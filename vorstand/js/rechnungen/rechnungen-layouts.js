@@ -452,8 +452,14 @@ window.rnInsertShortcode = function(code) {
   }
 };
 
-window.rnResetLayoutToDefault = function(type) {
-  if (!confirm(`⚠️ Möchtest du die Texte für '${type}' wirklich auf die Standardvorlage zurücksetzen?`)) return;
+window.rnResetLayoutToDefault = async function(type) {
+  const ok = await UIConfirmKit.confirm({
+    title: 'Standardvorlage wiederherstellen?',
+    message: `Möchtest du die Texte für <strong>${escapeHtml(type)}</strong> wirklich auf die Standardvorlage zurücksetzen?`,
+    type: 'warning',
+    confirmText: 'Zurücksetzen'
+  });
+  if (!ok) return;
   const defaults = window.rnGetDefaultLayouts()[type];
   if (defaults) {
     window._invoiceLayouts[type] = { ...defaults };

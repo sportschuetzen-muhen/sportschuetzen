@@ -98,60 +98,76 @@ window.rnSavePayment = async function(event, invoiceId) {
   const payAmt = parseFloat(document.getElementById('rnp-amount')?.value) || 0;
 
   if (payAmt <= 0) {
-    alert("❌ Bitte geben Sie einen gültigen Betrag grösser als 0 ein.");
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Ungültiger Betrag', 'Bitte gib einen gültigen Betrag grösser als CHF 0.00 ein.', 'warning');
+    } else {
+      alert("❌ Bitte gib einen gültigen Betrag grösser als CHF 0.00 ein.");
+    }
     return;
   }
 
-  // 1. Optimistic Update
-  const invIndex = window._invoices.findIndex(i => String(i.id) === String(invoiceId));
-  if (invIndex !== -1) {
-    const inv = window._invoices[invIndex];
-    const prevOpen = (inv.open_amount !== undefined && inv.open_amount !== null) ? Number(inv.open_amount) : Number(inv.total_amount || 0);
-    const newOpen = Math.max(0, prevOpen - payAmt);
-    inv.status = newOpen <= 0 ? 'bezahlt' : 'teilbezahlt';
-    inv.open_amount = newOpen;
-    inv.payment_date = datum;
-    inv.payment_method = methode;
-    inv.document_ref = beleg || `PAY-${invoiceId}`;
-    window.renderRechnungen(); // Render table instantly!
-  }
+  const runPayment = async () => {
+    // 1. Optimistic Update
+    const invIndex = window._invoices.findIndex(i => String(i.id) === String(invoiceId));
+    if (invIndex !== -1) {
+      const inv = window._invoices[invIndex];
+      const prevOpen = (inv.open_amount !== undefined && inv.open_amount !== null) ? Number(inv.open_amount) : Number(inv.total_amount || 0);
+      const newOpen = Math.max(0, prevOpen - payAmt);
+      inv.status = newOpen <= 0 ? 'bezahlt' : 'teilbezahlt';
+      inv.open_amount = newOpen;
+      inv.payment_date = datum;
+      inv.payment_method = methode;
+      inv.document_ref = beleg || `PAY-${invoiceId}`;
+      window.renderRechnungen(); // Render table instantly!
+    }
 
-  // Close modal instantly
-  const modalEl = document.getElementById('rnModalPayment');
-  if (modalEl) {
-    const modal = bootstrap.Modal.getInstance(modalEl);
-    if (modal) modal.hide();
-  }
+    // Close modal
+    const modalEl = document.getElementById('rnModalPayment');
+    if (modalEl) {
+      const modal = bootstrap.Modal.getInstance(modalEl);
+      if (modal) modal.hide();
+    }
 
-  showSuccess(`🎉 Zahlung für Rechnung ${invoiceId} wird verbucht...`);
+    showSuccess(`🎉 Zahlung für Rechnung ${invoiceId} wird verbucht...`);
 
-  // 2. Primärspeicher: RechnungsCore (Zahlungseingang -> Rechnungsstatus -> FiBu)
-  try {
-    if (window.RechnungsCore && typeof window.RechnungsCore.recordPayment === 'function') {
-      const res = await window.RechnungsCore.recordPayment(invoiceId, {
-        amount: payAmt,
-        paymentDate: datum,
-        paymentMethod: methode,
-        documentRef: beleg || `PAY-${invoiceId}`,
-        syncBookkeeping: syncBookkeeping
-      });
-      showSuccess(`✅ Zahlung für Rechnung ${invoiceId} erfolgreich erfasst (${res.status.toUpperCase()}, Rest: CHF ${window.RechnungsCore.formatSwissAmount(res.openAmount)}).`);
-    } else {
-      // Fallback direkt Supabase REST
-      const supa = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : null;
-      if (supa) {
-        await supa.from('invoices').update({
-          status: 'bezahlt',
-          payment_date: datum,
-          payment_method: methode,
-          document_ref: beleg || `PAY-${invoiceId}`,
-          updated_at: new Date().toISOString()
-        }).eq('id', invoiceId);
+    // 2. Primärspeicher: RechnungsCore (Zahlungseingang -> Rechnungsstatus -> FiBu)
+    try {
+      if (window.RechnungsCore && typeof window.RechnungsCore.recordPayment === 'function') {
+        const res = await window.RechnungsCore.recordPayment(invoiceId, {
+          amount: payAmt,
+          paymentDate: datum,
+          paymentMethod: methode,
+          documentRef: beleg || `PAY-${invoiceId}`,
+          syncBookkeeping: syncBookkeeping
+        });
+        showSuccess(`✅ Zahlung für Rechnung ${invoiceId} erfolgreich erfasst (${res.status.toUpperCase()}, Rest: CHF ${window.RechnungsCore.formatSwissAmount(res.openAmount)}).`);
+      } else {
+        // Fallback direkt Supabase REST
+        const supa = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : null;
+        if (supa) {
+          await supa.from('invoices').update({
+            status: 'bezahlt',
+            payment_date: datum,
+            payment_method: methode,
+            document_ref: beleg || `PAY-${invoiceId}`,
+            updated_at: new Date().toISOString()
+          }).eq('id', invoiceId);
+        }
+      }
+    } catch (err) {
+      console.error("❌ Fehler bei Zahlungsverbuchung:", err);
+      if (window.UIConfirmKit) {
+        await UIConfirmKit.alert('Fehler bei der Verbuchung', 'Fehler beim Speichern der Zahlung: ' + err.message, 'danger');
+      } else {
+        alert("❌ Fehler beim Speichern der Zahlung: " + err.message);
       }
     }
-  } catch (err) {
-    console.error("❌ Fehler bei Zahlungsverbuchung:", err);
-    alert("❌ Fehler beim Speichern der Zahlung: " + err.message);
+  };
+
+  if (window.UIButtonKit) {
+    await UIButtonKit.withLoading('#rnp-submit-btn', runPayment);
+  } else {
+    await runPayment();
   }
 
   // UI Refresh nach Buchung in Supabase
@@ -640,19 +656,27 @@ window.rnmSwitchTab = function(mode) {
   }
 };
 
-window.rnmResetTemplate = function() {
-  if (confirm('Möchtest du den E-Mail-Betreff und den Nachrichtentext auf die Standard-Vorlage zurücksetzen?')) {
-    const subjectEl = document.getElementById('rnm-subject');
-    const bodyEl = document.getElementById('rnm-mail-body');
-    if (subjectEl) subjectEl.value = window._rnmDefaultSubject || '';
-    if (bodyEl) {
-      bodyEl.value = window._rnmDefaultBody || '';
-      if (bodyEl._clubWysiwygInstance) {
-        bodyEl._clubWysiwygInstance.setHtml(window._rnmDefaultBody || '');
-      }
+window.rnmResetTemplate = async function() {
+  const ok = window.UIConfirmKit
+    ? await UIConfirmKit.confirm({
+        title: 'Vorlage zurücksetzen?',
+        message: 'Möchtest du den E-Mail-Betreff und den Nachrichtentext wirklich auf die Standard-Vorlage zurücksetzen?',
+        type: 'warning',
+        confirmText: 'Zurücksetzen'
+      })
+    : confirm('Möchtest du den E-Mail-Betreff und den Nachrichtentext auf die Standard-Vorlage zurücksetzen?');
+  if (!ok) return;
+
+  const subjectEl = document.getElementById('rnm-subject');
+  const bodyEl = document.getElementById('rnm-mail-body');
+  if (subjectEl) subjectEl.value = window._rnmDefaultSubject || '';
+  if (bodyEl) {
+    bodyEl.value = window._rnmDefaultBody || '';
+    if (bodyEl._clubWysiwygInstance) {
+      bodyEl._clubWysiwygInstance.setHtml(window._rnmDefaultBody || '');
     }
-    window.rnmSwitchTab('edit');
   }
+  window.rnmSwitchTab('edit');
 };
 
 window.rnExecuteSendMail = async function(invoiceId) {
@@ -2457,7 +2481,11 @@ window.rnSaveCreateInvoice = async function(event) {
 
   const isFreierBrief = (invoiceHeader.type === 'Freier Brief');
   if (positions.length === 0 && !isFreierBrief) {
-    alert("❌ Bitte fügen Sie mindestens eine Rechnungsposition hinzu.");
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Keine Positionen', 'Bitte füge mindestens eine Rechnungsposition hinzu.', 'warning');
+    } else {
+      alert("❌ Bitte füge mindestens eine Rechnungsposition hinzu.");
+    }
     return;
   }
   if (isFreierBrief && positions.length === 0) {
@@ -2475,7 +2503,12 @@ window.rnSaveCreateInvoice = async function(event) {
   if (!isFreierBrief) {
     for (let i = 0; i < positions.length; i++) {
       if (!positions[i].konto) {
-        alert(`❌ Position ${positions[i].position_nr} („${positions[i].description || 'Ohne Bezeichnung'}“) hat kein Gegenkonto (Haben).\n\nJede Rechnungsposition muss zwingend ein gültiges Gegenkonto aufweisen.\nBitte wähle in der Spalte „Konto (Haben)“ ein Konto aus dem Kontenrahmen aus.`);
+        const msg = `Position ${positions[i].position_nr} („${positions[i].description || 'Ohne Bezeichnung'}“) hat kein Gegenkonto (Haben).<br><br>Jede Rechnungsposition muss zwingend ein gültiges Gegenkonto aufweisen.<br>Bitte wähle in der Spalte „Konto (Haben)“ ein Konto aus dem Kontenrahmen aus.`;
+        if (window.UIConfirmKit) {
+          await UIConfirmKit.alert('Fehlendes Gegenkonto', msg, 'warning');
+        } else {
+          alert(msg.replace(/<br>/g, '\n'));
+        }
         return;
       }
     }
@@ -2737,20 +2770,33 @@ window.rnOpenEditModal = async function(invoiceId) {
 
     if (!inv) {
       hideLoadingOverlay();
-      alert(`❌ Rechnung ${invoiceId} wurde nicht gefunden.`);
+      if (window.UIConfirmKit) {
+        await UIConfirmKit.alert('Rechnung nicht gefunden', `Rechnung ${invoiceId} wurde nicht gefunden.`, 'danger');
+      } else {
+        alert(`❌ Rechnung ${invoiceId} wurde nicht gefunden.`);
+      }
       return;
     }
 
     if (inv.status === 'bezahlt' || (inv.total_paid && Number(inv.total_paid) > 0)) {
       hideLoadingOverlay();
-      alert(`🔒 Rechnung ${invoiceId} ist bereits bezahlt und kann nicht mehr bearbeitet werden.`);
+      if (window.UIConfirmKit) {
+        await UIConfirmKit.alert('Rechnung gesperrt', `Rechnung ${invoiceId} ist bereits bezahlt und kann nicht mehr bearbeitet werden.`, 'warning');
+      } else {
+        alert(`🔒 Rechnung ${invoiceId} ist bereits bezahlt und kann nicht mehr bearbeitet werden.`);
+      }
       return;
     }
 
     if (inv.mail_status === 'versendet' || inv.send_date) {
       hideLoadingOverlay();
       const sendDateDisplay = inv.send_date ? (typeof isoToDisplay === 'function' ? isoToDisplay(inv.send_date) : inv.send_date) : 'bereits';
-      alert(`🔒 Rechnung ${invoiceId} wurde am ${sendDateDisplay} an den Empfänger versandt.\n\nZur Vermeidung von Abweichungen beim Debitor können versandte Rechnungen nicht mehr inhaltlich editiert werden.\n\nFalls die Rechnung fehlerhaft ist, lösche oder storniere diese bitte und erstelle eine korrigierte Rechnung.`);
+      const msg = `Rechnung ${invoiceId} wurde am ${sendDateDisplay} an den Empfänger versandt.<br><br>Zur Vermeidung von Abweichungen beim Debitor können versandte Rechnungen nicht mehr inhaltlich editiert werden.<br><br>Falls die Rechnung fehlerhaft ist, storniere diese bitte und erstelle eine korrigierte Rechnung.`;
+      if (window.UIConfirmKit) {
+        await UIConfirmKit.alert('Rechnung gesperrt', msg, 'warning');
+      } else {
+        alert(msg.replace(/<br>/g, '\n'));
+      }
       return;
     }
 
@@ -3136,11 +3182,19 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
   const existingInv = (window._invoices || []).find(i => String(i.id) === String(invoiceId));
   if (existingInv) {
     if (existingInv.status === 'bezahlt' || (existingInv.total_paid && Number(existingInv.total_paid) > 0)) {
-      alert(`🔒 Rechnung ${invoiceId} ist bezahlt und kann nicht mehr geändert werden.`);
+      if (window.UIConfirmKit) {
+        await UIConfirmKit.alert('Rechnung gesperrt', `Rechnung ${invoiceId} ist bezahlt und kann nicht mehr geändert werden.`, 'warning');
+      } else {
+        alert(`🔒 Rechnung ${invoiceId} ist bezahlt und kann nicht mehr geändert werden.`);
+      }
       return;
     }
     if (existingInv.mail_status === 'versendet' || existingInv.send_date) {
-      alert(`🔒 Rechnung ${invoiceId} wurde bereits versandt und kann inhaltlich nicht mehr verändert werden.`);
+      if (window.UIConfirmKit) {
+        await UIConfirmKit.alert('Rechnung gesperrt', `Rechnung ${invoiceId} wurde bereits versandt und kann inhaltlich nicht mehr verändert werden.`, 'warning');
+      } else {
+        alert(`🔒 Rechnung ${invoiceId} wurde bereits versandt und kann inhaltlich nicht mehr verändert werden.`);
+      }
       return;
     }
   }
@@ -3190,7 +3244,11 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
 
   const isFreierBriefEdit = (invoiceHeader.type === 'Freier Brief');
   if (positions.length === 0 && !isFreierBriefEdit) {
-    alert("❌ Bitte fügen Sie mindestens eine Rechnungsposition hinzu.");
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Keine Positionen', 'Bitte füge mindestens eine Rechnungsposition hinzu.', 'warning');
+    } else {
+      alert("❌ Bitte füge mindestens eine Rechnungsposition hinzu.");
+    }
     return;
   }
   if (isFreierBriefEdit && positions.length === 0) {
@@ -3208,7 +3266,12 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
   if (!isFreierBriefEdit) {
     for (let i = 0; i < positions.length; i++) {
       if (!positions[i].konto) {
-        alert(`❌ Position ${positions[i].position_nr} („${positions[i].description || 'Ohne Bezeichnung'}“) hat kein Gegenkonto (Haben).\n\nJede Rechnungsposition muss zwingend ein gültiges Gegenkonto aufweisen.\nBitte wähle in der Spalte „Konto (Haben)“ ein Konto aus dem Kontenrahmen aus.`);
+        const msg = `Position ${positions[i].position_nr} („${positions[i].description || 'Ohne Bezeichnung'}“) hat kein Gegenkonto (Haben).<br><br>Jede Rechnungsposition muss zwingend ein gültiges Gegenkonto aufweisen.<br>Bitte wähle in der Spalte „Konto (Haben)“ ein Konto aus dem Kontenrahmen aus.`;
+        if (window.UIConfirmKit) {
+          await UIConfirmKit.alert('Fehlendes Gegenkonto', msg, 'warning');
+        } else {
+          alert(msg.replace(/<br>/g, '\n'));
+        }
         return;
       }
     }
@@ -3304,7 +3367,11 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
   const inv = (window._invoices || []).find(i => String(i.id) === String(invoiceId));
   if (inv) {
     if (inv.status === 'bezahlt' || (inv.total_paid && Number(inv.total_paid) > 0)) {
-      alert(`🔒 Rechnung ${invoiceId} ist bezahlt und kann aus buchhalterischen Gründen nicht gelöscht werden.`);
+      if (window.UIConfirmKit) {
+        await UIConfirmKit.alert('Löschen gesperrt', `Rechnung ${invoiceId} ist bezahlt und kann aus buchhalterischen Gründen nicht gelöscht werden.`, 'warning');
+      } else {
+        alert(`🔒 Rechnung ${invoiceId} ist bezahlt und kann aus buchhalterischen Gründen nicht gelöscht werden.`);
+      }
       return;
     }
   }
@@ -3327,7 +3394,16 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
       `Fortfahren?`;
   }
 
-  if (!confirm(warnText)) {
+  const ok = window.UIConfirmKit
+    ? await UIConfirmKit.confirm({
+        title: `Rechnung ${invoiceId} löschen?`,
+        message: warnText.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'),
+        type: 'danger',
+        confirmText: 'Unwiderruflich löschen'
+      })
+    : confirm(warnText);
+
+  if (!ok) {
     return;
   }
 
@@ -4017,19 +4093,27 @@ window.rnSwitchMahnungTab = function(mode) {
   }
 };
 
-window.rnResetMahnungTemplate = function() {
-  if (confirm('Möchtest du den E-Mail-Betreff und den Mahnungstext auf die Standard-Vorlage der aktuellen Stufe zurücksetzen?')) {
-    const subjectEl = document.getElementById('rn-mahnung-subject');
-    const bodyEl = document.getElementById('rn-mahnung-body');
-    if (subjectEl) subjectEl.value = window._rnMahnDefaultSubject || '';
-    if (bodyEl) {
-      bodyEl.value = window._rnMahnDefaultBody || '';
-      if (bodyEl._clubWysiwygInstance) {
-        bodyEl._clubWysiwygInstance.setHtml(window._rnMahnDefaultBody || '');
-      }
+window.rnResetMahnungTemplate = async function() {
+  const ok = window.UIConfirmKit
+    ? await UIConfirmKit.confirm({
+        title: 'Mahnvorlage zurücksetzen?',
+        message: 'Möchtest du den E-Mail-Betreff und den Mahnungstext wirklich auf die Standard-Vorlage der aktuellen Stufe zurücksetzen?',
+        type: 'warning',
+        confirmText: 'Zurücksetzen'
+      })
+    : confirm('Möchtest du den E-Mail-Betreff und den Mahnungstext auf die Standard-Vorlage der aktuellen Stufe zurücksetzen?');
+  if (!ok) return;
+
+  const subjectEl = document.getElementById('rn-mahnung-subject');
+  const bodyEl = document.getElementById('rn-mahnung-body');
+  if (subjectEl) subjectEl.value = window._rnMahnDefaultSubject || '';
+  if (bodyEl) {
+    bodyEl.value = window._rnMahnDefaultBody || '';
+    if (bodyEl._clubWysiwygInstance) {
+      bodyEl._clubWysiwygInstance.setHtml(window._rnMahnDefaultBody || '');
     }
-    window.rnSwitchMahnungTab('edit');
   }
+  window.rnSwitchMahnungTab('edit');
 };
 
 // 2. MANUELLE MAHNUNG: VERSAND AUSFÜHREN
@@ -4071,7 +4155,17 @@ window.rnExecuteSendMahnung = async function(event, invoiceId) {
   };
   const stufenTitle = stufenLabels[targetStufe] || `Mahnung (Stufe ${targetStufe})`;
 
-  if (!confirm(`Möchtest du wirklich die "${stufenTitle}" für Rechnung ${invoiceId} (${inv.name || ''}) per E-Mail an "${targetEmail}" versenden?`)) {
+  const esc = (window.UIFormatKit?.escapeHtml || window.escapeHtml || (s => s));
+  const ok = window.UIConfirmKit
+    ? await UIConfirmKit.confirm({
+        title: 'Mahnung versenden?',
+        message: `Möchtest du wirklich die <strong>${esc(stufenTitle)}</strong> für Rechnung <strong>${esc(invoiceId)}</strong> (${esc(inv.name || '')}) per E-Mail an <strong>${esc(targetEmail)}</strong> versenden?`,
+        type: 'warning',
+        confirmText: 'Mahnung jetzt senden'
+      })
+    : confirm(`Möchtest du wirklich die "${stufenTitle}" für Rechnung ${invoiceId} (${inv.name || ''}) per E-Mail an "${targetEmail}" versenden?`);
+
+  if (!ok) {
     return;
   }
 
@@ -4437,11 +4531,24 @@ window.rnUpdateBatchSelectedCount = function() {
 window.rnExecuteBatchMahnung = async function() {
   const checkedBoxes = document.querySelectorAll('.rn-batch-check:checked');
   if (checkedBoxes.length === 0) {
-    alert("❌ Bitte wähle mindestens eine Rechnung für den Mahnlauf aus.");
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Keine Auswahl', 'Bitte wähle mindestens eine Rechnung für den Mahnlauf aus.', 'warning');
+    } else {
+      alert("❌ Bitte wähle mindestens eine Rechnung für den Mahnlauf aus.");
+    }
     return;
   }
 
-  if (!confirm(`Möchtest du wirklich ${checkedBoxes.length} Mahnungen generieren und per E-Mail versenden?`)) {
+  const ok = window.UIConfirmKit
+    ? await UIConfirmKit.confirm({
+        title: 'Sammel-Mahnlauf starten?',
+        message: `Möchtest du wirklich <strong>${checkedBoxes.length}</strong> Mahnungen generieren und per E-Mail versenden?`,
+        type: 'warning',
+        confirmText: 'Mahnlauf starten'
+      })
+    : confirm(`Möchtest du wirklich ${checkedBoxes.length} Mahnungen generieren und per E-Mail versenden?`);
+
+  if (!ok) {
     return;
   }
 
@@ -4607,10 +4714,14 @@ window.rnClearTableSelection = function() {
 };
 
 // Massenversand aus Tabellenauswahl starten
-window.rnStartMassSendFromSelection = function() {
+window.rnStartMassSendFromSelection = async function() {
   const ids = rnGetSelectedInvoiceIds();
   if (ids.length === 0) {
-    alert("Bitte wähle mindestens eine Rechnung in der Tabelle aus.");
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Keine Auswahl', 'Bitte wähle mindestens eine Rechnung in der Tabelle aus.', 'warning');
+    } else {
+      alert("Bitte wähle mindestens eine Rechnung in der Tabelle aus.");
+    }
     return;
   }
   rnOpenMassSendModal(ids);
@@ -4620,7 +4731,11 @@ window.rnStartMassSendFromSelection = function() {
 window.rnDeleteSelectedInvoices = async function() {
   const selectedIds = rnGetSelectedInvoiceIds();
   if (selectedIds.length === 0) {
-    alert("Bitte wähle mindestens eine Rechnung in der Tabelle aus.");
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Keine Auswahl', 'Bitte wähle mindestens eine Rechnung in der Tabelle aus.', 'warning');
+    } else {
+      alert("Bitte wähle mindestens eine Rechnung in der Tabelle aus.");
+    }
     return;
   }
 
@@ -4634,7 +4749,12 @@ window.rnDeleteSelectedInvoices = async function() {
   const deletableInvoices = selectedInvoices.filter(inv => inv.status !== 'bezahlt' && (!inv.total_paid || Number(inv.total_paid) === 0));
 
   if (deletableInvoices.length === 0) {
-    alert(`🔒 Keine der ausgewählten Rechnungen kann gelöscht werden.\n\nAlle ${paidInvoices.length} ausgewählten Rechnungen sind bereits bezahlt und aus buchhalterischen Gründen geschützt.`);
+    const msg = `Keine der ausgewählten Rechnungen kann gelöscht werden.<br><br>Alle ${paidInvoices.length} ausgewählten Rechnungen sind bereits bezahlt und aus buchhalterischen Gründen geschützt.`;
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Löschen nicht möglich', msg, 'warning');
+    } else {
+      alert(msg.replace(/<br>/g, '\n'));
+    }
     return;
   }
 
@@ -4656,7 +4776,16 @@ window.rnDeleteSelectedInvoices = async function() {
   }
   warnMsg += `\nFortfahren?`;
 
-  if (!confirm(warnMsg)) {
+  const ok = window.UIConfirmKit
+    ? await UIConfirmKit.confirm({
+        title: `${deletableInvoices.length} Rechnungen löschen?`,
+        message: warnMsg.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'),
+        type: 'danger',
+        confirmText: 'Unwiderruflich löschen'
+      })
+    : confirm(warnMsg);
+
+  if (!ok) {
     return;
   }
 
@@ -5113,11 +5242,24 @@ window.rnExecuteMassSend = async function() {
   });
 
   if (itemsToSend.length === 0) {
-    alert("❌ Bitte wähle mindestens eine Rechnung mit gültiger E-Mail-Adresse aus.");
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Keine Empfänger', 'Bitte wähle mindestens eine Rechnung mit gültiger E-Mail-Adresse aus.', 'warning');
+    } else {
+      alert("❌ Bitte wähle mindestens eine Rechnung mit gültiger E-Mail-Adresse aus.");
+    }
     return;
   }
 
-  if (!confirm(`Möchtest du wirklich ${itemsToSend.length} Rechnungen als PDF mit Schweizer QR-Code generieren und per E-Mail versenden?`)) {
+  const ok = window.UIConfirmKit
+    ? await UIConfirmKit.confirm({
+        title: 'Sammelversand starten?',
+        message: `Möchtest du wirklich <strong>${itemsToSend.length}</strong> Rechnungen als PDF mit Schweizer QR-Code generieren und per E-Mail versenden?`,
+        type: 'primary',
+        confirmText: 'Versand starten'
+      })
+    : confirm(`Möchtest du wirklich ${itemsToSend.length} Rechnungen als PDF mit Schweizer QR-Code generieren und per E-Mail versenden?`);
+
+  if (!ok) {
     return;
   }
 
@@ -5768,7 +5910,17 @@ window.rnSaveContactForm = async function(event) {
 window.rnDeleteContactPrompt = async function(contactId) {
   const c = (window._externalContacts || []).find(x => String(x.id).trim() === String(contactId).trim());
   const label = c ? (window.rnGetContactDisplayName ? window.rnGetContactDisplayName(c) : (c.firma || c.name || `ID ${c.id}`)) : `ID ${contactId}`;
-  if (!confirm(`Möchtest du den externen Kontakt "${label}" (EXT-${contactId}) wirklich löschen?`)) return;
+  const esc = (window.UIFormatKit?.escapeHtml || window.escapeHtml || (s => s));
+
+  const ok = window.UIConfirmKit
+    ? await UIConfirmKit.confirm({
+        title: 'Externen Kontakt löschen?',
+        message: `Möchtest du den externen Kontakt <strong>${esc(label)}</strong> (EXT-${contactId}) wirklich löschen?`,
+        type: 'danger',
+        confirmText: 'Löschen'
+      })
+    : confirm(`Möchtest du den externen Kontakt "${label}" (EXT-${contactId}) wirklich löschen?`);
+  if (!ok) return;
 
   showLoadingOverlay('Lösche Kontakt...');
 
@@ -5776,7 +5928,11 @@ window.rnDeleteContactPrompt = async function(contactId) {
   const sb = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : (window.supabaseClient || null);
   if (!sb) {
     hideLoadingOverlay();
-    alert('❌ Fehler: Supabase-Client nicht verfügbar.');
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Systemfehler', 'Supabase-Client nicht verfügbar.', 'danger');
+    } else {
+      alert('❌ Fehler: Supabase-Client nicht verfügbar.');
+    }
     return;
   }
 

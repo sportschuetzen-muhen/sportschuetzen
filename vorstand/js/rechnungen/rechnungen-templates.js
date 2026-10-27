@@ -259,7 +259,13 @@ window.rnSaveTemplate = async function(event, templateId) {
 };
 
 window.rnDeleteTemplate = async function(templateId, desc) {
-  if (!confirm(`⚠️ Möchtest du die Standard-Position "${desc}" wirklich aus den Vorlagen löschen?`)) return;
+  const ok = await UIConfirmKit.confirm({
+    title: 'Standard-Position löschen?',
+    message: `Möchtest du die Standard-Position <strong>${escapeHtml(desc)}</strong> wirklich aus den Vorlagen löschen?`,
+    type: 'danger',
+    confirmText: 'Löschen'
+  });
+  if (!ok) return;
   
   const isServerTpl = templateId !== null && templateId !== undefined && templateId !== '';
   
