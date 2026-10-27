@@ -994,7 +994,20 @@ function bhBankRenderResults(filter) {
         </button>
       `;
     } else if (r.alreadyBooked) {
-      actionButtons = `<span id="bh-status-badge-${realI}" class="badge bg-light text-secondary border px-2 py-1.5" title="🔒 Bereits im Journal erfasst. Doppelbuchung geschützt."><i class="fas fa-lock me-1"></i>Gebucht</span>`;
+      let printBtn = '';
+      const jEntry = r.matchedJournalEntry || (window._bhJournal || []).find(j => {
+        if (r.bookingDate && j.datum !== r.bookingDate) return false;
+        const jAmt = Math.abs(Number(j.betrag) || 0);
+        const rAmt = Math.abs(Number(r.amount) || 0);
+        return Math.abs(jAmt - rAmt) < 0.01;
+      });
+      if (jEntry && jEntry.id) {
+        printBtn = `<button type="button" class="btn btn-sm btn-outline-primary py-1 px-2" onclick="bhPrintJournalBeleg(${jEntry.id})" title="Buchungsbeleg drucken / als PDF ablegen"><i class="fas fa-print"></i></button>`;
+      }
+      actionButtons = `
+        <span id="bh-status-badge-${realI}" class="badge bg-light text-secondary border px-2 py-1.5" title="🔒 Bereits im Journal erfasst. Doppelbuchung geschützt."><i class="fas fa-lock me-1"></i>Gebucht</span>
+        ${printBtn}
+      `;
     }
 
     const amountClass = isCredit ? 'text-success' : 'text-danger';
@@ -4001,6 +4014,9 @@ window.bhBankOpenSplitModal = async function(txIdx) {
 
 function bhBankCleanKonto(val) {
   if (!val) return '';
+  if (typeof window.bhKontoResolveCode === 'function') {
+    return window.bhKontoResolveCode(val);
+  }
   return String(val).split('|')[0].trim();
 }
 
@@ -4063,7 +4079,7 @@ function bhBankRenderSplitModalContent(tx) {
   const bal = bhBankCalcSplitBalance(tx, splitRows);
   const kontenrahmen = window._bhKontenrahmen || [];
 
-  function makeKontoSelectHTML(id, selectedVal) {
+  function makeKontoSelectHTML(id, selectedVal, type) {
     const matched = kontenrahmen.find(k => String(k.konto).trim() === String(selectedVal).trim());
     const cleanObj = matched
       ? (window.TableKit && typeof window.TableKit.cleanKontoDisplay === 'function'
@@ -4071,7 +4087,16 @@ function bhBankRenderSplitModalContent(tx) {
           : { konto: matched.konto, bezeichnung: String(matched.bezeichnung || '').replace(/\s*\bCH\d{2}[\s0-9A-Z]{12,}\b/gi, '').trim(), display: `${matched.konto} | ${String(matched.bezeichnung || '').replace(/\s*\bCH\d{2}[\s0-9A-Z]{12,}\b/gi, '').trim()}` })
       : null;
     const displayVal = cleanObj ? cleanObj.display : (selectedVal ? String(selectedVal) : '');
-    return `<input type="text" id="${id}" list="bh-konten-datalist" class="form-control form-control-sm" placeholder="Konto..." value="${escHtml(displayVal)}" autocomplete="off" oninput="bhBankUpdateSplitLiveBalance()" onchange="bhBankUpdateSplitLiveBalance()">`;
+    const isResolved = Boolean(matched);
+    const placeholder = type === 'soll' ? 'Soll-Konto (Empfänger)...' : 'Haben-Konto (Quelle)...';
+    return `
+      <div class="input-group input-group-sm">
+        <input type="text" id="${id}" class="form-control form-control-sm bh-konto-ac-input ${isResolved ? 'is-resolved' : ''}" placeholder="${placeholder}" value="${escHtml(displayVal)}" autocomplete="off" oninput="bhBankUpdateSplitLiveBalance()" onchange="bhBankUpdateSplitLiveBalance()">
+        <button type="button" class="btn btn-outline-secondary px-2" tabindex="-1" onclick="const inp=this.previousElementSibling; inp.focus(); inp.click();" title="Kontenliste anzeigen">
+          <i class="fas fa-chevron-down" style="font-size: 10px;"></i>
+        </button>
+      </div>
+    `;
   }
 
   const tableRowsHtml = splitRows.map((r, i) => {
@@ -4086,10 +4111,10 @@ function bhBankRenderSplitModalContent(tx) {
           <input type="number" step="0.01" min="0" class="form-control form-control-sm text-end fw-bold font-monospace" id="bh-split-amt-${i}" value="${amtVal}" placeholder="0.00" oninput="bhBankUpdateSplitLiveBalance()">
         </td>
         <td style="width: 240px;">
-          ${makeKontoSelectHTML(`bh-split-soll-${i}`, r.kontoSoll)}
+          ${makeKontoSelectHTML(`bh-split-soll-${i}`, r.kontoSoll, 'soll')}
         </td>
         <td style="width: 240px;">
-          ${makeKontoSelectHTML(`bh-split-haben-${i}`, r.kontoHaben)}
+          ${makeKontoSelectHTML(`bh-split-haben-${i}`, r.kontoHaben, 'haben')}
         </td>
         <td class="text-center" style="width:45px;">
           ${splitRows.length > 1 ? `
@@ -4173,8 +4198,8 @@ function bhBankRenderSplitModalContent(tx) {
                   <th style="width:38px;" class="text-center">#</th>
                   <th>Buchungstext / Beschreibung</th>
                   <th style="width:140px;" class="text-end">Betrag (CHF)</th>
-                  <th style="width:240px;">Soll-Konto</th>
-                  <th style="width:240px;">Haben-Konto</th>
+                  <th style="width:240px;"><i class="fas fa-long-arrow-alt-right text-primary me-1"></i>Soll-Konto (Empfänger)</th>
+                  <th style="width:240px;"><i class="fas fa-long-arrow-alt-left text-success me-1"></i>Haben-Konto (Quelle)</th>
                   <th style="width:45px;" class="text-center">Aktion</th>
                 </tr>
               </thead>
@@ -4207,6 +4232,9 @@ function bhBankRenderSplitModalContent(tx) {
           </div>
           <div class="d-flex gap-2">
             <button type="button" class="btn btn-outline-secondary px-3" data-bs-dismiss="modal">Abbrechen</button>
+            <button type="button" id="bh-split-save-print-btn" class="btn btn-outline-primary fw-bold px-3 shadow-sm" ${!bal.isBalanced ? 'disabled' : ''} onclick="bhBankSaveAndPrintSplitBooking(${window._bhSplitCurrentTxIndex})" title="Split-Aufteilung speichern und direkt druckreifen Buchungsbeleg (A4) öffnen">
+              <i class="fas fa-print me-1.5"></i>Split übernehmen &amp; Beleg drucken
+            </button>
             <button type="button" id="bh-split-save-btn" class="btn btn-success fw-bold px-4 shadow-sm" ${!bal.isBalanced ? 'disabled' : ''} onclick="bhBankSaveSplitBooking(${window._bhSplitCurrentTxIndex})">
               <i class="fas fa-check me-1.5"></i>${saveBtnText}
             </button>
@@ -4220,16 +4248,35 @@ function bhBankRenderSplitModalContent(tx) {
       </div>
     </div>
   `;
+
+  // Autocomplete für alle Konten-Felder analog manueller Erfassung aktivieren
+  if (typeof window.bhInitKontoAutocompleteForContainer === 'function') {
+    window.bhInitKontoAutocompleteForContainer(modalEl);
+  }
 }
 
 window.bhBankUpdateSplitLiveBalance = function() {
   bhBankUpdateSplitFromInputs();
 
+  const kontenrahmen = window._bhKontenrahmen || [];
+  const rows = window._bhSplitCurrentRows || [];
+  rows.forEach((r, i) => {
+    const sollEl = document.getElementById(`bh-split-soll-${i}`);
+    const habenEl = document.getElementById(`bh-split-haben-${i}`);
+    if (sollEl) {
+      const matchSoll = kontenrahmen.some(k => String(k.konto).trim() === String(r.kontoSoll).trim());
+      sollEl.classList.toggle('is-resolved', matchSoll);
+    }
+    if (habenEl) {
+      const matchHaben = kontenrahmen.some(k => String(k.konto).trim() === String(r.kontoHaben).trim());
+      habenEl.classList.toggle('is-resolved', matchHaben);
+    }
+  });
+
   const txs = window._bhBankMatchResults || [];
   const tx = txs[window._bhSplitCurrentTxIndex];
   if (!tx) return;
 
-  const rows = window._bhSplitCurrentRows || [];
   const bal = bhBankCalcSplitBalance(tx, rows);
 
   const sumEl = document.getElementById('bh-split-current-sum');
@@ -4272,6 +4319,11 @@ window.bhBankUpdateSplitLiveBalance = function() {
     const isSingle = (rows.length === 1);
     saveBtn.disabled = !bal.isBalanced;
     saveBtn.innerHTML = `<i class="fas fa-check me-1.5"></i>${isSingle ? 'Als Einzelbuchung übernehmen' : `Split-Aufteilung übernehmen (${rows.length} Zeilen)`}`;
+  }
+
+  const savePrintBtn = document.getElementById('bh-split-save-print-btn');
+  if (savePrintBtn) {
+    savePrintBtn.disabled = !bal.isBalanced;
   }
 };
 
@@ -4331,7 +4383,7 @@ window.bhBankRemoveSplitRow = function(idx) {
   }
 };
 
-window.bhBankSaveSplitBooking = function(txIdx) {
+window.bhBankSaveSplitBooking = function(txIdx, andPrint = false) {
   bhBankUpdateSplitFromInputs();
   const txs = window._bhBankMatchResults || [];
   const tx = txs[txIdx];
@@ -4402,6 +4454,26 @@ window.bhBankSaveSplitBooking = function(txIdx) {
       if (bsModal) bsModal.hide();
     }
 
+    if (andPrint && typeof window.bhPrintJournalBeleg === 'function') {
+      const printEntry = {
+        datum: tx.bookingDate || new Date().toISOString().split('T')[0],
+        beleg_nr: tx._batchBelegNr || 'Bank-Transaktion',
+        beschreibung: single.beschreibung || tx.partyName || 'Bankbuchung',
+        konto_soll: single.kontoSoll,
+        konto_haben: single.kontoHaben,
+        betrag: Number(single.betrag),
+        typ: 'Bank'
+      };
+      const addr = [tx.partyStreet, `${tx.partyPLZ || ''} ${tx.partyCity || ''}`.trim()].filter(Boolean).join(', ');
+      const recipient = {
+        name: tx.partyName || 'Banktransaktion',
+        iban: tx.partyIban || tx.accountIban || '',
+        address: addr,
+        city: tx.partyCity || ''
+      };
+      window.bhPrintJournalBeleg([printEntry], `${tx.partyName || 'Banktransaktion'} · Buchungsbeleg`, recipient);
+    }
+
     showToast(`✅ Transaktion als Einzelbuchung (${single.kontoSoll} / ${single.kontoHaben}) übernommen!`, 'success', 'top-end', 3500);
     bhBankRenderResults(window._bhBankActiveFilter);
     if (typeof bhBankUpdateSafeBookingsBtn === 'function') bhBankUpdateSafeBookingsBtn();
@@ -4458,10 +4530,34 @@ window.bhBankSaveSplitBooking = function(txIdx) {
     if (bsModal) bsModal.hide();
   }
 
+  if (andPrint && typeof window.bhPrintJournalBeleg === 'function') {
+    const printEntries = splitRows.map((r, rIdx) => ({
+      datum: tx.bookingDate || new Date().toISOString().split('T')[0],
+      beleg_nr: tx._batchBelegNr ? `${tx._batchBelegNr}-${String.fromCharCode(97 + rIdx)}` : `Bank-Split #${rIdx + 1}`,
+      beschreibung: r.beschreibung,
+      konto_soll: r.kontoSoll,
+      konto_haben: r.kontoHaben,
+      betrag: Number(r.betrag),
+      typ: 'Bank'
+    }));
+    const addr = [tx.partyStreet, `${tx.partyPLZ || ''} ${tx.partyCity || ''}`.trim()].filter(Boolean).join(', ');
+    const recipient = {
+      name: tx.partyName || 'Banktransaktion',
+      iban: tx.partyIban || tx.accountIban || '',
+      address: addr,
+      city: tx.partyCity || ''
+    };
+    window.bhPrintJournalBeleg(printEntries, `${tx.partyName || 'Banktransaktion'} · Split-Aufteilung (${splitRows.length} Positionen)`, recipient);
+  }
+
   showToast(`✅ Split-Aufteilung (${splitRows.length} Positionen) übernommen! Wird beim Klick auf «Alle Buchungen ausführen» verbucht.`, 'success', 'top-end', 4000);
 
   bhBankRenderResults(window._bhBankActiveFilter);
   if (typeof bhBankUpdateSafeBookingsBtn === 'function') bhBankUpdateSafeBookingsBtn();
+};
+
+window.bhBankSaveAndPrintSplitBooking = function(txIdx) {
+  bhBankSaveSplitBooking(txIdx, true);
 };
 
 window.bhBankClearSplit = function(txIdx) {
