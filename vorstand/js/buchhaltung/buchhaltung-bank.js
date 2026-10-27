@@ -2960,7 +2960,9 @@ window.bhBankBookAll = async function() {
         : (isBankKontoCode(r.suggestedHaben) 
             ? r.suggestedHaben 
             : bhBankGetAccountForIban(r.accountIban, '1020'));
-      r._batchBelegNr = bhGetNextBankBelegNr(activeYear, txBankKonto);
+      if (!r._batchBelegNr) {
+        r._batchBelegNr = bhGetNextBankBelegNr(activeYear, txBankKonto);
+      }
     });
 
     // 2. Alle Buchungspakete lokal im RAM zusammenstellen
@@ -3238,7 +3240,9 @@ window.bhBankBookSelected = async function() {
         : (isBankKontoCode(r.suggestedHaben) 
             ? r.suggestedHaben 
             : bhBankGetAccountForIban(r.accountIban, '1020'));
-      r._batchBelegNr = bhGetNextBankBelegNr(activeYear, txBankKonto);
+      if (!r._batchBelegNr) {
+        r._batchBelegNr = bhGetNextBankBelegNr(activeYear, txBankKonto);
+      }
     });
 
     // 2. Alle Buchungspakete lokal zusammenstellen
@@ -3964,6 +3968,13 @@ window.bhBankOpenSplitModal = async function(txIdx) {
   const partyOrInfo = (tx.partyName || tx.remittanceInfo || 'Abrechnung Wettschiessen').trim();
 
   const txBankKonto = bhBankGetAccountForIban(tx.accountIban, '1020');
+  const activeYear = Number(window._bhYear || (tx.bookingDate ? tx.bookingDate.split('-')[0] : new Date().getFullYear()));
+  if (!tx._batchBelegNr) {
+    tx._batchBelegNr = bhGetNextBankBelegNr(activeYear, txBankKonto);
+  }
+  if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
+    window._bhBankTransactions[txIdx]._batchBelegNr = tx._batchBelegNr;
+  }
 
   const matchGegenkonto = isCredit
     ? (tx.suggestedHaben && tx.suggestedHaben !== txBankKonto ? tx.suggestedHaben : '')
@@ -4101,9 +4112,13 @@ function bhBankRenderSplitModalContent(tx) {
 
   const tableRowsHtml = splitRows.map((r, i) => {
     const amtVal = (r.betrag !== undefined && r.betrag !== null) ? r.betrag : '';
+    const subChar = String.fromCharCode(97 + i); // a, b, c...
+    const rowBelegNr = tx._batchBelegNr ? `${tx._batchBelegNr}${subChar}` : `#${i + 1}`;
     return `
       <tr>
-        <td class="text-center font-monospace fw-bold text-muted small" style="width:38px;">#${i + 1}</td>
+        <td class="text-center font-monospace fw-bold text-muted small" style="width:65px;" title="Beleg-Nr: ${escHtml(rowBelegNr)}">
+          #${i + 1} <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace" style="font-size:11px;">${subChar}</span>
+        </td>
         <td>
           <input type="text" class="form-control form-control-sm" id="bh-split-desc-${i}" value="${escHtml(r.beschreibung)}" placeholder="Beschreibung..." oninput="bhBankUpdateSplitLiveBalance()">
         </td>
@@ -4172,6 +4187,7 @@ function bhBankRenderSplitModalContent(tx) {
             <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
               <div>
                 <span class="badge bg-warning text-dark me-2">CAMT Transaktion</span>
+                <span class="badge bg-primary text-white me-2 font-monospace" title="Offizielle Beleg-Nummer für diese Buchung">Beleg: ${escHtml(tx._batchBelegNr || '–')}</span>
                 <strong>${formatSwissDate(tx.bookingDate)}</strong> &middot; ${escHtml(tx.partyName || 'Bank-Transaktion')}
                 <div class="small text-muted mt-1">${escHtml(tx.remittanceInfo || '')}</div>
               </div>
@@ -4195,7 +4211,7 @@ function bhBankRenderSplitModalContent(tx) {
             <table class="table table-bordered table-striped table-hover align-middle mb-0" id="bh-split-table" style="font-size: 13.5px;">
               <thead class="table-light">
                 <tr>
-                  <th style="width:38px;" class="text-center">#</th>
+                  <th style="width:65px;" class="text-center"># / Beleg</th>
                   <th>Buchungstext / Beschreibung</th>
                   <th style="width:140px;" class="text-end">Betrag (CHF)</th>
                   <th style="width:240px;"><i class="fas fa-long-arrow-alt-right text-primary me-1"></i>Soll-Konto (Empfänger)</th>
@@ -4407,6 +4423,15 @@ window.bhBankSaveSplitBooking = function(txIdx, andPrint = false) {
     return;
   }
 
+  const txBankKonto = bhBankGetAccountForIban(tx.accountIban, '1020');
+  const activeYear = Number(window._bhYear || (tx.bookingDate ? tx.bookingDate.split('-')[0] : new Date().getFullYear()));
+  if (!tx._batchBelegNr) {
+    tx._batchBelegNr = bhGetNextBankBelegNr(activeYear, txBankKonto);
+  }
+  if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
+    window._bhBankTransactions[txIdx]._batchBelegNr = tx._batchBelegNr;
+  }
+
   // FALL 1: Genau 1 Zeile -> Saubere Übernahme als vollständige Einzelbuchung!
   if (splitRows.length === 1) {
     const single = splitRows[0];
@@ -4457,8 +4482,8 @@ window.bhBankSaveSplitBooking = function(txIdx, andPrint = false) {
     if (andPrint && typeof window.bhPrintJournalBeleg === 'function') {
       const printEntry = {
         datum: tx.bookingDate || new Date().toISOString().split('T')[0],
-        beleg_nr: tx._batchBelegNr || 'Bank-Transaktion',
-        beschreibung: single.beschreibung || tx.partyName || 'Bankbuchung',
+        beleg_nr: tx._batchBelegNr,
+        beschreibung: (single.beschreibung || tx.partyName || 'Bankbuchung').trim(),
         konto_soll: single.kontoSoll,
         konto_haben: single.kontoHaben,
         betrag: Number(single.betrag),
@@ -4506,7 +4531,6 @@ window.bhBankSaveSplitBooking = function(txIdx, andPrint = false) {
   tx._customSplitEdited = true;
   tx.splitRows = JSON.parse(JSON.stringify(splitRows));
 
-  const txBankKonto = bhBankGetAccountForIban(tx.accountIban, '1020');
   if (tx.isCredit) {
     tx.suggestedSoll = txBankKonto;
     tx.suggestedHaben = '';
@@ -4521,6 +4545,7 @@ window.bhBankSaveSplitBooking = function(txIdx, andPrint = false) {
     window._bhBankTransactions[txIdx].splitRows = JSON.parse(JSON.stringify(splitRows));
     window._bhBankTransactions[txIdx].suggestedSoll = tx.suggestedSoll;
     window._bhBankTransactions[txIdx].suggestedHaben = tx.suggestedHaben;
+    window._bhBankTransactions[txIdx]._batchBelegNr = tx._batchBelegNr;
   }
 
   // Modal schliessen
@@ -4531,15 +4556,19 @@ window.bhBankSaveSplitBooking = function(txIdx, andPrint = false) {
   }
 
   if (andPrint && typeof window.bhPrintJournalBeleg === 'function') {
-    const printEntries = splitRows.map((r, rIdx) => ({
-      datum: tx.bookingDate || new Date().toISOString().split('T')[0],
-      beleg_nr: tx._batchBelegNr ? `${tx._batchBelegNr}-${String.fromCharCode(97 + rIdx)}` : `Bank-Split #${rIdx + 1}`,
-      beschreibung: r.beschreibung,
-      konto_soll: r.kontoSoll,
-      konto_haben: r.kontoHaben,
-      betrag: Number(r.betrag),
-      typ: 'Bank'
-    }));
+    const baseBeleg = tx._batchBelegNr;
+    const printEntries = splitRows.map((r, rIdx) => {
+      const subChar = String.fromCharCode(97 + rIdx); // a, b, c...
+      return {
+        datum: tx.bookingDate || new Date().toISOString().split('T')[0],
+        beleg_nr: `${baseBeleg}${subChar}`,
+        beschreibung: (r.beschreibung || tx.partyName || 'Bankbuchung').trim(),
+        konto_soll: r.kontoSoll,
+        konto_haben: r.kontoHaben,
+        betrag: Number(r.betrag),
+        typ: 'Bank-Split'
+      };
+    });
     const addr = [tx.partyStreet, `${tx.partyPLZ || ''} ${tx.partyCity || ''}`.trim()].filter(Boolean).join(', ');
     const recipient = {
       name: tx.partyName || 'Banktransaktion',
@@ -4550,7 +4579,7 @@ window.bhBankSaveSplitBooking = function(txIdx, andPrint = false) {
     window.bhPrintJournalBeleg(printEntries, `${tx.partyName || 'Banktransaktion'} · Split-Aufteilung (${splitRows.length} Positionen)`, recipient);
   }
 
-  showToast(`✅ Split-Aufteilung (${splitRows.length} Positionen) übernommen! Wird beim Klick auf «Alle Buchungen ausführen» verbucht.`, 'success', 'top-end', 4000);
+  showToast(`✅ Split-Aufteilung (${splitRows.length} Positionen) übernommen! Belegnummer ${tx._batchBelegNr} (a–${String.fromCharCode(96 + splitRows.length)}).`, 'success', 'top-end', 4000);
 
   bhBankRenderResults(window._bhBankActiveFilter);
   if (typeof bhBankUpdateSafeBookingsBtn === 'function') bhBankUpdateSafeBookingsBtn();

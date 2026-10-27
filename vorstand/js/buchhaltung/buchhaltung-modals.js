@@ -1885,7 +1885,14 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle, recipientData) 
   }
 
   const belegNrs = Array.from(new Set(entries.map(e => e.beleg_nr).filter(Boolean)));
-  const belegNrDisplay = belegNrs.join(', ') || 'Ohne Belegnummer';
+  let belegNrDisplay = belegNrs.join(', ') || 'Ohne Belegnummer';
+  if (entries.length > 1 && typeof window.bhGetSplitBaseBeleg === 'function') {
+    const bases = Array.from(new Set(entries.map(e => window.bhGetSplitBaseBeleg(e.beleg_nr)).filter(Boolean)));
+    if (bases.length === 1 && bases[0] && bases[0] !== entries[0].beleg_nr) {
+      const suffixes = entries.map(e => String(e.beleg_nr).slice(bases[0].length)).filter(Boolean);
+      belegNrDisplay = `${bases[0]} (${suffixes.join(', ')})`;
+    }
+  }
   
   const belegDatum = entries[0].datum ? (typeof isoToDisplay === 'function' ? isoToDisplay(entries[0].datum) : entries[0].datum) : new Date().toLocaleDateString('de-CH');
   const totalAmount = entries.reduce((s, e) => s + (Number(e.betrag) || 0), 0);
@@ -2007,7 +2014,7 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle, recipientData) 
     <html lang="de">
     <head>
       <meta charset="utf-8">
-      <title>${belegType}_${belegNrs[0] || 'Druck'}</title>
+      <title>${belegType}_${(typeof window.bhGetSplitBaseBeleg === 'function' ? window.bhGetSplitBaseBeleg(belegNrs[0]) : belegNrs[0]) || 'Druck'}</title>
       <style>
         * { box-sizing: border-box; }
         body {
