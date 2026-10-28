@@ -67,8 +67,8 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
   - Über das Modal «Zahlungsaufträge» (`bhOpenPaymentOrdersModal`) können mehrere erfasste Auszahlungen an unterschiedliche Mitglieder ausgewählt und in **einer einzigen normierten Sammel-XML** (`pain.001.001.03.ch.02` via `bhDownloadPain001BatchXml`) gebündelt werden.
   - Alternativ kann direkt beim Erfassen eine Einzel-XML heruntergeladen werden. Der Status wechselt auf `exportiert`.
 * **Chronologische Verbuchung beim CAMT-Bankabgleich:**
-  - Sobald der CAMT.053/054-Kontoauszug eingelesen wird, gleicht die Engine Belastungen (`DBIT`) automatisch über Auftrags-Nr. (`EndToEndId`), IBAN oder Name und Betrag mit offenen Zahlungsaufträgen ab (Match-Typ `payment_order`).
-  - Beim Buchen wird der Buchungssatz **erst jetzt mit dem echten Valutadatum** und der nächsten fortlaufenden, lückenlosen `B_Zahl_YYYY-xxx` ins Journal geschrieben und der Zahlungsauftrag atomar auf `status = 'ausgefuehrt'` mit Referenz auf `journal_id` gesetzt.
+  - Sobald der CAMT.053/054-Kontoauszug eingelesen wird, extrahiert `bhBankParseCAMT053` zusätzlich die `EndToEndId` (`<Refs>`) sowie die Gegenpartei-IBAN (`partyIban`) und gleicht Belastungen (`DBIT`) automatisch über Auftrags-Nr., IBAN oder Name und Betrag mit offenen Zahlungsaufträgen ab (Match-Typ `payment_order`).
+  - Beim Einzel- und Sammel-Buchen (`bhBankBookAll`) wird der Buchungssatz **erst jetzt mit dem echten Valutadatum** und der nächsten fortlaufenden, lückenlosen `B_Zahl_YYYY-xxx` ins Journal geschrieben und der Zahlungsauftrag atomar auf `status = 'ausgefuehrt'` mit Referenz auf `journal_id` gesetzt.
 * **Belegdruck & Quittung:** Sowohl im Status Zahlungsauftrag (`ZA-...`) als auch nach finaler Verbuchung (`B_Zahl_...`) kann jederzeit via `bhPrintJournalBeleg` ein A4-Auszahlungsbeleg mit Empfänger-Box und IBAN ausgegeben werden.
 
 ### 2.7 Intelligente Modul-Erkennung & Status-Rücksetzung beim Löschen im Journal

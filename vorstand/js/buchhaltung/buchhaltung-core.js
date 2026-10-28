@@ -343,7 +343,7 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
   if (supa) {
     try {
       console.log("🚀 Lade Buchhaltungsdaten aus Supabase...");
-      const [accRes, jnlRes, budRes, ruleRes, allocRes, activeMemRes, payOrdersRes] = await Promise.all([
+      const [accRes, jnlRes, budRes, ruleRes, allocRes, activeMemRes, _, payOrdersRes] = await Promise.all([
         supa.from('accounting_accounts').select('*').order('sort_order', { ascending: true }),
         supa.from('accounting_journal').select('*').order('id', { ascending: false }),
         supa.from('accounting_budgets').select('*'),

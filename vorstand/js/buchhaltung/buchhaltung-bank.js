@@ -1393,15 +1393,28 @@ window.bhBankHandleFiles = async function(files) {
     } catch(_) {}
   }
 
-  window._bhBankTransactions = uniqueTxs;
-  window._bhBankMatchResults = bhBankMatchAll(uniqueTxs);
-  window._bhBankActiveFilter = 'all';
+  try {
+    window._bhBankTransactions = uniqueTxs;
+    window._bhBankMatchResults = bhBankMatchAll(uniqueTxs);
+    window._bhBankActiveFilter = 'all';
 
-  renderTabBankabgleich(document.getElementById('bh-tab-content-container'));
-  showToast(`✅ ${processedFilesCount} Datei(en) eingelesen! Insges. ${uniqueTxs.length} Transaktionen analysiert.`, 'success');
-
-  const inp = document.getElementById('bhBankXmlInput');
-  if (inp) inp.value = '';
+    renderTabBankabgleich(document.getElementById('bh-tab-content-container'));
+    showToast(`✅ ${processedFilesCount} Datei(en) eingelesen! Insges. ${uniqueTxs.length} Transaktionen analysiert.`, 'success');
+  } catch (err) {
+    console.error('[Bankabgleich] Fehler beim Verarbeiten der CAMT-Datei:', err);
+    if (window.UIConfirmKit && typeof window.UIConfirmKit.alert === 'function') {
+      await window.UIConfirmKit.alert({
+        title: 'Fehler beim CAMT-Import',
+        message: `Die Datei konnte nicht verarbeitet werden: ${err.message || err}`,
+        type: 'danger'
+      });
+    } else {
+      alert('Fehler beim CAMT-Import: ' + (err.message || err));
+    }
+  } finally {
+    const inp = document.getElementById('bhBankXmlInput');
+    if (inp) inp.value = '';
+  }
 };
 
 window.bhBankClearTransactions = function() {
@@ -1468,8 +1481,16 @@ function bhBankParseCAMT053(xmlText) {
 
     // Debtor (Zahler) oder Creditor (Empfänger)
     const partyNode = isCredit
-      ? (getFirstChild(getFirstChild(txDtls, 'UltmtDbtr'), 'Pty') || getFirstChild(getFirstChild(txDtls, 'Dbtr'), 'Pty'))
-      : (getFirstChild(getFirstChild(txDtls, 'UltmtCdtr'), 'Pty') || getFirstChild(getFirstChild(txDtls, 'Cdtr'), 'Pty'));
+      ? (getFirstChild(getFirstChild(txDtls, 'UltmtDbtr'), 'Pty') || getFirstChild(getFirstChild(txDtls, 'Dbtr'), 'Pty') || getFirstChild(txDtls, 'UltmtDbtr') || getFirstChild(txDtls, 'Dbtr'))
+      : (getFirstChild(getFirstChild(txDtls, 'UltmtCdtr'), 'Pty') || getFirstChild(getFirstChild(txDtls, 'Cdtr'), 'Pty') || getFirstChild(txDtls, 'UltmtCdtr') || getFirstChild(txDtls, 'Cdtr'));
+
+    const partyAcctNode = isCredit
+      ? getFirstChild(txDtls, 'DbtrAcct')
+      : getFirstChild(txDtls, 'CdtrAcct');
+    const partyIban = getTagText(getFirstChild(partyAcctNode, 'Id'), 'IBAN') || getTagText(getFirstChild(partyAcctNode, 'Id'), 'Othr');
+
+    const refsNode    = getFirstChild(txDtls, 'Refs');
+    const endToEndId  = getTagText(refsNode, 'EndToEndId') || getTagText(refsNode, 'InstrId') || getTagText(refsNode, 'PmtInfId');
 
     const partyName     = getTagText(partyNode, 'Nm');
     const pstlAdr       = getFirstChild(partyNode, 'PstlAdr');
@@ -1495,12 +1516,14 @@ function bhBankParseCAMT053(xmlText) {
       bookingDate,
       valutaDate,
       partyName,
+      partyIban,
       partyPLZ,
       partyCity: partyCity || (adrLine ? adrLine.split(' ').slice(-1)[0] : ''),
       remittanceInfo,
       _originalRemittanceInfo: remittanceInfo,
       ustrd,
       creditorReference,
+      endToEndId,
       fileMsgId,
       accountIban,
       accountName,
@@ -1651,6 +1674,7 @@ function bhBankMatchAll(transactions) {
     let matchedMember = null;
     let matchedBeitrag = null;
     let alreadyPaidJb = false;
+    let matchedPaymentOrder = tx.matchedPaymentOrder || null;
     let matchType = 'unknown'; // 'invoice' | 'jb' | 'rule' | 'journal' | 'heuristic' | 'unknown'
     let matchRuleName = '';
     let matchRulePrefix = '';
@@ -2067,7 +2091,6 @@ function bhBankMatchAll(transactions) {
     }
 
     // 2b. STUFE: Abgleich gegen offene Zahlungsaufträge (pain.001) bei Ausgangstransaktionen
-    let matchedPaymentOrder = tx.matchedPaymentOrder || null;
     if (!tx.isCredit && !isJahresbeitrag && !isInvoice && matchType === 'unknown' && Array.isArray(window._bhPaymentOrders) && window._bhPaymentOrders.length > 0) {
       const openOrders = window._bhPaymentOrders.filter(o => o.status === 'pendent' || o.status === 'exportiert');
       
@@ -2075,7 +2098,7 @@ function bhBankMatchAll(transactions) {
         // 1. Match über explizite Auftragsnummer (EndToEndId, z.B. ZA-2026-001)
         if (o.order_nr) {
           const cleanOrder = String(o.order_nr).toLowerCase().replace(/[^a-z0-9]/g, '');
-          const allText = `${tx.remittanceInfo || ''} ${tx.ustrd || ''} ${tx.creditorReference || ''}`.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const allText = `${tx.endToEndId || ''} ${tx.remittanceInfo || ''} ${tx.ustrd || ''} ${tx.creditorReference || ''}`.toLowerCase().replace(/[^a-z0-9]/g, '');
           if (cleanOrder.length >= 4 && allText.includes(cleanOrder)) return true;
         }
 
@@ -2083,7 +2106,7 @@ function bhBankMatchAll(transactions) {
         const amtDiff = Math.abs(Number(o.betrag || 0) - tx.amount);
         if (amtDiff < 0.05) {
           // IBAN-Match
-          if (o.recipient_iban && tx.accountIban) {
+          if (o.recipient_iban && tx.partyIban) {
             const cleanIban = String(o.recipient_iban).replace(/\s+/g, '').toUpperCase();
             const txPartyIban = String(tx.partyIban || '').replace(/\s+/g, '').toUpperCase();
             if (cleanIban && txPartyIban && cleanIban === txPartyIban) return true;
@@ -3224,7 +3247,7 @@ window.bhBankBookAll = async function() {
     // 4. Nachgelagerte Modul-Aktualisierungen (Rechnungen & Jahresbeiträge) direkt in Supabase abarbeiten
     const secondaryTasks = [];
 
-    preparedList.forEach(({ belegNr, bookingDate, matchedInvoice, matchedBeitrag, isJahresbeitrag }) => {
+    preparedList.forEach(({ belegNr, bookingDate, matchedInvoice, matchedBeitrag, matchedPaymentOrder, isJahresbeitrag }) => {
       // a) Rechnungs-Zahlung: lokaler Cache sofort updaten
       if (matchedInvoice && matchedInvoice.id) {
         const cachedInv = (window._invoices || []).find(inv => String(inv.id) === String(matchedInvoice.id));
@@ -3283,6 +3306,30 @@ window.bhBankBookAll = async function() {
             rq = rq.eq('invoice_id', matchedInvoice.id);
           }
           secondaryTasks.push(rq);
+        }
+      }
+
+      // d) Zahlungsauftrag (pain.001): auf 'ausgefuehrt' setzen und mit journal_id verknüpfen
+      if (matchedPaymentOrder && matchedPaymentOrder.id) {
+        const matchedJournalRow = createdBatchEntries.find(ce => String(ce.beleg_nr || '').startsWith(String(belegNr)));
+        const jId = matchedJournalRow?.id ? Number(matchedJournalRow.id) : null;
+        const execIso = new Date().toISOString();
+        matchedPaymentOrder.status = 'ausgefuehrt';
+        matchedPaymentOrder.journal_id = jId;
+        matchedPaymentOrder.executed_at = execIso;
+
+        const cachedPo = (window._bhPaymentOrders || []).find(o => String(o.id) === String(matchedPaymentOrder.id));
+        if (cachedPo) {
+          cachedPo.status = 'ausgefuehrt';
+          cachedPo.journal_id = jId;
+          cachedPo.executed_at = execIso;
+        }
+        if (sb) {
+          secondaryTasks.push(sb.from('accounting_payment_orders').update({
+            status: 'ausgefuehrt',
+            journal_id: jId,
+            executed_at: execIso
+          }).eq('id', matchedPaymentOrder.id));
         }
       }
     });
@@ -3511,7 +3558,7 @@ window.bhBankBookSelected = async function() {
     // 4. Nachgelagerte Modul-Aktualisierungen (Rechnungen & Jahresbeiträge) direkt in Supabase abarbeiten
     const secondaryTasks = [];
 
-    preparedList.forEach(({ belegNr, bookingDate, matchedInvoice, matchedBeitrag, isJahresbeitrag }) => {
+    preparedList.forEach(({ belegNr, bookingDate, matchedInvoice, matchedBeitrag, matchedPaymentOrder, isJahresbeitrag }) => {
       // a) Rechnungs-Zahlung: lokaler Cache sofort updaten
       if (matchedInvoice && matchedInvoice.id) {
         const cachedInv = (window._invoices || []).find(inv => String(inv.id) === String(matchedInvoice.id));
@@ -3570,6 +3617,30 @@ window.bhBankBookSelected = async function() {
             rq = rq.eq('invoice_id', matchedInvoice.id);
           }
           secondaryTasks.push(rq);
+        }
+      }
+
+      // d) Zahlungsauftrag (pain.001): auf 'ausgefuehrt' setzen und mit journal_id verknüpfen
+      if (matchedPaymentOrder && matchedPaymentOrder.id) {
+        const matchedJournalRow = createdBatchEntries.find(ce => String(ce.beleg_nr || '').startsWith(String(belegNr)));
+        const jId = matchedJournalRow?.id ? Number(matchedJournalRow.id) : null;
+        const execIso = new Date().toISOString();
+        matchedPaymentOrder.status = 'ausgefuehrt';
+        matchedPaymentOrder.journal_id = jId;
+        matchedPaymentOrder.executed_at = execIso;
+
+        const cachedPo = (window._bhPaymentOrders || []).find(o => String(o.id) === String(matchedPaymentOrder.id));
+        if (cachedPo) {
+          cachedPo.status = 'ausgefuehrt';
+          cachedPo.journal_id = jId;
+          cachedPo.executed_at = execIso;
+        }
+        if (sb) {
+          secondaryTasks.push(sb.from('accounting_payment_orders').update({
+            status: 'ausgefuehrt',
+            journal_id: jId,
+            executed_at: execIso
+          }).eq('id', matchedPaymentOrder.id));
         }
       }
     });
