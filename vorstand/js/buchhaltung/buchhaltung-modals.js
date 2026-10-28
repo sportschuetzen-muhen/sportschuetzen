@@ -261,10 +261,13 @@ window.bhDeleteKonto = function(kontoCode) {
   alert(`Sachkonto ${kontoCode} kann nicht gelöscht werden, da es mit historischen Transaktionen verknüpft sein könnte. Falls es ungenutzt ist, wenden Sie sich bitte an den Systemadministrator.`);
 };
 
-// Automatische Belegnummern-Generierung nach Konto (Kasse_2026-001, B_Zahl_2026-xxx, etc.)
+// Automatische Belegnummern-Generierung nach Konto (Kasse_2026-001, B_Zahl_2026-xxx, ZA-2026-xxx, etc.)
 window.bhGetNextJournalBelegNr = function(year, prefix = 'Kasse_') {
   const y = Number(year || window._bhYear || new Date().getFullYear());
   const cleanPrefix = String(prefix || 'BEL-').replace(/[-_]$/, '');
+  if (cleanPrefix.toUpperCase() === 'ZA' && typeof window.bhGetNextPaymentOrderNr === 'function') {
+    return window.bhGetNextPaymentOrderNr(y);
+  }
   const regex = new RegExp(`^${cleanPrefix}[-_]${y}[-_](\\d+)`, 'i');
   let maxSeq = 0;
   (window._bhJournal || []).forEach(j => {
@@ -293,6 +296,44 @@ window.bhGetNextPaymentOrderNr = function(year) {
       }
     }
   });
+  return `ZA-${y}-${String(maxSeq + 1).padStart(3, '0')}`;
+};
+
+// Prüft vor dem Insert gegen Supabase & lokalen Cache, ob eine ZA-Nummer bereits vergeben ist,
+// und vergibt bei Kollision automatisch die nächste freie ZA-YYYY-xxx Nummer.
+window.bhResolveSafePaymentOrderNr = async function(year, candidateNr, supaClient) {
+  const y = Number(year || window._bhYear || new Date().getFullYear());
+  const regex = new RegExp(`^ZA[-_]${y}[-_](\\d+)`, 'i');
+  const existingSet = new Set();
+  let maxSeq = 0;
+
+  const trackNr = (nr) => {
+    if (!nr) return;
+    const clean = String(nr).trim().toUpperCase();
+    existingSet.add(clean);
+    const m = clean.match(regex);
+    if (m) {
+      const num = parseInt(m[1], 10);
+      if (!isNaN(num) && num > maxSeq) maxSeq = num;
+    }
+  };
+
+  (window._bhPaymentOrders || []).forEach(po => trackNr(po.order_nr));
+
+  const supa = supaClient || ((typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient);
+  if (supa) {
+    try {
+      const { data } = await supa.from('accounting_payment_orders').select('order_nr').ilike('order_nr', `ZA-${y}-%`);
+      if (Array.isArray(data)) {
+        data.forEach(row => trackNr(row.order_nr));
+      }
+    } catch (_) {}
+  }
+
+  const cand = String(candidateNr || '').trim();
+  if (cand && /^ZA[-_]/i.test(cand) && !existingSet.has(cand.toUpperCase())) {
+    return cand;
+  }
   return `ZA-${y}-${String(maxSeq + 1).padStart(3, '0')}`;
 };
 
@@ -1627,7 +1668,9 @@ window.bhOpenEntryModal = function(entryId) {
       if (belegEl.dataset.userEdited === 'true') return;
       const pfx = window.bhDetermineAutoBelegPrefix(window.bhKontoResolveCode(sollEl.value), window.bhKontoResolveCode(habenEl.value), typEl.value);
       const y = Number(window._bhYear || new Date().getFullYear());
-      belegEl.value = window.bhGetNextJournalBelegNr(y, pfx);
+      belegEl.value = (pfx === 'ZA-' && typeof window.bhGetNextPaymentOrderNr === 'function')
+        ? window.bhGetNextPaymentOrderNr(y)
+        : window.bhGetNextJournalBelegNr(y, pfx);
     };
 
     sollEl.addEventListener('change', updateAutoBeleg);
@@ -1635,6 +1678,17 @@ window.bhOpenEntryModal = function(entryId) {
     typEl.onchange = updateAutoBeleg;
 
     updateAutoBeleg();
+
+    // Zahlungsaufträge im Hintergrund mit Supabase abgleichen, damit ZA-Nummern immer aktuell sind
+    const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
+    if (supa) {
+      supa.from('accounting_payment_orders').select('*').order('created_at', { ascending: false }).then(({ data, error }) => {
+        if (!error && Array.isArray(data)) {
+          window._bhPaymentOrders = data;
+          updateAutoBeleg();
+        }
+      }).catch(() => {});
+    }
   }
   
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
@@ -1652,8 +1706,8 @@ window.bhInitKassaSammelbeleg = function() {
   const belegEl = document.getElementById('bh-ks-beleg');
   const artEl = document.getElementById('bh-ks-art');
   const art = artEl ? artEl.value : 'bank';
-  if (belegEl && (!belegEl.value || belegEl.value.startsWith('Kasse_') || belegEl.value.startsWith('B_Zahl_'))) {
-    const pfx = (art === 'bank') ? 'B_Zahl_' : (art === 'ausgabe' || art === 'einnahme' ? 'Kasse_' : 'BEL-');
+  if (belegEl && (!belegEl.value || belegEl.value.startsWith('Kasse_') || belegEl.value.startsWith('B_Zahl_') || belegEl.value.startsWith('ZA-') || belegEl.value.startsWith('BEL-'))) {
+    const pfx = (art === 'bank') ? 'ZA-' : (art === 'ausgabe' || art === 'einnahme' ? 'Kasse_' : 'BEL-');
     belegEl.value = window.bhGetNextJournalBelegNr(y, pfx);
   }
   if (!window._bhKassaSammelRows || window._bhKassaSammelRows.length === 0) {
@@ -1672,8 +1726,8 @@ window.bhUpdateKassaSammelArt = function() {
   const belegEl = document.getElementById('bh-ks-beleg');
   const y = Number(window._bhYear || new Date().getFullYear());
 
-  if (belegEl && (belegEl.value.startsWith('Kasse_') || belegEl.value.startsWith('B_Zahl_') || !belegEl.value)) {
-    const pfx = (art === 'bank') ? 'B_Zahl_' : (art === 'ausgabe' || art === 'einnahme' ? 'Kasse_' : 'BEL-');
+  if (belegEl && (belegEl.value.startsWith('Kasse_') || belegEl.value.startsWith('B_Zahl_') || belegEl.value.startsWith('ZA-') || belegEl.value.startsWith('BEL-') || !belegEl.value)) {
+    const pfx = (art === 'bank') ? 'ZA-' : (art === 'ausgabe' || art === 'einnahme' ? 'Kasse_' : 'BEL-');
     belegEl.value = window.bhGetNextJournalBelegNr(y, pfx);
   }
 
@@ -1998,7 +2052,9 @@ window.bhSaveKassaSammelbeleg = async function(event, printAfter = false, export
     // FALL 1: BANK-ÜBERWEISUNG -> ALS ZAHLUNGSAUFTRAG VORMERKEN (KEINE BELEGNUMMER-BLOCKIERUNG IM JOURNAL!)
     if (art === 'bank') {
       const totalAmt = validRows.reduce((s, r) => s + r.betrag, 0);
-      const orderNr = baseBeleg.startsWith('ZA-') ? baseBeleg : window.bhGetNextPaymentOrderNr(year);
+      const orderNr = (typeof window.bhResolveSafePaymentOrderNr === 'function')
+        ? await window.bhResolveSafePaymentOrderNr(year, baseBeleg, supa)
+        : (baseBeleg.startsWith('ZA-') ? baseBeleg : window.bhGetNextPaymentOrderNr(year));
 
       const orderPayload = {
         order_nr: orderNr,
@@ -2040,6 +2096,10 @@ window.bhSaveKassaSammelbeleg = async function(event, printAfter = false, export
       if (modalEl) {
         const bsModal = bootstrap.Modal.getInstance(modalEl);
         if (bsModal) bsModal.hide();
+      }
+
+      if (document.getElementById('bhModalPaymentOrders')?.classList.contains('show') && typeof window.bhRenderPaymentOrdersModalContent === 'function') {
+        window.bhRenderPaymentOrdersModalContent();
       }
 
       if (printAfter) {
@@ -2134,7 +2194,15 @@ window.bhSaveKassaSammelbeleg = async function(event, printAfter = false, export
     }, 1500);
 
   } catch (err) {
-    alert('❌ Fehler beim Buchen des Sammelbelegs: ' + err.message);
+    if (window.UIConfirmKit && typeof window.UIConfirmKit.alert === 'function') {
+      await window.UIConfirmKit.alert({
+        title: 'Fehler beim Buchen des Sammelbelegs',
+        message: err.message || String(err),
+        type: 'danger'
+      });
+    } else {
+      alert('❌ Fehler beim Buchen des Sammelbelegs: ' + err.message);
+    }
   } finally {
     if (saveBtn) {
       saveBtn.disabled = false;
@@ -2593,7 +2661,15 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
   };
   
   if (!payload.konto_soll && !payload.konto_haben) {
-    alert("❌ Fehler: Mindestens ein Konto (Soll oder Haben) muss angegeben werden!");
+    if (window.UIConfirmKit && typeof window.UIConfirmKit.alert === 'function') {
+      await window.UIConfirmKit.alert({
+        title: 'Konto fehlt',
+        message: 'Mindestens ein Konto (Soll oder Haben) muss angegeben werden!',
+        type: 'danger'
+      });
+    } else {
+      alert("❌ Fehler: Mindestens ein Konto (Soll oder Haben) muss angegeben werden!");
+    }
     if (submitBtn) {
       submitBtn.disabled = false;
       submitBtn.innerHTML = payload.id ? '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern' : '<i class="fas fa-check-circle me-1"></i> Buchung speichern';
@@ -2603,7 +2679,15 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
     return;
   }
   if (payload.konto_soll && payload.konto_haben && payload.konto_soll === payload.konto_haben) {
-    alert("❌ Fehler: Soll- und Haben-Konto dürfen nicht identisch sein (Gegenkonto erforderlich)!");
+    if (window.UIConfirmKit && typeof window.UIConfirmKit.alert === 'function') {
+      await window.UIConfirmKit.alert({
+        title: 'Ungültige Kontierung',
+        message: 'Soll- und Haben-Konto dürfen nicht identisch sein (Gegenkonto erforderlich)!',
+        type: 'danger'
+      });
+    } else {
+      alert("❌ Fehler: Soll- und Haben-Konto dürfen nicht identisch sein (Gegenkonto erforderlich)!");
+    }
     if (submitBtn) {
       submitBtn.disabled = false;
       submitBtn.innerHTML = payload.id ? '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern' : '<i class="fas fa-check-circle me-1"></i> Buchung speichern';
@@ -2624,7 +2708,15 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
   const saveIban = document.getElementById('bhe-save-iban-to-member')?.checked;
 
   if (exportXml && (!memberIban || !/^CH\d{2}[0-9A-Z]{17}$/.test(memberIban))) {
-    alert("⚠️ Für die Erstellung der Bank-XML (pain.001) wird eine gültige Schweizer IBAN benötigt.\n\nBitte trage die IBAN des Mitglieds ein.");
+    if (window.UIConfirmKit && typeof window.UIConfirmKit.alert === 'function') {
+      await window.UIConfirmKit.alert({
+        title: 'Schweizer IBAN erforderlich',
+        message: 'Für die Erstellung der Bank-XML (pain.001) wird eine gültige Schweizer IBAN benötigt. Bitte trage die IBAN des Mitglieds ein.',
+        type: 'warning'
+      });
+    } else {
+      alert("⚠️ Für die Erstellung der Bank-XML (pain.001) wird eine gültige Schweizer IBAN benötigt.\n\nBitte trage die IBAN des Mitglieds ein.");
+    }
     const ibanInp = document.getElementById('bhe-member-iban');
     if (ibanInp) {
       const details = document.getElementById('bhe-member-details');
@@ -2644,8 +2736,17 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
   const entryDate = new Date(payload.datum);
   const entryYear = isNaN(entryDate.getTime()) ? null : entryDate.getFullYear();
   if (entryYear && entryYear !== Number(window._bhYear)) {
-    const confirmMsg = `⚠️ Buchungsdatum weicht ab!\n\nDas eingegebene Datum liegt im Jahr ${entryYear}, du buchst jedoch im aktiven Buchungsjahr ${window._bhYear}.\n\nMöchtest du diese Buchung trotzdem durchführen?`;
-    if (!confirm(confirmMsg)) {
+    const confirmMsg = `Das eingegebene Datum liegt im Jahr ${entryYear}, du buchst jedoch im aktiven Buchungsjahr ${window._bhYear}. Möchtest du diese Buchung trotzdem durchführen?`;
+    const ok = (window.UIConfirmKit && typeof window.UIConfirmKit.confirm === 'function')
+      ? await window.UIConfirmKit.confirm({
+          title: 'Buchungsdatum weicht ab',
+          message: confirmMsg,
+          type: 'warning',
+          confirmText: 'Trotzdem buchen',
+          cancelText: 'Abbrechen'
+        })
+      : confirm(`⚠️ Buchungsdatum weicht ab!\n\n${confirmMsg}`);
+    if (!ok) {
       if (submitBtn) {
         submitBtn.disabled = false;
         submitBtn.innerHTML = payload.id ? '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern' : '<i class="fas fa-check-circle me-1"></i> Buchung speichern';
@@ -2685,8 +2786,13 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
 
     // 1. BANK-ÜBERWEISUNG (NEUANLAGE) -> ALS ZAHLUNGSAUFTRAG VORMERKEN (KEINE BELEGNUMMER-BLOCKIERUNG IM JOURNAL!)
     if (!payload.id && (String(payload.konto_haben).trim() === '1020' || payload.typ === 'Überweisung')) {
+      const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
+      if (!supa) throw new Error("Supabase-Client nicht verfügbar");
+
       const year = Number(payload.jahr || window._bhYear || new Date().getFullYear());
-      const orderNr = (payload.beleg_nr && payload.beleg_nr.startsWith('ZA-')) ? payload.beleg_nr : window.bhGetNextPaymentOrderNr(year);
+      const orderNr = (typeof window.bhResolveSafePaymentOrderNr === 'function')
+        ? await window.bhResolveSafePaymentOrderNr(year, payload.beleg_nr, supa)
+        : ((payload.beleg_nr && payload.beleg_nr.startsWith('ZA-')) ? payload.beleg_nr : window.bhGetNextPaymentOrderNr(year));
 
       const orderPayload = {
         order_nr: orderNr,
@@ -2713,9 +2819,6 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
         exported_at: exportXml ? new Date().toISOString() : null
       };
 
-      const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
-      if (!supa) throw new Error("Supabase-Client nicht verfügbar");
-
       const { data: poData, error: poErr } = await supa.from('accounting_payment_orders').insert(orderPayload).select().single();
       if (poErr) throw new Error(poErr.message || 'Fehler beim Speichern des Zahlungsauftrags');
 
@@ -2729,6 +2832,10 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
       if (modalEl) {
         const modal = bootstrap.Modal.getInstance(modalEl);
         if (modal) modal.hide();
+      }
+
+      if (document.getElementById('bhModalPaymentOrders')?.classList.contains('show') && typeof window.bhRenderPaymentOrdersModalContent === 'function') {
+        window.bhRenderPaymentOrdersModalContent();
       }
 
       if (printAfter) {
@@ -2827,7 +2934,15 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
       await loadBuchhaltungData(true, true);
     }, 1500);
   } catch (err) {
-    alert("❌ Fehler beim Buchen: " + err.message);
+    if (window.UIConfirmKit && typeof window.UIConfirmKit.alert === 'function') {
+      await window.UIConfirmKit.alert({
+        title: 'Fehler beim Buchen',
+        message: err.message || String(err),
+        type: 'danger'
+      });
+    } else {
+      alert("❌ Fehler beim Buchen: " + err.message);
+    }
   } finally {
     if (submitBtn) {
       submitBtn.disabled = false;
