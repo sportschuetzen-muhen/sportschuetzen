@@ -1344,6 +1344,7 @@ window.bhOpenEntryModal = function(entryId) {
                   <div class="col-6">
                     <label class="form-label fw-bold small text-muted">Aktionstyp</label>
                     <select class="form-select" id="bhe-typ">
+                      <option value="Bank">Bankbuchung (CAMT / Bank)</option>
                       <option value="Kassa" selected>Ausgabe / Bar</option>
                       <option value="Überweisung">Überweisung Bank</option>
                       <option value="Einnahme">Erlös / Einnahme</option>
@@ -1558,15 +1559,19 @@ window.bhOpenEntryModal = function(entryId) {
         actionType = 'Überweisung';
       } else if (actionType === 'Erlös / Einnahme') {
         actionType = 'Einnahme';
+      } else if (actionType === 'Bank-Split' || actionType === 'Bankbuchung') {
+        actionType = 'Bank';
       }
       typEl.value = actionType;
+      if (!typEl.value) {
+        typEl.value = 'Bank';
+      }
       
       submitBtn.innerHTML = '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern';
 
-      // Split-Verbund prüfen und Infobox anzeigen
+      // Split-Verbund prüfen und Infobox anzeigen (auch wenn Suffix a,b,c fehlt, aber gleicher Belegstamm mehrfach existiert)
       const baseBeleg = window.bhGetSplitBaseBeleg(entry.beleg_nr);
-      const isSplit = /[a-z]$/i.test(String(entry.beleg_nr || '').trim());
-      const splitGroup = isSplit ? (window._bhJournal || []).filter(j => {
+      const splitGroup = baseBeleg ? (window._bhJournal || []).filter(j => {
         return Number(j.jahr) === Number(entry.jahr) && window.bhGetSplitBaseBeleg(j.beleg_nr) === baseBeleg;
       }) : [];
 
@@ -2174,11 +2179,11 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle, recipientData) 
   }
 
   // Automatische Verbund-Erkennung beim Drucken:
-  // Wenn ein einzelner Eintrag gedruckt wird, der auf a, b, c endet:
+  // Wenn ein einzelner Eintrag gedruckt wird, der Teil eines Split-Verbunds ist:
   if (entries.length === 1) {
     const singleEntry = entries[0];
     const baseBeleg = window.bhGetSplitBaseBeleg ? window.bhGetSplitBaseBeleg(singleEntry.beleg_nr) : singleEntry.beleg_nr;
-    if (/[a-z]$/i.test(String(singleEntry.beleg_nr || '').trim())) {
+    if (baseBeleg) {
       const siblings = (window._bhJournal || []).filter(j => {
         return Number(j.jahr) === Number(singleEntry.jahr) && (window.bhGetSplitBaseBeleg ? window.bhGetSplitBaseBeleg(j.beleg_nr) === baseBeleg : false);
       });
@@ -2676,6 +2681,8 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
   } : null;
   
   try {
+    let savedEntry = null;
+
     // 1. BANK-ÜBERWEISUNG (NEUANLAGE) -> ALS ZAHLUNGSAUFTRAG VORMERKEN (KEINE BELEGNUMMER-BLOCKIERUNG IM JOURNAL!)
     if (!payload.id && (String(payload.konto_haben).trim() === '1020' || payload.typ === 'Überweisung')) {
       const year = Number(payload.jahr || window._bhYear || new Date().getFullYear());
@@ -2752,32 +2759,30 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
 
     // 2. Supabase-First Write (Kasse, Umbuchung, Edit)
     const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
-    if (supa) {
-      try {
-        const jObj = {
-          jahr: Number(payload.jahr || new Date().getFullYear()),
-          datum: payload.datum || new Date().toISOString().slice(0, 10),
-          beleg_nr: payload.beleg_nr || '',
-          beschreibung: payload.beschreibung || '',
-          konto_soll: payload.konto_soll,
-          konto_haben: payload.konto_haben,
-          betrag: Number(payload.betrag || 0),
-          typ: payload.typ || 'Kassa',
-          buchungstyp: (typeof getBuchungstyp === 'function') ? getBuchungstyp(payload.konto_soll, payload.konto_haben) : 'TRANSIT'
-        };
-        if (payload.id) {
-          jObj.id = Number(payload.id);
-          const { data, error } = await supa.from('accounting_journal').update(jObj).eq('id', jObj.id).select().single();
-          if (!error && data) savedEntry = data;
-        } else {
-          const { data, error } = await supa.from('accounting_journal').insert(jObj).select().single();
-          if (!error && data) {
-            savedEntry = data;
-            payload.id = data.id;
-          }
-        }
-      } catch (supaErr) {
-        console.warn("⚠️ Supabase saveJournalEntry Warning:", supaErr);
+    if (!supa) throw new Error("Supabase-Client nicht verfügbar");
+
+    const jObj = {
+      jahr: Number(payload.jahr || new Date().getFullYear()),
+      datum: payload.datum || new Date().toISOString().slice(0, 10),
+      beleg_nr: payload.beleg_nr || '',
+      beschreibung: payload.beschreibung || '',
+      konto_soll: payload.konto_soll,
+      konto_haben: payload.konto_haben,
+      betrag: Number(payload.betrag || 0),
+      typ: payload.typ || 'Kassa',
+      buchungstyp: (typeof getBuchungstyp === 'function') ? getBuchungstyp(payload.konto_soll, payload.konto_haben) : 'TRANSIT'
+    };
+    if (payload.id) {
+      const targetId = Number(payload.id);
+      const { data, error } = await supa.from('accounting_journal').update(jObj).eq('id', targetId).select().single();
+      if (error) throw new Error(error.message || 'Fehler beim Aktualisieren des Buchungssatzes in Supabase');
+      if (data) savedEntry = data;
+    } else {
+      const { data, error } = await supa.from('accounting_journal').insert(jObj).select().single();
+      if (error) throw new Error(error.message || 'Fehler beim Erstellen des Buchungssatzes in Supabase');
+      if (data) {
+        savedEntry = data;
+        payload.id = data.id;
       }
     }
 
@@ -3168,8 +3173,7 @@ window.bhDeleteJournalEntry = async function(entryId) {
   if (!entry) return;
 
   const baseBeleg = window.bhGetSplitBaseBeleg ? window.bhGetSplitBaseBeleg(entry.beleg_nr) : entry.beleg_nr;
-  const isSplitRow = /[a-z]$/i.test(String(entry.beleg_nr || '').trim());
-  const splitSiblings = isSplitRow ? (window._bhJournal || []).filter(j => {
+  const splitSiblings = baseBeleg ? (window._bhJournal || []).filter(j => {
     return Number(j.jahr) === Number(entry.jahr) && (window.bhGetSplitBaseBeleg ? window.bhGetSplitBaseBeleg(j.beleg_nr) === baseBeleg : false);
   }) : [];
 
@@ -3623,6 +3627,10 @@ window.bhConvertEntryToSplit = function(entryId) {
   }
 
   const originalAmt = Number(entry.betrag || 0);
+  const ANCHOR_ACCOUNTS = ['1020', '1000', '1021', '1022'];
+  const cleanSoll = String(entry.konto_soll || '').trim();
+  const cleanHaben = String(entry.konto_haben || '').trim();
+  const isOutflowAnchor = ANCHOR_ACCOUNTS.includes(cleanHaben) && !ANCHOR_ACCOUNTS.includes(cleanSoll);
 
   window._bhCurrentSplitEdit = {
     baseBeleg: baseBeleg,
@@ -3643,8 +3651,8 @@ window.bhConvertEntryToSplit = function(entryId) {
       },
       {
         beschreibung: '',
-        konto_soll: entry.konto_soll || '',
-        konto_haben: '',
+        konto_soll: isOutflowAnchor ? '' : (entry.konto_soll || ''),
+        konto_haben: isOutflowAnchor ? (entry.konto_haben || '') : '',
         betrag: originalAmt > 0 ? (originalAmt - Number((originalAmt / 2).toFixed(2))).toFixed(2) : '',
         typ: entry.typ || 'Kassa',
         datum: entry.datum
@@ -3808,9 +3816,9 @@ window.bhRenderSplitGroupEditRows = function() {
     );
 
     return `
-      <tr class="${isAbzug ? 'table-danger-subtle' : ''}">
+      <tr id="bh-sge-tr-${i}" class="${isAbzug ? 'table-danger-subtle' : ''}">
         <td class="text-center fw-bold small text-muted">${i + 1}</td>
-        <td class="font-monospace small fw-bold text-secondary">
+        <td class="font-monospace small fw-bold text-secondary" id="bh-sge-belegcell-${i}">
           ${escapeHtml(belegDisplay)}
           ${isAbzug ? `<br><span class="badge bg-danger-subtle text-danger border border-danger-subtle py-0.5 px-1 mt-0.5" style="font-size: 9px;"><i class="fas fa-minus me-0.5"></i>Abzug / Minderung</span>` : ''}
         </td>
@@ -3818,13 +3826,19 @@ window.bhRenderSplitGroupEditRows = function() {
           <input type="text" class="form-control form-control-sm" id="bh-sge-desc-${i}" value="${escapeHtml(r.beschreibung || '')}" placeholder="Beschreibung..." oninput="bhUpdateSplitGroupLiveTotal()">
         </td>
         <td>
-          <div class="bh-konto-ac-wrap">
-            <input type="text" class="form-control form-control-sm bh-konto-ac-input" id="bh-sge-soll-${i}" value="${r.konto_soll ? window.bhKontoFormatDisplay(r.konto_soll) : ''}" placeholder="Soll-Konto suchen..." autocomplete="off">
+          <div class="input-group input-group-sm bh-konto-ac-wrap">
+            <input type="text" class="form-control form-control-sm bh-konto-ac-input" id="bh-sge-soll-${i}" value="${r.konto_soll ? window.bhKontoFormatDisplay(r.konto_soll) : ''}" placeholder="Soll-Konto suchen..." autocomplete="off" oninput="bhUpdateSplitGroupLiveTotal()" onchange="bhUpdateSplitGroupLiveTotal()">
+            <button class="btn btn-outline-secondary px-1.5" type="button" tabindex="-1" onclick="window.bhToggleAccountDropdown('bh-sge-soll-${i}')" title="Kontenliste öffnen">
+              <i class="fas fa-chevron-down" style="font-size: 10px;"></i>
+            </button>
           </div>
         </td>
         <td>
-          <div class="bh-konto-ac-wrap">
-            <input type="text" class="form-control form-control-sm bh-konto-ac-input" id="bh-sge-haben-${i}" value="${r.konto_haben ? window.bhKontoFormatDisplay(r.konto_haben) : ''}" placeholder="Haben-Konto suchen..." autocomplete="off">
+          <div class="input-group input-group-sm bh-konto-ac-wrap">
+            <input type="text" class="form-control form-control-sm bh-konto-ac-input" id="bh-sge-haben-${i}" value="${r.konto_haben ? window.bhKontoFormatDisplay(r.konto_haben) : ''}" placeholder="Haben-Konto suchen..." autocomplete="off" oninput="bhUpdateSplitGroupLiveTotal()" onchange="bhUpdateSplitGroupLiveTotal()">
+            <button class="btn btn-outline-secondary px-1.5" type="button" tabindex="-1" onclick="window.bhToggleAccountDropdown('bh-sge-haben-${i}')" title="Kontenliste öffnen">
+              <i class="fas fa-chevron-down" style="font-size: 10px;"></i>
+            </button>
           </div>
         </td>
         <td>
@@ -3864,11 +3878,16 @@ window.bhAddSplitGroupEditRow = function() {
   bhSyncSplitGroupFromInputs();
   if (!window._bhCurrentSplitEdit) return;
   const { rows, baseBeleg, datum } = window._bhCurrentSplitEdit;
-  const template = rows[rows.length - 1] || {};
+  const template = rows[rows.length - 1] || rows[0] || {};
+  const ANCHOR_ACCOUNTS = ['1020', '1000', '1021', '1022'];
+  const cleanSoll = String(template.konto_soll || '').trim();
+  const cleanHaben = String(template.konto_haben || '').trim();
+  const isOutflowAnchor = ANCHOR_ACCOUNTS.includes(cleanHaben) && !ANCHOR_ACCOUNTS.includes(cleanSoll);
+  const isInflowAnchor = ANCHOR_ACCOUNTS.includes(cleanSoll) && !ANCHOR_ACCOUNTS.includes(cleanHaben);
   rows.push({
     beschreibung: '',
-    konto_soll: template.konto_soll || '',
-    konto_haben: template.konto_haben || '',
+    konto_soll: isOutflowAnchor ? '' : (isInflowAnchor ? cleanSoll : (template.konto_soll || '')),
+    konto_haben: isOutflowAnchor ? cleanHaben : '',
     betrag: '',
     typ: template.typ || 'Kassa',
     datum: datum
@@ -3897,6 +3916,26 @@ window.bhUpdateSplitGroupLiveTotal = function() {
   const splitBal = window.bhCalcSplitGroupBalance ? window.bhCalcSplitGroupBalance(rows, baseBeleg) : { netAmount: 0, direction: 'inflow' };
   const totalSum = splitBal.netAmount;
   const fmt = (v) => window.UIFormatKit ? window.UIFormatKit.formatCurrency(v) : ('CHF ' + Number(v).toFixed(2));
+
+  // Zeilen-Darstellung für Abzug / Minderung live aktualisieren
+  rows.forEach((r, i) => {
+    const subSuffix = rows.length > 1 ? String.fromCharCode(97 + i) : '';
+    const belegDisplay = `${baseBeleg}${subSuffix}`;
+    const cleanSoll = r.konto_soll ? window.bhKontoResolveCode(r.konto_soll) : '';
+    const cleanHaben = r.konto_haben ? window.bhKontoResolveCode(r.konto_haben) : '';
+    const isAbzug = Boolean(splitBal && splitBal.anchorAccount && (
+      (splitBal.direction === 'inflow' && cleanHaben === splitBal.anchorAccount) ||
+      (splitBal.direction === 'outflow' && cleanSoll === splitBal.anchorAccount)
+    ));
+    const trEl = document.getElementById(`bh-sge-tr-${i}`);
+    if (trEl) trEl.classList.toggle('table-danger-subtle', isAbzug);
+    const amtEl = document.getElementById(`bh-sge-amt-${i}`);
+    if (amtEl) amtEl.classList.toggle('text-danger', isAbzug);
+    const belegCell = document.getElementById(`bh-sge-belegcell-${i}`);
+    if (belegCell) {
+      belegCell.innerHTML = `${escapeHtml(belegDisplay)}${isAbzug ? `<br><span class="badge bg-danger-subtle text-danger border border-danger-subtle py-0.5 px-1 mt-0.5" style="font-size: 9px;"><i class="fas fa-minus me-0.5"></i>Abzug / Minderung</span>` : ''}`;
+    }
+  });
 
   const totalEl = document.getElementById('bh-sge-total-display');
   if (totalEl) {
@@ -3932,26 +3971,26 @@ window.bhSaveSplitGroupEdit = async function(printAfter = false) {
     const r = rows[i];
     const amt = parseFloat(r.betrag);
     if (!r.beschreibung.trim()) {
-      alert(`Bitte Beschreibung für Zeile #${i + 1} eingeben.`);
+      await window.UIConfirmKit.alert({ title: 'Fehlende Beschreibung', message: `Bitte gib eine Beschreibung für Zeile #${i + 1} ein.`, type: 'warning' });
       return;
     }
     if (!r.konto_soll || !r.konto_haben) {
-      alert(`Bitte Soll- und Haben-Konto für Zeile #${i + 1} angeben.`);
+      await window.UIConfirmKit.alert({ title: 'Kontierung unvollständig', message: `Bitte gib Soll- und Haben-Konto für Zeile #${i + 1} an.`, type: 'warning' });
       return;
     }
     if (r.konto_soll === r.konto_haben) {
-      alert(`Soll- und Haben-Konto für Zeile #${i + 1} dürfen nicht identisch sein.`);
+      await window.UIConfirmKit.alert({ title: 'Ungültige Kontierung', message: `Soll- und Haben-Konto für Zeile #${i + 1} dürfen nicht identisch sein.`, type: 'warning' });
       return;
     }
     if (isNaN(amt) || amt <= 0) {
-      alert(`Bitte Betrag > 0 für Zeile #${i + 1} eingeben.`);
+      await window.UIConfirmKit.alert({ title: 'Ungültiger Betrag', message: `Bitte gib einen Betrag > 0 für Zeile #${i + 1} ein.`, type: 'warning' });
       return;
     }
     validRows.push({ ...r, betrag: amt });
   }
 
   if (validRows.length === 0) {
-    alert('Der Split-Verbund muss mindestens eine gültige Zeile enthalten.');
+    await window.UIConfirmKit.alert({ title: 'Keine Positionen', message: 'Der Split-Verbund muss mindestens eine gültige Zeile enthalten.', type: 'warning' });
     return;
   }
 
@@ -3966,39 +4005,38 @@ window.bhSaveSplitGroupEdit = async function(printAfter = false) {
   try {
     // 1. Supabase-First Sync
     const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
-    if (supa) {
-      try {
-        if (deletedIds && deletedIds.length > 0) {
-          await supa.from('accounting_journal').delete().in('id', deletedIds.map(Number));
+    if (!supa) throw new Error('Supabase-Client nicht verfügbar');
+
+    if (deletedIds && deletedIds.length > 0) {
+      const { error: delErr } = await supa.from('accounting_journal').delete().in('id', deletedIds.map(Number));
+      if (delErr) throw new Error(delErr.message || 'Fehler beim Löschen entfernter Split-Zeilen');
+      window._bhJournal = (window._bhJournal || []).filter(j => !deletedIds.some(dId => Number(dId) === Number(j.id)));
+    }
+    for (let i = 0; i < validRows.length; i++) {
+      const vr = validRows[i];
+      const subSuffix = validRows.length > 1 ? String.fromCharCode(97 + i) : '';
+      const belegNr = `${baseBeleg}${subSuffix}`;
+      const jRow = {
+        jahr: Number(year || new Date().getFullYear()),
+        datum: vr.datum || new Date().toISOString().slice(0, 10),
+        beleg_nr: belegNr,
+        beschreibung: vr.beschreibung,
+        konto_soll: vr.konto_soll,
+        konto_haben: vr.konto_haben,
+        betrag: Number(vr.betrag || 0),
+        typ: vr.typ || 'Kassa',
+        buchungstyp: (typeof getBuchungstyp === 'function') ? getBuchungstyp(vr.konto_soll, vr.konto_haben) : 'TRANSIT'
+      };
+      if (vr.id) {
+        const targetId = Number(vr.id);
+        const { error: upErr } = await supa.from('accounting_journal').update(jRow).eq('id', targetId);
+        if (upErr) throw new Error(upErr.message || `Fehler beim Aktualisieren von Zeile #${i + 1}`);
+      } else {
+        const { data: insData, error: insErr } = await supa.from('accounting_journal').insert(jRow).select('id');
+        if (insErr) throw new Error(insErr.message || `Fehler beim Einfügen von Zeile #${i + 1}`);
+        if (insData && insData.length > 0) {
+          vr.id = insData[0].id;
         }
-        for (let i = 0; i < validRows.length; i++) {
-          const vr = validRows[i];
-          const subSuffix = validRows.length > 1 ? String.fromCharCode(97 + i) : '';
-          const belegNr = `${baseBeleg}${subSuffix}`;
-          const jRow = {
-            jahr: Number(year || new Date().getFullYear()),
-            datum: vr.datum || new Date().toISOString().slice(0, 10),
-            beleg_nr: belegNr,
-            beschreibung: vr.beschreibung,
-            konto_soll: vr.konto_soll,
-            konto_haben: vr.konto_haben,
-            betrag: Number(vr.betrag || 0),
-            typ: vr.typ || 'Kassa',
-            buchungstyp: (typeof getBuchungstyp === 'function') ? getBuchungstyp(vr.konto_soll, vr.konto_haben) : 'TRANSIT'
-          };
-          if (vr.id) {
-            jRow.id = Number(vr.id);
-            await supa.from('accounting_journal').upsert(jRow, { onConflict: 'id' });
-          } else {
-            const { data: insData, error: insErr } = await supa.from('accounting_journal').insert(jRow).select('id');
-            if (insErr) throw insErr;
-            if (insData && insData.length > 0) {
-              vr.id = insData[0].id;
-            }
-          }
-        }
-      } catch (supaErr) {
-        console.warn("⚠️ Supabase saveSplitGroupEdit Warning:", supaErr);
       }
     }
 

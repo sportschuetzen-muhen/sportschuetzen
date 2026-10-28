@@ -2799,10 +2799,12 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
     if (sb) {
       try {
         const rowsToInsert = entries.map((e, eIdx) => {
+          const subSuffix = entries.length > 1 ? String.fromCharCode(97 + eIdx) : '';
+          const effectiveBelegNr = e.beleg_nr || (subSuffix ? `${belegNr}${subSuffix}` : belegNr);
           const row = {
             jahr: parseInt(e.jahr, 10),
             datum: bookingDate,
-            beleg_nr: belegNr,
+            beleg_nr: effectiveBelegNr,
             beschreibung: e.beschreibung,
             konto_soll: String(e.konto_soll).trim(),
             konto_haben: String(e.konto_haben).trim(),

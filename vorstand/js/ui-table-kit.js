@@ -1368,7 +1368,8 @@
     const header = modalEl.querySelector('.modal-header');
 
     if (!dialog || !content || !header) return;
-    if (modalEl._uiModalKitInitialized) return;
+    if (dialog._uiModalKitInitialized) return;
+    dialog._uiModalKitInitialized = true;
     modalEl._uiModalKitInitialized = true;
 
     const modalBody = modalEl.querySelector('.modal-body');
