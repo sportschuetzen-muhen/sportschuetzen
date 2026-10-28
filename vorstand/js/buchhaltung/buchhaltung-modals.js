@@ -324,6 +324,103 @@ window.bhGetSplitBaseBeleg = function(belegNr) {
   return m ? m[1] : str;
 };
 
+// ---------------------------------------------------------------------
+// Berechnet das Netto-Total eines Split-Verbunds bezogen auf das massgebliche Anker-Konto
+// (z.B. Bank 1020 bei B_Zahl_, Kasse 1000 bei Kasse_). Berücksichtigt Abzüge/Minderungen im Haben!
+// ---------------------------------------------------------------------
+window.bhCalcSplitGroupBalance = function(entries, baseBeleg) {
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return { netAmount: 0, direction: 'inflow', anchorAccount: '1020', sollSum: 0, habenSum: 0 };
+  }
+
+  const strBase = String(baseBeleg || '').trim();
+  let anchor = '';
+  if (strBase.startsWith('B_Zahl_')) anchor = '1020';
+  else if (strBase.startsWith('B_Wirt_')) anchor = '1021';
+  else if (strBase.startsWith('B_Geno_')) anchor = '1022';
+  else if (strBase.startsWith('Kasse_')) anchor = '1000';
+
+  const cleanKonto = (val) => {
+    if (!val) return '';
+    const s = String(val).trim();
+    return s.includes('|') ? s.split('|')[0].trim() : s;
+  };
+
+  // Falls nicht über Präfix bekannt: Liquiditätskonten prüfen (1020, 1000, 1021, 1022, 1090)
+  if (!anchor) {
+    const liquidAccounts = ['1020', '1000', '1021', '1022', '1090'];
+    for (const acc of liquidAccounts) {
+      const hasAcc = entries.some(e => cleanKonto(e.konto_soll || e.kontoSoll) === acc || cleanKonto(e.konto_haben || e.kontoHaben) === acc);
+      if (hasAcc) {
+        anchor = acc;
+        break;
+      }
+    }
+  }
+
+  // Falls noch immer kein Liquiditätskonto: Häufigstes Konto über alle Zeilen ermitteln
+  if (!anchor) {
+    const freq = {};
+    entries.forEach(e => {
+      const s = cleanKonto(e.konto_soll || e.kontoSoll);
+      const h = cleanKonto(e.konto_haben || e.kontoHaben);
+      if (s) freq[s] = (freq[s] || 0) + 1;
+      if (h) freq[h] = (freq[h] || 0) + 1;
+    });
+    let maxCount = 0;
+    Object.keys(freq).forEach(k => {
+      if (freq[k] > maxCount) {
+        maxCount = freq[k];
+        anchor = k;
+      }
+    });
+  }
+
+  let sollSum = 0;
+  let habenSum = 0;
+
+  entries.forEach(e => {
+    const s = cleanKonto(e.konto_soll || e.kontoSoll);
+    const h = cleanKonto(e.konto_haben || e.kontoHaben);
+    const amt = Math.abs(parseFloat(e.betrag !== undefined ? e.betrag : e.amount) || 0);
+
+    if (anchor) {
+      if (s === anchor && h !== anchor) {
+        sollSum += amt;
+      } else if (h === anchor && s !== anchor) {
+        habenSum += amt;
+      }
+    } else {
+      sollSum += amt;
+    }
+  });
+
+  sollSum = Math.round(sollSum * 100) / 100;
+  habenSum = Math.round(habenSum * 100) / 100;
+
+  if (anchor && (sollSum > 0 || habenSum > 0)) {
+    const netAmount = Math.round(Math.abs(sollSum - habenSum) * 100) / 100;
+    const direction = sollSum >= habenSum ? 'inflow' : 'outflow';
+    return {
+      netAmount,
+      direction,
+      anchorAccount: anchor,
+      sollSum,
+      habenSum
+    };
+  }
+
+  // Fallback ohne Anker: Gesamtsumme
+  const totalRaw = Math.round((entries.reduce((acc, e) => acc + (parseFloat(e.betrag !== undefined ? e.betrag : e.amount) || 0), 0)) * 100) / 100;
+  return {
+    netAmount: totalRaw,
+    direction: 'inflow',
+    anchorAccount: null,
+    sollSum: totalRaw,
+    habenSum: 0
+  };
+};
+
 // =====================================================================
 // AUTOCOMPLETE-WIDGET FÜR KONTOAUSWAHL (Suchbar mit Dropdown)
 // =====================================================================
@@ -1476,12 +1573,15 @@ window.bhOpenEntryModal = function(entryId) {
       const warnContainer = document.getElementById('bhe-split-warning-container');
       if (warnContainer) {
         if (splitGroup.length > 1) {
-          const splitGroupTotal = splitGroup.reduce((s, j) => s + (Number(j.betrag) || 0), 0);
+          const splitBal = window.bhCalcSplitGroupBalance ? window.bhCalcSplitGroupBalance(splitGroup, baseBeleg) : null;
+          const splitGroupTotal = splitBal ? splitBal.netAmount : splitGroup.reduce((s, j) => s + (Number(j.betrag) || 0), 0);
+          const formattedTotal = window.UIFormatKit ? window.UIFormatKit.formatCurrency(splitGroupTotal) : (typeof fmtChf === 'function' ? fmtChf(splitGroupTotal) : 'CHF ' + splitGroupTotal.toFixed(2));
+          const dirTxt = splitBal && splitBal.direction === 'outflow' ? ' (Belastung / Ausgang)' : ' (Gutschrift / Eingang)';
           warnContainer.innerHTML = `
             <div class="alert alert-primary border-primary d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 py-2.5 px-3 rounded-3 shadow-sm" style="background: #eef5ff; border-left: 4px solid #0d6efd;">
               <div>
                 <div class="fw-bold text-primary"><i class="fas fa-layer-group me-1.5"></i>Split-Buchung: <span class="font-monospace">${escapeHtml(baseBeleg)}</span></div>
-                <div class="small text-muted">Gehört zu einem Verbund von <strong>${splitGroup.length} Positionen</strong> (Gesamtbetrag: <strong>${typeof fmtChf === 'function' ? fmtChf(splitGroupTotal) : 'CHF ' + splitGroupTotal.toFixed(2)}</strong>).</div>
+                <div class="small text-muted">Gehört zu einem Verbund von <strong>${splitGroup.length} Positionen</strong> (Effektives Total: <strong>${formattedTotal}</strong>${dirTxt}).</div>
               </div>
               <div class="d-flex gap-2">
                 <button type="button" class="btn btn-sm btn-outline-primary bg-white fw-semibold" onclick="bhPrintJournalBeleg(${entry.id})" title="Gesamten Beleg drucken">
@@ -2100,7 +2200,8 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle, recipientData) 
   }
   
   const belegDatum = entries[0].datum ? (typeof isoToDisplay === 'function' ? isoToDisplay(entries[0].datum) : entries[0].datum) : new Date().toLocaleDateString('de-CH');
-  const totalAmount = entries.reduce((s, e) => s + (Number(e.betrag) || 0), 0);
+  const splitBal = window.bhCalcSplitGroupBalance ? window.bhCalcSplitGroupBalance(entries, belegNrDisplay) : null;
+  const totalAmount = (splitBal && splitBal.anchorAccount) ? splitBal.netAmount : entries.reduce((s, e) => s + (Number(e.betrag) || 0), 0);
   const title = customTitle || (entries.length === 1 ? entries[0].beschreibung : `Abrechnung (${entries.length} Positionen)`);
   
   // Situative Erkennung: Banküberweisung vs. Kassa vs. Umbuchung
@@ -2128,7 +2229,7 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle, recipientData) 
     }
   });
 
-  const isEinnahme = cashInflow >= cashOutflow;
+  const isEinnahme = (splitBal && splitBal.anchorAccount) ? (splitBal.direction === 'inflow') : (cashInflow >= cashOutflow);
   let belegType = '';
   let belegSubTitle = 'Finanzbuchhaltung &middot; Belegwesen Vereinsrechnung';
   let paymentMethodLabel = '';
@@ -2197,16 +2298,26 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle, recipientData) 
   const todayDate = new Date();
   const todayFormatted = `${String(todayDate.getDate()).padStart(2, '0')}.${String(todayDate.getMonth() + 1).padStart(2, '0')}.${todayDate.getFullYear()}`;
 
-  const tableRowsHtml = entries.map((e, idx) => `
+  const tableRowsHtml = entries.map((e, idx) => {
+    const s = String(e.konto_soll || '').trim();
+    const h = String(e.konto_haben || '').trim();
+    const isAbzug = splitBal && splitBal.anchorAccount && (
+      (splitBal.direction === 'inflow' && h === splitBal.anchorAccount) ||
+      (splitBal.direction === 'outflow' && s === splitBal.anchorAccount)
+    );
+    const sign = isAbzug ? '- ' : '';
+    const amtColor = isAbzug ? '#dc3545' : '#212529';
+    return `
     <tr>
       <td style="text-align: center; font-weight: bold; width: 35px;">${idx + 1}</td>
       <td style="font-family: monospace; font-size: 11px; width: 130px;">${escapeHtml(e.beleg_nr || '–')}</td>
-      <td><strong>${escapeHtml(e.beschreibung || '')}</strong></td>
+      <td><strong>${escapeHtml(e.beschreibung || '')}</strong>${isAbzug ? ' <span style="font-size:10px; color:#dc3545; font-weight:bold;">(Abzug / Minderung)</span>' : ''}</td>
       <td style="font-size: 11.5px;">${escapeHtml(getKontoLabel(e.konto_soll))}</td>
       <td style="font-size: 11.5px;">${escapeHtml(getKontoLabel(e.konto_haben))}</td>
-      <td style="text-align: right; font-weight: bold; white-space: nowrap; width: 110px;">${formatMoney(e.betrag)}</td>
+      <td style="text-align: right; font-weight: bold; white-space: nowrap; width: 110px; color: ${amtColor};">${sign}${formatMoney(e.betrag)}</td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 
   const printWindow = window.open('', '_blank', 'width=950,height=800');
   if (!printWindow) {
@@ -3567,7 +3678,8 @@ window.bhOpenSplitGroupEditModal = function(baseBeleg, year) {
     if (bsEntryModal) bsEntryModal.hide();
   }
 
-  const origTotal = siblings.reduce((s, j) => s + (Number(j.betrag) || 0), 0);
+  const splitBal = window.bhCalcSplitGroupBalance ? window.bhCalcSplitGroupBalance(siblings, baseBeleg) : null;
+  const origTotal = splitBal ? splitBal.netAmount : siblings.reduce((s, j) => s + (Number(j.betrag) || 0), 0);
 
   window._bhCurrentSplitEdit = {
     baseBeleg,
@@ -3682,16 +3794,26 @@ window.bhRenderSplitGroupEditRows = function() {
   if (!tbody || !window._bhCurrentSplitEdit) return;
 
   const { baseBeleg, rows } = window._bhCurrentSplitEdit;
+  const splitBal = window.bhCalcSplitGroupBalance ? window.bhCalcSplitGroupBalance(rows, baseBeleg) : null;
 
   tbody.innerHTML = rows.map((r, i) => {
     const subSuffix = rows.length > 1 ? String.fromCharCode(97 + i) : '';
     const belegDisplay = `${baseBeleg}${subSuffix}`;
     const amt = (r.betrag !== undefined && r.betrag !== null) ? r.betrag : '';
+    const cleanSoll = r.konto_soll ? window.bhKontoResolveCode(r.konto_soll) : '';
+    const cleanHaben = r.konto_haben ? window.bhKontoResolveCode(r.konto_haben) : '';
+    const isAbzug = splitBal && splitBal.anchorAccount && (
+      (splitBal.direction === 'inflow' && cleanHaben === splitBal.anchorAccount) ||
+      (splitBal.direction === 'outflow' && cleanSoll === splitBal.anchorAccount)
+    );
 
     return `
-      <tr>
+      <tr class="${isAbzug ? 'table-danger-subtle' : ''}">
         <td class="text-center fw-bold small text-muted">${i + 1}</td>
-        <td class="font-monospace small fw-bold text-secondary">${escapeHtml(belegDisplay)}</td>
+        <td class="font-monospace small fw-bold text-secondary">
+          ${escapeHtml(belegDisplay)}
+          ${isAbzug ? `<br><span class="badge bg-danger-subtle text-danger border border-danger-subtle py-0.5 px-1 mt-0.5" style="font-size: 9px;"><i class="fas fa-minus me-0.5"></i>Abzug / Minderung</span>` : ''}
+        </td>
         <td>
           <input type="text" class="form-control form-control-sm" id="bh-sge-desc-${i}" value="${escapeHtml(r.beschreibung || '')}" placeholder="Beschreibung..." oninput="bhUpdateSplitGroupLiveTotal()">
         </td>
@@ -3706,7 +3828,7 @@ window.bhRenderSplitGroupEditRows = function() {
           </div>
         </td>
         <td>
-          <input type="number" step="0.01" min="0.01" class="form-control form-control-sm text-end fw-bold" id="bh-sge-amt-${i}" value="${amt}" placeholder="0.00" oninput="bhUpdateSplitGroupLiveTotal()">
+          <input type="number" step="0.01" min="0.01" class="form-control form-control-sm text-end fw-bold ${isAbzug ? 'text-danger' : ''}" id="bh-sge-amt-${i}" value="${amt}" placeholder="0.00" oninput="bhUpdateSplitGroupLiveTotal()">
         </td>
         <td class="text-center">
           ${rows.length > 1 ? `<button type="button" class="btn btn-sm btn-outline-danger py-0 px-1.5" onclick="bhRemoveSplitGroupEditRow(${i})"><i class="fas fa-times"></i></button>` : ''}
@@ -3772,30 +3894,25 @@ window.bhUpdateSplitGroupLiveTotal = function() {
   if (!window._bhCurrentSplitEdit) return;
   const { rows, baseBeleg, originalSingleTotal } = window._bhCurrentSplitEdit;
 
-  let totalSum = 0;
-  let count = 0;
-  rows.forEach(r => {
-    const a = parseFloat(r.betrag);
-    if (!isNaN(a) && a > 0) {
-      totalSum += a;
-      count++;
-    }
-  });
+  const splitBal = window.bhCalcSplitGroupBalance ? window.bhCalcSplitGroupBalance(rows, baseBeleg) : { netAmount: 0, direction: 'inflow' };
+  const totalSum = splitBal.netAmount;
+  const fmt = (v) => window.UIFormatKit ? window.UIFormatKit.formatCurrency(v) : ('CHF ' + Number(v).toFixed(2));
 
   const totalEl = document.getElementById('bh-sge-total-display');
   if (totalEl) {
-    totalEl.innerHTML = `Total Beleg: <span class="text-primary font-monospace">CHF ${typeof fmtChf === 'function' ? fmtChf(totalSum) : totalSum.toFixed(2)}</span>`;
+    const dirText = splitBal.direction === 'outflow' ? ' (Belastung / Ausgang)' : ' (Gutschrift / Eingang)';
+    totalEl.innerHTML = `Total Beleg: <span class="text-primary font-monospace">${fmt(totalSum)}</span><span class="small text-muted fw-normal ms-1" style="font-size: 11.5px;">${dirText}</span>`;
   }
 
   const summaryEl = document.getElementById('bh-sge-summary-text');
   if (summaryEl) {
     if (typeof originalSingleTotal === 'number' && originalSingleTotal > 0) {
-      const diff = totalSum - originalSingleTotal;
+      const diff = Math.round((totalSum - originalSingleTotal) * 100) / 100;
       if (Math.abs(diff) < 0.005) {
-        summaryEl.innerHTML = `${rows.length} Position(en) &middot; <span class="badge bg-success text-white"><i class="fas fa-check me-1"></i>Deckung 100% (${typeof fmtChf === 'function' ? fmtChf(originalSingleTotal) : originalSingleTotal.toFixed(2)})</span>`;
+        summaryEl.innerHTML = `${rows.length} Position(en) &middot; <span class="badge bg-success text-white"><i class="fas fa-check me-1"></i>Deckung 100% (${fmt(originalSingleTotal)})</span>`;
       } else {
-        const diffText = (diff > 0 ? '+' : '') + (typeof fmtChf === 'function' ? fmtChf(diff) : diff.toFixed(2));
-        summaryEl.innerHTML = `${rows.length} Position(en) &middot; <span class="badge bg-warning text-dark"><i class="fas fa-balance-scale me-1"></i>Original: ${typeof fmtChf === 'function' ? fmtChf(originalSingleTotal) : originalSingleTotal.toFixed(2)} (Diff: ${diffText})</span>`;
+        const diffText = (diff > 0 ? '+' : '') + fmt(diff);
+        summaryEl.innerHTML = `${rows.length} Position(en) &middot; <span class="badge bg-warning text-dark"><i class="fas fa-balance-scale me-1"></i>Original: ${fmt(originalSingleTotal)} (Diff: ${diffText})</span>`;
       }
     } else {
       summaryEl.textContent = `${rows.length} Position(en) im Verbund`;

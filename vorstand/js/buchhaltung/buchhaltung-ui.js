@@ -475,7 +475,48 @@ window.renderTabBerichte = function(container) {
 window._bhSelectedJournalIds = window._bhSelectedJournalIds || new Set();
 window._bhLastCheckedJournalId = null;
 window._bhJournalAnchorId = null;
-window._bhJournalFocusId = null;
+// ---------------------------------------------------------------------
+// Hilfsfunktionen zur vorzeichen- und verbundkorrekten Journal-Summierung
+// ---------------------------------------------------------------------
+window.bhGetJournalItemSign = function(item) {
+  if (!item) return 1;
+  const s = String(item.konto_soll || '').trim();
+  const h = String(item.konto_haben || '').trim();
+  const rawTyp = item.buchungstyp || (typeof window.getBuchungstyp === 'function' ? window.getBuchungstyp(s, h) : '');
+  const bTyp = String(rawTyp || '').toUpperCase().trim();
+
+  // Ertragsminderung (Ertragskonto im Soll oder Bank/Kasse im Haben bei Ertrag)
+  if (bTyp === 'ERTRAG' && (s.startsWith('3') || h.startsWith('102') || h.startsWith('100') || h.startsWith('1021') || h.startsWith('1022'))) {
+    return -1;
+  }
+  // Aufwandsminderung (Aufwandskonto im Haben oder Bank/Kasse im Soll bei Aufwand)
+  if (bTyp === 'AUFWAND' && (h.startsWith('4') || h.startsWith('5') || h.startsWith('6') || h.startsWith('7') || h.startsWith('8') || s.startsWith('102') || s.startsWith('100'))) {
+    return 1;
+  }
+  if (bTyp === 'AUFWAND') return -1;
+  if (bTyp === 'ERTRAG') return 1;
+
+  // Liquiditätskonten als Fallback
+  if (s.startsWith('102') || s.startsWith('100')) return 1;
+  if (h.startsWith('102') || h.startsWith('100')) return -1;
+  return 1;
+};
+
+window.bhCalcJournalItemsSignedTotal = function(items) {
+  if (!Array.isArray(items) || items.length === 0) return 0;
+  // Wenn alle ausgewählten Buchungen zu genau einem Split-Verbund gehören: Netto-Saldo des Verbunds
+  const baseBelegs = Array.from(new Set(items.map(e => (typeof window.bhGetSplitBaseBeleg === 'function' ? window.bhGetSplitBaseBeleg(e.beleg_nr) : e.beleg_nr)).filter(Boolean)));
+  if (baseBelegs.length === 1 && typeof window.bhCalcSplitGroupBalance === 'function') {
+    const bal = window.bhCalcSplitGroupBalance(items, baseBelegs[0]);
+    return bal.netAmount;
+  }
+  let sum = 0;
+  items.forEach(item => {
+    const sign = window.bhGetJournalItemSign(item);
+    sum += sign * (Number(item.betrag) || 0);
+  });
+  return Math.round(sum * 100) / 100;
+};
 
 window.bhToggleJournalIncompleteFilter = function() {
   window._bhJournalFilterIncomplete = !window._bhJournalFilterIncomplete;
@@ -552,13 +593,9 @@ window.renderTabJournal = function(container) {
     return 0;
   });
 
-  // Berechne Summe der ausgewählten Buchungen
-  let selectedTotal = 0;
-  filteredJournal.forEach(item => {
-    if (window._bhSelectedJournalIds.has(Number(item.id))) {
-      selectedTotal += Number(item.betrag || 0);
-    }
-  });
+  // Berechne Summe der ausgewählten Buchungen (vorzeichen- & verbundkorrekt)
+  const selectedItems = filteredJournal.filter(item => window._bhSelectedJournalIds.has(Number(item.id)));
+  const selectedTotal = window.bhCalcJournalItemsSignedTotal ? window.bhCalcJournalItemsSignedTotal(selectedItems) : selectedItems.reduce((s, it) => s + Number(it.betrag || 0), 0);
   const selectedCount = window._bhSelectedJournalIds.size;
   
   const journalRows = filteredJournal.map(item => {
@@ -572,6 +609,9 @@ window.renderTabJournal = function(container) {
     const cleanHaben = String(item.konto_haben || '').trim();
     const isIncomplete = !cleanSoll || !cleanHaben;
     const isTransitKlaerung = cleanSoll === '1090' || cleanHaben === '1090';
+
+    const isErtragsMinderung = isErtrag && (cleanSoll.startsWith('3') || cleanHaben.startsWith('102') || cleanHaben.startsWith('100'));
+    const isAufwandsMinderung = isAufwand && (cleanHaben.startsWith('4') || cleanHaben.startsWith('5') || cleanHaben.startsWith('6') || cleanHaben.startsWith('7') || cleanHaben.startsWith('8') || cleanSoll.startsWith('102') || cleanSoll.startsWith('100'));
 
     let rowClass = isSelected ? 'bh-row-selected' : '';
     let rowStyle = '';
@@ -590,18 +630,36 @@ window.renderTabJournal = function(container) {
     let amountClass = 'text-secondary';
     let amountSign  = '';
     let badgeClass  = 'bg-secondary text-white';
+    let badgeLabel  = isTransitKlaerung ? 'KLÄRUNG 1090' : (bTyp || 'BUCHUNG');
 
     if (isAufwand) {
-      amountClass = 'text-danger';
-      amountSign  = '- ';
-      badgeClass  = 'bg-danger text-white';
+      if (isAufwandsMinderung) {
+        amountClass = 'text-success';
+        amountSign  = '+ ';
+        badgeClass  = 'bg-success text-white';
+        badgeLabel  = 'AUFWANDSMINDERUNG';
+      } else {
+        amountClass = 'text-danger';
+        amountSign  = '- ';
+        badgeClass  = 'bg-danger text-white';
+        badgeLabel  = 'AUFWAND';
+      }
     } else if (isErtrag) {
-      amountClass = 'text-success';
-      amountSign  = '+ ';
-      badgeClass  = 'bg-success text-white';
+      if (isErtragsMinderung) {
+        amountClass = 'text-danger';
+        amountSign  = '- ';
+        badgeClass  = 'bg-danger text-white';
+        badgeLabel  = 'ERTRAG (ABZUG)';
+      } else {
+        amountClass = 'text-success';
+        amountSign  = '+ ';
+        badgeClass  = 'bg-success text-white';
+        badgeLabel  = 'ERTRAG';
+      }
     } else if (bTyp === 'TRANSIT') {
       amountClass = isTransitKlaerung ? 'text-info fw-bold' : 'text-muted';
       badgeClass  = isTransitKlaerung ? 'bg-info text-dark' : 'bg-secondary text-white';
+      badgeLabel  = isTransitKlaerung ? 'KLÄRUNG 1090' : 'TRANSIT';
     }
 
     return `
@@ -637,7 +695,7 @@ window.renderTabJournal = function(container) {
       </td>
       <td data-col-id="betrag" class="text-end fw-bold ${amountClass} tk-col-betrag" style="white-space: nowrap;">${amountSign}${fmtChf(item.betrag)}</td>
       <td data-col-id="buchungstyp" class="tk-col-buchungstyp">
-        <span class="badge ${badgeClass} border-0 small me-1 mb-1 mb-sm-0">${isTransitKlaerung ? 'KLÄRUNG 1090' : (bTyp || 'BUCHUNG')}</span>
+        <span class="badge ${badgeClass} border-0 small me-1 mb-1 mb-sm-0">${badgeLabel}</span>
         <span class="badge bg-light text-dark border small">${item.typ || 'Rechnung'}</span>
       </td>
       <td data-col-id="aktionen" class="text-end tk-col-aktionen" style="white-space: nowrap;" onclick="event.stopPropagation()">
@@ -785,18 +843,15 @@ window.bhUpdateJournalSelectionUI = function() {
   const selectedCount = window._bhSelectedJournalIds.size;
   
   if (selectedCount > 0) {
-    let total = 0;
-    (window._bhJournal || []).forEach(j => {
-      if (window._bhSelectedJournalIds.has(Number(j.id))) {
-        total += Number(j.betrag || 0);
-      }
-    });
+    const selectedItems = (window._bhJournal || []).filter(j => window._bhSelectedJournalIds.has(Number(j.id)));
+    const total = window.bhCalcJournalItemsSignedTotal ? window.bhCalcJournalItemsSignedTotal(selectedItems) : selectedItems.reduce((s, it) => s + Number(it.betrag || 0), 0);
+    const fmt = (v) => window.UIFormatKit ? window.UIFormatKit.formatCurrency(v) : ('CHF ' + Number(v).toFixed(2));
     
     if (batchBar) batchBar.classList.remove('d-none');
     if (countEl) countEl.textContent = selectedCount;
     if (btnCountEl) btnCountEl.textContent = selectedCount;
     if (btnPrintCountEl) btnPrintCountEl.textContent = selectedCount;
-    if (sumEl) sumEl.textContent = 'Total: ' + fmtChf(total);
+    if (sumEl) sumEl.textContent = 'Total: ' + fmt(total);
   } else {
     if (batchBar) batchBar.classList.add('d-none');
   }

@@ -75,6 +75,11 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
 * **Problemstellung & Kopplung:** Wird ein Buchungssatz im Journal gelöscht, dessen Zahlung zuvor ein Fachmodul (Rechnungen `invoices`, Jahresbeitrag `contributions_header`, Vermietung `rental_requests` oder Inventar-Depots `inventory_deposits`) auf `bezahlt` gesetzt hatte, führte eine isolierte Journalzeilen-Löschung zu Diskrepanzen (z.B. CAMT-Bankimport markierte die Buchung weiterhin als «bereits gebucht»).
 * **Lösung & Kaskade:** Vor dem Löschen (Einzelbuchung, Split-Gruppe oder Sammellöschung) scannt `bhDetectLinkedModulesForJournal` automatisch Fremdschlüssel (`invoice_payments`), Belegnummern und Buchungstexte auf verknüpfte Vorgänge. Bei erkannten bezahlten Modulen öffnet sich ein Entscheidungsmodal, in welchem der Benutzer wählen kann, ob nur der Buchungssatz gelöscht werden soll oder ob zusätzlich der Status der verknüpften Rechnungen und Module wieder auf `offen` (bzw. `confirmed`) zurückgesetzt und Zahlungen entfernt werden sollen (inklusive CAMT-Cache-Freigabe zur erneuten Buchung).
 
+### 2.8 Netto-Zahlungsfluss & Ertragsminderungen bei Split-Verbunden (Sammelbuchungen)
+* **Problemstellung:** Enthält eine Sammelbuchung (z.B. Jahresbeitragsabrechnung mit Lizenz, Beitrag und Ehrenmitglieder-Rabatt) sowohl Erträge als auch Ertragsminderungen/Gutschriften, führte ein blindes Aufsummieren aller Zeilenbeträge zu einem verfälschten Brutto-Total (z.B. CHF 268.00 statt der effektiv eingegangenen CHF 68.00).
+* **Invariante & Anker-Konto:** Ein Split-Verbund repräsentiert einen einzigen Zahlungsfluss auf das massgebliche Liquiditäts- bzw. Anker-Konto (z.B. Bank `1020` bei `B_Zahl_`, Kasse `1000` bei `Kasse_`). Das Total des Verbunds wird immer als Netto-Saldo auf diesem Anker-Konto berechnet (`|Soll - Haben|`), sodass Gutschriften und Rabatte korrekt als Minderung abgezogen werden.
+* **Darstellung im Journal:** Buchungszeilen mit Ertragsminderung (Ertragskonto im Soll, Bank im Haben) werden mit negativem Vorzeichen (`- `) und Badge `ERTRAG (ABZUG)` dargestellt. Auch bei Mehrfachauswahl im Journal und beim Belegdruck wird der exakte Netto-Zahlungsbetrag ausgewiesen.
+
 ---
 
 ## 3. Datenmodell (Kern-Tabellen)
