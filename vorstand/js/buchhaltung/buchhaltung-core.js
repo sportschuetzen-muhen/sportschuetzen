@@ -343,7 +343,7 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
   if (supa) {
     try {
       console.log("🚀 Lade Buchhaltungsdaten aus Supabase...");
-      const [accRes, jnlRes, budRes, ruleRes, allocRes, activeMemRes] = await Promise.all([
+      const [accRes, jnlRes, budRes, ruleRes, allocRes, activeMemRes, payOrdersRes] = await Promise.all([
         supa.from('accounting_accounts').select('*').order('sort_order', { ascending: true }),
         supa.from('accounting_journal').select('*').order('id', { ascending: false }),
         supa.from('accounting_budgets').select('*'),
@@ -356,7 +356,8 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
             const r = await supa.from('inventar_items').select('id, typ').ilike('typ', '%gewehr%');
             if (r.data) window._bhProMemoriaGewehreCount = r.data.length;
           } catch (_) {}
-        })()
+        })(),
+        supa.from('accounting_payment_orders').select('*').order('created_at', { ascending: false })
       ]);
 
       if (!accRes.error && !jnlRes.error && Array.isArray(accRes.data)) {
@@ -370,6 +371,7 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
           jahr: Number(j.jahr),
           betrag: Number(j.betrag)
         }));
+        window._bhPaymentOrders = (payOrdersRes && !payOrdersRes.error && Array.isArray(payOrdersRes.data)) ? payOrdersRes.data : [];
 
         // Zuteilungsquoten aus DB übernehmen
         if (allocRes && !allocRes.error && Array.isArray(allocRes.data) && allocRes.data.length > 0) {

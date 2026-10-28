@@ -63,6 +63,9 @@ window.renderBuchhaltung = function() {
           <option value="2024" ${window._bhYear === 2024 ? 'selected' : ''}>Jahr: 2024</option>
         </select>
         ${(typeof hasWriteAccess === 'function' ? hasWriteAccess('buchhaltung') : true) ? `
+        <button class="btn btn-sm btn-outline-primary fw-bold shadow-sm" onclick="bhOpenPaymentOrdersModal()" title="Zahlungsaufträge verwalten & Sammel-pain.001 exportieren">
+          <i class="fas fa-file-export me-1"></i> Zahlungsaufträge
+        </button>
         <button class="btn btn-sm btn-primary fw-bold shadow-sm" onclick="bhOpenEntryModal(null)">
           <i class="fas fa-plus me-1"></i> Buchung erfassen
         </button>

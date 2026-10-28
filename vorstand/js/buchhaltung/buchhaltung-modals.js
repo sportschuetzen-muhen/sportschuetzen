@@ -280,13 +280,31 @@ window.bhGetNextJournalBelegNr = function(year, prefix = 'Kasse_') {
   return `${cleanPrefix}${delimiter}${y}-${String(maxSeq + 1).padStart(3, '0')}`;
 };
 
+window.bhGetNextPaymentOrderNr = function(year) {
+  const y = Number(year || window._bhYear || new Date().getFullYear());
+  const regex = new RegExp(`^ZA[-_]${y}[-_](\\d+)`, 'i');
+  let maxSeq = 0;
+  (window._bhPaymentOrders || []).forEach(po => {
+    if (po.order_nr) {
+      const m = String(po.order_nr).match(regex);
+      if (m) {
+        const num = parseInt(m[1], 10);
+        if (!isNaN(num) && num > maxSeq) maxSeq = num;
+      }
+    }
+  });
+  return `ZA-${y}-${String(maxSeq + 1).padStart(3, '0')}`;
+};
+
 window.bhDetermineAutoBelegPrefix = function(soll, haben, typ) {
   const s = String(soll || '').trim();
   const h = String(haben || '').trim();
   const t = String(typ || '').trim();
 
+  // Bei Bankauszahlungen an Mitglieder / Lieferanten: Zahlungsauftrag ZA-
+  if ((h === '1020' && s !== '1000') || t === 'Überweisung') return 'ZA-';
+
   // Prio 1: Bankkonten (Zahlungskonto 1020, Wirtschaft 1021, Anteilschein/Geno 1022)
-  // Bei Geldtransfer Kasse <-> Bank hat die Bank Prio, da der Bankauszug der externe Hauptbeleg ist
   if (s === '1020' || h === '1020') return 'B_Zahl_';
   if (s === '1021' || h === '1021') return 'B_Wirt_';
   if (s === '1022' || h === '1022') return 'B_Geno_';
@@ -787,23 +805,6 @@ window.bhDownloadFile = function(filename, content, mimeType = 'application/xml;
 };
 
 window.bhGeneratePain001Xml = function(params) {
-  const {
-    executionDate,
-    debtorIban,
-    debtorName,
-    debtorStreet,
-    debtorZip,
-    debtorCity,
-    creditorName,
-    creditorStreet,
-    creditorZip,
-    creditorCity,
-    creditorIban,
-    amount,
-    endToEndId,
-    remittanceInfo
-  } = params;
-
   function escapeXml(str) {
     return String(str || '')
       .replace(/&/g, '&amp;')
@@ -822,30 +823,96 @@ window.bhGeneratePain001Xml = function(params) {
   const now = new Date();
   const createdIso = now.toISOString().replace(/\.\d{3}Z$/, '');
   const msgId = sanitizeSwiftId(`SPM-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}-${Date.now().toString().slice(-6)}`);
-  const safeEndToEndId = sanitizeSwiftId(endToEndId || `PAY-${Date.now()}`);
-  const pmtInfId = sanitizeSwiftId(`PMT-${safeEndToEndId}`);
-  const amtFormatted = Number(amount || 0).toFixed(2);
-  const cleanDebtorIban = String(debtorIban || 'CH0680808003633131892').replace(/\s+/g, '').toUpperCase();
-  const cleanCreditorIban = String(creditorIban || '').replace(/\s+/g, '').toUpperCase();
-  const execDate = executionDate || now.toISOString().split('T')[0];
+  const debtorIban = String(params.debtorIban || 'CH0680808003633131892').replace(/\s+/g, '').toUpperCase();
+  const debtorName = params.debtorName || 'Sportschützen Muhen';
+  const debtorStreet = params.debtorStreet || 'Schiessanlage Hard';
+  const debtorZip = params.debtorZip || '5037';
+  const debtorCity = params.debtorCity || 'Muhen';
+  const execDate = params.executionDate || now.toISOString().split('T')[0];
 
-  let creditorAddressXml = '';
-  if (creditorStreet || creditorZip || creditorCity) {
-    creditorAddressXml = `
-          <PstlAdr>
-            ${creditorStreet ? `<StrtNm>${escapeXml(creditorStreet.slice(0, 70))}</StrtNm>` : ''}
-            ${creditorZip ? `<PstCd>${escapeXml(creditorZip.slice(0, 16))}</PstCd>` : ''}
-            ${creditorCity ? `<TwnNm>${escapeXml(creditorCity.slice(0, 35))}</TwnNm>` : ''}
-            <Ctry>CH</Ctry>
-          </PstlAdr>`;
+  // Entweder params.transactions (Sammelauftrag) oder Einzelüberweisung aus params
+  let txList = [];
+  if (Array.isArray(params.transactions) && params.transactions.length > 0) {
+    txList = params.transactions;
   } else {
-    creditorAddressXml = `
-          <PstlAdr>
-            <Ctry>CH</Ctry>
-          </PstlAdr>`;
+    txList = [{
+      creditorName: params.creditorName,
+      creditorStreet: params.creditorStreet,
+      creditorZip: params.creditorZip,
+      creditorCity: params.creditorCity,
+      creditorIban: params.creditorIban,
+      amount: params.amount,
+      endToEndId: params.endToEndId,
+      remittanceInfo: params.remittanceInfo
+    }];
   }
 
-  const cleanRemittance = String(remittanceInfo || 'Rückvergütung Sportschützen Muhen').slice(0, 140);
+  let totalAmount = 0;
+  const txBlocks = txList.map((tx, idx) => {
+    const amt = Number(tx.amount || 0);
+    totalAmount += amt;
+    const safeEndToEndId = sanitizeSwiftId(tx.endToEndId || `PAY-${Date.now()}-${idx+1}`);
+    const cleanCreditorIban = String(tx.creditorIban || '').replace(/\s+/g, '').toUpperCase();
+    const cleanRemittance = String(tx.remittanceInfo || 'Rückvergütung Sportschützen Muhen').slice(0, 140);
+
+    let creditorAddressXml = '';
+    if (tx.creditorStreet || tx.creditorZip || tx.creditorCity) {
+      creditorAddressXml = `
+        <CdtTrfTxInf>
+          <PmtId>
+            <EndToEndId>${escapeXml(safeEndToEndId)}</EndToEndId>
+          </PmtId>
+          <Amt>
+            <InstdAmt Ccy="CHF">${amt.toFixed(2)}</InstdAmt>
+          </Amt>
+          <Cdtr>
+            <Nm>${escapeXml(tx.creditorName || 'Mitglied')}</Nm>
+            <PstlAdr>
+              ${tx.creditorStreet ? `<StrtNm>${escapeXml(String(tx.creditorStreet).slice(0, 70))}</StrtNm>` : ''}
+              ${tx.creditorZip ? `<PstCd>${escapeXml(String(tx.creditorZip).slice(0, 16))}</PstCd>` : ''}
+              ${tx.creditorCity ? `<TwnNm>${escapeXml(String(tx.creditorCity).slice(0, 35))}</TwnNm>` : ''}
+              <Ctry>CH</Ctry>
+            </PstlAdr>
+          </Cdtr>
+          <CdtrAcct>
+            <Id>
+              <IBAN>${cleanCreditorIban}</IBAN>
+            </Id>
+          </CdtrAcct>
+          <RmtInf>
+            <Ustrd>${escapeXml(cleanRemittance)}</Ustrd>
+          </RmtInf>
+        </CdtTrfTxInf>`;
+    } else {
+      creditorAddressXml = `
+        <CdtTrfTxInf>
+          <PmtId>
+            <EndToEndId>${escapeXml(safeEndToEndId)}</EndToEndId>
+          </PmtId>
+          <Amt>
+            <InstdAmt Ccy="CHF">${amt.toFixed(2)}</InstdAmt>
+          </Amt>
+          <Cdtr>
+            <Nm>${escapeXml(tx.creditorName || 'Mitglied')}</Nm>
+            <PstlAdr>
+              <Ctry>CH</Ctry>
+            </PstlAdr>
+          </Cdtr>
+          <CdtrAcct>
+            <Id>
+              <IBAN>${cleanCreditorIban}</IBAN>
+            </Id>
+          </CdtrAcct>
+          <RmtInf>
+            <Ustrd>${escapeXml(cleanRemittance)}</Ustrd>
+          </RmtInf>
+        </CdtTrfTxInf>`;
+    }
+    return creditorAddressXml;
+  });
+
+  const totalAmtFormatted = totalAmount.toFixed(2);
+  const pmtInfId = sanitizeSwiftId(`PMT-${msgId}`);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Document xmlns="http://www.six-interbank-clearing.com/de/pain.001.001.03.ch.02.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.six-interbank-clearing.com/de/pain.001.001.03.ch.02.xsd pain.001.001.03.ch.02.xsd">
@@ -853,71 +920,124 @@ window.bhGeneratePain001Xml = function(params) {
     <GrpHdr>
       <MsgId>${escapeXml(msgId)}</MsgId>
       <CreDtTm>${createdIso}</CreDtTm>
-      <NbOfTxs>1</NbOfTxs>
-      <CtrlSum>${amtFormatted}</CtrlSum>
+      <NbOfTxs>${txList.length}</NbOfTxs>
+      <CtrlSum>${totalAmtFormatted}</CtrlSum>
       <InitgPty>
-        <Nm>${escapeXml(debtorName || 'Sportschützen Muhen')}</Nm>
+        <Nm>${escapeXml(debtorName)}</Nm>
       </InitgPty>
     </GrpHdr>
     <PmtInf>
       <PmtInfId>${escapeXml(pmtInfId)}</PmtInfId>
       <PmtMtd>TRF</PmtMtd>
       <BtchBookg>true</BtchBookg>
-      <NbOfTxs>1</NbOfTxs>
-      <CtrlSum>${amtFormatted}</CtrlSum>
+      <NbOfTxs>${txList.length}</NbOfTxs>
+      <CtrlSum>${totalAmtFormatted}</CtrlSum>
       <PmtTpInf>
         <InstrPrty>NORM</InstrPrty>
       </PmtTpInf>
       <ReqdExctnDt>${execDate}</ReqdExctnDt>
       <Dbtr>
-        <Nm>${escapeXml(debtorName || 'Sportschützen Muhen')}</Nm>
+        <Nm>${escapeXml(debtorName)}</Nm>
         <PstlAdr>
-          <StrtNm>${escapeXml(debtorStreet || 'Schiessanlage Hard')}</StrtNm>
-          <PstCd>${escapeXml(debtorZip || '5037')}</PstCd>
-          <TwnNm>${escapeXml(debtorCity || 'Muhen')}</TwnNm>
+          <StrtNm>${escapeXml(debtorStreet)}</StrtNm>
+          <PstCd>${escapeXml(debtorZip)}</PstCd>
+          <TwnNm>${escapeXml(debtorCity)}</TwnNm>
           <Ctry>CH</Ctry>
         </PstlAdr>
       </Dbtr>
       <DbtrAcct>
         <Id>
-          <IBAN>${cleanDebtorIban}</IBAN>
+          <IBAN>${debtorIban}</IBAN>
         </Id>
       </DbtrAcct>
       <DbtrAgt>
         <FinInstnId>
           <BIC>RAIFCH22</BIC>
         </FinInstnId>
-      </DbtrAgt>
-      <CdtTrfTxInf>
-        <PmtId>
-          <EndToEndId>${escapeXml(safeEndToEndId)}</EndToEndId>
-        </PmtId>
-        <Amt>
-          <InstdAmt Ccy="CHF">${amtFormatted}</InstdAmt>
-        </Amt>
-        <Cdtr>
-          <Nm>${escapeXml(creditorName || 'Mitglied')}</Nm>
-          ${creditorAddressXml}
-        </Cdtr>
-        <CdtrAcct>
-          <Id>
-            <IBAN>${cleanCreditorIban}</IBAN>
-          </Id>
-        </CdtrAcct>
-        <RmtInf>
-          <Ustrd>${escapeXml(cleanRemittance)}</Ustrd>
-        </RmtInf>
-      </CdtTrfTxInf>
+      </DbtrAgt>${txBlocks.join('')}
     </PmtInf>
   </CstmrCdtTrfInitn>
 </Document>`;
+};
+
+// Sammel-Export von mehreren Zahlungsaufträgen in eine einzige pain.001 XML
+window.bhDownloadPain001BatchXml = async function(orderList) {
+  if (!orderList || !Array.isArray(orderList) || orderList.length === 0) {
+    alert("⚠️ Keine Zahlungsaufträge zum Exportieren ausgewählt.");
+    return false;
+  }
+
+  // Validierung: Alle müssen gültige Schweizer IBAN haben
+  const invalid = orderList.filter(o => !o.recipient_iban || !/^CH\d{2}[0-9A-Z]{17}$/.test(String(o.recipient_iban).replace(/\s+/g, '').toUpperCase()));
+  if (invalid.length > 0) {
+    alert(`⚠️ Folgende Aufträge haben keine gültige Schweizer IBAN:\n\n${invalid.map(i => `• ${i.order_nr}: ${i.recipient_name}`).join('\n')}\n\nBitte IBAN vor dem Export korrigieren.`);
+    return false;
+  }
+
+  const transactions = orderList.map(o => ({
+    creditorName: o.recipient_name,
+    creditorStreet: o.recipient_street || '',
+    creditorZip: o.recipient_zip || '',
+    creditorCity: o.recipient_city || '',
+    creditorIban: o.recipient_iban,
+    amount: Number(o.betrag || 0),
+    endToEndId: o.order_nr,
+    remittanceInfo: (o.beschreibung || `Auszahlung ${o.order_nr}`).slice(0, 140)
+  }));
+
+  const now = new Date();
+  const dateStr = now.toISOString().split('T')[0];
+  const xmlContent = window.bhGeneratePain001Xml({
+    executionDate: dateStr,
+    transactions: transactions
+  });
+
+  const totalSum = orderList.reduce((s, o) => s + Number(o.betrag || 0), 0);
+  const filename = `pain001_Sammelauftrag_${dateStr}_${orderList.length}Txs.xml`;
+  window.bhDownloadFile(filename, xmlContent, 'application/xml;charset=utf-8');
+
+  // Supabase aktualisieren: Status auf 'exportiert'
+  const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
+  if (supa) {
+    const ids = orderList.map(o => o.id);
+    const { error } = await supa.from('accounting_payment_orders')
+      .update({
+        status: 'exportiert',
+        exported_at: now.toISOString(),
+        pain_msg_id: filename
+      })
+      .in('id', ids);
+
+    if (error) {
+      console.warn("Fehler beim Aktualisieren des Zahlungsauftrag-Status:", error);
+    } else {
+      orderList.forEach(o => {
+        o.status = 'exportiert';
+        o.exported_at = now.toISOString();
+        o.pain_msg_id = filename;
+      });
+      const storedOrders = window._bhPaymentOrders || [];
+      storedOrders.forEach(so => {
+        if (ids.includes(so.id)) {
+          so.status = 'exportiert';
+          so.exported_at = now.toISOString();
+          so.pain_msg_id = filename;
+        }
+      });
+    }
+  }
+
+  if (typeof showSuccess === 'function') {
+    showSuccess(`📥 Bank-Datei ${filename} (pain.001) mit ${orderList.length} Zahlungen (CHF ${totalSum.toFixed(2)}) heruntergeladen!`);
+  }
+  return true;
 };
 
 window.bhDownloadPain001Xml = function(entries, recipientData) {
   if (!entries || entries.length === 0) return;
   const single = entries[0];
   const totalAmount = entries.reduce((s, e) => s + (Number(e.betrag) || 0), 0);
-  const baseBeleg = window.bhGetSplitBaseBeleg ? window.bhGetSplitBaseBeleg(single.beleg_nr) : single.beleg_nr;
+  const baseBeleg = window.bhGetSplitBaseBeleg ? window.bhGetSplitBaseBeleg(single.beleg_nr || single.order_nr) : (single.beleg_nr || single.order_nr);
 
   const rec = recipientData || {};
   const iban = String(rec.iban || '').replace(/\s+/g, '').toUpperCase();
@@ -1767,14 +1887,88 @@ window.bhSaveKassaSammelbeleg = async function(event, printAfter = false, export
   const savedEntries = [];
 
   try {
+    const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : (window.supabaseClient || null);
+    if (!supa) throw new Error("Supabase-Client nicht verfügbar");
+
+    // FALL 1: BANK-ÜBERWEISUNG -> ALS ZAHLUNGSAUFTRAG VORMERKEN (KEINE BELEGNUMMER-BLOCKIERUNG IM JOURNAL!)
+    if (art === 'bank') {
+      const totalAmt = validRows.reduce((s, r) => s + r.betrag, 0);
+      const orderNr = baseBeleg.startsWith('ZA-') ? baseBeleg : window.bhGetNextPaymentOrderNr(year);
+
+      const orderPayload = {
+        order_nr: orderNr,
+        jahr: year,
+        datum: datum,
+        execution_date: datum,
+        member_pn: memberPn || null,
+        recipient_name: memberName || 'Vereinsmitglied',
+        recipient_street: memberStreet || '',
+        recipient_zip: memberZip || '',
+        recipient_city: memberCity || '',
+        recipient_iban: memberIban || '',
+        betrag: totalAmt,
+        konto_soll: validRows[0].soll,
+        konto_haben: '1020',
+        beschreibung: titel,
+        positions: validRows.map(vr => ({
+          text: vr.text,
+          soll: vr.soll,
+          haben: vr.haben,
+          betrag: vr.betrag
+        })),
+        status: exportXml ? 'exportiert' : 'pendent',
+        exported_at: exportXml ? new Date().toISOString() : null
+      };
+
+      const { data: poData, error: poErr } = await supa.from('accounting_payment_orders').insert(orderPayload).select().single();
+      if (poErr) throw new Error(poErr.message || 'Fehler beim Speichern des Zahlungsauftrags');
+
+      const savedOrder = poData || { id: Date.now(), ...orderPayload };
+      window._bhPaymentOrders = window._bhPaymentOrders || [];
+      window._bhPaymentOrders.unshift(savedOrder);
+
+      if (typeof showSuccess === 'function') {
+        showSuccess(`🎉 Zahlungsauftrag ${savedOrder.order_nr} (CHF ${totalAmt.toFixed(2)}) erfolgreich erfasst!`);
+      }
+
+      const modalEl = document.getElementById('bhModalNewEntry');
+      if (modalEl) {
+        const bsModal = bootstrap.Modal.getInstance(modalEl);
+        if (bsModal) bsModal.hide();
+      }
+
+      if (printAfter) {
+        bhPrintJournalBeleg([{
+          beleg_nr: savedOrder.order_nr,
+          datum: datum,
+          beschreibung: titel,
+          betrag: totalAmt,
+          konto_soll: validRows[0].soll,
+          konto_haben: '1020'
+        }], titel, recipientData);
+      }
+
+      if (exportXml && recipientData && recipientData.iban) {
+        bhDownloadPain001Xml([{
+          beleg_nr: savedOrder.order_nr,
+          datum: datum,
+          beschreibung: titel,
+          betrag: totalAmt
+        }], recipientData);
+      }
+
+      setTimeout(async () => {
+        if (typeof loadBuchhaltungData === 'function') await loadBuchhaltungData(true, true);
+      }, 500);
+      return;
+    }
+
+    // FALL 2: KASSE / FREIE KONTEN -> DIREKT IM JOURNAL BUCHEN
     for (let i = 0; i < validRows.length; i++) {
       const vr = validRows[i];
       const subSuffix = validRows.length > 1 ? String.fromCharCode(97 + i) : '';
       const belegNr = `${baseBeleg}${subSuffix}`;
       const desc = validRows.length > 1 ? `${titel} (${vr.text})` : `${titel} - ${vr.text}`;
-
-      const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : (window.supabaseClient || null);
-      if (!supa) throw new Error("Supabase-Client nicht verfügbar");
 
       const insertPayload = {
         jahr: year,
@@ -1784,7 +1978,7 @@ window.bhSaveKassaSammelbeleg = async function(event, printAfter = false, export
         konto_soll: vr.soll,
         konto_haben: vr.haben,
         betrag: vr.betrag,
-        typ: (art === 'bank') ? 'Überweisung' : (art === 'einnahme' ? 'Einnahme' : 'Kassa'),
+        typ: (art === 'einnahme' ? 'Einnahme' : 'Kassa'),
         buchungstyp: (typeof getBuchungstyp === 'function') ? getBuchungstyp(vr.soll, vr.haben) : 'TRANSIT'
       };
 
@@ -2371,9 +2565,81 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
   } : null;
   
   try {
-    let savedEntry = null;
+    // 1. BANK-ÜBERWEISUNG (NEUANLAGE) -> ALS ZAHLUNGSAUFTRAG VORMERKEN (KEINE BELEGNUMMER-BLOCKIERUNG IM JOURNAL!)
+    if (!payload.id && (String(payload.konto_haben).trim() === '1020' || payload.typ === 'Überweisung')) {
+      const year = Number(payload.jahr || window._bhYear || new Date().getFullYear());
+      const orderNr = (payload.beleg_nr && payload.beleg_nr.startsWith('ZA-')) ? payload.beleg_nr : window.bhGetNextPaymentOrderNr(year);
 
-    // 1. Supabase-First Write
+      const orderPayload = {
+        order_nr: orderNr,
+        jahr: year,
+        datum: payload.datum || new Date().toISOString().slice(0, 10),
+        execution_date: payload.datum || new Date().toISOString().slice(0, 10),
+        member_pn: memberPn || null,
+        recipient_name: memberName || 'Vereinsmitglied',
+        recipient_street: memberStreet || '',
+        recipient_zip: memberZip || '',
+        recipient_city: memberCity || '',
+        recipient_iban: memberIban || '',
+        betrag: Number(payload.betrag || 0),
+        konto_soll: payload.konto_soll,
+        konto_haben: '1020',
+        beschreibung: payload.beschreibung,
+        positions: [{
+          text: payload.beschreibung,
+          soll: payload.konto_soll,
+          haben: '1020',
+          betrag: Number(payload.betrag || 0)
+        }],
+        status: exportXml ? 'exportiert' : 'pendent',
+        exported_at: exportXml ? new Date().toISOString() : null
+      };
+
+      const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
+      if (!supa) throw new Error("Supabase-Client nicht verfügbar");
+
+      const { data: poData, error: poErr } = await supa.from('accounting_payment_orders').insert(orderPayload).select().single();
+      if (poErr) throw new Error(poErr.message || 'Fehler beim Speichern des Zahlungsauftrags');
+
+      const savedOrder = poData || { id: Date.now(), ...orderPayload };
+      window._bhPaymentOrders = window._bhPaymentOrders || [];
+      window._bhPaymentOrders.unshift(savedOrder);
+
+      showSuccess(`🎉 Zahlungsauftrag ${savedOrder.order_nr} (CHF ${Number(savedOrder.betrag).toFixed(2)}) erfolgreich erfasst!`);
+
+      const modalEl = document.getElementById('bhModalNewEntry');
+      if (modalEl) {
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+      }
+
+      if (printAfter) {
+        bhPrintJournalBeleg([{
+          beleg_nr: savedOrder.order_nr,
+          datum: savedOrder.datum,
+          beschreibung: savedOrder.beschreibung,
+          betrag: savedOrder.betrag,
+          konto_soll: savedOrder.konto_soll,
+          konto_haben: '1020'
+        }], savedOrder.beschreibung, recipientData);
+      }
+
+      if (exportXml && recipientData && recipientData.iban) {
+        bhDownloadPain001Xml([{
+          beleg_nr: savedOrder.order_nr,
+          datum: savedOrder.datum,
+          beschreibung: savedOrder.beschreibung,
+          betrag: savedOrder.betrag
+        }], recipientData);
+      }
+
+      setTimeout(async () => {
+        await loadBuchhaltungData(true, true);
+      }, 500);
+      return;
+    }
+
+    // 2. Supabase-First Write (Kasse, Umbuchung, Edit)
     const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
     if (supa) {
       try {
@@ -4567,4 +4833,307 @@ window.bhSaveAllBudgets = async function() {
     }
   }
 };
+
+// =====================================================================
+// MODAL: ZAHLUNGSAUFTRÄGE & SAMMEL-PAIN.001 VERWALTUNG
+// =====================================================================
+window._bhPayOrdersFilter = window._bhPayOrdersFilter || 'all';
+
+window.bhOpenPaymentOrdersModal = async function() {
+  let modalEl = document.getElementById('bhModalPaymentOrders');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'bhModalPaymentOrders';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+
+  // Aktuelle Zahlungsaufträge aus Supabase frisch nachladen
+  const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
+  if (supa) {
+    try {
+      const { data, error } = await supa.from('accounting_payment_orders').select('*').order('created_at', { ascending: false });
+      if (!error && Array.isArray(data)) {
+        window._bhPaymentOrders = data;
+      }
+    } catch (_) {}
+  }
+
+  window.bhRenderPaymentOrdersModalContent();
+  const bsModal = new bootstrap.Modal(modalEl);
+  bsModal.show();
+};
+
+window.bhSetPaymentOrdersFilter = function(filter) {
+  window._bhPayOrdersFilter = filter;
+  window.bhRenderPaymentOrdersModalContent();
+};
+
+window.bhRenderPaymentOrdersModalContent = function() {
+  const modalEl = document.getElementById('bhModalPaymentOrders');
+  if (!modalEl) return;
+
+  const orders = window._bhPaymentOrders || [];
+  const filter = window._bhPayOrdersFilter || 'all';
+
+  const pendentCount = orders.filter(o => o.status === 'pendent').length;
+  const exportedCount = orders.filter(o => o.status === 'exportiert').length;
+  const executedCount = orders.filter(o => o.status === 'ausgefuehrt').length;
+
+  let filtered = orders;
+  if (filter === 'pendent') filtered = orders.filter(o => o.status === 'pendent');
+  else if (filter === 'exportiert') filtered = orders.filter(o => o.status === 'exportiert');
+  else if (filter === 'ausgefuehrt') filtered = orders.filter(o => o.status === 'ausgefuehrt');
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered modal-xl" style="max-width: 1200px;">
+      <div class="modal-content border-0 rounded-4 shadow">
+        <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
+          <div class="d-flex align-items-center gap-2">
+            <i class="fas fa-file-export fa-lg"></i>
+            <div>
+              <h5 class="modal-title fw-bold mb-0">Zahlungsaufträge & ISO 20022 XML (pain.001)</h5>
+              <div class="small text-white-50">Erfasste Vergütungen vor der Bank-Ausführung und CAMT-Verbuchung</div>
+            </div>
+          </div>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="modal-body p-4 bg-light">
+          <!-- Toolbar & Filter -->
+          <div class="card p-3 mb-3 border-0 shadow-sm rounded-3 bg-white">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <div class="btn-group btn-group-sm" role="group">
+                <button type="button" class="btn ${filter === 'all' ? 'btn-primary fw-bold' : 'btn-outline-secondary'}" onclick="bhSetPaymentOrdersFilter('all')">
+                  Alle (${orders.length})
+                </button>
+                <button type="button" class="btn ${filter === 'pendent' ? 'btn-warning fw-bold' : 'btn-outline-secondary'}" onclick="bhSetPaymentOrdersFilter('pendent')">
+                  Pendent (${pendentCount})
+                </button>
+                <button type="button" class="btn ${filter === 'exportiert' ? 'btn-info text-white fw-bold' : 'btn-outline-secondary'}" onclick="bhSetPaymentOrdersFilter('exportiert')">
+                  Exportiert (${exportedCount})
+                </button>
+                <button type="button" class="btn ${filter === 'ausgefuehrt' ? 'btn-success fw-bold' : 'btn-outline-secondary'}" onclick="bhSetPaymentOrdersFilter('ausgefuehrt')">
+                  Ausgeführt (${executedCount})
+                </button>
+              </div>
+
+              <div class="d-flex align-items-center gap-2 flex-wrap">
+                <button type="button" class="btn btn-sm btn-success fw-bold shadow-sm" id="bh-po-batch-export-btn" onclick="bhExportSelectedPaymentOrders()" disabled>
+                  <i class="fas fa-file-code me-1.5"></i>Sammel-pain.001 exportieren (<span id="bh-po-selected-count">0</span>)
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-primary fw-bold shadow-sm" onclick="bhOpenEntryModal(null)">
+                  <i class="fas fa-plus me-1"></i>Neuer Zahlungsauftrag
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tabelle -->
+          <div class="card border-0 shadow-sm rounded-3 bg-white overflow-hidden">
+            <div class="table-responsive" style="max-height: 520px;">
+              <table class="table table-hover align-middle mb-0" id="bh-po-table" style="font-size: 13.5px;">
+                <thead class="table-light sticky-top">
+                  <tr>
+                    <th style="width: 40px;" class="text-center">
+                      <input type="checkbox" class="form-check-input" id="bh-po-select-all" onchange="bhToggleAllPaymentOrders(this.checked)" title="Alle offenen selektieren">
+                    </th>
+                    <th style="width: 130px;">Auftrags-Nr.</th>
+                    <th style="width: 100px;">Datum</th>
+                    <th>Empfänger / Begünstigter</th>
+                    <th style="width: 220px;">IBAN</th>
+                    <th style="width: 120px;" class="text-end">Betrag (CHF)</th>
+                    <th style="width: 100px;">Konto</th>
+                    <th>Zweck</th>
+                    <th style="width: 110px;" class="text-center">Status</th>
+                    <th style="width: 120px;" class="text-center">Aktionen</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${filtered.length === 0 ? `
+                    <tr>
+                      <td colspan="10" class="text-center py-5 text-muted">
+                        <i class="fas fa-inbox fa-3x mb-2 opacity-50"></i>
+                        <div>Keine Zahlungsaufträge für diesen Filter vorhanden.</div>
+                      </td>
+                    </tr>
+                  ` : filtered.map(o => {
+                    const isSelectable = o.status === 'pendent' || o.status === 'exportiert';
+                    const statusBadge = (o.status === 'pendent') 
+                      ? '<span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>Pendent</span>'
+                      : (o.status === 'exportiert')
+                        ? '<span class="badge bg-info text-white"><i class="fas fa-file-export me-1"></i>Exportiert</span>'
+                        : (o.status === 'ausgefuehrt')
+                          ? '<span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Ausgeführt</span>'
+                          : '<span class="badge bg-secondary">Storniert</span>';
+
+                    return `
+                      <tr id="bh-po-row-${o.id}">
+                        <td class="text-center">
+                          <input type="checkbox" class="form-check-input bh-po-row-cb" data-order-id="${o.id}" ${isSelectable ? '' : 'disabled'} onchange="bhUpdatePaymentOrdersBatchSelection()">
+                        </td>
+                        <td>
+                          <span class="font-monospace fw-bold text-primary">${escapeHtml(o.order_nr)}</span>
+                        </td>
+                        <td class="text-muted small">${escapeHtml(o.datum || '')}</td>
+                        <td>
+                          <div class="fw-bold">${escapeHtml(o.recipient_name || '')}</div>
+                          ${o.member_pn ? `<span class="badge bg-light text-muted border small">Nr. ${escapeHtml(o.member_pn)}</span>` : ''}
+                        </td>
+                        <td>
+                          <span class="font-monospace small text-dark">${escapeHtml(o.recipient_iban || '')}</span>
+                        </td>
+                        <td class="text-end fw-bold text-primary font-monospace">
+                          ${typeof fmtChf === 'function' ? fmtChf(o.betrag) : 'CHF ' + Number(o.betrag).toFixed(2)}
+                        </td>
+                        <td>
+                          <span class="badge bg-light text-dark border font-monospace">${escapeHtml(o.konto_soll || '')}</span>
+                        </td>
+                        <td class="small text-truncate" style="max-width: 220px;" title="${escapeHtml(o.beschreibung || '')}">
+                          ${escapeHtml(o.beschreibung || '')}
+                        </td>
+                        <td class="text-center">${statusBadge}</td>
+                        <td class="text-center">
+                          <div class="btn-group btn-group-sm">
+                            <button type="button" class="btn btn-light border py-0.5 px-1.5" onclick="bhPrintPaymentOrder('${o.id}')" title="Auszahlungsbeleg drucken">
+                              <i class="fas fa-print text-primary"></i>
+                            </button>
+                            <button type="button" class="btn btn-light border py-0.5 px-1.5" onclick="bhDownloadSinglePaymentOrderXml('${o.id}')" title="Einzel-pain.001 XML herunterladen">
+                              <i class="fas fa-file-code text-success"></i>
+                            </button>
+                            ${o.status !== 'ausgefuehrt' ? `
+                              <button type="button" class="btn btn-light border py-0.5 px-1.5" onclick="bhDeletePaymentOrder('${o.id}')" title="Auftrag stornieren / löschen">
+                                <i class="fas fa-trash-alt text-danger"></i>
+                              </button>
+                            ` : ''}
+                          </div>
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer bg-white border-0 py-2.5">
+          <button type="button" class="btn btn-secondary px-4 fw-semibold" data-bs-dismiss="modal">Schliessen</button>
+        </div>
+      </div>
+    </div>
+  `;
+};
+
+window.bhToggleAllPaymentOrders = function(check) {
+  document.querySelectorAll('.bh-po-row-cb:not(:disabled)').forEach(cb => {
+    cb.checked = check;
+  });
+  window.bhUpdatePaymentOrdersBatchSelection();
+};
+
+window.bhUpdatePaymentOrdersBatchSelection = function() {
+  const selectedCbs = Array.from(document.querySelectorAll('.bh-po-row-cb:checked'));
+  const count = selectedCbs.length;
+  const btn = document.getElementById('bh-po-batch-export-btn');
+  const countSpan = document.getElementById('bh-po-selected-count');
+
+  if (countSpan) countSpan.innerText = count;
+  if (btn) {
+    btn.disabled = (count === 0);
+  }
+};
+
+window.bhExportSelectedPaymentOrders = async function() {
+  const selectedCbs = Array.from(document.querySelectorAll('.bh-po-row-cb:checked'));
+  const selectedIds = selectedCbs.map(cb => cb.getAttribute('data-order-id'));
+  const orders = (window._bhPaymentOrders || []).filter(o => selectedIds.includes(String(o.id)));
+
+  if (orders.length === 0) {
+    alert("Bitte mindestens einen Zahlungsauftrag auswählen.");
+    return;
+  }
+
+  const ok = await window.bhDownloadPain001BatchXml(orders);
+  if (ok) {
+    window.bhRenderPaymentOrdersModalContent();
+  }
+};
+
+window.bhDownloadSinglePaymentOrderXml = async function(orderId) {
+  const order = (window._bhPaymentOrders || []).find(o => String(o.id) === String(orderId));
+  if (!order) return;
+  const ok = await window.bhDownloadPain001BatchXml([order]);
+  if (ok) {
+    window.bhRenderPaymentOrdersModalContent();
+  }
+};
+
+window.bhPrintPaymentOrder = function(orderId) {
+  const order = (window._bhPaymentOrders || []).find(o => String(o.id) === String(orderId));
+  if (!order) return;
+
+  const recipientData = {
+    name: order.recipient_name,
+    iban: order.recipient_iban,
+    street: order.recipient_street,
+    zip: order.recipient_zip,
+    city: order.recipient_city,
+    personNumber: order.member_pn
+  };
+
+  const dummyEntry = {
+    beleg_nr: order.order_nr,
+    datum: order.datum,
+    beschreibung: order.beschreibung,
+    betrag: order.betrag,
+    konto_soll: order.konto_soll,
+    konto_haben: order.konto_haben || '1020'
+  };
+
+  bhPrintJournalBeleg([dummyEntry], order.beschreibung, recipientData);
+};
+
+window.bhDeletePaymentOrder = async function(orderId) {
+  const order = (window._bhPaymentOrders || []).find(o => String(o.id) === String(orderId));
+  if (!order) return;
+
+  if (order.status === 'ausgefuehrt') {
+    alert("⚠️ Ein bereits über die Bank ausgeführter Zahlungsauftrag kann nicht gelöscht werden.");
+    return;
+  }
+
+  const confirmed = (window.UIConfirmKit && typeof window.UIConfirmKit.confirm === 'function')
+    ? await window.UIConfirmKit.confirm({
+        title: 'Zahlungsauftrag löschen',
+        message: `Möchtest du den Zahlungsauftrag ${order.order_nr} an ${order.recipient_name} über CHF ${Number(order.betrag).toFixed(2)} wirklich unwiderruflich löschen?`,
+        type: 'danger',
+        confirmText: 'Auftrag löschen',
+        cancelText: 'Abbrechen'
+      })
+    : confirm(`Zahlungsauftrag ${order.order_nr} an ${order.recipient_name} wirklich löschen?`);
+
+  if (!confirmed) return;
+
+  const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
+  if (supa) {
+    try {
+      const { error } = await supa.from('accounting_payment_orders').delete().eq('id', orderId);
+      if (error) {
+        alert("Fehler beim Löschen des Auftrags: " + error.message);
+        return;
+      }
+      window._bhPaymentOrders = (window._bhPaymentOrders || []).filter(o => String(o.id) !== String(orderId));
+      if (typeof showSuccess === 'function') {
+        showSuccess(`🗑️ Zahlungsauftrag ${order.order_nr} gelöscht.`);
+      }
+      window.bhRenderPaymentOrdersModalContent();
+    } catch (err) {
+      alert("Fehler: " + err.message);
+    }
+  }
+};
+
 

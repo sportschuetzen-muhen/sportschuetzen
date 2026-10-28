@@ -198,6 +198,9 @@ window.renderTabBankabgleich = function(container) {
           </p>
         </div>
         <div class="d-flex align-items-center gap-2">
+          <button class="btn btn-sm btn-outline-primary fw-bold shadow-sm" onclick="bhOpenPaymentOrdersModal()" title="Erfasste Zahlungsaufträge verwalten & Sammel-pain.001 exportieren">
+            <i class="fas fa-file-export me-1"></i> Zahlungsaufträge (pain.001)
+          </button>
           ${hasResults ? `
             <button class="btn btn-sm btn-outline-danger" onclick="bhBankClearTransactions()" title="Aktuell geladene Transaktionen verwerfen und Auszug neu hochladen">
               <i class="fas fa-trash-alt me-1"></i> Auszug leeren
@@ -902,6 +905,8 @@ function bhBankRenderResults(filter) {
       statusBadge = `<span class="badge bg-success" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="✅ RECHNUNGS-TREFFER: ${escHtml(r.matchedInvoice?.id || '')} (${escHtml(r.matchedInvoice?.name || '')}). Klicken zum Ändern oder Aufheben."><i class="fas fa-file-invoice me-1"></i>Rechnung <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i></span>`;
     } else if (r.isJahresbeitrag) {
       statusBadge = `<span class="badge bg-success" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="✅ JAHRESBEITRAG: Mitglied und offener Beitrag erkannt. Klicken zum Ändern oder Aufheben."><i class="fas fa-check-circle me-1"></i>Jahresbeitrag <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i></span>`;
+    } else if (r.matchType === 'payment_order') {
+      statusBadge = `<span class="badge bg-primary text-white" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="📤 ZAHLUNGSAUFTRAG: ${escHtml(r.matchLabel)}. Klicken zum Ändern oder Zuordnen."><i class="fas fa-file-export me-1"></i>Auszahlung <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i></span>`;
     } else if (r.matchType === 'rule') {
       statusBadge = `<span class="badge bg-info text-dark" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="⚡ REGEL-TREFFER: ${escHtml(r.matchRuleName)}. Klicken zum Ändern oder Aufheben."><i class="fas fa-magic me-1"></i>Regel <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i></span>`;
     } else if (r.matchType === 'journal') {
@@ -931,6 +936,12 @@ function bhBankRenderResults(filter) {
         <i class="fas fa-user me-1"></i>${escHtml(m.FirstName)} ${escHtml(m.LastName)}
       </div>
       <div class="text-muted" style="font-size:10px;">Mitglieds-Nr: ${m.PersonNumber || '–'}</div>`;
+    } else if (r.matchType === 'payment_order' && r.matchedPaymentOrder) {
+      const po = r.matchedPaymentOrder;
+      matchContent = `<div class="fw-semibold text-primary" style="font-size:12px;">
+        <i class="fas fa-file-export me-1"></i>${escHtml(po.order_nr)}: ${escHtml(po.recipient_name)}
+      </div>
+      <div class="text-muted" style="font-size:10px;">${escHtml(po.beschreibung || 'Auszahlung')} · CHF ${Number(po.betrag || 0).toFixed(2)}</div>`;
     } else {
       matchContent = `<div class="text-muted" style="font-size:11px;">${escHtml(r.matchLabel || 'Manuelle Buchung')}</div>`;
     }
@@ -2055,6 +2066,60 @@ function bhBankMatchAll(transactions) {
       }
     }
 
+    // 2b. STUFE: Abgleich gegen offene Zahlungsaufträge (pain.001) bei Ausgangstransaktionen
+    let matchedPaymentOrder = tx.matchedPaymentOrder || null;
+    if (!tx.isCredit && !isJahresbeitrag && !isInvoice && matchType === 'unknown' && Array.isArray(window._bhPaymentOrders) && window._bhPaymentOrders.length > 0) {
+      const openOrders = window._bhPaymentOrders.filter(o => o.status === 'pendent' || o.status === 'exportiert');
+      
+      const foundOrder = openOrders.find(o => {
+        // 1. Match über explizite Auftragsnummer (EndToEndId, z.B. ZA-2026-001)
+        if (o.order_nr) {
+          const cleanOrder = String(o.order_nr).toLowerCase().replace(/[^a-z0-9]/g, '');
+          const allText = `${tx.remittanceInfo || ''} ${tx.ustrd || ''} ${tx.creditorReference || ''}`.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (cleanOrder.length >= 4 && allText.includes(cleanOrder)) return true;
+        }
+
+        // 2. Match über Betrag + Empfänger (Name oder IBAN)
+        const amtDiff = Math.abs(Number(o.betrag || 0) - tx.amount);
+        if (amtDiff < 0.05) {
+          // IBAN-Match
+          if (o.recipient_iban && tx.accountIban) {
+            const cleanIban = String(o.recipient_iban).replace(/\s+/g, '').toUpperCase();
+            const txPartyIban = String(tx.partyIban || '').replace(/\s+/g, '').toUpperCase();
+            if (cleanIban && txPartyIban && cleanIban === txPartyIban) return true;
+          }
+
+          // Name-Match
+          if (o.recipient_name && cleanParty) {
+            const oName = String(o.recipient_name).toLowerCase().trim();
+            if (cleanParty.includes(oName) || oName.includes(cleanParty)) return true;
+            const parts = oName.split(/\s+/).filter(p => p.length >= 3);
+            if (parts.length >= 2 && parts.every(p => cleanParty.includes(p))) return true;
+          }
+        }
+        return false;
+      });
+
+      if (foundOrder) {
+        matchedPaymentOrder = foundOrder;
+        matchType = 'payment_order';
+        matchScore = 3;
+        matchLabel = `Zahlungsauftrag ${foundOrder.order_nr} (${foundOrder.recipient_name})`;
+        if (!tx._customSollEdited) suggestedSoll = foundOrder.konto_soll;
+        if (!tx._customHabenEdited) suggestedHaben = foundOrder.konto_haben || txBankKonto;
+
+        if (Array.isArray(foundOrder.positions) && foundOrder.positions.length > 1 && !tx._customSplitEdited) {
+          tx.isSplit = true;
+          tx.splitRows = foundOrder.positions.map(p => ({
+            beschreibung: p.text || foundOrder.beschreibung,
+            kontoSoll: p.soll,
+            kontoHaben: p.haben || txBankKonto,
+            betrag: p.betrag
+          }));
+        }
+      }
+    }
+
     // 3. STUFE: Historisches Journal-Learning
     // WICHTIGE SICHERHEIT: Ausgang (Belastung) gleicht NUR mit früheren Ausgängen ab!
     // 3. STUFE: Historie-Matching (Journal der letzten 12 Monate)
@@ -2297,6 +2362,7 @@ function bhBankMatchAll(transactions) {
       matchedMember,
       matchedBeitrag,
       alreadyPaidJb,
+      matchedPaymentOrder: tx.matchedPaymentOrder || matchedPaymentOrder,
       matchType: (tx.alreadyBooked || alreadyBooked) ? 'journal' : matchType,
       matchRuleName,
       matchRulePrefix,
@@ -2542,6 +2608,9 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
     }
 
     beschreibung = `Wirtschaftseinnahme TWINT (RaiseNow${extractedDate ? ' vom ' + extractedDate : ''})`;
+  } else if (tx.matchType === 'payment_order' && tx.matchedPaymentOrder) {
+    const po = tx.matchedPaymentOrder;
+    beschreibung = `Auszahlung ${po.order_nr} (${po.recipient_name}): ${po.beschreibung}`;
   } else if (tx.isInvoice && tx.matchedInvoice) {
     const inv = tx.matchedInvoice;
     beschreibung = `Zahlungseingang Rechnung ${inv.id} (${inv.name})${inv.type ? ' - ' + inv.type : ''}`;
@@ -2641,6 +2710,7 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
     bookBtn,
     matchedInvoice: tx.matchedInvoice,
     matchedBeitrag: resolvedBeitrag,
+    matchedPaymentOrder: tx.matchedPaymentOrder,
     isJahresbeitrag: isJbMatched
   };
 };
@@ -2860,6 +2930,32 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
         if (cachedJb) { cachedJb.status = 'bezahlt'; cachedJb.payment_date = bookingDate; }
       } catch (jbErr) {
         console.warn('⚠️ Hinweis: Journal gebucht, Beitragsstatus konnte nicht aktualisiert werden:', jbErr);
+      }
+    }
+
+    // 2.3 Falls Zahlungsauftrag gematcht: auf 'ausgefuehrt' setzen und mit journal_id verknüpfen
+    if (prepared.matchedPaymentOrder && prepared.matchedPaymentOrder.id && sb) {
+      try {
+        const jId = createdEntries[0]?.id ? Number(createdEntries[0].id) : null;
+        await sb.from('accounting_payment_orders').update({
+          status: 'ausgefuehrt',
+          journal_id: jId,
+          executed_at: new Date().toISOString()
+        }).eq('id', prepared.matchedPaymentOrder.id);
+
+        prepared.matchedPaymentOrder.status = 'ausgefuehrt';
+        prepared.matchedPaymentOrder.journal_id = jId;
+        prepared.matchedPaymentOrder.executed_at = new Date().toISOString();
+
+        const cachedPo = (window._bhPaymentOrders || []).find(o => String(o.id) === String(prepared.matchedPaymentOrder.id));
+        if (cachedPo) {
+          cachedPo.status = 'ausgefuehrt';
+          cachedPo.journal_id = jId;
+          cachedPo.executed_at = new Date().toISOString();
+        }
+        console.log(`✅ [Zahlungsauftrag] ${prepared.matchedPaymentOrder.order_nr} auf 'ausgefuehrt' gesetzt (Journal-ID: ${jId})`);
+      } catch (poErr) {
+        console.warn('⚠️ Fehler beim Aktualisieren des Zahlungsauftrag-Status:', poErr);
       }
     }
 
