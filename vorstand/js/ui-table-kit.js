@@ -130,7 +130,11 @@
         position: relative !important;
         overflow: visible !important;
         white-space: normal !important;
+        overflow-wrap: anywhere !important;
+        word-break: break-word !important;
+        hyphens: auto !important;
         vertical-align: bottom !important;
+        line-height: 1.25 !important;
       }
       .tk-col-resizer {
         position: absolute;
@@ -192,10 +196,28 @@
       }
       table.tk-table-resizable td {
         overflow: hidden;
+        text-overflow: ellipsis;
+        overflow-wrap: anywhere;
+        word-break: break-word;
       }
-      table.tk-table-resizable td input.form-control,
-      table.tk-table-resizable td select.form-select {
+      table.tk-table-resizable td input,
+      table.tk-table-resizable td select,
+      table.tk-table-resizable td .form-control,
+      table.tk-table-resizable td .form-select {
         min-width: 0 !important;
+        max-width: 100% !important;
+      }
+      table.tk-table-resizable td .text-truncate {
+        min-width: 0 !important;
+        max-width: 100% !important;
+      }
+      table.tk-table-resizable td .d-flex > *:not(.flex-shrink-0) {
+        min-width: 0 !important;
+      }
+      table.tk-table-resizable td .badge {
+        max-width: 100% !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
       }
     `;
     document.head.appendChild(style);
@@ -800,14 +822,22 @@
   // =========================================================
   // 6. SPALTENBREITEN ANPASSEN (TableKit.makeResizable)
   // =========================================================
+  let _tkResizeTableSeq = 0;
+
   function makeResizable(tableOrSelector, options = {}) {
     ensureStyles();
     const table = typeof tableOrSelector === 'string' ? document.querySelector(tableOrSelector) : tableOrSelector;
     if (!table) return;
 
+    table.classList.add('tk-table-resizable');
+
     const storageKey = options.storageKey || (table.id ? `tk_col_widths_${table.id}` : null);
     const minColWidth = options.minWidth || 45;
     const columnsConfig = options.columns || {};
+
+    const tableResizeId = table.dataset.tkResizeId || table.id || storageKey || `tk_tbl_${++_tkResizeTableSeq}`;
+    table.dataset.tkResizeId = tableResizeId;
+    const styleElId = `tk-col-widths-style-${String(tableResizeId).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 
     // 1. Gespeicherte Breiten laden
     let savedWidths = {};
@@ -821,17 +851,83 @@
     const ths = Array.from(table.querySelectorAll('thead th'));
     if (!ths.length) return;
 
+    const activeWidths = {};
+
+    function getColId(th, idx) {
+      const id = th.dataset.colId || th.dataset.col || th.getAttribute('data-col') || `col_${idx}`;
+      if (!th.dataset.colId) th.dataset.colId = id;
+      return id;
+    }
+
+    // Stellt sicher, dass auch Tabellen ohne explizites data-col-id auf <td> sauber zugeordnet werden
+    function stampBodyCells() {
+      const currentThs = Array.from(table.querySelectorAll('thead tr:first-child th'));
+      if (!currentThs.length) return;
+      const colIds = currentThs.map((th, idx) => getColId(th, idx));
+      const rows = table.querySelectorAll('tbody tr');
+      rows.forEach(tr => {
+        const cells = tr.children;
+        if (cells.length === colIds.length) {
+          for (let i = 0; i < cells.length; i++) {
+            if (!cells[i].dataset.colId && !cells[i].hasAttribute('colspan')) {
+              cells[i].dataset.colId = colIds[i];
+            }
+          }
+        }
+      });
+    }
+
+    function syncColStyleSheet() {
+      let styleEl = document.getElementById(styleElId);
+      const entries = Object.entries(activeWidths).filter(([, w]) => w && !isNaN(w) && w > 20);
+      if (!entries.length) {
+        if (styleEl) styleEl.textContent = '';
+        return;
+      }
+      if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = styleElId;
+        document.head.appendChild(styleEl);
+      }
+      const escAttr = (s) => String(s).replace(/["\\]/g, '\\$&');
+      const tblSel = `table[data-tk-resize-id="${escAttr(tableResizeId)}"]`;
+      styleEl.textContent = entries.map(([colId, w]) => {
+        const cId = escAttr(colId);
+        return `${tblSel} th[data-col-id="${cId}"], ${tblSel} td[data-col-id="${cId}"], ${tblSel} .tk-col-${cId} { width: ${w}px !important; min-width: ${w}px !important; max-width: ${w}px !important; box-sizing: border-box !important; }`;
+      }).join('\n');
+    }
+
+    function applyColWidth(th, colId, widthPx, skipSheetSync = false) {
+      if (widthPx && !isNaN(widthPx) && widthPx > 20) {
+        const w = Math.round(Number(widthPx));
+        activeWidths[colId] = w;
+        if (th) {
+          th.style.width = w + 'px';
+          th.style.minWidth = w + 'px';
+          th.style.maxWidth = w + 'px';
+        }
+      } else {
+        delete activeWidths[colId];
+        if (th) {
+          th.style.width = '';
+          th.style.minWidth = '';
+          th.style.maxWidth = '';
+        }
+      }
+      if (!skipSheetSync) {
+        syncColStyleSheet();
+      }
+    }
+
     function saveAllWidths() {
       if (!storageKey) return;
       try {
         const toSave = {};
         ths.forEach((th, idx) => {
-          const colId = th.dataset.colId || th.dataset.col || th.getAttribute('data-col') || `col_${idx}`;
-          if (th.style.width && th.style.width !== 'auto') {
-            const val = parseInt(th.style.width, 10);
-            if (!isNaN(val) && val > 20) {
-              toSave[colId] = val;
-            }
+          const colId = getColId(th, idx);
+          const val = activeWidths[colId] || (th.style.width && th.style.width !== 'auto' ? parseInt(th.style.width, 10) : NaN);
+          if (!isNaN(val) && val > 20) {
+            toSave[colId] = val;
           }
         });
         localStorage.setItem(storageKey, JSON.stringify(toSave));
@@ -840,18 +936,17 @@
       }
     }
 
+    stampBodyCells();
+
     ths.forEach((th, idx) => {
-      const colId = th.dataset.colId || th.dataset.col || th.getAttribute('data-col') || `col_${idx}`;
+      const colId = getColId(th, idx);
       const colConf = columnsConfig[colId] || {};
 
-      // Gespeicherte Breite anwenden
+      // Gespeicherte Breite oder Default-Breite anwenden
       if (savedWidths[colId]) {
-        const sw = savedWidths[colId];
-        th.style.width = sw + 'px';
-        th.style.minWidth = sw + 'px';
+        applyColWidth(th, colId, savedWidths[colId], true);
       } else if (colConf.defaultWidth) {
-        th.style.width = colConf.defaultWidth + 'px';
-        th.style.minWidth = colConf.defaultWidth + 'px';
+        applyColWidth(th, colId, colConf.defaultWidth, true);
       }
 
       if (colConf.resizable === false) return;
@@ -880,11 +975,9 @@
           e.stopPropagation();
           e.preventDefault();
           if (colConf.defaultWidth) {
-            th.style.width = colConf.defaultWidth + 'px';
-            th.style.minWidth = colConf.defaultWidth + 'px';
+            applyColWidth(th, colId, colConf.defaultWidth);
           } else {
-            th.style.width = '';
-            th.style.minWidth = '';
+            applyColWidth(th, colId, null);
           }
           if (storageKey) {
             try {
@@ -906,6 +999,8 @@
           e.stopPropagation();
           e.preventDefault();
 
+          stampBodyCells();
+
           const startX = e.pageX || (e.touches && e.touches[0] ? e.touches[0].pageX : 0);
           const startWidth = th.getBoundingClientRect().width;
           const currentMinWidth = colConf.minWidth || minColWidth;
@@ -918,8 +1013,7 @@
             const currentX = ev.pageX || (ev.touches && ev.touches[0] ? ev.touches[0].pageX : 0);
             const diff = currentX - startX;
             const newWidth = Math.max(currentMinWidth, Math.round(startWidth + diff));
-            th.style.width = newWidth + 'px';
-            th.style.minWidth = newWidth + 'px';
+            applyColWidth(th, colId, newWidth);
           };
 
           const onPointerUp = () => {
@@ -934,7 +1028,7 @@
             saveAllWidths();
 
             if (typeof options.onResize === 'function') {
-              const finalWidth = parseInt(th.style.width, 10);
+              const finalWidth = activeWidths[colId] || parseInt(th.style.width, 10);
               options.onResize(colId, finalWidth);
             }
           };
@@ -952,48 +1046,46 @@
       }
     });
 
+    syncColStyleSheet();
+
     return {
       apply: () => {
+        stampBodyCells();
         if (storageKey) {
           try {
             const raw = localStorage.getItem(storageKey);
             if (raw) {
               const map = JSON.parse(raw);
               ths.forEach((th, idx) => {
-                const colId = th.dataset.colId || th.dataset.col || th.getAttribute('data-col') || `col_${idx}`;
+                const colId = getColId(th, idx);
                 if (map[colId]) {
-                  th.style.width = map[colId] + 'px';
-                  th.style.minWidth = map[colId] + 'px';
+                  applyColWidth(th, colId, map[colId], true);
                 }
               });
             }
           } catch (_) {}
         }
+        syncColStyleSheet();
       },
       reset: () => {
         if (storageKey) {
           try { localStorage.removeItem(storageKey); } catch (_) {}
         }
         ths.forEach((th, idx) => {
-          const colId = th.dataset.colId || th.dataset.col || th.getAttribute('data-col') || `col_${idx}`;
+          const colId = getColId(th, idx);
           const colConf = columnsConfig[colId] || {};
           if (colConf.defaultWidth) {
-            th.style.width = colConf.defaultWidth + 'px';
-            th.style.minWidth = colConf.defaultWidth + 'px';
+            applyColWidth(th, colId, colConf.defaultWidth, true);
           } else {
-            th.style.width = '';
-            th.style.minWidth = '';
+            applyColWidth(th, colId, null, true);
           }
         });
+        syncColStyleSheet();
       },
       setWidth: (colId, width) => {
-        const targetTh = ths.find((th, idx) => {
-          const id = th.dataset.colId || th.dataset.col || th.getAttribute('data-col') || `col_${idx}`;
-          return id === colId;
-        });
+        const targetTh = ths.find((th, idx) => getColId(th, idx) === colId);
         if (targetTh) {
-          targetTh.style.width = width + 'px';
-          targetTh.style.minWidth = width + 'px';
+          applyColWidth(targetTh, colId, width);
           saveAllWidths();
         }
       }

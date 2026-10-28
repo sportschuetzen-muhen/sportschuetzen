@@ -881,7 +881,7 @@ function bhBankRenderResults(filter) {
       : '';
     const placeholderText = isEmpty ? '⚠️ Gegenkonto wählen...' : 'Ziffern/Name...';
 
-    return `<input type="text" id="${id}" list="bh-konten-datalist" class="form-control form-control-sm bh-konto-input ${isEmpty ? 'bh-konto-empty' : ''}" placeholder="${placeholderText}" value="${escHtml(displayVal)}" style="font-size:12px; width:100%; min-width:80px; ${highlightStyle}" autocomplete="off" oninput="window._bhUpdateTxKonto(${realIdx}, '${type}', this.value)" onchange="window._bhUpdateTxKonto(${realIdx}, '${type}', this.value)" title="${escHtml(displayVal || 'Kein Gegenkonto zugeordnet (kann leer gebucht oder manuell gewählt werden)')}">`;
+    return `<input type="text" id="${id}" list="bh-konten-datalist" class="form-control form-control-sm bh-konto-input ${isEmpty ? 'bh-konto-empty' : ''}" placeholder="${placeholderText}" value="${escHtml(displayVal)}" style="font-size:12px; width:100%; min-width:0; ${highlightStyle}" autocomplete="off" oninput="window._bhUpdateTxKonto(${realIdx}, '${type}', this.value)" onchange="window._bhUpdateTxKonto(${realIdx}, '${type}', this.value)" title="${escHtml(displayVal || 'Kein Gegenkonto zugeordnet (kann leer gebucht oder manuell gewählt werden)')}">`;
   }
 
   const realIdxMap = filtered.map(r => rows.indexOf(r));
@@ -951,8 +951,8 @@ function bhBankRenderResults(filter) {
       matchInfo = matchContent;
     } else {
       matchInfo = `
-        <div class="d-flex align-items-center justify-content-between gap-1">
-          <div class="text-truncate">${matchContent}</div>
+        <div class="d-flex align-items-center justify-content-between gap-1" style="min-width: 0;">
+          <div class="text-truncate" style="min-width: 0; flex: 1 1 auto;">${matchContent}</div>
           <div class="dropdown flex-shrink-0">
             <button class="btn btn-xs btn-outline-secondary py-0 px-1 dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-boundary="viewport" aria-expanded="false" title="Status & Zuordnung ändern">
               <i class="fas fa-pen small"></i>
@@ -1048,7 +1048,7 @@ function bhBankRenderResults(filter) {
         <td data-col-id="amount" class="text-end fw-bold ${amountClass} tk-col-amount" style="white-space:nowrap;">
           ${amountSign} CHF ${Number(r.amount || 0).toFixed(2)}
         </td>
-        <td data-col-id="remittance" class="tk-col-remittance" style="min-width: 110px;">
+        <td data-col-id="remittance" class="tk-col-remittance">
           ${(r.alreadyBooked || r.isWrongYear) ? `
             <div class="small text-muted" style="white-space: normal; word-break: break-word;" title="${escHtml(r.remittanceInfo || '–')}">
               ${escHtml(r.remittanceInfo || '–')}
@@ -1058,7 +1058,7 @@ function bhBankRenderResults(filter) {
               value="${escHtml(r.remittanceInfo || '')}"
               placeholder="Verwendungszweck / Buchungstext..."
               title="${escHtml(r.remittanceInfo || 'Klicken zum Anpassen')}"
-              style="font-size: 12px; width: 100%; min-width: 90px;"
+              style="font-size: 12px; width: 100%; min-width: 0;"
               oninput="window._bhUpdateTxRemittance(${realI}, this.value)">
             <div id="bh-rmt-orig-${realI}" class="text-muted mt-1 ${r._customRemittanceEdited && r._originalRemittanceInfo && r.remittanceInfo.trim() !== r._originalRemittanceInfo.trim() ? '' : 'd-none'}"
                  style="font-size: 10px; line-height: 1.25; white-space: normal; word-break: break-word;"
@@ -1069,18 +1069,18 @@ function bhBankRenderResults(filter) {
         </td>
         <td data-col-id="status" class="tk-col-status">${statusBadge}</td>
         <td data-col-id="type" class="tk-col-type">${matchInfo}</td>
-        <td data-col-id="soll" class="tk-col-soll" style="min-width: 85px;">
+        <td data-col-id="soll" class="tk-col-soll">
           ${(r.isSplit && !isCredit && Array.isArray(r.splitRows) && r.splitRows.length > 0 && !r.alreadyBooked && !r.isWrongYear) ? `
-            <div class="badge bg-primary-subtle text-primary border border-primary-subtle p-1.5 w-100 text-start" style="font-size:11px; cursor:pointer;" onclick="bhBankOpenSplitModal(${realI})" title="Split-Positionen (Soll): Klicken zum Ansehen/Bearbeiten">
-              <div class="fw-bold"><i class="fas fa-layer-group me-1"></i>Split (${r.splitRows.length} Soll)</div>
+            <div class="badge bg-primary-subtle text-primary border border-primary-subtle p-1.5 w-100 text-start d-block" style="font-size:11px; cursor:pointer; max-width:100%; overflow:hidden;" onclick="bhBankOpenSplitModal(${realI})" title="Split-Positionen (Soll): Klicken zum Ansehen/Bearbeiten">
+              <div class="fw-bold text-truncate"><i class="fas fa-layer-group me-1"></i>Split (${r.splitRows.length} Soll)</div>
               <div class="text-muted text-truncate font-monospace" style="font-size:9.5px;">${r.splitRows.map(s => `${s.kontoSoll || '?'}: ${Number(s.betrag).toFixed(2)}`).join(' · ')}</div>
             </div>
           ` : makeKontoSelectHTML(sollSelectId, r.suggestedSoll, 'soll', r.alreadyBooked || r.isWrongYear)}
         </td>
-        <td data-col-id="haben" class="tk-col-haben" style="min-width: 85px;">
+        <td data-col-id="haben" class="tk-col-haben">
           ${(r.isSplit && isCredit && Array.isArray(r.splitRows) && r.splitRows.length > 0 && !r.alreadyBooked && !r.isWrongYear) ? `
-            <div class="badge bg-primary-subtle text-primary border border-primary-subtle p-1.5 w-100 text-start" style="font-size:11px; cursor:pointer;" onclick="bhBankOpenSplitModal(${realI})" title="Split-Positionen (Haben): Klicken zum Ansehen/Bearbeiten">
-              <div class="fw-bold"><i class="fas fa-layer-group me-1"></i>Split (${r.splitRows.length} Haben)</div>
+            <div class="badge bg-primary-subtle text-primary border border-primary-subtle p-1.5 w-100 text-start d-block" style="font-size:11px; cursor:pointer; max-width:100%; overflow:hidden;" onclick="bhBankOpenSplitModal(${realI})" title="Split-Positionen (Haben): Klicken zum Ansehen/Bearbeiten">
+              <div class="fw-bold text-truncate"><i class="fas fa-layer-group me-1"></i>Split (${r.splitRows.length} Haben)</div>
               <div class="text-muted text-truncate font-monospace" style="font-size:9.5px;">${r.splitRows.map(s => `${s.kontoHaben || '?'}: ${Number(s.betrag).toFixed(2)}`).join(' · ')}</div>
             </div>
           ` : makeKontoSelectHTML(habenSelectId, r.suggestedHaben, 'haben', r.alreadyBooked || r.isWrongYear)}
@@ -1182,14 +1182,14 @@ function bhBankRenderResults(filter) {
         resizable: {
           minWidth: 45,
           columns: {
-            date: { minWidth: 70, defaultWidth: 95 },
-            party: { minWidth: 90, defaultWidth: 160 },
-            amount: { minWidth: 75, defaultWidth: 110 },
-            remittance: { minWidth: 95, defaultWidth: 220 },
-            status: { minWidth: 65, defaultWidth: 90 },
-            type: { minWidth: 80, defaultWidth: 130 },
-            soll: { minWidth: 80, defaultWidth: 130 },
-            haben: { minWidth: 80, defaultWidth: 130 },
+            date: { minWidth: 50, defaultWidth: 95 },
+            party: { minWidth: 50, defaultWidth: 160 },
+            amount: { minWidth: 55, defaultWidth: 110 },
+            remittance: { minWidth: 50, defaultWidth: 220 },
+            status: { minWidth: 45, defaultWidth: 90 },
+            type: { minWidth: 50, defaultWidth: 130 },
+            soll: { minWidth: 50, defaultWidth: 130 },
+            haben: { minWidth: 50, defaultWidth: 130 },
             actions: { minWidth: 135, defaultWidth: 155, resizable: false }
           }
         },
