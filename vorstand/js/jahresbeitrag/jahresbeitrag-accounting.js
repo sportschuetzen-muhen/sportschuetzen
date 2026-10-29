@@ -133,6 +133,8 @@ window.jbResolveAccountForPosition = function(sourceField, description, customSe
 window.jbGetSplitBookings = function(options) {
   options = options || {};
   const year = Number(options.year || window._bhYear || window._jbYear || new Date().getFullYear());
+  const headerYearMatch = options.headerId ? String(options.headerId).match(/\b(20\d{2})\b/) : null;
+  const beitragYear = Number(options.beitragYear || (headerYearMatch ? headerYearMatch[1] : year));
   const bookingDate = options.bookingDate || new Date().toISOString().split('T')[0];
   const bankAccount = String(options.bankAccount || '1020').trim();
   const belegNr = String(options.belegNr || '').trim() || `JB-${year}`;
@@ -146,7 +148,7 @@ window.jbGetSplitBookings = function(options) {
   }
   if ((!rawPositions || rawPositions.length === 0) && member.PersonNumber && window._jbAllPositions) {
     rawPositions = (window._jbAllPositions || []).filter(p => 
-      String(p.PersonNumber) === String(member.PersonNumber) && Number(p.year) === year
+      String(p.PersonNumber) === String(member.PersonNumber) && Number(p.year) === beitragYear
     );
   }
   if ((!rawPositions || rawPositions.length === 0) && options.headerId && window._invoices) {
@@ -166,7 +168,7 @@ window.jbGetSplitBookings = function(options) {
       jahr: year,
       datum: bookingDate,
       beleg_nr: belegNr,
-      beschreibung: `Jahresbeitrag ${year}: ${memberName}`,
+      beschreibung: `Jahresbeitrag ${beitragYear}: ${memberName}`,
       konto_soll: bankAccount,
       konto_haben: fallbackHaben,
       betrag: Math.round(fallbackAmount * 100) / 100,
@@ -188,7 +190,8 @@ window.jbGetSplitBookings = function(options) {
 
     const desc = p.beschreibung || p.description || p.name || 'Jahresbeitrag Position';
     const source = p.sourcefield || p.source_field || '';
-    const targetKonto = window.jbResolveAccountForPosition(source, desc);
+    const explicitKonto = String(p.konto || p.konto_haben || '').split('|')[0].trim();
+    const targetKonto = explicitKonto || window.jbResolveAccountForPosition(source, desc);
 
     if (amt > 0) {
       // Normaler Debit-Posten: Geld geht auf die Bank ein
@@ -196,7 +199,7 @@ window.jbGetSplitBookings = function(options) {
         jahr: year,
         datum: bookingDate,
         beleg_nr: belegNr,
-        beschreibung: `Jahresbeitrag ${year}: ${memberName} (${desc})`,
+        beschreibung: `Jahresbeitrag ${beitragYear}: ${memberName} (${desc})`,
         konto_soll: bankAccount,
         konto_haben: targetKonto,
         betrag: Math.round(amt * 100) / 100,
@@ -231,7 +234,7 @@ window.jbGetSplitBookings = function(options) {
         jahr: year,
         datum: bookingDate,
         beleg_nr: belegNr,
-        beschreibung: `Spende / Aufrundung Jahresbeitrag: ${memberName}`,
+        beschreibung: `Spende / Aufrundung Jahresbeitrag ${beitragYear}: ${memberName}`,
         konto_soll: bankAccount,
         konto_haben: '3800', // Sponsoring, Gönner & Spenden
         betrag: diff,

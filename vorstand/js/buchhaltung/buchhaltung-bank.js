@@ -164,16 +164,13 @@ window.renderTabBankabgleich = function(container) {
     }).catch(() => {});
   }
 
-  if ((!window._jbAllBeitraege || window._jbAllBeitraege.length === 0) && typeof window.loadJahresbeitragData === 'function') {
+  if ((!window._jbAllBeitraege || window._jbAllBeitraege.length === 0 || !window._jbAllPositions || window._jbAllPositions.length === 0 || !window._jbGebuehren || window._jbGebuehren.length === 0) && typeof window.loadJahresbeitragData === 'function') {
     window.loadJahresbeitragData(true, false).then(() => {
       if (window._bhBankTransactions && window._bhBankTransactions.length > 0) {
         window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);
         bhBankRenderResults(window._bhBankActiveFilter);
       }
     }).catch(() => {});
-  }
-  if ((!window._jbGebuehren || window._jbGebuehren.length === 0 || !window._jbAllPositions || window._jbAllPositions.length === 0) && typeof window.loadJahresbeitragData === 'function') {
-    window.loadJahresbeitragData(false, false).catch(() => {});
   }
 
   const hasResults = window._bhBankMatchResults && window._bhBankMatchResults.length > 0;
@@ -1072,36 +1069,28 @@ function bhBankRenderResults(filter) {
         <td data-col-id="soll" class="tk-col-soll">
           ${(r.isSplit && !isCredit && Array.isArray(r.splitRows) && r.splitRows.length > 0 && !r.alreadyBooked && !r.isWrongYear) ? `
             <div class="badge bg-primary-subtle text-primary border border-primary-subtle p-1.5 w-100 text-start d-block" style="font-size:11px; cursor:pointer; max-width:100%; overflow:hidden;" onclick="bhBankOpenSplitModal(${realI})" title="Split-Positionen (Soll): Klicken zum Ansehen/Bearbeiten">
-              <div class="fw-bold text-truncate"><i class="fas fa-layer-group me-1"></i>Split (${r.splitRows.length} Soll)</div>
-              <div class="text-muted text-truncate font-monospace" style="font-size:9.5px;">${r.splitRows.map(s => `${s.kontoSoll || '?'}: ${Number(s.betrag).toFixed(2)}`).join(' · ')}</div>
+              <div class="fw-bold text-truncate"><i class="fas fa-layer-group me-1"></i>Split (${r.splitRows.length} Posten)</div>
+              <div class="text-muted text-truncate font-monospace" style="font-size:9.5px;">${r.splitRows.map(s => {
+                const isAbzug = isBankKontoCode(s.kontoSoll) && !isBankKontoCode(s.kontoHaben);
+                const kCode = isAbzug ? (s.kontoHaben || '?') : (s.kontoSoll || '?');
+                const sign = isAbzug ? '-' : '';
+                return `${kCode}: ${sign}${Number(s.betrag).toFixed(2)}`;
+              }).join(' · ')}</div>
             </div>
           ` : makeKontoSelectHTML(sollSelectId, r.suggestedSoll, 'soll', r.alreadyBooked || r.isWrongYear)}
         </td>
         <td data-col-id="haben" class="tk-col-haben">
           ${(r.isSplit && isCredit && Array.isArray(r.splitRows) && r.splitRows.length > 0 && !r.alreadyBooked && !r.isWrongYear) ? `
             <div class="badge bg-primary-subtle text-primary border border-primary-subtle p-1.5 w-100 text-start d-block" style="font-size:11px; cursor:pointer; max-width:100%; overflow:hidden;" onclick="bhBankOpenSplitModal(${realI})" title="Split-Positionen (Haben): Klicken zum Ansehen/Bearbeiten">
-              <div class="fw-bold text-truncate"><i class="fas fa-layer-group me-1"></i>Split (${r.splitRows.length} Haben)</div>
-              <div class="text-muted text-truncate font-monospace" style="font-size:9.5px;">${r.splitRows.map(s => `${s.kontoHaben || '?'}: ${Number(s.betrag).toFixed(2)}`).join(' · ')}</div>
+              <div class="fw-bold text-truncate"><i class="fas fa-layer-group me-1"></i>Split (${r.splitRows.length} Posten)</div>
+              <div class="text-muted text-truncate font-monospace" style="font-size:9.5px;">${r.splitRows.map(s => {
+                const isAbzug = isBankKontoCode(s.kontoHaben) && !isBankKontoCode(s.kontoSoll);
+                const kCode = isAbzug ? (s.kontoSoll || '?') : (s.kontoHaben || '?');
+                const sign = isAbzug ? '-' : '';
+                return `${kCode}: ${sign}${Number(s.betrag).toFixed(2)}`;
+              }).join(' · ')}</div>
             </div>
           ` : makeKontoSelectHTML(habenSelectId, r.suggestedHaben, 'haben', r.alreadyBooked || r.isWrongYear)}
-          ${(() => {
-            if (!r.isSplit && (r.isJahresbeitrag || (r.isInvoice && String(r.matchedInvoice?.type || '').toLowerCase().includes('jahresbeitrag'))) && typeof window.jbGetSplitBookings === 'function') {
-              const hId = r.matchedBeitrag ? r.matchedBeitrag.id : (r.matchedInvoice ? r.matchedInvoice.id : null);
-              const mObj = r.matchedMember || (r.matchedInvoice ? { FirstName: r.matchedInvoice.name, LastName: '', PersonNumber: r.matchedInvoice.PersonNumber } : {});
-              const splits = window.jbGetSplitBookings({
-                headerId: hId,
-                member: mObj,
-                paidAmount: r.amount,
-                bankAccount: isBankKontoCode(r.suggestedSoll) ? r.suggestedSoll : '1020',
-                year: Number(window._bhYear || new Date().getFullYear())
-              });
-              if (splits && splits.length > 1) {
-                const summary = window.jbFormatSplitSummary(splits);
-                return `<div class="mt-1"><span class="badge bg-primary text-white border border-primary py-1 px-2" style="font-size:10px; cursor:help;" title="${escHtml(summary)}"><i class="fas fa-layer-group me-1"></i>Split (${splits.length} Posten)</span></div>`;
-              }
-            }
-            return '';
-          })()}
         </td>
         ${canEdit ? `<td data-col-id="actions" class="bh-col-sticky-action text-center tk-col-actions"><div class="d-flex align-items-center justify-content-center gap-1">${actionButtons}</div></td>` : ''}
       </tr>
@@ -1387,7 +1376,7 @@ window.bhBankHandleFiles = async function(files) {
       if (cached) window._bhKontenrahmen = JSON.parse(cached);
     } catch(_) {}
   }
-  if ((!window._jbAllBeitraege || window._jbAllBeitraege.length === 0) && typeof window.loadJahresbeitragData === 'function') {
+  if ((!window._jbAllBeitraege || window._jbAllBeitraege.length === 0 || !window._jbAllPositions || window._jbAllPositions.length === 0 || !window._jbGebuehren || window._jbGebuehren.length === 0) && typeof window.loadJahresbeitragData === 'function') {
     try {
       await window.loadJahresbeitragData(true, false);
     } catch(_) {}
@@ -1643,6 +1632,111 @@ function bhBankApplyInvoicePositionsToTx(tx, inv, positions) {
 window.bhBankApplyInvoicePositionsToTx = bhBankApplyInvoicePositionsToTx;
 
 // ---------------------------------------------------------------------
+// Ermittelt den passendsten Beitrags-Header für ein Mitglied (inkl. Vorjahres-Erkennung)
+// ---------------------------------------------------------------------
+function bhBankFindBestBeitragForMember(personNumber, txAmount, remittanceText, activeYear) {
+  if (!personNumber) return null;
+  const pn = String(personNumber).trim();
+  const allBeitraege = (window._jbAllBeitraege || []).filter(x => String(x.PersonNumber).trim() === pn);
+  if (allBeitraege.length === 0) return null;
+
+  const targetYear = Number(activeYear || window._bhYear || new Date().getFullYear());
+  const rmt = String(remittanceText || '');
+  const amt = Number(txAmount || 0);
+
+  // 1. Explizite Jahresangabe im Verwendungszweck (z. B. "Jahresbeitrag 2025")
+  const explicitJbMatch = rmt.match(/(?:jahresbeitrag|mitgliederbeitrag|vereinsbeitrag|beitrag|\bjb\b)\s*(20\d{2})/i) || rmt.match(/\b(20\d{2})\b/);
+  if (explicitJbMatch) {
+    const expYr = Number(explicitJbMatch[1]);
+    const expBeitrag = allBeitraege.find(b => Number(b.year) === expYr);
+    if (expBeitrag) return expBeitrag;
+  }
+
+  // 2. Exakter Betragstreffer bei offenem Beitrag (aktuelles Jahr hat bei Gleichstand Vorrang vor Vorjahr)
+  const currentYearBeitrag = allBeitraege.find(b => Number(b.year) === targetYear) || null;
+  if (currentYearBeitrag && Math.abs(Number(currentYearBeitrag.Gesamt || 0) - amt) < 0.05) {
+    return currentYearBeitrag;
+  }
+
+  const exactOpenOther = allBeitraege
+    .filter(b => b.status !== 'bezahlt' && Math.abs(Number(b.Gesamt || 0) - amt) < 0.05)
+    .sort((a, b) => Number(b.year || 0) - Number(a.year || 0));
+  if (exactOpenOther.length > 0) {
+    return exactOpenOther[0];
+  }
+
+  const exactAnyOther = allBeitraege
+    .filter(b => Math.abs(Number(b.Gesamt || 0) - amt) < 0.05)
+    .sort((a, b) => Number(b.year || 0) - Number(a.year || 0));
+  if (exactAnyOther.length > 0) {
+    return exactAnyOther[0];
+  }
+
+  // 3. Fallback: Aktuelles Buchungsjahr oder neuester vorhandener Eintrag
+  if (currentYearBeitrag) return currentYearBeitrag;
+  return [...allBeitraege].sort((a, b) => Number(b.year || 0) - Number(a.year || 0))[0];
+}
+window.bhBankFindBestBeitragForMember = bhBankFindBestBeitragForMember;
+
+// ---------------------------------------------------------------------
+// Überträgt die Jahresbeitrags-Positionen direkt in tx.splitRows / tx.isSplit
+// ---------------------------------------------------------------------
+function bhBankApplyJbPositionsToTx(tx) {
+  if (!tx || tx._customSplitEdited) return;
+  const isJb = Boolean(tx.isJahresbeitrag || (tx.matchedInvoice && String(tx.matchedInvoice.type || '').toLowerCase().includes('jahresbeitrag')));
+  if (!isJb || typeof window.jbGetSplitBookings !== 'function') return;
+
+  // Falls bereits über eine verknüpfte Rechnung Split-Positionen geladen wurden, diese behalten
+  if (tx.isSplit && Array.isArray(tx.splitRows) && tx.splitRows.length > 0) return;
+
+  const activeYear = Number(window._bhYear || new Date().getFullYear());
+  const txBankKonto = isBankKontoCode(tx.suggestedSoll) ? tx.suggestedSoll : bhBankGetAccountForIban(tx.accountIban, '1020');
+
+  if (!tx.matchedBeitrag && (tx.matchedMember?.PersonNumber || tx.matchedInvoice?.PersonNumber)) {
+    const pn = tx.matchedMember?.PersonNumber || tx.matchedInvoice?.PersonNumber;
+    tx.matchedBeitrag = bhBankFindBestBeitragForMember(pn, tx.amount, tx.remittanceInfo, activeYear);
+  }
+
+  const hId = tx.matchedBeitrag ? tx.matchedBeitrag.id : (tx.matchedInvoice ? tx.matchedInvoice.id : null);
+  const beitragYear = tx.matchedBeitrag && tx.matchedBeitrag.year
+    ? Number(tx.matchedBeitrag.year)
+    : (tx.matchedInvoice && tx.matchedInvoice.year ? Number(tx.matchedInvoice.year) : activeYear);
+  const mObj = tx.matchedMember || (tx.matchedInvoice ? { FirstName: tx.matchedInvoice.name, LastName: '', PersonNumber: tx.matchedInvoice.PersonNumber } : {});
+
+  const splits = window.jbGetSplitBookings({
+    headerId: hId,
+    member: mObj,
+    paidAmount: Number(tx.amount || 0),
+    bookingDate: tx.bookingDate || new Date().toISOString().split('T')[0],
+    bankAccount: txBankKonto,
+    year: activeYear,
+    beitragYear: beitragYear
+  });
+
+  if (!Array.isArray(splits) || splits.length === 0) return;
+
+  if (splits.length === 1) {
+    tx.isSplit = false;
+    tx.splitRows = null;
+    if (!tx._customSollEdited) tx.suggestedSoll = String(splits[0].konto_soll || txBankKonto).trim();
+    if (!tx._customHabenEdited) tx.suggestedHaben = String(splits[0].konto_haben || '3410').trim();
+    return;
+  }
+
+  tx.isSplit = true;
+  tx.splitRows = splits.map((s, idx) => ({
+    beschreibung: (s.beschreibung || `Jahresbeitrag ${beitragYear} (Position ${idx + 1})`).trim(),
+    betrag: Math.round(Math.abs(Number(s.betrag || 0)) * 100) / 100,
+    kontoSoll: bhBankCleanKonto(s.konto_soll) || String(s.konto_soll || '').trim(),
+    kontoHaben: bhBankCleanKonto(s.konto_haben) || String(s.konto_haben || '').trim(),
+    position_nr: idx + 1
+  }));
+  tx.suggestedSoll = txBankKonto;
+  tx.suggestedHaben = '';
+}
+window.bhBankApplyJbPositionsToTx = bhBankApplyJbPositionsToTx;
+
+// ---------------------------------------------------------------------
 // Matching Engine (Jahresbeiträge + Rules + Journal History + Duplikats-Schutz)
 // ---------------------------------------------------------------------
 function bhBankMatchAll(transactions) {
@@ -1883,7 +1977,8 @@ function bhBankMatchAll(transactions) {
             if (invType.includes('jahresbeitrag') || invIdUpper.startsWith('JB-') || invIdUpper.startsWith('RE-JB-')) {
               suggestedHaben = '3410'; // Mitgliederbeiträge Aktive
               isJahresbeitrag = true;
-              matchedBeitrag = beitraege.find(b => String(b.PersonNumber) === String(bestInv.PersonNumber) || String(b.id) === String(bestInv.id)) || null;
+              matchedBeitrag = bhBankFindBestBeitragForMember(bestInv.PersonNumber, tx.amount, cleanRemittance, Number(bestInv.year || window._bhYear || new Date().getFullYear()))
+                || beitraege.find(b => String(b.PersonNumber) === String(bestInv.PersonNumber) || String(b.id) === String(bestInv.id)) || null;
               matchedMember = members.find(m => String(m.PersonNumber) === String(bestInv.PersonNumber)) || null;
               alreadyPaidJb = alreadyPaidInvoice || (matchedBeitrag && matchedBeitrag.status === 'bezahlt');
             } else if (invType.includes('vermietung') || invType.includes('miete') || invIdUpper.startsWith('VT-') || invIdUpper.startsWith('V-')) {
@@ -1915,7 +2010,7 @@ function bhBankMatchAll(transactions) {
           let bestBeit = null;
 
           for (const m of members) {
-            const b = beitraege.find(x => String(x.PersonNumber) === String(m.PersonNumber)) || null;
+            const b = bhBankFindBestBeitragForMember(m.PersonNumber, tx.amount, cleanRemittance, Number(window._bhYear || new Date().getFullYear()));
             const mLast  = normalizeString(m.LastName  || '');
             const mFirst = normalizeString(m.FirstName || '');
             const mGesamt = b ? Number(b.Gesamt || 0) : (m._istPassiv ? 20 : 0);
@@ -1947,11 +2042,16 @@ function bhBankMatchAll(transactions) {
             matchType = 'jb';
             if (!tx._customSollEdited) suggestedSoll = txBankKonto; // Bank
             if (!tx._customHabenEdited) suggestedHaben = '3410'; // Mitgliederbeiträge Aktive
-            matchLabel = `Jahresbeitrag (${bestMem.FirstName} ${bestMem.LastName})`;
+            const jbYr = bestBeit && bestBeit.year ? bestBeit.year : Number(window._bhYear || new Date().getFullYear());
+            matchLabel = `Jahresbeitrag ${jbYr} (${bestMem.FirstName} ${bestMem.LastName})`;
 
             // Falls eine Rechnung im Rechnungsmodul für diesen Beitrag existiert:
             if (bestMem) {
-              const relInv = invoices.find(inv => String(inv.PersonNumber) === String(bestMem.PersonNumber) && String(inv.type || '').toLowerCase().includes('jahresbeitrag'));
+              const relInv = invoices.find(inv =>
+                String(inv.PersonNumber) === String(bestMem.PersonNumber) &&
+                String(inv.type || '').toLowerCase().includes('jahresbeitrag') &&
+                (!bestBeit || !bestBeit.year || !inv.year || Number(inv.year) === Number(bestBeit.year))
+              );
               if (relInv) {
                 matchedInvoice = relInv;
                 isInvoice = true;
@@ -2397,10 +2497,13 @@ function bhBankMatchAll(transactions) {
     };
   });
 
-  // Rechnungs-Positionen anwenden (Split oder spezifisches Gegenkonto)
+  // Rechnungs- und Jahresbeitrags-Positionen anwenden (Split oder spezifisches Gegenkonto)
   results.forEach(r => {
     if (r.matchedInvoice) {
       bhBankApplyInvoicePositionsToTx(r, r.matchedInvoice);
+    }
+    if (r.isJahresbeitrag || (r.matchedInvoice && String(r.matchedInvoice.type || '').toLowerCase().includes('jahresbeitrag'))) {
+      bhBankApplyJbPositionsToTx(r);
     }
   });
 
@@ -2664,12 +2767,15 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
   const belegNr = customBelegNr || bhGetNextBankBelegNr(year, txBankKonto);
   const bookingDate = tx.bookingDate || new Date().toISOString().split('T')[0];
 
-  // Vorab sicherstellen: Falls Rechnung gematcht und Positionen im Cache oder Objekt vorhanden sind
+  // Vorab sicherstellen: Falls Rechnung oder Jahresbeitrag gematcht und Positionen im Cache oder Objekt vorhanden sind
   if (tx.matchedInvoice && !tx._customSplitEdited && (!tx.splitRows || tx.splitRows.length === 0)) {
     const cachedPos = (window._invoicePositionsCache && window._invoicePositionsCache[String(tx.matchedInvoice.id).trim()]) || tx.matchedInvoice.positions;
     if (cachedPos && cachedPos.length > 0) {
       bhBankApplyInvoicePositionsToTx(tx, tx.matchedInvoice, cachedPos);
     }
+  }
+  if ((tx.isJahresbeitrag || (tx.matchedInvoice && String(tx.matchedInvoice.type || '').toLowerCase().includes('jahresbeitrag'))) && !tx._customSplitEdited && (!tx.splitRows || tx.splitRows.length === 0)) {
+    bhBankApplyJbPositionsToTx(tx);
   }
 
   let entries = [];
@@ -2693,6 +2799,9 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
     });
   } else if ((tx.isJahresbeitrag || (tx.matchedInvoice && String(tx.matchedInvoice.type || '').toLowerCase().includes('jahresbeitrag'))) && (!tx._customHabenEdited || tx.suggestedHaben === '3410') && typeof window.jbGetSplitBookings === 'function') {
     const hId = tx.matchedBeitrag ? tx.matchedBeitrag.id : (tx.matchedInvoice ? tx.matchedInvoice.id : null);
+    const beitragYear = tx.matchedBeitrag && tx.matchedBeitrag.year
+      ? Number(tx.matchedBeitrag.year)
+      : (tx.matchedInvoice && tx.matchedInvoice.year ? Number(tx.matchedInvoice.year) : year);
     const mObj = tx.matchedMember || (tx.matchedInvoice ? { FirstName: tx.matchedInvoice.name, LastName: '', PersonNumber: tx.matchedInvoice.PersonNumber } : {});
     const split = window.jbGetSplitBookings({
       headerId: hId,
@@ -2701,7 +2810,8 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
       bookingDate: bookingDate,
       belegNr: belegNr,
       bankAccount: txBankKonto,
-      year: year
+      year: year,
+      beitragYear: beitragYear
     });
     if (Array.isArray(split) && split.length > 0) {
       entries = split;
@@ -2941,7 +3051,7 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
     if (isJahresbeitrag && matchedBeitrag && matchedBeitrag.id) {
       try {
         if (sb) {
-          await sb.from('membership_fee_headers').update({
+          await sb.from('contributions_header').update({
             status: 'bezahlt',
             payment_date: bookingDate,
             payment_method: 'Überweisung',
@@ -3276,7 +3386,7 @@ window.bhBankBookAll = async function() {
           cachedJb.payment_date = bookingDate;
         }
         if (sb) {
-          secondaryTasks.push(sb.from('membership_fee_headers').update({
+          secondaryTasks.push(sb.from('contributions_header').update({
             status: 'bezahlt',
             payment_date: bookingDate,
             payment_method: 'Überweisung',
@@ -3587,7 +3697,7 @@ window.bhBankBookSelected = async function() {
           cachedJb.payment_date = bookingDate;
         }
         if (sb) {
-          secondaryTasks.push(sb.from('membership_fee_headers').update({
+          secondaryTasks.push(sb.from('contributions_header').update({
             status: 'bezahlt',
             payment_date: bookingDate,
             payment_method: 'Überweisung',
@@ -4172,6 +4282,18 @@ window.bhBankOpenSplitModal = async function(txIdx) {
       if (positions && positions.length > 0 && typeof window.bhBankApplyInvoicePositionsToTx === 'function') {
         window.bhBankApplyInvoicePositionsToTx(tx, tx.matchedInvoice, positions);
       }
+    }
+  }
+
+  // Falls Jahresbeitrag zugeordnet und noch kein Split in tx.splitRows hinterlegt: Beitragspositionen laden & anwenden
+  if ((tx.isJahresbeitrag || (tx.matchedInvoice && String(tx.matchedInvoice.type || '').toLowerCase().includes('jahresbeitrag'))) && (!tx.splitRows || tx.splitRows.length === 0) && !tx._customSplitEdited) {
+    if ((!window._jbAllPositions || window._jbAllPositions.length === 0) && typeof window.loadJahresbeitragData === 'function') {
+      try {
+        await window.loadJahresbeitragData(true, false);
+      } catch (_) {}
+    }
+    if (typeof window.bhBankApplyJbPositionsToTx === 'function') {
+      window.bhBankApplyJbPositionsToTx(tx);
     }
   }
 
@@ -4873,6 +4995,9 @@ window.bhBankRemoveJbAssignment = function(txIdx) {
   tx.isInvoice = false;
   tx.matchedInvoice = null;
   tx.alreadyPaidInvoice = false;
+  tx.isSplit = false;
+  delete tx.splitRows;
+  delete tx._customSplitEdited;
   tx.matchType = tx.alreadyBooked ? 'journal' : 'unknown';
   tx.matchLabel = 'Manuelle Buchung';
   tx.matchScore = 0;
@@ -4892,11 +5017,14 @@ window.bhBankRemoveJbAssignment = function(txIdx) {
       isInvoice: false,
       matchedInvoice: null,
       alreadyPaidInvoice: false,
+      isSplit: false,
+      splitRows: null,
       matchType: tx.matchType,
       matchLabel: 'Manuelle Buchung',
       matchScore: 0,
       suggestedHaben: tx.suggestedHaben
     });
+    delete window._bhBankTransactions[txIdx]._customSplitEdited;
   }
 
   const modalEl = document.getElementById('bhModalAssign');
@@ -4917,14 +5045,14 @@ window.bhBankApplyJbAssignment = function(txIdx, personNumber) {
   if (!tx) return;
 
   const members = window._jbMembers || [];
-  const beitraege = (window._jbAllBeitraege || []).filter(h => Number(h.year) === Number(window._bhYear || new Date().getFullYear()));
+  const activeYear = Number(window._bhYear || new Date().getFullYear());
   const mem = members.find(m => String(m.PersonNumber) === String(personNumber));
   if (!mem) {
     if (typeof showToast === 'function') showToast('Bitte ein Mitglied auswählen.', 'warning');
     return;
   }
 
-  const beitrag = beitraege.find(b => String(b.PersonNumber) === String(mem.PersonNumber)) || null;
+  const beitrag = bhBankFindBestBeitragForMember(mem.PersonNumber, tx.amount, tx.remittanceInfo, activeYear);
 
   tx._customMatchOverride = 'jahresbeitrag';
   tx.isJahresbeitrag = true;
@@ -4934,17 +5062,23 @@ window.bhBankApplyJbAssignment = function(txIdx, personNumber) {
   tx.isInvoice = false;
   tx.matchedInvoice = null;
   tx.alreadyPaidInvoice = false;
+  tx.isSplit = false;
+  tx.splitRows = null;
+  delete tx._customSplitEdited;
   if (tx.alreadyPaidJb) {
     tx.alreadyBooked = true;
     tx.bookedDate = tx.bookedDate || (beitrag ? formatSwissDate(beitrag.payment_date || tx.bookingDate) : '');
   }
+  const jbYr = beitrag && beitrag.year ? beitrag.year : activeYear;
   tx.matchType = tx.alreadyBooked ? 'journal' : 'jb';
-  tx.matchLabel = tx.alreadyBooked ? `Jahresbeitrag bezahlt (${mem.FirstName} ${mem.LastName})` : `Jahresbeitrag (${mem.FirstName} ${mem.LastName})`;
+  tx.matchLabel = tx.alreadyBooked ? `Jahresbeitrag ${jbYr} bezahlt (${mem.FirstName} ${mem.LastName})` : `Jahresbeitrag ${jbYr} (${mem.FirstName} ${mem.LastName})`;
   tx.matchScore = 2;
 
   const txBankKonto = tx.accountIban ? bhBankGetAccountForIban(tx.accountIban, '1020') : '1020';
   if (!tx._customSollEdited) tx.suggestedSoll = txBankKonto;
   if (!tx._customHabenEdited) tx.suggestedHaben = '3410';
+
+  bhBankApplyJbPositionsToTx(tx);
 
   if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
     Object.assign(window._bhBankTransactions[txIdx], {
@@ -4958,6 +5092,8 @@ window.bhBankApplyJbAssignment = function(txIdx, personNumber) {
       isInvoice: false,
       matchedInvoice: null,
       alreadyPaidInvoice: false,
+      isSplit: tx.isSplit,
+      splitRows: tx.splitRows ? JSON.parse(JSON.stringify(tx.splitRows)) : null,
       matchType: tx.matchType,
       matchLabel: tx.matchLabel,
       matchScore: 2,
@@ -4974,7 +5110,7 @@ window.bhBankApplyJbAssignment = function(txIdx, personNumber) {
 
   bhBankRenderResults(window._bhBankActiveFilter);
   if (typeof showToast === 'function') {
-    showToast(`✅ Transaktion als Jahresbeitrag von ${mem.FirstName} ${mem.LastName} zugeordnet.`, 'success');
+    showToast(`✅ Transaktion als Jahresbeitrag ${jbYr} von ${mem.FirstName} ${mem.LastName} zugeordnet.`, 'success');
   }
 };
 
@@ -4994,6 +5130,9 @@ window.bhBankApplyInvoiceAssignment = function(txIdx, invoiceId) {
   tx.isInvoice = true;
   tx.matchedInvoice = inv;
   tx.alreadyPaidInvoice = (inv.status === 'bezahlt');
+  tx.isSplit = false;
+  tx.splitRows = null;
+  delete tx._customSplitEdited;
 
   const invType = String(inv.type || '').toLowerCase();
   const invIdUpper = String(inv.id || '').toUpperCase();
@@ -5001,7 +5140,8 @@ window.bhBankApplyInvoiceAssignment = function(txIdx, invoiceId) {
     tx.isJahresbeitrag = true;
     const members = window._jbMembers || [];
     const beitraege = window._jbAllBeitraege || [];
-    tx.matchedBeitrag = beitraege.find(b => String(b.PersonNumber) === String(inv.PersonNumber) || String(b.id) === String(inv.id)) || null;
+    tx.matchedBeitrag = bhBankFindBestBeitragForMember(inv.PersonNumber, tx.amount, tx.remittanceInfo, Number(inv.year || window._bhYear || new Date().getFullYear()))
+      || beitraege.find(b => String(b.PersonNumber) === String(inv.PersonNumber) || String(b.id) === String(inv.id)) || null;
     tx.matchedMember = members.find(m => String(m.PersonNumber) === String(inv.PersonNumber)) || null;
     tx.alreadyPaidJb = tx.alreadyPaidInvoice || (tx.matchedBeitrag && tx.matchedBeitrag.status === 'bezahlt');
     if (!tx._customHabenEdited) tx.suggestedHaben = '3410';
@@ -5029,6 +5169,11 @@ window.bhBankApplyInvoiceAssignment = function(txIdx, invoiceId) {
   const txBankKonto = tx.accountIban ? bhBankGetAccountForIban(tx.accountIban, '1020') : '1020';
   if (!tx._customSollEdited) tx.suggestedSoll = txBankKonto;
 
+  bhBankApplyInvoicePositionsToTx(tx, inv);
+  if (tx.isJahresbeitrag) {
+    bhBankApplyJbPositionsToTx(tx);
+  }
+
   if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
     Object.assign(window._bhBankTransactions[txIdx], {
       _customMatchOverride: 'invoice',
@@ -5041,6 +5186,8 @@ window.bhBankApplyInvoiceAssignment = function(txIdx, invoiceId) {
       alreadyPaidJb: tx.alreadyPaidJb,
       alreadyBooked: tx.alreadyBooked,
       bookedDate: tx.bookedDate,
+      isSplit: tx.isSplit,
+      splitRows: tx.splitRows ? JSON.parse(JSON.stringify(tx.splitRows)) : null,
       matchType: tx.matchType,
       matchLabel: tx.matchLabel,
       matchScore: 2,
@@ -5067,7 +5214,7 @@ window.bhBankFilterAssignMemberList = function(txIdx) {
   if (!sel) return;
 
   const members = window._jbMembers || [];
-  const beitraege = (window._jbAllBeitraege || []).filter(h => Number(h.year) === Number(window._bhYear || new Date().getFullYear()));
+  const activeYear = Number(window._bhYear || new Date().getFullYear());
   const tx = (window._bhBankMatchResults || [])[txIdx];
   const currentMemPn = tx && tx.matchedMember ? String(tx.matchedMember.PersonNumber) : '';
 
@@ -5083,10 +5230,11 @@ window.bhBankFilterAssignMemberList = function(txIdx) {
   }
 
   sel.innerHTML = filteredMems.map(m => {
-    const b = beitraege.find(x => String(x.PersonNumber) === String(m.PersonNumber));
+    const b = bhBankFindBestBeitragForMember(m.PersonNumber, tx?.amount, tx?.remittanceInfo, activeYear);
     const amt = b ? Number(b.Gesamt || 0) : 0;
     const isSel = String(m.PersonNumber) === currentMemPn;
-    const bStatus = b ? (b.status === 'bezahlt' ? ' (bereits bezahlt)' : ` (Offen: CHF ${amt.toFixed(2)})`) : '';
+    const yrTag = b && b.year ? ` ${b.year}` : '';
+    const bStatus = b ? (b.status === 'bezahlt' ? ` (${yrTag} bereits bezahlt)` : ` (Offen${yrTag}: CHF ${amt.toFixed(2)})`) : '';
     return `<option value="${escHtml(m.PersonNumber)}" ${isSel ? 'selected' : ''}>${escHtml(m.LastName)} ${escHtml(m.FirstName)} [Nr. ${escHtml(m.PersonNumber)}]${bStatus}</option>`;
   }).join('');
 };

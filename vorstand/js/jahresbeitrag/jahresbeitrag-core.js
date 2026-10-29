@@ -428,7 +428,9 @@ async function loadJahresbeitragData(forceReload = false, showSpinner = true) {
 
     jbApplyTableSorting();
     jbApplySidebarSorting();
-    renderJahresbeitragView();
+    if (showSpinner && document.getElementById('jahresbeitrag-container')) {
+      renderJahresbeitragView();
+    }
     return;
   }
 
@@ -518,7 +520,9 @@ async function loadJahresbeitragData(forceReload = false, showSpinner = true) {
 
         jbApplyTableSorting();
         jbApplySidebarSorting();
-        renderJahresbeitragView();
+        if (showSpinner && document.getElementById('jahresbeitrag-container')) {
+          renderJahresbeitragView();
+        }
         return;
       }
       if (headRes.error) throw headRes.error;
