@@ -85,15 +85,11 @@ let archivAiConfig = {
 // 1. INITIALISIERUNG & NAVIGATION HOOK
 // ============================================================================
 document.addEventListener('DOMContentLoaded', () => {
-    const originalNavTo = window.navTo;
-    window.navTo = function (viewId, element) {
-        if (typeof originalNavTo === 'function') {
-            originalNavTo(viewId, element);
-        }
-        if (viewId === 'archiv') {
-            initArchiv();
-        }
-    };
+    // Falls das Archiv bereits als aktive View geladen ist, initialisieren
+    const activeView = document.querySelector('.module-view.active');
+    if (activeView && activeView.id === 'view-archiv') {
+        initArchiv();
+    }
 });
 
 function canManageArchiv() {
@@ -132,7 +128,10 @@ async function initArchiv() {
     }
 
     loadArchivAiConfig();
-    if (!archivState.loaded && !archivState.loading) {
+    if (archivState.loading) {
+        return; // Ladevorgang läuft bereits, Doppelaufruf ignorieren
+    }
+    if (!archivState.loaded) {
         await loadAllArchivDocuments();
     } else {
         updateArchivKpisAndBadges();
@@ -801,70 +800,82 @@ function renderArchivExplorer() {
         return;
     }
 
-    tbody.innerHTML = pageItems.map(doc => {
-        const catCfg = ARCHIV_CATEGORIES[doc.category] || { label: doc.category, icon: 'fa-folder', color: 'secondary' };
-        const subLabel = ARCHIV_SUBCATEGORIES[doc.subcategory] || doc.subcategory || '';
-        const hasFulltext = doc.transcription_status === 'completed' || (doc.content_text && doc.content_text.length > 20);
-        const dateFormatted = doc.document_date && !doc.document_date.endsWith('-01-01')
-            ? (window.UIFormatKit ? UIFormatKit.formatDate(doc.document_date) : doc.document_date)
-            : '';
-        const sizeLabel = doc.file_size_kb ? `${doc.file_size_kb.toLocaleString('de-CH')} KB` : '';
-        const snippetHtml = archivState.searchQuery ? buildSearchSnippet(doc.content_text, archivState.searchQuery) : '';
-        const cacheBustedUrl = doc.file_url ? `${doc.file_url}${doc.file_url.includes('?') ? '&' : '?'}t=${Date.now()}` : '#';
+    try {
+        tbody.innerHTML = pageItems.map(doc => {
+            const catCfg = ARCHIV_CATEGORIES[doc.category] || { label: doc.category, icon: 'fa-folder', color: 'secondary' };
+            const subLabel = ARCHIV_SUBCATEGORIES[doc.subcategory] || doc.subcategory || '';
+            const hasFulltext = doc.transcription_status === 'completed' || (doc.content_text && doc.content_text.length > 20);
+            const dateStr = doc.document_date ? String(doc.document_date) : '';
+            const dateFormatted = dateStr && !dateStr.endsWith('-01-01')
+                ? (window.UIFormatKit?.formatDate ? window.UIFormatKit.formatDate(dateStr) : (window.UIFormatKit?.date ? window.UIFormatKit.date(dateStr) : dateStr))
+                : '';
+            const sizeLabel = doc.file_size_kb ? `${Number(doc.file_size_kb).toLocaleString('de-CH')} KB` : '';
+            const snippetHtml = archivState.searchQuery ? buildSearchSnippet(doc.content_text, archivState.searchQuery) : '';
+            const cacheBustedUrl = doc.file_url ? `${doc.file_url}${doc.file_url.includes('?') ? '&' : '?'}t=${Date.now()}` : '#';
 
-        const visBadge = doc.visibility === 'vorstand'
-            ? `<span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill" style="font-size: 0.7rem;"><i class="fas fa-lock me-1"></i>Vorstand</span>`
-            : doc.visibility === 'public'
-                ? `<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill" style="font-size: 0.7rem;"><i class="fas fa-globe me-1"></i>Öffentlich</span>`
-                : `<span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill" style="font-size: 0.7rem;"><i class="fas fa-users me-1"></i>Mitglieder</span>`;
+            const visBadge = doc.visibility === 'vorstand'
+                ? `<span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill" style="font-size: 0.7rem;"><i class="fas fa-lock me-1"></i>Vorstand</span>`
+                : doc.visibility === 'public'
+                    ? `<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill" style="font-size: 0.7rem;"><i class="fas fa-globe me-1"></i>Öffentlich</span>`
+                    : `<span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill" style="font-size: 0.7rem;"><i class="fas fa-users me-1"></i>Mitglieder</span>`;
 
-        const indexBadge = hasFulltext
-            ? `<span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size: 0.65rem;" title="Volltext indexiert und durchsuchbar"><i class="fas fa-check me-1"></i>Volltext</span>`
-            : `<span class="badge bg-warning-subtle text-warning border border-warning-subtle" style="font-size: 0.65rem;" title="Bild-Scan ohne extrahierten Text"><i class="fas fa-eye me-1"></i>Scan</span>`;
+            const indexBadge = hasFulltext
+                ? `<span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size: 0.65rem;" title="Volltext indexiert und durchsuchbar"><i class="fas fa-check me-1"></i>Volltext</span>`
+                : `<span class="badge bg-warning-subtle text-warning border border-warning-subtle" style="font-size: 0.65rem;" title="Bild-Scan ohne extrahierten Text"><i class="fas fa-eye me-1"></i>Scan</span>`;
 
-        return `
-            <tr style="cursor: pointer;" onclick="openArchivDocModal('${doc.id}')">
-                <td>
-                    <div class="fw-bold text-primary">${doc.year || '–'}</div>
-                    ${dateFormatted ? `<div class="small text-muted" style="font-size: 0.72rem;">${escapeHtml(dateFormatted)}</div>` : ''}
-                </td>
-                <td>
-                    <div class="fw-bold text-dark">${escapeHtml(doc.title)}</div>
-                    ${doc.description && doc.description !== doc.title ? `<div class="small text-muted text-truncate" style="max-width: 520px; font-size: 0.76rem;">${escapeHtml(doc.description)}</div>` : ''}
-                    ${snippetHtml}
-                </td>
-                <td>
-                    <span class="badge bg-${catCfg.color}-subtle text-${catCfg.color} border border-${catCfg.color}-subtle mb-1" style="font-size: 0.7rem;">
-                        <i class="fas ${catCfg.icon} me-1"></i>${escapeHtml(catCfg.label)}
-                    </span>
-                    ${subLabel ? `<div class="small text-muted text-truncate" style="max-width: 200px; font-size: 0.72rem;">${escapeHtml(subLabel)}</div>` : ''}
-                </td>
-                <td>${visBadge}</td>
-                <td>
-                    <div class="d-flex flex-wrap gap-1 align-items-center">
-                        ${getFileTypeBadge(doc.file_type)}
-                        ${indexBadge}
-                    </div>
-                    ${sizeLabel ? `<div class="small text-muted mt-0.5" style="font-size: 0.68rem;">${sizeLabel}</div>` : ''}
-                </td>
-                <td class="text-end" onclick="event.stopPropagation();">
-                    <div class="btn-group btn-group-sm">
-                        <button type="button" class="btn btn-outline-primary" onclick="openArchivDocModal('${doc.id}')" title="Im Split-View öffnen (Vorschau &amp; Volltext)">
-                            <i class="fas fa-book-open-reader"></i>
-                        </button>
-                        <a href="${escapeHtml(cacheBustedUrl)}" target="_blank" rel="noopener" class="btn btn-outline-secondary" title="Originaldatei in neuem Tab öffnen / herunterladen">
-                            <i class="fas fa-up-right-from-square"></i>
-                        </a>
-                        ${canManage ? `
-                        <button type="button" class="btn btn-outline-danger" onclick="deleteArchivDocument('${doc.id}')" title="Dokument löschen">
-                            <i class="fas fa-trash-alt"></i>
-                        </button>
-                        ` : ''}
-                    </div>
+            return `
+                <tr style="cursor: pointer;" onclick="openArchivDocModal('${doc.id}')">
+                    <td>
+                        <div class="fw-bold text-primary">${doc.year || '–'}</div>
+                        ${dateFormatted ? `<div class="small text-muted" style="font-size: 0.72rem;">${escapeHtml(dateFormatted)}</div>` : ''}
+                    </td>
+                    <td>
+                        <div class="fw-bold text-dark">${escapeHtml(doc.title || '')}</div>
+                        ${doc.description && doc.description !== doc.title ? `<div class="small text-muted text-truncate" style="max-width: 520px; font-size: 0.76rem;">${escapeHtml(doc.description)}</div>` : ''}
+                        ${snippetHtml}
+                    </td>
+                    <td>
+                        <span class="badge bg-${catCfg.color}-subtle text-${catCfg.color} border border-${catCfg.color}-subtle mb-1" style="font-size: 0.7rem;">
+                            <i class="fas ${catCfg.icon} me-1"></i>${escapeHtml(catCfg.label)}
+                        </span>
+                        ${subLabel ? `<div class="small text-muted text-truncate" style="max-width: 200px; font-size: 0.72rem;">${escapeHtml(subLabel)}</div>` : ''}
+                    </td>
+                    <td>${visBadge}</td>
+                    <td>
+                        <div class="d-flex flex-wrap gap-1 align-items-center">
+                            ${getFileTypeBadge(doc.file_type)}
+                            ${indexBadge}
+                        </div>
+                        ${sizeLabel ? `<div class="small text-muted mt-0.5" style="font-size: 0.68rem;">${sizeLabel}</div>` : ''}
+                    </td>
+                    <td class="text-end" onclick="event.stopPropagation();">
+                        <div class="btn-group btn-group-sm">
+                            <button type="button" class="btn btn-outline-primary" onclick="openArchivDocModal('${doc.id}')" title="Im Split-View öffnen (Vorschau &amp; Volltext)">
+                                <i class="fas fa-book-open-reader"></i>
+                            </button>
+                            <a href="${escapeHtml(cacheBustedUrl)}" target="_blank" rel="noopener" class="btn btn-outline-secondary" title="Originaldatei in neuem Tab öffnen / herunterladen">
+                                <i class="fas fa-up-right-from-square"></i>
+                            </a>
+                            ${canManage ? `
+                            <button type="button" class="btn btn-outline-danger" onclick="deleteArchivDocument('${doc.id}')" title="Dokument löschen">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                            ` : ''}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    } catch (err) {
+        console.error('❌ Fehler beim Rendern der Archiv-Dokumente:', err);
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" class="text-center py-4 text-danger">
+                    <i class="fas fa-exclamation-triangle me-2"></i>Fehler bei der Tabellendarstellung: ${escapeHtml(err.message)}
                 </td>
             </tr>
         `;
-    }).join('');
+    }
 }
 
 function changeArchivPage(newPage) {

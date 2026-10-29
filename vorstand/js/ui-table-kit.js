@@ -2196,7 +2196,15 @@
         return '+' + digits.replace(/(\d{3})(?=\d)/g, '$1 ');
       }
       return raw;
-    }
+    },
+
+    // Aliase gemäss AGENTS.md Richtlinie 9
+    formatCurrency(val, options) { return UIFormat.money(val, options); },
+    formatDate(val, options) { return UIFormat.date(val, options); },
+    formatDateTime(val, options) { return UIFormat.dateTime(val, options); },
+    formatTime(val, options) { return UIFormat.time(val, options); },
+    formatIban(val, options) { return UIFormat.iban(val, options); },
+    formatPhone(val, options) { return UIFormat.phone(val, options); }
   };
 
   // ===========================================================================

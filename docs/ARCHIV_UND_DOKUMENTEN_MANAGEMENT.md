@@ -155,3 +155,5 @@ RETURNS TABLE (
    Vorstandsprotokolle (`visibility = 'vorstand'`) dürfen in RAG-Ergebnissen für reguläre Mitglieder niemals auftauchen.
 6. **UTF-8 Zeichenkodierung & Umlaute (Migration 82):**  
    Historisch importierte Dokumenttitel und Beschreibungen sind verbindlich in standardkonformem UTF-8 ohne Ersetzungszeichen (`U+FFFD`) zu führen. Bei Migrationen und Daten-Pipings via Shell/PowerShell muss der Stream zwingend als UTF-8 definiert werden, um Umlautverfälschungen (ä, ö, ü, à) dauerhaft zu unterbinden.
+7. **UI-Toolkit-Schnittstelle & Render-Stabilität:**  
+   Datumsformatierungen erfolgen einheitlich über `UIFormatKit.formatDate(isoDate)` bzw. `UIFormatKit.date(isoDate)` mit sicherem String-Fallback. Zur Vermeidung von Rendering-Ausfällen ist das Zeilen-Mapping in `renderArchivExplorer` isoliert abzufangen, und Mehrfachinitialisierungen während aktiver Supabase-Abfragen (`archivState.loading`) sind strikt abzuweisen.
