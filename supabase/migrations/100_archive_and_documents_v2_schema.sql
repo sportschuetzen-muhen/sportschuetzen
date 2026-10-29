@@ -143,7 +143,46 @@ CREATE POLICY "Manage access for club-documents"
     WITH CHECK (bucket_id = 'club-documents');
 
 
--- 5. RLS-SCHUTZ AUF public.document_chunks & ERWEITERTE RPC-SUCHFUNKTION
+-- 5. RLS-SCHUTZ AUF public.documents & public.document_chunks (inkl. archiv.view / archiv.manage)
+DROP POLICY IF EXISTS "Members can view member documents" ON public.documents;
+CREATE POLICY "Members can view member documents"
+    ON public.documents FOR SELECT
+    TO authenticated
+    USING (
+        visibility IN ('public', 'members')
+        OR (SELECT public.rbac_allows(ARRAY['archiv.view', 'archiv.manage', 'dokumente.view', 'dokumente.manage', 'vorstand.view', 'admin']))
+    );
+
+DROP POLICY IF EXISTS "Vorstand can view all documents" ON public.documents;
+CREATE POLICY "Vorstand can view all documents"
+    ON public.documents FOR SELECT
+    TO authenticated
+    USING (
+        (SELECT public.rbac_allows(ARRAY['archiv.view', 'archiv.manage', 'dokumente.view', 'dokumente.manage', 'vorstand.view', 'admin']))
+    );
+
+DROP POLICY IF EXISTS "Admins and managers can modify documents" ON public.documents;
+CREATE POLICY "Admins and managers can modify documents"
+    ON public.documents FOR ALL
+    TO authenticated
+    USING (
+        (SELECT public.rbac_allows(ARRAY['archiv.manage', 'dokumente.manage', 'admin']))
+    )
+    WITH CHECK (
+        (SELECT public.rbac_allows(ARRAY['archiv.manage', 'dokumente.manage', 'admin']))
+    );
+
+DROP POLICY IF EXISTS "Admins can manage chunks" ON public.document_chunks;
+CREATE POLICY "Admins can manage chunks"
+    ON public.document_chunks FOR ALL
+    TO authenticated
+    USING (
+        (SELECT public.rbac_allows(ARRAY['archiv.manage', 'dokumente.manage', 'admin']))
+    )
+    WITH CHECK (
+        (SELECT public.rbac_allows(ARRAY['archiv.manage', 'dokumente.manage', 'admin']))
+    );
+
 DROP POLICY IF EXISTS "Members can view chunks" ON public.document_chunks;
 CREATE POLICY "Members can view chunks"
     ON public.document_chunks FOR SELECT

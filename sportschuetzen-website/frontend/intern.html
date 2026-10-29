@@ -58,6 +58,31 @@
             box-shadow: 0 8px 25px rgba(15, 60, 92, 0.08);
             border-color: rgba(15, 60, 92, 0.2);
         }
+        .doc-decade-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.35rem 0.85rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            border: 1px solid rgba(15, 60, 92, 0.12);
+            background: rgba(255, 255, 255, 0.7);
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: var(--transition);
+        }
+        .doc-decade-btn:hover {
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+            background: white;
+        }
+        .doc-decade-btn.active {
+            background: rgba(15, 60, 92, 0.1);
+            color: var(--primary-color);
+            border-color: var(--primary-color);
+            font-weight: 700;
+        }
     </style>
 </head>
 <body>
@@ -132,19 +157,19 @@
                     <div class="glass-card mb-4" style="background: rgba(15, 60, 92, 0.02); padding: 1.5rem 2rem;">
                         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1.25rem;">
                             <div>
-                                <h3 style="margin-bottom: 0.25rem; font-size: 1.25rem;">📄 Historisches Vereinsarchiv &amp; Dokumente</h3>
+                                <h3 style="margin-bottom: 0.25rem; font-size: 1.25rem;">📄 Historisches Vereinsarchiv &amp; Dokumente (1919–heute)</h3>
                                 <p style="color: var(--text-muted); font-size: 0.92rem; margin: 0;">
-                                    Durchsuche über 280 historische Protokolle, Traktanden, Jahresberichte und Chroniken der Sportschützen Muhen.
+                                    Durchsuche über 320 historische GV-Protokolle, Jahresberichte, Traktanden, Statuten und Chroniken im Volltext.
                                 </p>
                             </div>
                             <!-- Suchfeld -->
-                            <div style="position: relative; min-width: 280px; width: 100%; max-width: 380px;">
+                            <div style="position: relative; min-width: 280px; width: 100%; max-width: 400px;">
                                 <span style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); opacity: 0.5;">🔍</span>
-                                <input type="text" id="doc-search-input" placeholder="Nach Stichwort oder Jahr (z.B. 1975) suchen..." style="width: 100%; padding: 0.65rem 1rem 0.65rem 2.4rem; border-radius: 25px; border: 1px solid var(--glass-border); font-size: 0.9rem; outline: none; background: #ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
+                                <input type="text" id="doc-search-input" placeholder="Stichwort, Name oder Jahr (z.B. 1954, Standbau)..." style="width: 100%; padding: 0.65rem 1rem 0.65rem 2.4rem; border-radius: 25px; border: 1px solid var(--glass-border); font-size: 0.9rem; outline: none; background: #ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
                             </div>
                         </div>
 
-                        <!-- Ordner-Filter Bar (Genau die 3 gewünschten Ordner + Alle) -->
+                        <!-- Ordner-Filter Bar -->
                         <div id="doc-folder-bar" style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid rgba(15, 60, 92, 0.06);">
                             <button class="doc-folder-btn active" data-folder="all">
                                 <span>📁</span> <span>Alle Dokumente</span>
@@ -152,18 +177,37 @@
                             <button class="doc-folder-btn" data-folder="gv">
                                 <span>🗳️</span> <span>Generalversammlung</span> <span style="opacity: 0.7; font-size: 0.8rem;">(1919–heute)</span>
                             </button>
+                            <button class="doc-folder-btn" data-folder="berichte">
+                                <span>📊</span> <span>Jahresberichte</span>
+                            </button>
                             <button class="doc-folder-btn" data-folder="einladungen">
-                                <span>✉️</span> <span>Einladungen</span> <span style="opacity: 0.7; font-size: 0.8rem;">(Traktanden)</span>
+                                <span>✉️</span> <span>Einladungen &amp; Traktanden</span>
                             </button>
                             <button class="doc-folder-btn" data-folder="chronik">
-                                <span>📖</span> <span>Chronik</span> <span style="opacity: 0.7; font-size: 0.8rem;">(Geschichte)</span>
+                                <span>📖</span> <span>Chronik &amp; Presse</span>
+                            </button>
+                            <button class="doc-folder-btn" data-folder="statuten">
+                                <span>📜</span> <span>Statuten &amp; Reglemente</span>
                             </button>
                         </div>
 
+                        <!-- Epochen / Jahrzehnt-Zeitleiste -->
+                        <div id="doc-decade-bar" style="display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; margin-top: 0.85rem; padding-top: 0.75rem; border-top: 1px dashed rgba(15, 60, 92, 0.08);">
+                            <span style="font-size: 0.78rem; font-weight: 700; color: var(--text-muted); margin-right: 0.25rem;">🗓️ Zeitleiste:</span>
+                            <button class="doc-decade-btn active" data-decade="all">Alle Jahre</button>
+                            <button class="doc-decade-btn" data-decade="2020">2020er</button>
+                            <button class="doc-decade-btn" data-decade="2010">2010er</button>
+                            <button class="doc-decade-btn" data-decade="2000">2000er</button>
+                            <button class="doc-decade-btn" data-decade="1990">1990er</button>
+                            <button class="doc-decade-btn" data-decade="1980">1980er</button>
+                            <button class="doc-decade-btn" data-decade="1950-1979">1950–1979</button>
+                            <button class="doc-decade-btn" data-decade="1919-1949">1919–1949 (Gründerzeit)</button>
+                        </div>
+
                         <!-- Zähler & Filterstatus -->
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted); flex-wrap: wrap; gap: 0.5rem;">
                             <span id="doc-count-badge" style="font-weight: 600;">Lade Dokumente...</span>
-                            <span id="doc-sort-info" style="font-size: 0.8rem;">Chronologisch sortiert (neueste zuerst)</span>
+                            <span id="doc-sort-info" style="font-size: 0.8rem;">Chronologisch sortiert (neueste zuerst) • 💡 Tipp: Klicke auf «📖 Lesen» für die Volltext-Ansicht</span>
                         </div>
                     </div>
 
@@ -321,35 +365,46 @@
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
                             <div>
                                 <span class="badge" style="background: var(--accent-color); color: white; margin-bottom: 0.5rem; display: inline-block;">Vertraulich • Nur Vorstand</span>
-                                <h3 style="margin-bottom: 0.25rem;">📂 Vorstandsdokumente &amp; Vorstandsportal</h3>
-                                <p style="color: var(--text-muted); font-size: 0.95rem; margin: 0;">Interne Protokolle, Finanzen, Buchhaltung und Mitgliederverwaltung.</p>
+                                <h3 style="margin-bottom: 0.25rem;">📂 Vertrauliches Vorstandsarchiv &amp; Vorstandsportal</h3>
+                                <p style="color: var(--text-muted); font-size: 0.95rem; margin: 0;">Direktzugriff auf über 820 interne Sitzungsprotokolle (ab 1973), Verträge, Bauakten, Versicherungen und Schiessbetrieb.</p>
                             </div>
                             <a href="vorstand/index.html" class="btn btn-primary" style="font-size: 0.9rem; padding: 0.6rem 1.4rem; border-radius: 20px; text-decoration: none;">
-                                👑 Zum Vorstandsportal wechseln
+                                👑 Zum Vorstandsportal &amp; KI-Archivar wechseln
                             </a>
                         </div>
                         
-                        <div class="grid-2">
+                        <div class="grid-2" style="margin-bottom: 1.5rem;">
                             <div style="background: white; border-radius: 12px; padding: 1.5rem; border: 1px solid var(--glass-border);">
-                                <h4 style="margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; font-size: 1.1rem;">
-                                    <span>📝</span> Sitzungsprotokolle
-                                </h4>
-                                <ul id="board-protocol-list" style="list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.5rem;">
-                                    <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid var(--glass-border);">
-                                        <a href="docs/2018-06-25%20Protokoll%20Vorstandssitzung%20Sportsch%C3%BCtzen%20Muhen.pdf" target="_blank" rel="noopener" style="color: var(--primary-color); font-weight: 600; text-decoration: none;">
-                                            📄 Protokoll Vorstandssitzung
-                                        </a>
-                                        <span class="badge" style="background: rgba(220, 38, 38, 0.1); color: var(--accent-color); font-size: 0.75rem;">PDF</span>
-                                    </li>
+                                <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap;">
+                                    <h4 style="margin: 0; display: flex; align-items: center; gap: 0.5rem; font-size: 1.1rem;">
+                                        <span>📝</span> Vorstands-Dokumente (<span id="board-doc-count">0</span>)
+                                    </h4>
+                                    <select id="board-cat-filter" style="padding: 0.35rem 0.7rem; border-radius: 8px; border: 1px solid var(--glass-border); font-size: 0.82rem; font-weight: 600;">
+                                        <option value="all">Alle Vorstands-Kategorien</option>
+                                        <option value="vorstand">📋 Sitzungsprotokolle &amp; Führung</option>
+                                        <option value="gebaeude">🏠 Schützenhaus &amp; Bau</option>
+                                        <option value="versicherungen">🛡️ Versicherungen &amp; Verträge</option>
+                                        <option value="anlaesse">🎪 Vereinsanlässe &amp; Reisen</option>
+                                        <option value="schiessbetrieb">🎯 Schiessbetrieb &amp; Nachwuchs</option>
+                                    </select>
+                                </div>
+                                <input type="text" id="board-doc-search" placeholder="Vorstandsprotokolle oder Bauakten durchsuchen..." style="width: 100%; padding: 0.5rem 0.85rem; border-radius: 10px; border: 1px solid var(--glass-border); font-size: 0.85rem; margin-bottom: 0.75rem;">
+                                <ul id="board-protocol-list" style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.35rem; max-height: 360px; overflow-y: auto;">
+                                    <li style="padding: 0.75rem 0; color: var(--text-muted); font-size: 0.88rem;">Lade Vorstandsdokumente...</li>
                                 </ul>
                             </div>
-                            <div style="background: white; border-radius: 12px; padding: 1.5rem; border: 1px solid var(--glass-border);">
-                                <h4 style="margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; font-size: 1.1rem;">
-                                    <span>📊</span> Finanzen, Buchhaltung &amp; RBAC
-                                </h4>
-                                <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.6; margin-bottom: 1.25rem;">
-                                    Das Rechnungsmodul, Beitragscontrolling, Bankabgleich und die Mitgliederverwaltung werden über das zentrale Supabase-Vorstandsportal gesteuert.
-                                </p>
+                            <div style="background: white; border-radius: 12px; padding: 1.5rem; border: 1px solid var(--glass-border); display: flex; flex-direction: column; justify-content: space-between;">
+                                <div>
+                                    <h4 style="margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; font-size: 1.1rem;">
+                                        <span>🤖</span> Dokumenten-Management &amp; KI-Archivar
+                                    </h4>
+                                    <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.6; margin-bottom: 1rem;">
+                                        Im Vorstandsportal unter <strong>«Archiv &amp; KI-Wissen»</strong> kannst du neue Protokolle direkt hochladen, OCR-Volltexte im Split-Screen bearbeiten und dem KI-Archivar komplexe Fragen zu Beschlüssen und Verträgen stellen.
+                                    </p>
+                                </div>
+                                <a href="vorstand/index.html" class="btn btn-outline" style="font-size: 0.88rem; text-align: center; text-decoration: none; border-radius: 12px;">
+                                    📂 Archiv-Verwaltung im Vorstandsportal öffnen
+                                </a>
                             </div>
                         </div>
                     </div>
@@ -357,6 +412,36 @@
             </div>
         </div>
     </main>
+
+    <!-- ========================================== -->
+    <!-- SPLIT-SCREEN LESEMODAL FÜR MITGLIEDER      -->
+    <!-- ========================================== -->
+    <div id="member-doc-reader-modal" style="display: none; position: fixed; inset: 0; z-index: 9999; background: rgba(15, 23, 42, 0.72); backdrop-filter: blur(5px); align-items: center; justify-content: center; padding: 1.25rem;">
+        <div style="background: #ffffff; width: 100%; max-width: 1240px; height: 88vh; border-radius: 18px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.4); display: flex; flex-direction: column; overflow: hidden;">
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; background: #0f3c5c; color: #ffffff; gap: 1rem; flex-wrap: wrap;">
+                <div>
+                    <div id="reader-modal-meta" style="font-size: 0.75rem; opacity: 0.85; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700;">Vereinsarchiv</div>
+                    <h3 id="reader-modal-title" style="margin: 0.15rem 0 0; font-size: 1.15rem; color: #ffffff;">Dokument</h3>
+                </div>
+                <div style="display: flex; gap: 0.6rem; align-items: center;">
+                    <a id="reader-modal-download" href="#" target="_blank" rel="noopener" class="btn btn-outline" style="background: rgba(255,255,255,0.12); color: #ffffff; border-color: rgba(255,255,255,0.3); font-size: 0.82rem; padding: 0.4rem 0.95rem; border-radius: 20px; text-decoration: none;">
+                        📥 Originaldatei öffnen
+                    </a>
+                    <button type="button" onclick="closeMemberDocReaderModal()" style="background: rgba(255,255,255,0.15); border: none; color: #ffffff; width: 34px; height: 34px; border-radius: 50%; cursor: pointer; font-size: 1rem; font-weight: 700;">✕</button>
+                </div>
+            </div>
+            <div id="reader-modal-body" style="display: grid; grid-template-columns: 1fr 1fr; flex: 1; min-height: 0; background: #f8fafc;">
+                <div id="reader-modal-preview" style="border-right: 1px solid #e2e8f0; height: 100%; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #0f172a;"></div>
+                <div style="height: 100%; overflow-y: auto; padding: 1.5rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid #e2e8f0;">
+                        <strong style="color: #0f3c5c; font-size: 0.92rem;">📖 Extrahierter Volltext / Transkription</strong>
+                        <span id="reader-modal-charcount" style="font-size: 0.78rem; color: #64748b;"></span>
+                    </div>
+                    <div id="reader-modal-text" style="font-family: Georgia, 'Times New Roman', serif; font-size: 0.96rem; line-height: 1.7; color: #1e293b; white-space: pre-wrap;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <site-footer></site-footer>
 
@@ -752,10 +837,19 @@
             }
 
             // ============================================================
-            // Dokumentenarchiv: Laden, Ordner-Filter & Suche
+            // Dokumentenarchiv: Laden, Ordner-Filter, Zeitleiste & Suche
             // ============================================================
             let clubDocuments = [];
             let activeFolder = 'all';
+            let activeDecade = 'all';
+
+            function escapeHtmlSafe(str) {
+                return String(str || '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+            }
 
             async function loadClubDocuments() {
                 const grid = document.getElementById('club-documents-grid');
@@ -765,10 +859,15 @@
                     const SUPABASE_REST_URL = 'https://supabase-muhen.danfamily.uk/rest/v1';
                     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
 
-                    const res = await fetch(`${SUPABASE_REST_URL}/documents?select=*&order=year.desc,sort_order.asc,title.asc`, {
+                    let authHeader = `Bearer ${SUPABASE_ANON_KEY}`;
+                    if (window.AuthSession && typeof window.AuthSession.getAuthHeader === 'function') {
+                        authHeader = window.AuthSession.getAuthHeader() || authHeader;
+                    }
+
+                    const res = await fetch(`${SUPABASE_REST_URL}/documents?select=*&order=year.desc.nullslast,sort_order.asc,title.asc&limit=2000`, {
                         headers: {
                             'apikey': SUPABASE_ANON_KEY,
-                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                            'Authorization': authHeader
                         }
                     });
 
@@ -798,9 +897,19 @@
 
                     // Ordner-Filter
                     if (activeFolder !== 'all') {
-                        if (activeFolder === 'gv' && doc.category !== 'gv') return false;
-                        if (activeFolder === 'einladungen' && doc.category !== 'einladungen') return false;
-                        if (activeFolder === 'chronik' && doc.category !== 'chronik') return false;
+                        if (doc.category !== activeFolder) return false;
+                    }
+
+                    // Jahrzehnt / Epochen-Filter
+                    if (activeDecade !== 'all') {
+                        const y = Number(doc.year) || 0;
+                        if (activeDecade === '2020' && (y < 2020 || y > 2029)) return false;
+                        if (activeDecade === '2010' && (y < 2010 || y > 2019)) return false;
+                        if (activeDecade === '2000' && (y < 2000 || y > 2009)) return false;
+                        if (activeDecade === '1990' && (y < 1990 || y > 1999)) return false;
+                        if (activeDecade === '1980' && (y < 1980 || y > 1989)) return false;
+                        if (activeDecade === '1950-1979' && (y < 1950 || y > 1979)) return false;
+                        if (activeDecade === '1919-1949' && (y < 1919 || y > 1949)) return false;
                     }
 
                     // Suche (Titel, Beschreibung, Jahr & Volltext)
@@ -820,9 +929,11 @@
                 if (countBadge) {
                     const folderNames = {
                         'all': 'Dokumente insgesamt',
-                        'gv': 'in Generalversammlung (Protokolle & Berichte)',
-                        'einladungen': 'in Einladungen',
-                        'chronik': 'in Chronik'
+                        'gv': 'in Generalversammlung',
+                        'berichte': 'in Jahresberichte',
+                        'einladungen': 'in Einladungen & Traktanden',
+                        'chronik': 'in Chronik & Presse',
+                        'statuten': 'in Statuten & Reglemente'
                     };
                     const label = folderNames[activeFolder] || '';
                     countBadge.textContent = `${filtered.length} Dokument${filtered.length === 1 ? '' : 'e'} ${label}`;
@@ -833,7 +944,7 @@
                         <div class="glass-card" style="grid-column: 1 / -1; text-align: center; padding: 3rem 2rem;">
                             <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">🔍</div>
                             <p style="color: var(--text-muted); font-size: 1.05rem; margin: 0;">Keine Dokumente für diese Auswahl gefunden.</p>
-                            ${query ? `<button class="btn btn-outline" style="margin-top: 1rem; font-size: 0.85rem;" onclick="document.getElementById('doc-search-input').value=''; renderDocumentsGrid();">Suche zurücksetzen</button>` : ''}
+                            <button class="btn btn-outline" style="margin-top: 1rem; font-size: 0.85rem;" onclick="document.getElementById('doc-search-input').value=''; activeDecade='all'; document.querySelectorAll('.doc-decade-btn').forEach(b=>b.classList.toggle('active', b.getAttribute('data-decade')==='all')); renderDocumentsGrid();">Filter zurücksetzen</button>
                         </div>
                     `;
                     return;
@@ -841,14 +952,20 @@
 
                 const catLabels = {
                     'gv': 'Generalversammlung',
+                    'berichte': 'Jahresbericht',
                     'einladungen': 'Einladung',
-                    'chronik': 'Chronik'
+                    'chronik': 'Chronik & Presse',
+                    'statuten': 'Statuten & Reglement'
                 };
+
+                const cacheBust = Date.now();
 
                 grid.innerHTML = filtered.map(doc => {
                     const ft = (doc.file_type || 'pdf').toLowerCase();
                     let icon = '📄';
                     if (doc.category === 'chronik') icon = '📖';
+                    else if (doc.category === 'berichte') icon = '📊';
+                    else if (doc.category === 'statuten') icon = '📜';
                     else if (doc.category === 'einladungen') icon = '✉️';
                     else if (ft === 'html') icon = '🌐';
                     else if (ft === 'docx' || ft === 'doc' || ft === 'odt') icon = '📝';
@@ -858,18 +975,24 @@
                     const sizeBadge = doc.file_size_kb ? `${doc.file_size_kb} KB` : '';
                     const yearBadge = doc.year ? `${doc.year}` : '';
                     const catLabel = catLabels[doc.category] || doc.category;
+                    const hasFulltext = Boolean(doc.content_text && doc.content_text.trim().length > 25);
+                    const fileUrlWithBust = doc.file_url ? `${doc.file_url}${doc.file_url.includes('?') ? '&' : '?'}t=${cacheBust}` : '#';
 
                     let snippetHtml = '';
                     if (query && doc.content_text && doc.content_text.toLowerCase().includes(query)) {
                         const lowText = doc.content_text.toLowerCase();
                         const idx = lowText.indexOf(query);
-                        const start = Math.max(0, idx - 35);
-                        const end = Math.min(doc.content_text.length, idx + query.length + 65);
-                        const snip = doc.content_text.substring(start, end).replace(/[\r\n]+/g, ' ').trim();
+                        const start = Math.max(0, idx - 40);
+                        const end = Math.min(doc.content_text.length, idx + query.length + 75);
+                        const rawSnip = doc.content_text.substring(start, end).replace(/[\r\n]+/g, ' ').trim();
+                        const safeSnip = escapeHtmlSafe(rawSnip).replace(
+                            new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'),
+                            '<mark style="background:#fef08a; padding:0 2px; border-radius:3px;">$1</mark>'
+                        );
                         snippetHtml = `
                             <div style="font-size: 0.8rem; background: rgba(15, 60, 92, 0.04); padding: 6px 10px; border-radius: 8px; margin: 0.5rem 0 0.85rem; border-left: 3px solid var(--primary-color); color: var(--text-color); line-height: 1.4;">
-                                <strong style="color: var(--primary-color); font-size: 0.72rem; display: block; margin-bottom: 2px;">🔍 Gefundene Textstelle:</strong>
-                                <em>«...${snip}...»</em>
+                                <strong style="color: var(--primary-color); font-size: 0.72rem; display: block; margin-bottom: 2px;">🔍 Gefundene Textstelle im Dokument:</strong>
+                                <em>«...${safeSnip}...»</em>
                             </div>
                         `;
                     }
@@ -881,44 +1004,129 @@
                                     <span style="font-size: 2rem; line-height: 1;">${icon}</span>
                                     <div style="display: flex; gap: 0.35rem; flex-wrap: wrap; justify-content: flex-end;">
                                         ${yearBadge ? `<span class="badge" style="font-size: 0.75rem; background: rgba(15, 60, 92, 0.08); color: var(--primary-color); font-weight: 700;">📅 ${yearBadge}</span>` : ''}
-                                        <span class="badge" style="font-size: 0.75rem; background: rgba(0, 0, 0, 0.05); color: var(--text-color);">${catLabel}</span>
-                                        <span class="badge" style="font-size: 0.75rem; background: var(--primary-color); color: white; text-transform: uppercase;">${ft}</span>
+                                        <span class="badge" style="font-size: 0.75rem; background: rgba(0, 0, 0, 0.05); color: var(--text-color);">${escapeHtmlSafe(catLabel)}</span>
+                                        <span class="badge" style="font-size: 0.75rem; background: var(--primary-color); color: white; text-transform: uppercase;">${escapeHtmlSafe(ft)}</span>
                                     </div>
                                 </div>
                                 <h4 style="margin: 0 0 0.4rem; color: var(--primary-color); font-size: 1.05rem; line-height: 1.35;">
-                                    ${doc.title}
+                                    ${escapeHtmlSafe(doc.title)}
                                 </h4>
                                 <p style="font-size: 0.88rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 0.4rem;">
-                                    ${doc.description || ''}
+                                    ${escapeHtmlSafe(doc.description || '')}
                                 </p>
                                 ${snippetHtml}
                             </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--glass-border); padding-top: 0.75rem; margin-top: 0.5rem;">
-                                <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 600;">${sizeBadge}</span>
-                                <a href="${doc.file_url}" target="_blank" rel="noopener" class="btn btn-outline" style="padding: 0.45rem 1rem; font-size: 0.85rem; border-radius: 20px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 0.4rem;">
-                                    <span>📥</span> <span>Öffnen</span>
-                                </a>
+                            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--glass-border); padding-top: 0.75rem; margin-top: 0.5rem; gap: 0.5rem; flex-wrap: wrap;">
+                                <span style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">
+                                    ${sizeBadge} ${hasFulltext ? '• <span style="color:#059669;">📝 Volltext</span>' : ''}
+                                </span>
+                                <div style="display: flex; gap: 0.4rem;">
+                                    ${hasFulltext ? `
+                                        <button type="button" onclick="openMemberDocReaderModal('${doc.id}')" class="btn btn-outline" style="padding: 0.42rem 0.85rem; font-size: 0.82rem; border-radius: 20px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer;">
+                                            <span>📖</span> <span>Lesen</span>
+                                        </button>
+                                    ` : ''}
+                                    <a href="${fileUrlWithBust}" target="_blank" rel="noopener" class="btn btn-outline" style="padding: 0.42rem 0.9rem; font-size: 0.82rem; border-radius: 20px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 0.35rem;">
+                                        <span>📥</span> <span>Öffnen</span>
+                                    </a>
+                                </div>
                             </div>
                         </div>
                     `;
                 }).join('');
             }
 
+            window.openMemberDocReaderModal = function(docId) {
+                const doc = clubDocuments.find(d => String(d.id) === String(docId));
+                if (!doc) return;
+                const modal = document.getElementById('member-doc-reader-modal');
+                if (!modal) return;
+
+                const ft = (doc.file_type || 'pdf').toLowerCase();
+                const fileUrlWithBust = doc.file_url ? `${doc.file_url}${doc.file_url.includes('?') ? '&' : '?'}t=${Date.now()}` : '#';
+
+                document.getElementById('reader-modal-title').textContent = doc.title || 'Dokument';
+                document.getElementById('reader-modal-meta').textContent = `${doc.year ? doc.year + ' • ' : ''}${(doc.category || '').toUpperCase()} • ${ft.toUpperCase()}`;
+                document.getElementById('reader-modal-download').href = fileUrlWithBust;
+
+                const textEl = document.getElementById('reader-modal-text');
+                const rawText = (doc.content_text || '').trim();
+                textEl.textContent = rawText || 'Für dieses Dokument ist noch keine Text-Transkription hinterlegt.';
+                document.getElementById('reader-modal-charcount').textContent = rawText ? `${rawText.length.toLocaleString('de-CH')} Zeichen` : '';
+
+                const previewEl = document.getElementById('reader-modal-preview');
+                if (ft === 'pdf') {
+                    previewEl.innerHTML = `<iframe src="${fileUrlWithBust}" style="width:100%; height:100%; border:none; background:#fff;" title="PDF Vorschau"></iframe>`;
+                } else if (['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ft)) {
+                    previewEl.innerHTML = `<img src="${fileUrlWithBust}" alt="Vorschau" style="max-width:100%; max-height:100%; object-fit:contain;">`;
+                } else {
+                    previewEl.innerHTML = `
+                        <div style="text-align:center; color:#cbd5e1; padding:2rem;">
+                            <div style="font-size:3.5rem; margin-bottom:0.75rem;">📄</div>
+                            <h4 style="color:#fff; margin-bottom:0.5rem;">Office-/Originaldatei (${ft.toUpperCase()})</h4>
+                            <p style="font-size:0.88rem; max-width:340px; margin:0 auto 1.25rem;">Rechts siehst du den vollständig extrahierten Text. Du kannst die Originaldatei jederzeit herunterladen.</p>
+                            <a href="${fileUrlWithBust}" target="_blank" rel="noopener" class="btn btn-primary" style="text-decoration:none; border-radius:20px; padding:0.55rem 1.25rem; font-size:0.85rem;">📥 Originaldatei herunterladen</a>
+                        </div>
+                    `;
+                }
+
+                modal.style.display = 'flex';
+            };
+
+            window.closeMemberDocReaderModal = function() {
+                const modal = document.getElementById('member-doc-reader-modal');
+                if (modal) {
+                    modal.style.display = 'none';
+                    const previewEl = document.getElementById('reader-modal-preview');
+                    if (previewEl) previewEl.innerHTML = '';
+                }
+            };
+
             function renderBoardDocuments() {
                 const list = document.getElementById('board-protocol-list');
+                const countEl = document.getElementById('board-doc-count');
                 if (!list) return;
 
-                const boardDocs = clubDocuments.filter(d => d.visibility === 'vorstand' || d.category === 'protokoll');
-                if (boardDocs.length === 0) return;
+                const catFilterEl = document.getElementById('board-cat-filter');
+                const searchEl = document.getElementById('board-doc-search');
+                const catVal = catFilterEl ? catFilterEl.value : 'all';
+                const q = searchEl ? searchEl.value.toLowerCase().trim() : '';
 
-                list.innerHTML = boardDocs.map(d => `
-                    <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--glass-border);">
-                        <a href="${d.file_url}" target="_blank" rel="noopener" style="color: var(--primary-color); font-weight: 600; text-decoration: none; font-size: 0.9rem;">
-                            📄 ${d.title} ${d.year ? `(${d.year})` : ''}
-                        </a>
-                        <span class="badge" style="background: rgba(220, 38, 38, 0.1); color: var(--accent-color); font-size: 0.75rem;">${(d.file_type || 'PDF').toUpperCase()}</span>
-                    </li>
-                `).join('');
+                const boardDocs = clubDocuments.filter(d => {
+                    if (d.visibility !== 'vorstand' && d.category !== 'protokoll') return false;
+                    if (catVal !== 'all' && d.category !== catVal) return false;
+                    if (q) {
+                        const mTitle = (d.title || '').toLowerCase().includes(q);
+                        const mYear = d.year ? String(d.year).includes(q) : false;
+                        const mText = (d.content_text || '').toLowerCase().includes(q);
+                        if (!mTitle && !mYear && !mText) return false;
+                    }
+                    return true;
+                });
+
+                if (countEl) countEl.textContent = String(boardDocs.length);
+
+                if (boardDocs.length === 0) {
+                    list.innerHTML = `<li style="padding: 0.75rem 0; color: var(--text-muted); font-size: 0.88rem;">Keine Vorstandsdokumente für diesen Filter gefunden.</li>`;
+                    return;
+                }
+
+                const cacheBust = Date.now();
+                list.innerHTML = boardDocs.slice(0, 80).map(d => {
+                    const url = d.file_url ? `${d.file_url}${d.file_url.includes('?') ? '&' : '?'}t=${cacheBust}` : '#';
+                    const hasText = Boolean(d.content_text && d.content_text.trim().length > 25);
+                    return `
+                        <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.55rem 0; border-bottom: 1px solid var(--glass-border); gap: 0.5rem;">
+                            <a href="${url}" target="_blank" rel="noopener" style="color: var(--primary-color); font-weight: 600; text-decoration: none; font-size: 0.88rem; flex: 1;">
+                                📄 ${escapeHtmlSafe(d.title)} ${d.year ? `<span style="color:var(--text-muted); font-weight:400;">(${d.year})</span>` : ''}
+                            </a>
+                            <div style="display: flex; gap: 0.35rem; align-items: center;">
+                                ${hasText ? `<button type="button" onclick="openMemberDocReaderModal('${d.id}')" style="border:1px solid rgba(15,60,92,0.2); background:#f8fafc; color:var(--primary-color); border-radius:12px; padding:2px 8px; font-size:0.74rem; font-weight:600; cursor:pointer;">📖 Lesen</button>` : ''}
+                                <span class="badge" style="background: rgba(220, 38, 38, 0.1); color: var(--accent-color); font-size: 0.72rem;">${escapeHtmlSafe((d.file_type || 'PDF').toUpperCase())}</span>
+                            </div>
+                        </li>
+                    `;
+                }).join('');
             }
 
             // Ordner-Filter Button Listeners
@@ -931,6 +1139,23 @@
                     renderDocumentsGrid();
                 });
             });
+
+            // Jahrzehnt-Filter Button Listeners
+            const decadeBtns = document.querySelectorAll('.doc-decade-btn');
+            decadeBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    decadeBtns.forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    activeDecade = btn.getAttribute('data-decade');
+                    renderDocumentsGrid();
+                });
+            });
+
+            // Vorstands-Filter Listeners
+            const boardCatFilter = document.getElementById('board-cat-filter');
+            if (boardCatFilter) boardCatFilter.addEventListener('change', renderBoardDocuments);
+            const boardDocSearch = document.getElementById('board-doc-search');
+            if (boardDocSearch) boardDocSearch.addEventListener('input', renderBoardDocuments);
 
             // Dokumenten-Suche Listener
             const docSearch = document.getElementById('doc-search-input');

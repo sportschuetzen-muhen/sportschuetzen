@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-r"""
+"""
 Vollständige Archiv-Migration & Text-Ingestion (Phase 2)
 Sportschützen Muhen -> Supabase (CT 117)
 
@@ -16,14 +16,14 @@ import re
 import sys
 import json
 import time
-import hashlib
+import glob
 import zipfile
 import unicodedata
 import urllib.parse
 import urllib.request
 import urllib.error
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import datetime
 
 import pymupdf
 
@@ -41,7 +41,7 @@ JSON_HEADERS = {
     "Authorization": f"Bearer {SUPABASE_KEY}",
     "Content-Type": "application/json",
     "Prefer": "return=representation",
-    "User-Agent": "SPS-Muhen-Archiv-Ingest/2.1"
+    "User-Agent": "SPS-Muhen-Archiv-Ingest/2.0"
 }
 
 MIME_MAP = {
@@ -78,6 +78,31 @@ ALLOWED_DOC_EXTS = {
 }
 SCAN_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
 
+# Globale Word COM Instanz für schnelle .doc/.rtf/.dot Konvertierung
+_word_app = None
+
+def get_word_app():
+    global _word_app
+    if _word_app is None:
+        try:
+            import win32com.client
+            _word_app = win32com.client.Dispatch("Word.Application")
+            _word_app.Visible = False
+            _word_app.DisplayAlerts = 0
+        except Exception as e:
+            print(f"  [WARN] MS Word COM konnte nicht gestartet werden: {e}")
+            _word_app = False
+    return _word_app if _word_app is not False else None
+
+def close_word_app():
+    global _word_app
+    if _word_app:
+        try:
+            _word_app.Quit()
+        except Exception:
+            pass
+        _word_app = None
+
 
 def sb_request(endpoint, method="GET", data=None, extra_headers=None, retries=3):
     url = f"{SUPABASE_REST}/{endpoint}"
@@ -95,11 +120,11 @@ def sb_request(endpoint, method="GET", data=None, extra_headers=None, retries=3)
             err_body = he.read().decode("utf-8", errors="replace")
             if attempt == retries - 1:
                 raise RuntimeError(f"HTTP {he.code} auf {endpoint}: {err_body[:300]}")
-            time.sleep(0.8)
-        except Exception:
+            time.sleep(1.0)
+        except Exception as e:
             if attempt == retries - 1:
                 raise
-            time.sleep(0.8)
+            time.sleep(1.0)
 
 
 def sb_upload_file(storage_path, local_path):
@@ -116,7 +141,7 @@ def sb_upload_file(storage_path, local_path):
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": mime,
         "x-upsert": "true",
-        "User-Agent": "SPS-Muhen-Archiv-Ingest/2.1"
+        "User-Agent": "SPS-Muhen-Archiv-Ingest/2.0"
     }
     for attempt in range(3):
         try:
@@ -126,6 +151,7 @@ def sb_upload_file(storage_path, local_path):
                 return f"{SUPABASE_STORAGE}/object/public/{BUCKET}/{encoded_path}"
         except urllib.error.HTTPError as he:
             if he.code == 400 and attempt == 0:
+                # Fallback auf PUT falls Objekt schon existiert
                 req_put = urllib.request.Request(url, data=file_bytes, headers=headers, method="PUT")
                 with urllib.request.urlopen(req_put, timeout=90) as resp:
                     resp.read()
@@ -133,11 +159,11 @@ def sb_upload_file(storage_path, local_path):
             if attempt == 2:
                 err_body = he.read().decode("utf-8", errors="replace")
                 raise RuntimeError(f"Storage Upload HTTP {he.code}: {err_body[:200]}")
-            time.sleep(1.0)
+            time.sleep(1.5)
         except Exception:
             if attempt == 2:
                 raise
-            time.sleep(1.0)
+            time.sleep(1.5)
 
 
 def sanitize_storage_filename(name):
@@ -203,6 +229,7 @@ def extract_date_and_year(filename, folder_path="", fallback_mtime=None):
         y = int(m.group(1))
         return y, f"{y:04d}-01-01"
 
+    # 6. Zweistellige Jahreszahl am Anfang wie "14-08-29" oder "AKSF17"
     if "AKSF17" in combined or "AKSF 2017" in combined:
         return 2017, "2017-01-01"
 
@@ -216,50 +243,11 @@ def extract_date_and_year(filename, folder_path="", fallback_mtime=None):
 def clean_extracted_text(text):
     if not text:
         return ""
+    # Null-Bytes und Steuerzeichen bereinigen (PostgreSQL TEXT erlaubt kein \x00)
     text = text.replace("\x00", "").replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"[\x01-\x08\x0b\x0c\x0e-\x1f]", " ", text)
     text = re.sub(r"\n{4,}", "\n\n\n", text)
     return text.strip()
-
-
-def extract_binary_doc(abs_path):
-    """
-    Schneller, direkter Binär-Parser für klassische MS Word .doc / .dot Dateien
-    (funktioniert auch für alte Word 6.0 / 95 / 97 Dokumente ohne Trust-Center-Blockade).
-    """
-    with open(abs_path, "rb") as f:
-        data = f.read()
-
-    noise_tokens = (
-        "Times New Roman", "Normal.dot", "Microsoft Word", "MSWordDoc",
-        "Word.Document", "Root Entry", "SummaryInformation", "CompObj",
-        "DocumentSummaryInformation", "Standard", " Überschrift", "Arial",
-        "Calibri", "Cambria", "http://schemas.openxmlformats"
-    )
-
-    chunks = []
-    # 1. CP1252 / Latin-1 Textblöcke (8-Bit Stream in Word 6/95/97/2003)
-    text_latin = data.decode("cp1252", errors="ignore")
-    for m in re.finditer(r"[A-Za-zÄÖÜäöüß0-9][A-Za-zÄÖÜäöüß0-9\s\.,;:\-\(\)/!?\'\+\*\"„“”«»%&=\r\n\t]{28,}", text_latin):
-        s = m.group(0).strip()
-        if any(bad in s for bad in noise_tokens):
-            continue
-        # Prüfe Buchstaben/Gesamtlänge-Verhältnis (echter Text vs. Binär-Artefakte)
-        alpha_cnt = sum(1 for ch in s if ch.isalpha() or ch in " \n\t.,;:-0123456789")
-        if len(s) >= 28 and (alpha_cnt / len(s)) > 0.85:
-            chunks.append(s)
-
-    # 2. UTF-16LE Textblöcke (falls Unicode-Stream im .doc verwendet wurde)
-    text_u16 = data.decode("utf-16le", errors="ignore")
-    for m in re.finditer(r"[A-Za-zÄÖÜäöüß0-9][A-Za-zÄÖÜäöüß0-9\s\.,;:\-\(\)/!?\'\+\*\"„“”«»%&=\r\n\t]{35,}", text_u16):
-        s = m.group(0).strip()
-        if any(bad in s for bad in noise_tokens):
-            continue
-        alpha_cnt = sum(1 for ch in s if ch.isalpha() or ch in " \n\t.,;:-0123456789")
-        if len(s) >= 35 and (alpha_cnt / len(s)) > 0.88:
-            chunks.append(s)
-
-    return clean_extracted_text("\n\n".join(chunks))
 
 
 def extract_text_from_file(local_path):
@@ -302,6 +290,7 @@ def extract_text_from_file(local_path):
                         if row_txt:
                             parts.append(row_txt)
             except Exception:
+                # Fallback direkt über word/document.xml im ZIP
                 with zipfile.ZipFile(abs_path, "r") as z:
                     if "word/document.xml" in z.namelist():
                         xml_bytes = z.read("word/document.xml")
@@ -311,7 +300,7 @@ def extract_text_from_file(local_path):
             if len(full) >= 20:
                 return full, "office_extract", 1
 
-        # 3. DOC / DOT / RTF
+        # 3. DOC / DOT / RTF (via MS Word COM oder striprtf)
         if ext in {".doc", ".dot", ".rtf"}:
             if ext == ".rtf":
                 try:
@@ -323,9 +312,28 @@ def extract_text_from_file(local_path):
                 except Exception:
                     pass
 
-            full = extract_binary_doc(abs_path)
-            if len(full) >= 20:
-                return full, "office_extract", 1
+            word = get_word_app()
+            if word is not None:
+                try:
+                    doc = word.Documents.Open(
+                        abs_path,
+                        ConfirmConversions=False,
+                        ReadOnly=True,
+                        AddToRecentFiles=False,
+                        Visible=False
+                    )
+                    txt = doc.Content.Text or ""
+                    pages = 1
+                    try:
+                        pages = max(1, int(doc.ComputeStatistics(2)))  # wdStatisticPages = 2
+                    except Exception:
+                        pass
+                    doc.Close(False)
+                    full = clean_extracted_text(txt)
+                    if len(full) >= 20:
+                        return full, "office_extract", pages
+                except Exception as we:
+                    print(f"    [WARN] Word COM Fehler bei {os.path.basename(abs_path)}: {we}")
 
         # 4. ODT / ODS (OpenDocument XML)
         if ext in {".odt", ".ods"}:
@@ -447,6 +455,7 @@ def chunk_text(text, max_chars=900):
             if len(p) <= max_chars:
                 current = p
             else:
+                # Sehr lange Absätze (z.B. Tabellen) in Blöcke à max_chars teilen
                 for i in range(0, len(p), max_chars):
                     sub = p[i:i + max_chars].strip()
                     if sub:
@@ -454,6 +463,7 @@ def chunk_text(text, max_chars=900):
                 current = ""
     if current:
         chunks.append(current)
+    # Maximal 80 Chunks pro Dokument (verhindert DB-Explosion bei riesigen Excel-Tabellen, deckt aber alle Chroniken & Protokolle komplett ab)
     return chunks[:80]
 
 
@@ -474,23 +484,32 @@ def save_chunks_for_document(doc_id, title, category, doc_date, text):
         "page_number": 1,
         "content": c
     } for i, c in enumerate(chunks)]
+    # In Batches zu 40 Zeilen einfügen
     for i in range(0, len(rows), 40):
         sb_request("document_chunks", method="POST", data=rows[i:i + 40])
     return len(rows)
 
 
 def classify_google_drive_file(rel_path):
+    """
+    Ordnet jeden Dateipfad aus 'Sportschützen Muhen GMail' einer sauberen
+    (category, subcategory, visibility, description_prefix) Struktur zu.
+    Gibt None zurück, wenn die Datei übersprungen werden soll (z.B. Fotos für Immich, Binaries).
+    """
     parts = rel_path.replace("/", "\\").split("\\")
     top = parts[0]
     sub = parts[1] if len(parts) > 2 else ""
     fname = parts[-1]
     ext = os.path.splitext(fname)[1].lower()
 
+    # System- und temporäre Dateien ignorieren
     if fname.startswith("~$") or fname.lower() in {"desktop.ini", "thumbs.db", ".ds_store"}:
         return None
 
+    # 1. General- und Vereinsversammlungen 1919 bis heute
     if top == "General- und Vereinsversammlungen 1919 bis heute":
         if sub in {"01 Protokolle Generalversammlungen", "02 Einladungen zur GV", "05 Berichte Präsident und Jungschützen", "30 Chroniken"}:
+            # Diese 4 Ordner wurden bereits im ersten Transfer hochgeladen (werden in Schritt A vervollständigt)
             return ("EXISTING_GV", sub, "members", "")
         if sub == "20 Alte Liste Vereinsmitglieder":
             if ext in ALLOWED_DOC_EXTS or ext in SCAN_IMAGE_EXTS:
@@ -501,6 +520,7 @@ def classify_google_drive_file(rel_path):
             return ("vorstand", "gv_vorlagen", "vorstand", f"GV-Vorlage / Entwurf ({sub})")
         return None
 
+    # 2. Vorstand (Sitzungsprotokolle 1973–2026 & Statuten)
     if top == "Vorstand":
         if ext not in ALLOWED_DOC_EXTS:
             return None
@@ -508,6 +528,7 @@ def classify_google_drive_file(rel_path):
             return ("statuten", "statuten_reglemente", "members", "Vereinsstatuten & Reglemente")
         return ("vorstand", "vorstand_protokolle", "vorstand", f"Vorstandsprotokoll ({sub or 'Allgemein'})")
 
+    # 3. Gebäude (Schützenhaus Rüteli, Pachtvertrag, Umbauten, Scheiben 2016, Wasserschaden)
     if top == "Gebäude":
         if ext not in ALLOWED_DOC_EXTS and ext not in SCAN_IMAGE_EXTS:
             return None
@@ -519,26 +540,31 @@ def classify_google_drive_file(rel_path):
             return ("gebaeude", "vermietung_historisch", "vorstand", "Gebäude • Vermietung Schützenstube")
         return ("gebaeude", "schuetzenhaus", "vorstand", f"Gebäude & Infrastruktur{(' • ' + sub) if sub else ''}")
 
+    # 4. 50 m Anlage & 10 m Anlage
     if top in {"50 m Anlage", "10 m Anlage"}:
         if ext not in ALLOWED_DOC_EXTS and ext not in SCAN_IMAGE_EXTS:
             return None
         return ("gebaeude", "anlagen_50m_10m", "vorstand", f"{top}{(' • ' + sub) if sub else ''}")
 
+    # 5. Versicherungen Policen
     if top == "Versicherungen Policen":
         if ext not in ALLOWED_DOC_EXTS:
             return None
         return ("versicherungen", "policen_schatzungen", "vorstand", "Versicherungspolice & Gebäudeschatzung")
 
+    # 6. Presse Artikel
     if top == "Presse Artikel":
         if ext not in ALLOWED_DOC_EXTS and ext not in SCAN_IMAGE_EXTS:
             return None
         return ("chronik", "presse", "members", "Pressebericht & Zeitungsarchiv")
 
+    # 7. Festanlässe ohne Schiessen
     if top == "Festanlässe ohne Schiessen":
         if ext not in ALLOWED_DOC_EXTS:
             return None
         return ("anlaesse", "festanlaesse", "vorstand", f"Festanlass{(' • ' + sub) if sub else ''}")
 
+    # 8. Abteilung Kleinkaliber & Abteilung Luftgewehr
     if top == "Abteilung Kleinkaliber":
         if ext not in ALLOWED_DOC_EXTS:
             return None
@@ -551,6 +577,7 @@ def classify_google_drive_file(rel_path):
             return None
         return ("schiessbetrieb", "abteilung_lg", "vorstand", f"Luftgewehr 10m{(' • ' + sub) if sub else ''}")
 
+    # 9. Mitglieder DB (Gewehrliste, Schlüsselliste, historisches SSV-Verzeichnis; ohne Zint/TCL-Binaries und ohne 99 Einzelrechnungen)
     if top.startswith("Mitglieder DB"):
         if any(skip in rel_path for skip in ("zint", "tcl", "QR_Erstellung_Zint", "Via Mail versandt", "Mahnungen via Mail")):
             return None
@@ -558,16 +585,19 @@ def classify_google_drive_file(rel_path):
             return None
         return ("schiessbetrieb", "mitglieder_listen", "vorstand", f"Mitglieder- & Waffenverzeichnis{(' • ' + sub) if sub else ''}")
 
+    # 10. Kleider, Jungschütze, Ausbildung, Rechnung an AGSV
     if top in {"Kleider", "Jungschütze", "Ausbildung", "Rechnung an AGSV"}:
         if ext not in ALLOWED_DOC_EXTS and ext not in SCAN_IMAGE_EXTS:
             return None
         return ("schiessbetrieb", "kleider_ausbildung", "vorstand", f"{top}{(' • ' + sub) if sub else ''}")
 
+    # 11. Photos -> Nur echte PDF/Word-Dokumente (z.B. Alte Unterlagen, Wegweiser), keine Kamerafotos!
     if top == "Photos":
         if ext in ALLOWED_DOC_EXTS:
             return ("chronik", "30_chroniken", "members", f"Historische Unterlagen ({sub or 'Archiv'})")
         return None
 
+    # 12. Einzeldateien im Root (z.B. SSV Mitgliederverzeichnis_08022026.xlsx)
     if len(parts) == 1 and ext in ALLOWED_DOC_EXTS:
         return ("schiessbetrieb", "mitglieder_listen", "vorstand", "SSV Mitgliederverzeichnis")
 
@@ -575,6 +605,7 @@ def classify_google_drive_file(rel_path):
 
 
 def normalize_match_key(s):
+    """Normalisiert Dateinamen zur sicheren Zuordnung trotz Umlaut-Unterschieden."""
     s = os.path.splitext(s)[0].lower()
     s = re.sub(r"[^a-z0-9]+", "", s)
     return s
@@ -596,6 +627,7 @@ def step_a_complete_existing_281_docs(drive_base):
         "30_chroniken": os.path.join(gv_base, "30 Chroniken"),
     }
 
+    # Indexiere alle lokalen Dateien in diesen 4 Ordnern nach ihrem normalisierten Schlüssel
     local_lookup = {}
     for subcat, folder_path in folder_map.items():
         if os.path.isdir(folder_path):
@@ -607,11 +639,9 @@ def step_a_complete_existing_281_docs(drive_base):
 
     updated_text_count = 0
     rechunked_count = 0
+    scan_only_count = 0
 
-    for d in docs:
-        if d.get("transcription_status") == "completed" and d.get("content_text") and len(d["content_text"]) > 80:
-            continue
-
+    for idx, d in enumerate(docs, 1):
         subcat = d.get("subcategory") or "01_protokolle"
         url_fname = urllib.parse.unquote(d.get("file_url", "").split("/")[-1])
         key_url = (subcat, normalize_match_key(url_fname))
@@ -619,6 +649,7 @@ def step_a_complete_existing_281_docs(drive_base):
 
         local_file = local_lookup.get(key_url) or local_lookup.get(key_title)
         if not local_file:
+            # Fuzzy-Suche im jeweiligen Unterordner
             target_dir = folder_map.get(subcat, "")
             if os.path.isdir(target_dir):
                 nk = normalize_match_key(d.get("title", ""))
@@ -626,6 +657,10 @@ def step_a_complete_existing_281_docs(drive_base):
                     if nk and (nk in normalize_match_key(fname) or normalize_match_key(fname) in nk):
                         local_file = os.path.join(target_dir, fname)
                         break
+
+        # Falls bereits completed (z.B. 1919 oder die 40 PDFs), sicherstellen dass alle Chunks vorhanden sind
+        if d.get("transcription_status") == "completed" and d.get("content_text") and len(d["content_text"]) > 80:
+            continue
 
         if not local_file or not os.path.isfile(local_file):
             continue
@@ -642,7 +677,7 @@ def step_a_complete_existing_281_docs(drive_base):
                 "page_count": page_count,
                 "original_filename": orig_fname,
                 "file_size_kb": fsize_kb,
-                "updated_at": datetime.now(timezone.utc).isoformat()
+                "updated_at": datetime.utcnow().isoformat() + "Z"
             })
             n_chunks = save_chunks_for_document(
                 d["id"],
@@ -653,8 +688,18 @@ def step_a_complete_existing_281_docs(drive_base):
             )
             updated_text_count += 1
             rechunked_count += n_chunks
+            if updated_text_count % 15 == 0:
+                print(f"  [A] {updated_text_count} bestehende Dokumente neu extrahiert & indexiert...")
+        else:
+            # Reiner Bild-Scan ohne eingebetteten Text -> Metadaten trotzdem ergänzen
+            sb_request(f"documents?id=eq.{d['id']}", method="PATCH", data={
+                "original_filename": orig_fname,
+                "file_size_kb": fsize_kb,
+                "page_count": page_count
+            })
+            scan_only_count += 1
 
-    print(f"-> Schritt A abgeschlossen: {updated_text_count} weitere Dokumente (insb. ältere .doc Dateien) neu mit Volltext ({rechunked_count} Chunks) befüllt.")
+    print(f"-> Schritt A abgeschlossen: {updated_text_count} Dokumente neu mit Volltext ({rechunked_count} Chunks) befüllt, {scan_only_count} historische Bild-Scans markiert.")
 
 
 def step_b_ingest_all_drive_folders(drive_base, my_drive_root):
@@ -662,29 +707,14 @@ def step_b_ingest_all_drive_folders(drive_base, my_drive_root):
     print("SCHRITT B: MIGRATION & INDEXIERUNG ALLER WEITEREN GOOGLE DRIVE ORDNER")
     print("======================================================================")
 
+    # Bereits importierte source_paths abrufen, damit das Skript 100% idempotent ist
     existing_docs = sb_request("documents?select=id,source_path,title,file_url&limit=3000")
     existing_sources = {d["source_path"]: d for d in existing_docs if d.get("source_path")}
-    print(f"Bereits via source_path in public.documents registriert: {len(existing_sources)} Dokumente")
-
-    # Lade bereits im Storage (club-documents) vorhandene Pfade, um erneuten Datei-Upload zu sparen
-    storage_lookup = {}
-    storage_list_file = os.path.join(os.path.dirname(__file__), "existing_storage_paths.txt")
-    if os.path.isfile(storage_list_file):
-        with open(storage_list_file, "r", encoding="utf-8-sig") as f:
-            for line in f:
-                sp = line.strip()
-                if not sp:
-                    continue
-                parts = sp.split("/")
-                if len(parts) >= 3 and parts[0] == "archiv":
-                    sc = parts[1]
-                    fn = parts[2]
-                    # Entferne den 5-stelligen Präfix "12345_" falls vorhanden
-                    clean_fn = re.sub(r"^\d{5}_", "", fn)
-                    storage_lookup.setdefault((sc, clean_fn), []).append(sp)
-        print(f"Bereits in Supabase Storage 'club-documents' gecachte Dateien geladen: {sum(len(v) for v in storage_lookup.values())}")
+    print(f"Bereits via source_path registriert: {len(existing_sources)} Dokumente")
 
     candidates = []
+
+    # 1. Die 2 wichtigen PDFs direkt in G:\Meine Ablage (Fahnenweihe 2021 & GV 2026)
     root_specials = [
         ("Fahnenweihe Sportschützen Muhen 15.08.2021.pdf", "chronik", "30_chroniken", "members", "Festschrift & Chronik Fahnenweihe 2021"),
         ("GV_2026_vom_12.03.2026.pdf", "gv", "01_protokolle", "members", "Generalversammlung 2026"),
@@ -694,6 +724,7 @@ def step_b_ingest_all_drive_folders(drive_base, my_drive_root):
         if os.path.isfile(fpath):
             candidates.append((fpath, f"Root/{fname}", cat, subcat, vis, desc_pref))
 
+    # 2. Alle Dateien unter G:\Meine Ablage\Sportschützen Muhen GMail durchlaufen
     for root, dirs, files in os.walk(drive_base):
         for fname in files:
             fpath = os.path.join(root, fname)
@@ -706,16 +737,17 @@ def step_b_ingest_all_drive_folders(drive_base, my_drive_root):
                 continue
             candidates.append((fpath, rel_path.replace("\\", "/"), cat, subcat, vis, desc_pref))
 
-    print(f"Gefundene Dokumente für Registrierung & Volltext-Indexierung: {len(candidates)}")
+    print(f"Gefundene neue Dokumente für Upload & Indexierung: {len(candidates)}")
 
-    saved_count = 0
+    uploaded_count = 0
     extracted_count = 0
     total_chunks = 0
-    reused_storage_count = 0
+    skipped_existing = 0
     errors = []
 
     for idx, (fpath, rel_source, cat, subcat, vis, desc_pref) in enumerate(candidates, 1):
         if rel_source in existing_sources:
+            skipped_existing += 1
             continue
 
         fname = os.path.basename(fpath)
@@ -727,21 +759,17 @@ def step_b_ingest_all_drive_folders(drive_base, my_drive_root):
             mtime = os.path.getmtime(fpath)
             year, doc_date = extract_date_and_year(fname, folder_context, fallback_mtime=mtime)
             fsize_kb = max(1, int(round(os.path.getsize(fpath) / 1024.0)))
+
+            # Eindeutiger Storage-Pfad unter archiv/<subcategory>/<year>_<safe_name>
             safe_name = sanitize_storage_filename(fname)
+            # Kurzer Hash aus rel_source verhindert Namenskollisionen (z.B. "Protokoll 1.doc" in 2012 vs 2014)
+            short_hash = f"{abs(hash(rel_source)) % 100000:05d}"
+            storage_path = f"archiv/{subcat}/{short_hash}_{safe_name}"
 
-            # Prüfen ob die Datei bereits im ersten Lauf in club-documents hochgeladen wurde
-            matching_paths = storage_lookup.get((subcat, safe_name))
-            if matching_paths:
-                storage_path = matching_paths.pop(0)
-                encoded_path = "/".join(urllib.parse.quote(part, safe="") for part in storage_path.split("/"))
-                file_url = f"{SUPABASE_STORAGE}/object/public/{BUCKET}/{encoded_path}"
-                reused_storage_count += 1
-            else:
-                det_hash = int(hashlib.md5(rel_source.encode("utf-8")).hexdigest()[:6], 16) % 100000
-                storage_path = f"archiv/{subcat}/{det_hash:05d}_{safe_name}"
-                file_url = sb_upload_file(storage_path, fpath)
+            # 1. Datei in Supabase Storage 'club-documents' hochladen
+            file_url = sb_upload_file(storage_path, fpath)
 
-            # Volltext extrahieren
+            # 2. Volltext extrahieren
             text, ocr_method, page_count = extract_text_from_file(fpath)
             has_text = len(text) >= 25
             status = "completed" if has_text else "pending"
@@ -780,21 +808,21 @@ def step_b_ingest_all_drive_folders(drive_base, my_drive_root):
             )
             doc_id = inserted[0]["id"] if isinstance(inserted, list) and inserted else None
 
-            saved_count += 1
+            uploaded_count += 1
             if has_text and doc_id:
                 n_c = save_chunks_for_document(doc_id, title_clean, cat, doc_date, text)
                 extracted_count += 1
                 total_chunks += n_c
 
-            if saved_count % 50 == 0 or idx == len(candidates):
-                print(f"  [B] Fortschritt: {idx}/{len(candidates)} | {saved_count} in DB | {extracted_count} mit Volltext ({total_chunks} Chunks) | Storage-Cache genutzt: {reused_storage_count}")
+            if uploaded_count % 25 == 0 or idx == len(candidates):
+                print(f"  [B] Fortschritt: {idx}/{len(candidates)} verarbeitet | {uploaded_count} hochgeladen | {extracted_count} mit Volltext ({total_chunks} Chunks)")
 
         except Exception as e:
             err_msg = f"{rel_source}: {e}"
             print(f"  [ERR] {err_msg}")
             errors.append(err_msg)
 
-    print(f"\n-> Schritt B abgeschlossen: {saved_count} neue Dokumente in Supabase gespeichert, {extracted_count} direkt volltext-indexiert ({total_chunks} neue Chunks). Fehler: {len(errors)}")
+    print(f"\n-> Schritt B abgeschlossen: {uploaded_count} neue Dokumente in Supabase gespeichert, {extracted_count} direkt volltext-indexiert ({total_chunks} neue Chunks). Fehler: {len(errors)}")
 
 
 def main():
@@ -810,8 +838,11 @@ def main():
         sys.exit(1)
 
     print(f"Gefundener Google Drive Pfad: {drive_base}")
-    step_a_complete_existing_281_docs(drive_base)
-    step_b_ingest_all_drive_folders(drive_base, my_drive_root)
+    try:
+        step_a_complete_existing_281_docs(drive_base)
+        step_b_ingest_all_drive_folders(drive_base, my_drive_root)
+    finally:
+        close_word_app()
 
 
 if __name__ == "__main__":
