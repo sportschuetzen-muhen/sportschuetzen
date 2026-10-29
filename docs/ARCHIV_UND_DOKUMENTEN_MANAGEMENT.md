@@ -1,12 +1,12 @@
 # Fachdokumentation: Vereins-Archiv, Dokumenten-Management & KI-Suche
 
-> **Status:** ARCHITEKTUR & IMPLEMENTIERUNGSPLAN (Option 2)  
-> **Stand:** Oktober 2026  
+> **Status:** ARCHITEKTUR & IMPLEMENTIERUNGSPLAN V2 (Supabase Voll-Archiv & KI-RAG)  
+> **Stand:** Oktober 2026 (Migration 100 – 1'148 Dokumente & 6'724 Volltext-Chunks)  
 > **Führendes Gesamtsystem:** Supabase PostgreSQL (CT 117) & Storage (`club-documents`)  
 > **Hardware & Lokale KI:** i7-Worker-PC (`192.168.68.56` / GTX 1070 8 GB, Ollama `11434`, Immich-ML `3003`)  
 > **Live-LLM für Vorstand:** Groq via Homeassistant-Proxy (`qwen/qwen3.8-27b`)  
-> **Komponenten:** `sportschuetzen-website/frontend/intern.html`, `vorstand/js/archiv.js`, `supabase/migrations/`  
-> **Relevanz für KI:** Verbindliche Richtlinie für die Entkopplung von Google Drive, Paperless-ngx, lokalem PC und Supabase.
+> **Komponenten:** `sportschuetzen-website/frontend/intern.html`, `vorstand/js/archiv.js`, `tools/ingest_archive_to_supabase.py`, `supabase/migrations/100_archive_and_documents_v2_schema.sql`  
+> **Relevanz für KI:** Verbindliche Richtlinie für die vollständige Ablösung von Google Drive durch Supabase Storage (`club-documents`), Paperless-Entkopplung und KI-RAG.
 
 ---
 
@@ -77,20 +77,26 @@
 
 ## 3. Datenmodell in Supabase PostgreSQL (CT 117)
 
-### 3.1 Tabelle `public.documents` (Stammdaten & Volltext)
-Erweiterung der bestehenden Tabelle (aus Migration 50/51):
+### 3.1 Tabelle `public.documents` (Stammdaten & Volltext – 1'148 Dokumente)
+Erweiterung der bestehenden Tabelle (Migrationen 50, 51, 61, 82 & 100):
 * `id` (UUID, Primary Key)
 * `title` (VARCHAR(255))
 * `description` (TEXT)
-* `category` (VARCHAR(50): `'gv'`, `'einladungen'`, `'chronik'`, `'vorstand'`)
+* `category` (VARCHAR(50): `'gv'`, `'berichte'`, `'einladungen'`, `'chronik'`, `'statuten'`, `'vorstand'`, `'gebaeude'`, `'versicherungen'`, `'anlaesse'`, `'schiessbetrieb'`)
+* `subcategory` (VARCHAR(100): `'01_protokolle'`, `'02_einladungen'`, `'05_berichte'`, `'30_chroniken'`, `'presse'`, `'statuten_reglemente'`, `'vorstand_protokolle'`, `'gv_vorlagen'`, `'schuetzenhaus'`, `'umbau_neubau'`, `'scheiben_2016'`, `'anlagen_50m_10m'`, `'vermietung_historisch'`, `'policen_schatzungen'`, `'festanlaesse'`, `'abteilung_kk'`, `'abteilung_lg'`, `'mitglieder_listen'`, `'kleider_ausbildung'`)
 * `visibility` (VARCHAR(20): `'public'`, `'members'`, `'vorstand'`)
-* `file_url` (TEXT – Link zu Supabase Storage `club-documents`)
+* `file_url` (TEXT – Direktlink zu Supabase Storage `club-documents`)
+* `storage_path` (TEXT – relativer Objektpfad in `club-documents`)
+* `source_path` (TEXT UNIQUE – kanonischer Ursprungspfad aus dem Google-Drive-Import zur Idempotenz)
+* `original_filename` (VARCHAR(255))
 * `file_size_kb` (INTEGER)
-* `file_type` (VARCHAR(20))
-* `year` (INTEGER)
-* `content_text` (TEXT – vollständiger transkribierter Text für globale Suche)
+* `file_type` (VARCHAR(20): `'pdf'`, `'doc'`, `'docx'`, `'xls'`, `'xlsx'`, `'xlsm'`, `'pptx'`, `'msg'`, `'odt'`, `'csv'`, `'txt'`, `'jpg'`)
+* `year` (INTEGER) & `document_date` (DATE – exaktes Dokumentdatum)
+* `content_text` (TEXT – extrahierter Volltext aus PDF, Word `.doc`/`.docx`, Excel `.xls`/`.xlsx`, `.msg`, `.odt` und Vision-OCR)
 * `transcription_status` (VARCHAR(30): `'pending'`, `'completed'`, `'manual_review'`)
-* `tsv_content` (tsvector – generiert via Trigger für die deutsche Volltextsuche)
+* `ocr_method` (VARCHAR(50): `'digital_pdf'`, `'office_extract'`, `'vision_ocr'`, `'manual'`, `'none'`)
+* `page_count` (INTEGER)
+* `tsv_content` (tsvector – gewichteter deutscher Volltextindex: Titel `A`, Metadaten `B`, Inhalt `C`)
 
 ### 3.2 Tabelle `public.document_chunks` (Vektor- & Abschnitts-Index für RAG)
 Für die semantische KI-Suche und den RAG-Chat:
