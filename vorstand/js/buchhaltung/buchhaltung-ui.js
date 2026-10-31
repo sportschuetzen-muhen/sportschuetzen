@@ -546,6 +546,11 @@ window.renderTabJournal = function(container) {
   const tableScrollTop = tableResp ? tableResp.scrollTop : 0;
   const windowScrollTop = window.scrollY || document.documentElement.scrollTop;
 
+  // Aktiven Suchfilter aus bestehendem Feld oder State sichern
+  const searchInputOld = container.querySelector('#bh-journal-search');
+  const savedSearchQuery = searchInputOld ? searchInputOld.value : (window._bhSavedJournalSearchQuery || '');
+  window._bhSavedJournalSearchQuery = savedSearchQuery;
+
   let filteredJournal = window._bhJournal.filter(j => Number(j.jahr) === Number(window._bhYear));
   
   // Zähle unvollständige Buchungen (fehlendes Soll- oder Haben-Konto)
@@ -723,7 +728,7 @@ window.renderTabJournal = function(container) {
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap" style="gap: 10px;">
         <h4 class="fw-bold text-primary mb-0"><i class="fas fa-receipt me-2"></i>Kassabuch-Journal (${window._bhYear})</h4>
         <div class="d-flex align-items-center flex-wrap" style="gap: 8px;">
-          <input type="text" class="form-control form-control-sm" id="bh-journal-search" placeholder="🔎 Beleg suchen..." oninput="bhFilterJournal(this.value)" style="max-width: 180px;">
+          <input type="text" class="form-control form-control-sm" id="bh-journal-search" placeholder="🔎 Beleg suchen..." value="${escapeHtml(savedSearchQuery)}" oninput="bhFilterJournal(this.value)" style="max-width: 180px;">
           ${transitKlaerungCount > 0 ? `
             <button type="button" class="btn btn-sm ${window._bhJournalFilterTransit ? 'btn-info fw-bold text-dark shadow-sm' : 'btn-outline-info text-dark'}" 
                     onclick="bhToggleJournalTransitFilter()" 
@@ -805,7 +810,27 @@ window.renderTabJournal = function(container) {
   `;
 
   const tableRespNew = container.querySelector('.table-responsive');
-  if (tableRespNew && tableScrollTop) {
+
+  // 1. Gespeicherten Suchfilter sofort wieder anwenden
+  if (savedSearchQuery) {
+    bhFilterJournal(savedSearchQuery);
+  }
+
+  // 2. Beleg-Verankerung: Wenn ein Beleg aktiv selektiert/fokussiert ist, diesen verlässlich sichtbar halten
+  const targetFocusId = window._bhJournalFocusId || (window._bhSelectedJournalIds && window._bhSelectedJournalIds.size === 1 ? Array.from(window._bhSelectedJournalIds)[0] : null);
+
+  const scrollTargetIntoView = () => {
+    if (targetFocusId) {
+      const targetRow = container.querySelector(`#bh-journal-tbody tr[data-journal-id="${targetFocusId}"]`);
+      if (targetRow) {
+        targetRow.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+        return true;
+      }
+    }
+    return false;
+  };
+
+  if (!scrollTargetIntoView() && tableRespNew && tableScrollTop) {
     tableRespNew.scrollTop = tableScrollTop;
   }
   window.scrollTo(0, windowScrollTop);
@@ -829,6 +854,11 @@ window.renderTabJournal = function(container) {
       },
       columnToggle: '#bh-journal-column-toggle'
     });
+  }
+
+  // Zusätzliche Absicherung nach TableKit sync (Spaltenbreiten/MutationObserver 15ms):
+  if (targetFocusId) {
+    setTimeout(scrollTargetIntoView, 35);
   }
 };
 
@@ -1272,7 +1302,8 @@ window.getAccountNameByCode = function(code) {
 
 // Live filter im Journal
 window.bhFilterJournal = function(query) {
-  const q = String(query).toLowerCase().trim();
+  window._bhSavedJournalSearchQuery = query || '';
+  const q = String(query || '').toLowerCase().trim();
   const rows = document.querySelectorAll('#bh-journal-tbody tr[data-journal-id]');
   
   rows.forEach(row => {

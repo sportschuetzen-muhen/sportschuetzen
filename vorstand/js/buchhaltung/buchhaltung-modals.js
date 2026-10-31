@@ -1257,6 +1257,24 @@ window.bhOpenEntryModal = function(entryId) {
   
   const isEdit = Boolean(entryId);
 
+  if (entryId) {
+    const numId = Number(entryId);
+    window._bhSelectedJournalIds = window._bhSelectedJournalIds || new Set();
+    window._bhSelectedJournalIds.clear();
+    window._bhSelectedJournalIds.add(numId);
+    window._bhJournalAnchorId = numId;
+    window._bhJournalFocusId = numId;
+    window._bhLastCheckedJournalId = numId;
+    if (typeof window.bhUpdateJournalSelectionUI === 'function') {
+      window.bhUpdateJournalSelectionUI();
+    }
+    const targetRow = document.querySelector(`#bh-journal-tbody tr[data-journal-id="${numId}"]`);
+    if (targetRow) {
+      document.querySelectorAll('#bh-journal-tbody tr.bh-row-selected').forEach(r => r.classList.remove('bh-row-selected'));
+      targetRow.classList.add('bh-row-selected');
+    }
+  }
+
   modalEl.innerHTML = `
     <div class="modal-dialog modal-dialog-centered modal-xl" style="max-width: 1100px;">
       <div class="modal-content border-0 rounded-4 shadow" style="position: relative;">
@@ -2910,6 +2928,19 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
       };
     }
 
+    if (savedEntry && savedEntry.id) {
+      const numId = Number(savedEntry.id);
+      window._bhSelectedJournalIds = window._bhSelectedJournalIds || new Set();
+      window._bhSelectedJournalIds.clear();
+      window._bhSelectedJournalIds.add(numId);
+      window._bhJournalAnchorId = numId;
+      window._bhJournalFocusId = numId;
+      window._bhLastCheckedJournalId = numId;
+      if (typeof window.bhUpdateJournalSelectionUI === 'function') {
+        window.bhUpdateJournalSelectionUI();
+      }
+    }
+
     if (payload.id) {
       const idx = window._bhJournal.findIndex(j => Number(j.id) === Number(savedEntry.id));
       if (idx !== -1) {
@@ -2929,10 +2960,6 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
     if (exportXml && recipientData && recipientData.iban) {
       bhDownloadPain001Xml([savedEntry], recipientData);
     }
-
-    setTimeout(async () => {
-      await loadBuchhaltungData(true, true);
-    }, 1500);
   } catch (err) {
     if (window.UIConfirmKit && typeof window.UIConfirmKit.alert === 'function') {
       await window.UIConfirmKit.alert({
@@ -3723,6 +3750,22 @@ window.bhConvertEntryToSplit = function(entryId) {
     return;
   }
 
+  const numId = Number(entryId);
+  window._bhSelectedJournalIds = window._bhSelectedJournalIds || new Set();
+  window._bhSelectedJournalIds.clear();
+  window._bhSelectedJournalIds.add(numId);
+  window._bhJournalAnchorId = numId;
+  window._bhJournalFocusId = numId;
+  window._bhLastCheckedJournalId = numId;
+  if (typeof window.bhUpdateJournalSelectionUI === 'function') {
+    window.bhUpdateJournalSelectionUI();
+  }
+  const targetRow = document.querySelector(`#bh-journal-tbody tr[data-journal-id="${numId}"]`);
+  if (targetRow) {
+    document.querySelectorAll('#bh-journal-tbody tr.bh-row-selected').forEach(r => r.classList.remove('bh-row-selected'));
+    targetRow.classList.add('bh-row-selected');
+  }
+
   const baseBeleg = window.bhGetSplitBaseBeleg ? window.bhGetSplitBaseBeleg(entry.beleg_nr) : String(entry.beleg_nr || '').trim();
   const y = Number(entry.jahr || window._bhYear || new Date().getFullYear());
 
@@ -4184,6 +4227,19 @@ window.bhSaveSplitGroupEdit = async function(printAfter = false) {
       updatedEntries.push(savedItem);
     }
 
+    if (updatedEntries.length > 0) {
+      window._bhSelectedJournalIds = window._bhSelectedJournalIds || new Set();
+      window._bhSelectedJournalIds.clear();
+      updatedEntries.forEach(ue => window._bhSelectedJournalIds.add(Number(ue.id)));
+      const firstId = Number(updatedEntries[0].id);
+      window._bhJournalAnchorId = firstId;
+      window._bhJournalFocusId = firstId;
+      window._bhLastCheckedJournalId = Number(updatedEntries[updatedEntries.length - 1].id);
+      if (typeof window.bhUpdateJournalSelectionUI === 'function') {
+        window.bhUpdateJournalSelectionUI();
+      }
+    }
+
     if (typeof showSuccess === 'function') {
       showSuccess(`🎉 Split-Verbund ${baseBeleg} (${updatedEntries.length} Zeilen) erfolgreich aktualisiert!`);
     }
@@ -4201,11 +4257,6 @@ window.bhSaveSplitGroupEdit = async function(printAfter = false) {
     if (printAfter && updatedEntries.length > 0) {
       bhPrintJournalBeleg(updatedEntries, `Abrechnung ${baseBeleg}`);
     }
-
-    setTimeout(async () => {
-      if (typeof loadBuchhaltungData === 'function') await loadBuchhaltungData(true, true);
-    }, 1500);
-
   } catch (err) {
     console.error("Fehler beim Speichern des Split-Verbunds:", err);
     if (window.UIConfirmKit && typeof window.UIConfirmKit.alert === 'function') {
