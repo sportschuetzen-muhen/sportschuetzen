@@ -679,7 +679,11 @@ window.bhGetAccountCategory = function(account) {
       detail = 'Dienstleistungen Erträge';
     } else if (k === '8' || codeStr.startsWith('8')) {
       sub = 'Betriebsfremder, ausserordentlicher Ertrag';
-      detail = codeStr.startsWith('81') ? 'Finanzertrag / Zinsertrag' : (account.bezeichnung || 'Ausserordentlicher Ertrag');
+      if (codeStr.startsWith('810') || codeStr.startsWith('811')) {
+        detail = 'Finanzertrag / Zinsertrag';
+      } else {
+        detail = 'Ausserordentlicher Ertrag';
+      }
     } else {
       sub = 'Übrige Erlöse aus Lieferungen und Leistungen';
       detail = 'Diverse betriebliche Erträge';
@@ -781,8 +785,8 @@ window.bhGetAccountCategory = function(account) {
       sub = 'Energie';
       detail = 'Energie & Wasser';
     } else if (codeStr.startsWith('85')) {
-      sub = 'Verwaltung';
-      detail = 'Verwaltungsaufwand';
+      sub = 'Betriebsfremder, ausserordentlicher Aufwand';
+      detail = 'Ausserordentlicher Aufwand';
     }
     return { main: 'Aufwand', sub, detail };
   }

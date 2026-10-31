@@ -100,6 +100,10 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
   - **Client-Payloads:** CAMT- und Split-Buchungsmethoden (`bhBankBookOneInternal`, `bhBankBookAll`, `bhBankBookSelected`, `jbGetSplitBookings`) übergeben den Typ via `getBuchungstyp` direkt beim Insert.
   - **Resiliente UI (`bhResolveItemBuchungstyp`):** Frontend und Controlling bewerten Datensätze dynamisch und lassen ein veraltetes `'TRANSIT'` nur bei echten Transitkonten gelten.
 
+### 2.11 KMU-Erfolgsrechnung: Kontenklassen-Integrität (81xx Ertrag vs. 85xx Aufwand) & Numerische Gruppierung
+* **Invariante & Klassifizierung:** Ausserordentliche Erlöse wie Kleiderverkauf (`8121`), Reinigungstücher (`8122`) und Entschädigungen (`8123`) sind in `public.accounting_accounts` strikt als `Ertrag` hinterlegt (nicht als Aufwand mit Negativsaldo). Kleidereinkauf (`8501`) und Sonderaufwände (`8500`) bilden den Gegenpol als `Ausserordentlicher Aufwand`.
+* **Gliederung & Sortierung:** Die Darstellung in den KMU-Finanzberichten (`renderErfolgsrechnungHTML`) und Controlling sortiert Untergruppen nicht alphabetisch, sondern strikt nach aufsteigender Kontonummer der enthaltenen Konten (34xx &rarr; 36xx &rarr; 38xx &rarr; 81xx und 40xx &rarr; 41xx &rarr; 42xx &rarr; 44xx &rarr; 60xx &rarr; 85xx &rarr; 89xx). Zinserträge (`8110`) und ausserordentliche Erträge (`812x`) werden in eigenständigen Subgruppen sauber getrennt.
+
 ---
 
 ## 3. Datenmodell (Kern-Tabellen)

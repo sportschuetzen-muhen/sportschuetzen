@@ -310,12 +310,36 @@ window.renderTabBerichte = function (container) {
     let html = '';
     if (!tree[mainClass]) return html;
 
-    const subs = Object.keys(tree[mainClass]).sort();
+    function getMinKontoInSub(sub) {
+      let min = 999999;
+      if (!tree[mainClass][sub]) return min;
+      Object.keys(tree[mainClass][sub]).forEach(d => {
+        (tree[mainClass][sub][d] || []).forEach(acc => {
+          const num = parseInt(acc.konto, 10);
+          if (!isNaN(num) && num < min) min = num;
+        });
+      });
+      return min;
+    }
+
+    function getMinKontoInDetail(sub, detail) {
+      let min = 999999;
+      const accs = tree[mainClass][sub] && tree[mainClass][sub][detail];
+      if (Array.isArray(accs)) {
+        accs.forEach(acc => {
+          const num = parseInt(acc.konto, 10);
+          if (!isNaN(num) && num < min) min = num;
+        });
+      }
+      return min;
+    }
+
+    const subs = Object.keys(tree[mainClass]).sort((a, b) => getMinKontoInSub(a) - getMinKontoInSub(b));
     subs.forEach(sub => {
-      const details = Object.keys(tree[mainClass][sub]).sort();
+      const details = Object.keys(tree[mainClass][sub]).sort((a, b) => getMinKontoInDetail(sub, a) - getMinKontoInDetail(sub, b));
       details.forEach(detail => {
         const accounts = tree[mainClass][sub][detail];
-        accounts.sort((a, b) => parseInt(a.konto) - parseInt(b.konto));
+        accounts.sort((a, b) => parseInt(a.konto, 10) - parseInt(b.konto, 10));
         html += renderSubgroupRows(accounts, detail);
       });
     });
