@@ -345,14 +345,14 @@ function bhBankStatsBannerHTML() {
 // Render Results Table
 // ---------------------------------------------------------------------
 window._bhBankSortCol = window._bhBankSortCol || 'date';
-window._bhBankSortAsc = window._bhBankSortAsc !== undefined ? window._bhBankSortAsc : false;
+window._bhBankSortAsc = window._bhBankSortAsc !== undefined ? window._bhBankSortAsc : true;
 
 window.bhBankSortTable = function(col) {
   if (window._bhBankSortCol === col) {
     window._bhBankSortAsc = !window._bhBankSortAsc;
   } else {
     window._bhBankSortCol = col;
-    window._bhBankSortAsc = (col === 'party' || col === 'date') ? true : false;
+    window._bhBankSortAsc = true;
   }
   bhBankRenderResults(window._bhBankActiveFilter);
 };
@@ -826,6 +826,9 @@ function bhBankRenderResults(filter) {
     bhBankUpdateSelectedBtn();
   }
 
+  // Belegnummern-Vorschau chronologisch von oben nach unten ermitteln
+  bhCalculateProjectedBankBelegNrs(rows, window._bhYear);
+
   // Sortierung auf alle Spalten anwenden
   const col = window._bhBankSortCol || 'date';
   const asc = window._bhBankSortAsc;
@@ -834,6 +837,11 @@ function bhBankRenderResults(filter) {
     let res = 0;
     if (col === 'date') {
       res = new Date(a.bookingDate || 0) - new Date(b.bookingDate || 0);
+      if (res === 0) {
+        const idxA = a._camtOrderIndex !== undefined ? a._camtOrderIndex : 0;
+        const idxB = b._camtOrderIndex !== undefined ? b._camtOrderIndex : 0;
+        res = idxA - idxB;
+      }
     } else if (col === 'party') {
       res = (a.partyName || '').localeCompare(b.partyName || '', 'de');
     } else if (col === 'amount') {
@@ -1037,6 +1045,11 @@ function bhBankRenderResults(filter) {
         <td data-col-id="date" class="small tk-col-date" style="white-space:nowrap;">
           <span class="fw-bold">${formatSwissDate(r.bookingDate)}</span>
           ${r.accountIban ? `<br><span class="badge bg-light text-muted border" style="font-size:9px;" title="Konto: ${escHtml(r.accountIban)}">${escHtml(r.accountIban.slice(-8))}</span>` : ''}
+          ${r.alreadyBooked ? `
+            <div class="mt-1"><span class="badge bg-success-subtle text-success border border-success-subtle font-monospace" style="font-size:10px;" title="Verbuchte Belegnummer im Journal"><i class="fas fa-check-circle me-1"></i>${escHtml(r.matchedJournalEntry?.beleg_nr || 'Gebucht')}</span></div>
+          ` : (r._projectedBelegNr ? `
+            <div class="mt-1"><span class="badge bg-light text-secondary border font-monospace" style="font-size:10px;" title="Voraussichtliche Belegnummer (chronologisch von oben nach unten)"><i class="fas fa-receipt me-1 opacity-50"></i>${escHtml(r._projectedBelegNr)}</span></div>
+          ` : '')}
         </td>
         <td data-col-id="party" class="tk-col-party">
           <span class="fw-bold">${escHtml(r.partyName || '–')}</span>
@@ -1355,10 +1368,11 @@ window.bhBankHandleFiles = async function(files) {
   const uniqueTxs = [];
   const seenKeys = new Set();
 
-  combined.forEach(t => {
+  combined.forEach((t, idx) => {
     const key = `${t.bookingDate}_${t.amount}_${(t.partyName||'').toLowerCase()}_${(t.remittanceInfo||'').substring(0,30).toLowerCase()}`;
     if (!seenKeys.has(key)) {
       seenKeys.add(key);
+      if (t._camtOrderIndex === undefined) t._camtOrderIndex = idx;
       uniqueTxs.push(t);
     }
   });
@@ -1500,6 +1514,7 @@ function bhBankParseCAMT053(xmlText) {
     const creditorReference = getTagText(cdtrRefInf, 'Ref');
 
     transactions.push({
+      _camtOrderIndex: i,
       isCredit,
       amount,
       bookingDate,
@@ -2523,6 +2538,9 @@ function bhBankMatchAll(transactions) {
     });
   }
 
+  // Belegnummern chronologisch von oben nach unten vorausberechnen
+  bhCalculateProjectedBankBelegNrs(results, window._bhYear);
+
   return results;
 }
 
@@ -2591,6 +2609,57 @@ function bhGetNextBankBelegNr(year, bankKonto = '1020') {
   const prefix = getBankBelegPrefix(bankKonto);
   const seq = bhGetNextBankBelegSeq(year, bankKonto);
   return `${prefix}${year}-${String(seq).padStart(3, '0')}`;
+}
+
+// ---------------------------------------------------------------------
+// Vorschau-Berechnung der Belegnummern streng chronologisch von oben nach unten (Top-to-Bottom)
+// ---------------------------------------------------------------------
+function bhCalculateProjectedBankBelegNrs(allRows, year) {
+  if (!Array.isArray(allRows) || allRows.length === 0) return;
+  const y = Number(year || window._bhYear || new Date().getFullYear());
+  const journal = window._bhJournal || [];
+
+  // 1. Höchste vorhandene Belegnummern im Journal je Präfix ermitteln
+  const maxSeqs = {};
+  journal.forEach(j => {
+    if (Number(j.jahr) === y && j.beleg_nr) {
+      const m = String(j.beleg_nr).match(/^(B_Zahl_|B_Wirt_|B_Geno_|BK_)\d{4}-(\d+)/i);
+      if (m) {
+        const pfx = m[1].toUpperCase();
+        const num = parseInt(m[2], 10);
+        if (!isNaN(num)) {
+          maxSeqs[pfx] = Math.max(maxSeqs[pfx] || 0, num);
+        }
+      }
+    }
+  });
+
+  // 2. Ungebuchte Zeilen des Buchungsjahres filtern
+  const unbooked = allRows.filter(r => !r.alreadyBooked && !r.isWrongYear && Number(r.amount || 0) > 0);
+
+  // 3. Streng chronologisch und nach CAMT-Reihenfolge sortieren
+  unbooked.sort((a, b) => {
+    const dateA = new Date(a.bookingDate || '1970-01-01').getTime();
+    const dateB = new Date(b.bookingDate || '1970-01-01').getTime();
+    if (dateA !== dateB) return dateA - dateB;
+    const idxA = a._camtOrderIndex !== undefined ? a._camtOrderIndex : 0;
+    const idxB = b._camtOrderIndex !== undefined ? b._camtOrderIndex : 0;
+    return idxA - idxB;
+  });
+
+  // 4. Fortlaufende Nummern von oben nach unten vergeben
+  const runningSeqs = { ...maxSeqs };
+  unbooked.forEach(r => {
+    const txBankKonto = isBankKontoCode(r.suggestedSoll) 
+      ? r.suggestedSoll 
+      : (isBankKontoCode(r.suggestedHaben) 
+          ? r.suggestedHaben 
+          : bhBankGetAccountForIban(r.accountIban, '1020'));
+    const pfxRaw = getBankBelegPrefix(txBankKonto);
+    const pfxKey = pfxRaw.toUpperCase();
+    runningSeqs[pfxKey] = (runningSeqs[pfxKey] || 0) + 1;
+    r._projectedBelegNr = `${pfxRaw}${y}-${String(runningSeqs[pfxKey]).padStart(3, '0')}`;
+  });
 }
 
 // ---------------------------------------------------------------------
@@ -2764,7 +2833,7 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
 
   const year = Number(window._bhYear || new Date().getFullYear());
   const txBankKonto = isBankKontoCode(kontoSoll) ? kontoSoll : (isBankKontoCode(kontoHaben) ? kontoHaben : (tx.accountIban ? bhBankGetAccountForIban(tx.accountIban) : '1020'));
-  const belegNr = customBelegNr || bhGetNextBankBelegNr(year, txBankKonto);
+  const belegNr = customBelegNr || tx._batchBelegNr || tx._projectedBelegNr || bhGetNextBankBelegNr(year, txBankKonto);
   const bookingDate = tx.bookingDate || new Date().toISOString().split('T')[0];
 
   // Vorab sicherstellen: Falls Rechnung oder Jahresbeitrag gematcht und Positionen im Cache oder Objekt vorhanden sind
@@ -2861,6 +2930,33 @@ window.bhBankBookOne = async function(txIdx, customBelegNr, isBatch = false) {
 
   const tx = window._bhBankMatchResults[txIdx];
   if (!tx || tx._isBooking || tx.alreadyBooked) return;
+
+  // Reihenfolgen-Schutz: Prüfen, ob frühere Buchungen auf dem Kontoauszug noch ungebucht sind
+  const unbookedPrior = (window._bhBankMatchResults || []).filter((other, idx) => {
+    if (idx === txIdx || other.alreadyBooked || other.isWrongYear || Number(other.amount || 0) <= 0) return false;
+    const dateOther = new Date(other.bookingDate || 0).getTime();
+    const dateCurrent = new Date(tx.bookingDate || 0).getTime();
+    if (dateOther < dateCurrent) return true;
+    if (dateOther === dateCurrent && (other._camtOrderIndex || 0) < (tx._camtOrderIndex || 0)) return true;
+    return false;
+  });
+
+  if (unbookedPrior.length > 0) {
+    const plannedBeleg = tx._projectedBelegNr || bhGetNextBankBelegNr(Number(window._bhYear || new Date().getFullYear()), isBankKontoCode(tx.suggestedSoll) ? tx.suggestedSoll : (isBankKontoCode(tx.suggestedHaben) ? tx.suggestedHaben : bhBankGetAccountForIban(tx.accountIban, '1020')));
+    let proceed = false;
+    if (window.UIConfirmKit && typeof window.UIConfirmKit.confirm === 'function') {
+      proceed = await window.UIConfirmKit.confirm({
+        title: 'Belegnummern-Chronologie beachten',
+        message: `Auf diesem Kontoauszug befinden sich noch ${unbookedPrior.length} frühere Buchung(en), die noch nicht im Journal erfasst sind.\n\nWenn du diese Zeile jetzt einzeln buchst, erhält sie die Belegnummer ${plannedBeleg}, wodurch die Belegnummern von oben nach unten auf dem Auszug nicht mehr streng synchron bleiben.\n\nEmpfehlung: Verbuche den Auszug gesammelt über «Alle offenen Bank-Buchungen buchen» (unklare Posten laufen über Klärungskonto 1090).\n\nMöchtest du diese Zeile trotzdem einzeln buchen?`,
+        type: 'warning',
+        confirmText: 'Ja, einzeln buchen',
+        cancelText: 'Abbrechen'
+      });
+    } else {
+      proceed = confirm(`Hinweis: Es gibt noch ${unbookedPrior.length} frühere ungebuchte Zeilen. Trotzdem einzeln buchen?`);
+    }
+    if (!proceed) return;
+  }
 
   // Sofortige Sperre gegen Mehrfachklick auf denselben Button
   tx._isBooking = true;
@@ -3219,12 +3315,14 @@ window.bhBankBookAll = async function() {
   const batchToast = showToast(`⏳ Bereite ${toBook.length} Buchungen lokal im Browser vor...`, 'info', 'top-end', 0);
 
   try {
-    // 1. WICHTIG: Vor der Belegnummern-Vergabe STRIKT chronologisch nach Buchungsdatum sortieren!
+    // 1. WICHTIG: Vor der Belegnummern-Vergabe STRIKT chronologisch nach Buchungsdatum und CAMT-Reihenfolge sortieren!
     toBook.sort((a, b) => {
       const dateA = new Date(a.r.bookingDate || '1970-01-01').getTime();
       const dateB = new Date(b.r.bookingDate || '1970-01-01').getTime();
       if (dateA !== dateB) return dateA - dateB;
-      return a.i - b.i;
+      const idxA = a.r._camtOrderIndex !== undefined ? a.r._camtOrderIndex : a.i;
+      const idxB = b.r._camtOrderIndex !== undefined ? b.r._camtOrderIndex : b.i;
+      return idxA - idxB;
     });
 
     // 2. Belegnummern im Vorfeld lückenlos und streng chronologisch vergeben
@@ -3235,7 +3333,7 @@ window.bhBankBookAll = async function() {
             ? r.suggestedHaben 
             : bhBankGetAccountForIban(r.accountIban, '1020'));
       if (!r._batchBelegNr) {
-        r._batchBelegNr = bhGetNextBankBelegNr(activeYear, txBankKonto);
+        r._batchBelegNr = r._projectedBelegNr || bhGetNextBankBelegNr(activeYear, txBankKonto);
       }
     });
 
@@ -3523,12 +3621,14 @@ window.bhBankBookSelected = async function() {
   const batchToast = showToast(`⏳ Bereite ${toBook.length} Buchungen aus dem Stapel vor...`, 'info', 'top-end', 0);
 
   try {
-    // 1. Vor der Belegnummern-Vergabe STRIKT chronologisch nach Buchungsdatum sortieren
+    // 1. Vor der Belegnummern-Vergabe STRIKT chronologisch nach Buchungsdatum und CAMT-Reihenfolge sortieren
     toBook.sort((a, b) => {
       const dateA = new Date(a.r.bookingDate || '1970-01-01').getTime();
       const dateB = new Date(b.r.bookingDate || '1970-01-01').getTime();
       if (dateA !== dateB) return dateA - dateB;
-      return a.i - b.i;
+      const idxA = a.r._camtOrderIndex !== undefined ? a.r._camtOrderIndex : a.i;
+      const idxB = b.r._camtOrderIndex !== undefined ? b.r._camtOrderIndex : b.i;
+      return idxA - idxB;
     });
 
     // 2. Belegnummern lückenlos und chronologisch vergeben
@@ -3539,7 +3639,7 @@ window.bhBankBookSelected = async function() {
             ? r.suggestedHaben 
             : bhBankGetAccountForIban(r.accountIban, '1020'));
       if (!r._batchBelegNr) {
-        r._batchBelegNr = bhGetNextBankBelegNr(activeYear, txBankKonto);
+        r._batchBelegNr = r._projectedBelegNr || bhGetNextBankBelegNr(activeYear, txBankKonto);
       }
     });
 
