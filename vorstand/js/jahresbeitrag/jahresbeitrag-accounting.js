@@ -28,7 +28,7 @@ window.jbResolveAccountForPosition = function(sourceField, description, customSe
       const k = String(gZ1['Haben-Konto-Jahresbeitrag-Buchhaltung'] || gZ1['Vorgeschlagenes Haben-Konto'] || gZ1.konto_haben || gZ1.konto || '').trim();
       if (k) return k;
     }
-    return '8500'; // Standard-Fallback
+    return '1351'; // Transit Z001 Vereinsbekleidung
   }
   if (sf === 'Z2' || sf === 'Z002' || desc.includes('zusatzposition 2')) {
     if (customSettings && customSettings.z2_konto) return String(customSettings.z2_konto).trim();
@@ -40,7 +40,7 @@ window.jbResolveAccountForPosition = function(sourceField, description, customSe
       const k = String(gZ2['Haben-Konto-Jahresbeitrag-Buchhaltung'] || gZ2['Vorgeschlagenes Haben-Konto'] || gZ2.konto_haben || gZ2.konto || '').trim();
       if (k) return k;
     }
-    return '1300'; // Transitorische Aktiven Standard (13xx)
+    return '1352'; // Transit Z002 Schützenfeste
   }
 
   // 2. Abgleich mit dem dynamischen Sheet gebuehrenconfig (Members100 Spalten I & J)
@@ -102,10 +102,20 @@ window.jbResolveAccountForPosition = function(sourceField, description, customSe
     return '3420'; // Standard-Gegenkonto Jugendförderung
   }
 
-  // Wettschiessen (10m / 50m / Volksschiessen / DEZ): Falls nicht in gebuehrenconfig konfiguriert, auf Transitorische Aktiven (1300) leiten
-  if (sf.startsWith('KK') || sf.startsWith('LG') || desc.includes('50m') || desc.includes('10m') || desc.includes('stich') || desc.includes('volksschiessen')) {
-    return '1300';
+  // Wettschiessen (10m / 50m / Volksschiessen / DEZ): Falls nicht in gebuehrenconfig konfiguriert, auf 13xx Transitkonten leiten
+  if (sf.startsWith('KK')) {
+    const num = parseInt(sf.replace(/\D/g, ''), 10);
+    if (!isNaN(num) && num >= 1 && num <= 20) return String(1310 + num);
+    return '1310';
   }
+  if (sf.startsWith('LG')) {
+    const num = parseInt(sf.replace(/\D/g, ''), 10);
+    if (!isNaN(num) && num >= 1 && num <= 20) return String(1330 + num);
+    return '1330';
+  }
+  if (desc.includes('50m')) return '1310';
+  if (desc.includes('10m')) return '1330';
+  if (desc.includes('stich') || desc.includes('volksschiessen')) return '1318';
 
   return '3410'; // Standard-Fallback
 };

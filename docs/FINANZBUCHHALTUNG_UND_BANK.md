@@ -83,6 +83,15 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
 * **Suffix-Invariante & Live-Kontierung im Split-Verbund:** Sowohl beim Sammel- als auch beim Einzel-Verbuchen im CAMT-Abgleich (`_bhBankBookOneInternal`) und beim nachträglichen Aufteilen (`bhConvertEntryToSplit` / `bhSaveSplitGroupEdit`) erhalten zusammengehörige Teilpositionen durchgehend alphabetische Suffixe (`a, b, c...`) am Belegstamm (`baseBeleg`). Beim Hinzufügen oder Aufteilen einer Buchung bleibt das Liquiditäts-Ankerkonto (`1020`, `1000`, `1021`, `1022`) je nach Flussrichtung im Soll oder Haben vorbelegt, während Kontoänderungen im Split-Editor sofort den Netto-Saldo und die Abzug-Kennzeichnung live neu berechnen. Beim Bearbeiten bestehender CAMT-Buchungen bleibt der Aktionstyp `Bank` im Auswahlfeld `#bhe-typ` erhalten.
 * **Vorjahres-Erkennung & automatische Split-Übernahme bei Jahresbeiträgen im CAMT-Abgleich:** Bei eingehenden Jahresbeitragszahlungen ermittelt `bhBankFindBestBeitragForMember` anhand expliziter Jahresangaben im Verwendungszweck (z.B. `Jahresbeitrag 2025`) oder eines exakten Betragstreffers auf einen offenen Beitrags-Header (`contributions_header`) das korrekte Beitragsjahr. Über `bhBankApplyJbPositionsToTx` und `jbGetSplitBookings` werden die zugehörigen Beitragspositionen (`contributions_positions`) unmittelbar in `tx.splitRows` (`tx.isSplit = true`) überführt, sodass sowohl die Haupttabelle als auch das Detail-Modal «Split-Buchung aufteilen» (`bhBankOpenSplitModal`) alle Teilbuchungen inklusive Ehrenmitglieder-/Vorstands-Abzügen konsistent ausweisen.
 
+### 2.9 Strukturierte 20er-Block Transitkonten für Stiche & Weiterverrechnungen (13xx)
+* **Problemstellung:** Laufen sämtliche Meisterschaftsstiche, Verbandsschiessen und Sonderbeiträge über ein einziges Sammelkonto `1300`, ist die rechnerische Detailkontrolle bei Jahresend-Differenzen extrem zeitaufwendig.
+* **Architektur & Block-Standard:** Der 13xx-Bereich ist in feste 20er-Nummernblöcke gegliedert, deren Endziffern exakt mit den Gebühren-Codes korrespondieren:
+  - `1300–1309`: Meisterschafts-Sammel- & Klärungskonto (`1300`), Gruppengewinne (`1301`).
+  - `1310–1329`: 50m Kleinkaliber (`1310` Sammel; `1311` Grenzland KK001 bis `1318` Volksschiessen KK008; `1319–1329` Reserve).
+  - `1330–1349`: 10m Luftgewehr (`1330` Sammel; `1331` AG DEZ LG001 bis `1337` Kniend LG007; `1338–1349` Reserve/Nachwuchs).
+  - `1350–1369`: Zusatzpositionen & Feste (`1350` Sammel; `1351` Bekleidung Z001; `1352` Schützenfest Stiche Z002; `1353` Fest-Logis Z003; `1354–1369` Reserve).
+* **Vorteil:** Die Bilanz saldiert jeden einzelnen Anlass transparent gegen die Verbandsrechnungen des Ausrichters (Soll = Verbandsrechnung, Haben = Beitragsanteile Mitglieder -> Saldo CHF 0.00).
+
 ---
 
 ## 3. Datenmodell (Kern-Tabellen)
