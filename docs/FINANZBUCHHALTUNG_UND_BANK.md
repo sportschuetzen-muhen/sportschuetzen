@@ -93,6 +93,13 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
   - `1350–1369`: Zusatzpositionen & Feste (`1350` Sammel; `1351` Bekleidung Z001; `1352` Schützenfest Stiche Z002; `1353` Fest-Logis Z003; `1354–1369` Reserve).
 * **Vorteil:** Die Bilanz saldiert jeden einzelnen Anlass transparent gegen die Verbandsrechnungen des Ausrichters (Soll = Verbandsrechnung, Haben = Beitragsanteile Mitglieder -> Saldo CHF 0.00).
 
+### 2.10 Automatische Buchungstyp-Ermittlung & Trigger-Sicherung (accounting_journal.buchungstyp)
+* **Problemstellung:** Da CAMT-Importe den Spaltenwert `buchungstyp` historisch nicht explizit mitgaben, belegte die Datenbank alle importierten Datensätze mit dem Tabellen-Default `'TRANSIT'`. Dadurch wurden Ertrags- und Aufwandsbuchungen im Journal starr als «TRANSIT» ausgewiesen und in gefilterten Revisorenberichten verborgen, bis sie manuell geöffnet und gespeichert wurden.
+* **Lösung & Invariante (3-Schichten-Schutz):**
+  - **PostgreSQL Trigger (`trg_acc_journal_set_buchungstyp` via Migration `105`):** Ein `BEFORE INSERT OR UPDATE`-Trigger auf `accounting_journal` ermittelt anhand der Kontenklasse (`public.accounting_accounts`) und Standard-Präfixe vollautomatisch den Typ (`ERTRAG`, `AUFWAND`, `DEBITOR`, `KASSE`, `BANK`). Echte Klärungs- (`1090`), Geldtransit- (`1190`) und Stichkonten (`13xx`) bleiben strikt auf `TRANSIT`.
+  - **Client-Payloads:** CAMT- und Split-Buchungsmethoden (`bhBankBookOneInternal`, `bhBankBookAll`, `bhBankBookSelected`, `jbGetSplitBookings`) übergeben den Typ via `getBuchungstyp` direkt beim Insert.
+  - **Resiliente UI (`bhResolveItemBuchungstyp`):** Frontend und Controlling bewerten Datensätze dynamisch und lassen ein veraltetes `'TRANSIT'` nur bei echten Transitkonten gelten.
+
 ---
 
 ## 3. Datenmodell (Kern-Tabellen)

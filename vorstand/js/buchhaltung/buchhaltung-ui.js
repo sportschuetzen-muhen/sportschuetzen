@@ -3,10 +3,10 @@
 // =====================================================================
 
 // Globaler Hook für Navigation (wird aus main.js aufgerufen)
-window.renderBuchhaltung = function() {
+window.renderBuchhaltung = function () {
   const container = document.getElementById('buchhaltung-container');
   if (!container) return;
-  
+
   // Grundgerüst zeichnen
   container.innerHTML = `
     <!-- KPI Header -->
@@ -78,42 +78,42 @@ window.renderBuchhaltung = function() {
       <!-- Tabs werden hier dynamisch gerendert -->
     </div>
   `;
-  
+
   return loadBuchhaltungData(false);
 };
 
 // Schaltet Tabs um
-window.bhSwitchTab = function(tabName) {
+window.bhSwitchTab = function (tabName) {
   window._bhActiveTab = tabName;
-  
+
   document.querySelectorAll('.bh-tab-btn').forEach(btn => {
     btn.classList.remove('active');
     if (btn.getAttribute('onclick').includes(`'${tabName}'`)) {
       btn.classList.add('active');
     }
   });
-  
+
   renderActiveAccountingTab();
 };
 
 // Ändert das aktive Buchhaltungsjahr
-window.bhChangeYear = function(year) {
+window.bhChangeYear = function (year) {
   window._bhYear = Number(year);
-  
+
   if (window._bhBankTransactions && window._bhBankTransactions.length > 0 && typeof bhBankMatchAll === 'function') {
     window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);
   }
-  
+
   recalculateLiveAccountBalances();
   updateAccountingKPIs();
   renderActiveAccountingTab();
 };
 
 // Rendert den Inhalt des aktiven Tabs
-window.renderActiveAccountingTab = function() {
+window.renderActiveAccountingTab = function () {
   const content = document.getElementById('bh-tab-content-container');
   if (!content) return;
-  
+
   if (window._bhActiveTab === 'berichte') {
     renderTabBerichte(content);
   } else if (window._bhActiveTab === 'journal') {
@@ -148,7 +148,7 @@ window.renderActiveAccountingTab = function() {
 };
 
 // Sortier-Mechanismus für Kassabuch-Journal
-window.bhSortJournal = function(col) {
+window.bhSortJournal = function (col) {
   if (window._bhJournalSortCol === col) {
     window._bhJournalSortAsc = !window._bhJournalSortAsc;
   } else {
@@ -159,7 +159,7 @@ window.bhSortJournal = function(col) {
 };
 
 // Sortier-Mechanismus für Kontenrahmen
-window.bhSortKonten = function(col) {
+window.bhSortKonten = function (col) {
   if (window._bhKontenSortCol === col) {
     window._bhKontenSortAsc = !window._bhKontenSortAsc;
   } else {
@@ -170,16 +170,16 @@ window.bhSortKonten = function(col) {
 };
 
 // Rendert Untergruppen-Zeilen und berechnet deren Subsumme
-window.renderSubgroupRows = function(accounts, subgroupTitle) {
+window.renderSubgroupRows = function (accounts, subgroupTitle) {
   if (accounts.length === 0) return '';
   const sum = accounts.reduce((s, acc) => s + Number(acc._endsaldo || 0), 0);
-  
+
   let html = `
     <tr class="table-light">
       <td colspan="3" class="ps-3 fw-bold text-muted small" style="background-color: rgba(15,58,93,0.02);">${subgroupTitle}</td>
     </tr>
   `;
-  
+
   accounts.forEach(acc => {
     let proMemoriaHTML = '';
     if (String(acc.konto).trim() === '1510' && window._bhProMemoriaGewehreCount > 0) {
@@ -191,7 +191,7 @@ window.renderSubgroupRows = function(accounts, subgroupTitle) {
         </div>
       `;
     }
-    
+
     html += `
       <tr class="bh-detail-row bh-account-row">
         <td class="ps-4 font-monospace" style="width: 80px;">
@@ -205,19 +205,19 @@ window.renderSubgroupRows = function(accounts, subgroupTitle) {
       </tr>
     `;
   });
-  
+
   html += `
     <tr class="bh-subtotal-row">
       <td colspan="2" class="ps-3 text-muted italic">Subtotal ${subgroupTitle}</td>
       <td class="text-end fw-bold text-dark">${fmtChf(sum)}</td>
     </tr>
   `;
-  
+
   return html;
 };
 
 // RENDERING: TAB 1 – KMU-FINANZBERICHTE (BILANZ & ERFOLGSRECHNUNG)
-window.renderTabBerichte = function(container) {
+window.renderTabBerichte = function (container) {
   const tree = {};
   window._bhKontenrahmen.forEach(acc => {
     const cat = bhGetAccountCategory(acc);
@@ -226,7 +226,7 @@ window.renderTabBerichte = function(container) {
     if (!tree[cat.main][cat.sub][cat.detail]) tree[cat.main][cat.sub][cat.detail] = [];
     tree[cat.main][cat.sub][cat.detail].push(acc);
   });
-  
+
   function getClassTotal(mainClass) {
     if (!tree[mainClass]) return 0;
     let total = 0;
@@ -239,7 +239,7 @@ window.renderTabBerichte = function(container) {
     });
     return total;
   }
-  
+
   const totalAktiven = getClassTotal('Aktiven');
   const sumErtrag = getClassTotal('Ertrag');
   const sumAufwand = getClassTotal('Aufwand');
@@ -249,8 +249,8 @@ window.renderTabBerichte = function(container) {
   function renderClassHTML(mainClass) {
     let html = '';
     if (!tree[mainClass]) return html;
-    
-    const subs = Object.keys(tree[mainClass]).sort((a,b) => {
+
+    const subs = Object.keys(tree[mainClass]).sort((a, b) => {
       if (a.includes('Umlauf')) return -1;
       if (b.includes('Umlauf')) return 1;
       if (a.includes('Kurzfristig')) return -1;
@@ -259,23 +259,23 @@ window.renderTabBerichte = function(container) {
       if (b.includes('Langfristig')) return 1;
       return 0;
     });
-    
+
     subs.forEach(sub => {
       html += `<tr class="bh-sub-header"><td colspan="3"><i class="fas fa-folder-open me-2 text-primary"></i>${sub}</td></tr>`;
-      
+
       const details = Object.keys(tree[mainClass][sub]).sort();
       let subSum = 0;
-      
+
       details.forEach(detail => {
         const accounts = tree[mainClass][sub][detail];
         accounts.sort((a, b) => parseInt(a.konto) - parseInt(b.konto));
-        
+
         const detailSum = accounts.reduce((sum, acc) => sum + Number(acc._endsaldo || 0), 0);
         subSum += detailSum;
-        
+
         html += renderSubgroupRows(accounts, detail);
       });
-      
+
       if (mainClass === 'Passiven' && sub === 'Eigenkapital') {
         const proMemoriaJahresgewinn = `
           <tr class="bh-detail-row bh-account-row italic">
@@ -294,7 +294,7 @@ window.renderTabBerichte = function(container) {
         html += proMemoriaJahresgewinn;
         subSum += gewinnVerlust;
       }
-      
+
       html += `
         <tr class="bh-subtotal-row bg-light" style="border-top: 1.5px solid #6c757d;">
           <td colspan="2" class="fw-bold ps-2 text-primary">Total ${sub}</td>
@@ -302,14 +302,14 @@ window.renderTabBerichte = function(container) {
         </tr>
       `;
     });
-    
+
     return html;
   }
 
   function renderErfolgsrechnungHTML(mainClass) {
     let html = '';
     if (!tree[mainClass]) return html;
-    
+
     const subs = Object.keys(tree[mainClass]).sort();
     subs.forEach(sub => {
       const details = Object.keys(tree[mainClass][sub]).sort();
@@ -319,15 +319,15 @@ window.renderTabBerichte = function(container) {
         html += renderSubgroupRows(accounts, detail);
       });
     });
-    
+
     return html;
   }
-  
+
   const aktivenHTML = renderClassHTML('Aktiven');
   const passivenHTML = renderClassHTML('Passiven');
   const ertraegeHTML = renderErfolgsrechnungHTML('Ertrag');
   const aufwaendeHTML = renderErfolgsrechnungHTML('Aufwand');
-  
+
   container.innerHTML = `
     <div class="row g-4">
       
@@ -478,11 +478,11 @@ window._bhJournalAnchorId = null;
 // ---------------------------------------------------------------------
 // Hilfsfunktionen zur vorzeichen- und verbundkorrekten Journal-Summierung
 // ---------------------------------------------------------------------
-window.bhGetJournalItemSign = function(item) {
+window.bhGetJournalItemSign = function (item) {
   if (!item) return 1;
   const s = String(item.konto_soll || '').trim();
   const h = String(item.konto_haben || '').trim();
-  const rawTyp = item.buchungstyp || (typeof window.getBuchungstyp === 'function' ? window.getBuchungstyp(s, h) : '');
+  const rawTyp = typeof window.bhResolveItemBuchungstyp === 'function' ? window.bhResolveItemBuchungstyp(item) : (item.buchungstyp || window.getBuchungstyp(s, h));
   const bTyp = String(rawTyp || '').toUpperCase().trim();
 
   // Ertragsminderung (Ertragskonto im Soll oder Bank/Kasse im Haben bei Ertrag)
@@ -502,7 +502,7 @@ window.bhGetJournalItemSign = function(item) {
   return 1;
 };
 
-window.bhCalcJournalItemsSignedTotal = function(items) {
+window.bhCalcJournalItemsSignedTotal = function (items) {
   if (!Array.isArray(items) || items.length === 0) return 0;
   // Wenn alle ausgewählten Buchungen zu genau einem Split-Verbund gehören: Netto-Saldo des Verbunds
   const baseBelegs = Array.from(new Set(items.map(e => (typeof window.bhGetSplitBaseBeleg === 'function' ? window.bhGetSplitBaseBeleg(e.beleg_nr) : e.beleg_nr)).filter(Boolean)));
@@ -518,7 +518,7 @@ window.bhCalcJournalItemsSignedTotal = function(items) {
   return Math.round(sum * 100) / 100;
 };
 
-window.bhToggleJournalIncompleteFilter = function() {
+window.bhToggleJournalIncompleteFilter = function () {
   window._bhJournalFilterIncomplete = !window._bhJournalFilterIncomplete;
   if (window._bhJournalFilterIncomplete) {
     window._bhJournalFilterTransit = false;
@@ -529,7 +529,7 @@ window.bhToggleJournalIncompleteFilter = function() {
   }
 };
 
-window.bhToggleJournalTransitFilter = function() {
+window.bhToggleJournalTransitFilter = function () {
   window._bhJournalFilterTransit = !window._bhJournalFilterTransit;
   if (window._bhJournalFilterTransit) {
     window._bhJournalFilterIncomplete = false;
@@ -540,7 +540,7 @@ window.bhToggleJournalTransitFilter = function() {
   }
 };
 
-window.renderTabJournal = function(container) {
+window.renderTabJournal = function (container) {
   const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('buchhaltung') : true;
   const tableResp = container.querySelector('.table-responsive');
   const tableScrollTop = tableResp ? tableResp.scrollTop : 0;
@@ -552,7 +552,7 @@ window.renderTabJournal = function(container) {
   window._bhSavedJournalSearchQuery = savedSearchQuery;
 
   let filteredJournal = window._bhJournal.filter(j => Number(j.jahr) === Number(window._bhYear));
-  
+
   // Zähle unvollständige Buchungen (fehlendes Soll- oder Haben-Konto)
   const incompleteCount = filteredJournal.filter(j => !String(j.konto_soll || '').trim() || !String(j.konto_haben || '').trim()).length;
 
@@ -575,16 +575,16 @@ window.renderTabJournal = function(container) {
 
   const col = window._bhJournalSortCol;
   const asc = window._bhJournalSortAsc;
-  
+
   filteredJournal.sort((a, b) => {
     let valA = a[col];
     let valB = b[col];
-    
+
     if (col === 'buchungstyp') {
-      valA = a.buchungstyp || window.getBuchungstyp(a.konto_soll, a.konto_haben);
-      valB = b.buchungstyp || window.getBuchungstyp(b.konto_soll, b.konto_haben);
+      valA = typeof window.bhResolveItemBuchungstyp === 'function' ? window.bhResolveItemBuchungstyp(a) : (a.buchungstyp || window.getBuchungstyp(a.konto_soll, a.konto_haben));
+      valB = typeof window.bhResolveItemBuchungstyp === 'function' ? window.bhResolveItemBuchungstyp(b) : (b.buchungstyp || window.getBuchungstyp(b.konto_soll, b.konto_haben));
     }
-    
+
     if (col === 'id' || col === 'betrag' || col === 'jahr') {
       valA = Number(valA || 0);
       valB = Number(valB || 0);
@@ -592,7 +592,7 @@ window.renderTabJournal = function(container) {
       valA = String(valA || '').toLowerCase();
       valB = String(valB || '').toLowerCase();
     }
-    
+
     if (valA < valB) return asc ? -1 : 1;
     if (valA > valB) return asc ? 1 : -1;
     return 0;
@@ -602,16 +602,16 @@ window.renderTabJournal = function(container) {
   const selectedItems = filteredJournal.filter(item => window._bhSelectedJournalIds.has(Number(item.id)));
   const selectedTotal = window.bhCalcJournalItemsSignedTotal ? window.bhCalcJournalItemsSignedTotal(selectedItems) : selectedItems.reduce((s, it) => s + Number(it.betrag || 0), 0);
   const selectedCount = window._bhSelectedJournalIds.size;
-  
-  const journalRows = filteredJournal.map(item => {
-    const rawTyp = item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben);
-    const bTyp = String(rawTyp || '').toUpperCase().trim();
-    const isAufwand = bTyp === 'AUFWAND';
-    const isErtrag  = bTyp === 'ERTRAG';
-    const isSelected = window._bhSelectedJournalIds.has(Number(item.id));
 
+  const journalRows = filteredJournal.map(item => {
     const cleanSoll = String(item.konto_soll || '').trim();
     const cleanHaben = String(item.konto_haben || '').trim();
+    const rawTyp = typeof window.bhResolveItemBuchungstyp === 'function' ? window.bhResolveItemBuchungstyp(item) : (item.buchungstyp || window.getBuchungstyp(cleanSoll, cleanHaben));
+    const bTyp = String(rawTyp || '').toUpperCase().trim();
+    const isAufwand = bTyp === 'AUFWAND';
+    const isErtrag = bTyp === 'ERTRAG';
+    const isSelected = window._bhSelectedJournalIds.has(Number(item.id));
+
     const isIncomplete = !cleanSoll || !cleanHaben;
     const isTransitKlaerung = cleanSoll === '1090' || cleanHaben === '1090';
 
@@ -633,38 +633,38 @@ window.renderTabJournal = function(container) {
     }
 
     let amountClass = 'text-secondary';
-    let amountSign  = '';
-    let badgeClass  = 'bg-secondary text-white';
-    let badgeLabel  = isTransitKlaerung ? 'KLÄRUNG 1090' : (bTyp || 'BUCHUNG');
+    let amountSign = '';
+    let badgeClass = 'bg-secondary text-white';
+    let badgeLabel = isTransitKlaerung ? 'KLÄRUNG 1090' : (bTyp || 'BUCHUNG');
 
     if (isAufwand) {
       if (isAufwandsMinderung) {
         amountClass = 'text-success';
-        amountSign  = '+ ';
-        badgeClass  = 'bg-success text-white';
-        badgeLabel  = 'AUFWANDSMINDERUNG';
+        amountSign = '+ ';
+        badgeClass = 'bg-success text-white';
+        badgeLabel = 'AUFWANDSMINDERUNG';
       } else {
         amountClass = 'text-danger';
-        amountSign  = '- ';
-        badgeClass  = 'bg-danger text-white';
-        badgeLabel  = 'AUFWAND';
+        amountSign = '- ';
+        badgeClass = 'bg-danger text-white';
+        badgeLabel = 'AUFWAND';
       }
     } else if (isErtrag) {
       if (isErtragsMinderung) {
         amountClass = 'text-danger';
-        amountSign  = '- ';
-        badgeClass  = 'bg-danger text-white';
-        badgeLabel  = 'ERTRAG (ABZUG)';
+        amountSign = '- ';
+        badgeClass = 'bg-danger text-white';
+        badgeLabel = 'ERTRAG (ABZUG)';
       } else {
         amountClass = 'text-success';
-        amountSign  = '+ ';
-        badgeClass  = 'bg-success text-white';
-        badgeLabel  = 'ERTRAG';
+        amountSign = '+ ';
+        badgeClass = 'bg-success text-white';
+        badgeLabel = 'ERTRAG';
       }
     } else if (bTyp === 'TRANSIT') {
       amountClass = isTransitKlaerung ? 'text-info fw-bold' : 'text-muted';
-      badgeClass  = isTransitKlaerung ? 'bg-info text-dark' : 'bg-secondary text-white';
-      badgeLabel  = isTransitKlaerung ? 'KLÄRUNG 1090' : 'TRANSIT';
+      badgeClass = isTransitKlaerung ? 'bg-info text-dark' : 'bg-secondary text-white';
+      badgeLabel = isTransitKlaerung ? 'KLÄRUNG 1090' : 'TRANSIT';
     }
 
     return `
@@ -722,7 +722,7 @@ window.renderTabJournal = function(container) {
     </tr>
   `;
   }).join('');
-  
+
   container.innerHTML = `
     <div class="bh-report-section border border-light shadow-sm">
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap" style="gap: 10px;">
@@ -863,20 +863,20 @@ window.renderTabJournal = function(container) {
 };
 
 // Hilfsfunktion: Aktualisiert die visuelle Darstellung der Selektion (Aktionsleiste & Master-Checkbox)
-window.bhUpdateJournalSelectionUI = function() {
+window.bhUpdateJournalSelectionUI = function () {
   const batchBar = document.getElementById('bh-journal-batch-bar');
   const countEl = document.getElementById('bh-journal-selected-count');
   const btnCountEl = document.getElementById('bh-journal-btn-count');
   const btnPrintCountEl = document.getElementById('bh-journal-btn-print-count');
   const sumEl = document.getElementById('bh-journal-selected-sum');
-  
+
   const selectedCount = window._bhSelectedJournalIds.size;
-  
+
   if (selectedCount > 0) {
     const selectedItems = (window._bhJournal || []).filter(j => window._bhSelectedJournalIds.has(Number(j.id)));
     const total = window.bhCalcJournalItemsSignedTotal ? window.bhCalcJournalItemsSignedTotal(selectedItems) : selectedItems.reduce((s, it) => s + Number(it.betrag || 0), 0);
     const fmt = (v) => window.UIFormatKit ? window.UIFormatKit.formatCurrency(v) : ('CHF ' + Number(v).toFixed(2));
-    
+
     if (batchBar) batchBar.classList.remove('d-none');
     if (countEl) countEl.textContent = selectedCount;
     if (btnCountEl) btnCountEl.textContent = selectedCount;
@@ -885,11 +885,11 @@ window.bhUpdateJournalSelectionUI = function() {
   } else {
     if (batchBar) batchBar.classList.add('d-none');
   }
-  
+
   bhUpdateJournalMasterCheckbox();
 };
 
-window.bhPrintSelectedJournalBelege = function() {
+window.bhPrintSelectedJournalBelege = function () {
   const selectedIds = Array.from(window._bhSelectedJournalIds || []);
   if (selectedIds.length === 0) {
     alert('Bitte mindestens eine Buchung auswählen.');
@@ -901,17 +901,17 @@ window.bhPrintSelectedJournalBelege = function() {
 };
 
 // Master-Checkbox (Tri-State: checked, indeterminate, unchecked)
-window.bhUpdateJournalMasterCheckbox = function() {
+window.bhUpdateJournalMasterCheckbox = function () {
   const masterCheck = document.getElementById('bh-journal-select-all');
   if (!masterCheck) return;
-  
+
   const visibleRows = Array.from(document.querySelectorAll('#bh-journal-tbody tr[data-journal-id]:not(.d-none)'));
   if (visibleRows.length === 0) {
     masterCheck.checked = false;
     masterCheck.indeterminate = false;
     return;
   }
-  
+
   let visibleCheckedCount = 0;
   visibleRows.forEach(row => {
     const id = Number(row.getAttribute('data-journal-id'));
@@ -919,7 +919,7 @@ window.bhUpdateJournalMasterCheckbox = function() {
       visibleCheckedCount++;
     }
   });
-  
+
   if (visibleCheckedCount === 0) {
     masterCheck.checked = false;
     masterCheck.indeterminate = false;
@@ -933,7 +933,7 @@ window.bhUpdateJournalMasterCheckbox = function() {
 };
 
 // Hilfsfunktion: Setzt die visuelle und Status-Selektion einer einzelnen Zeile
-window.bhSetJournalRowVisual = function(row, id, isSelected) {
+window.bhSetJournalRowVisual = function (row, id, isSelected) {
   const numId = Number(id);
   if (isSelected) {
     window._bhSelectedJournalIds.add(numId);
@@ -949,15 +949,15 @@ window.bhSetJournalRowVisual = function(row, id, isSelected) {
 };
 
 // Bereichsauswahl zwischen Anker und Ziel-Zeile
-window.bhSelectJournalRange = function(targetId) {
+window.bhSelectJournalRange = function (targetId) {
   const visibleRows = Array.from(document.querySelectorAll('#bh-journal-tbody tr[data-journal-id]:not(.d-none)'));
   if (visibleRows.length === 0) return;
 
   const numTargetId = Number(targetId);
-  const anchorId = (window._bhJournalAnchorId !== null) 
-    ? window._bhJournalAnchorId 
+  const anchorId = (window._bhJournalAnchorId !== null)
+    ? window._bhJournalAnchorId
     : (window._bhLastCheckedJournalId !== null ? window._bhLastCheckedJournalId : Number(visibleRows[0].getAttribute('data-journal-id')));
-    
+
   const startIdx = visibleRows.findIndex(r => Number(r.getAttribute('data-journal-id')) === anchorId);
   const targetIdx = visibleRows.findIndex(r => Number(r.getAttribute('data-journal-id')) === numTargetId);
 
@@ -978,7 +978,7 @@ window.bhSelectJournalRange = function(targetId) {
 };
 
 // Klick auf Tabellenzeile zum Auswählen
-window.bhHandleJournalRowClick = function(event, id) {
+window.bhHandleJournalRowClick = function (event, id) {
   if (event.target.closest('a, button, input, select')) return;
   const numId = Number(id);
   const targetRow = document.querySelector(`#bh-journal-tbody tr[data-journal-id="${numId}"]`);
@@ -1020,7 +1020,7 @@ window.bhHandleJournalRowClick = function(event, id) {
 };
 
 // Einzelne Zeile über Checkbox toggeln
-window.bhToggleJournalRow = function(id, isChecked, event) {
+window.bhToggleJournalRow = function (id, isChecked, event) {
   const numId = Number(id);
   if (event && event.shiftKey && (window._bhJournalAnchorId !== null || window._bhLastCheckedJournalId !== null)) {
     window.bhSelectJournalRange(numId);
@@ -1038,7 +1038,7 @@ window.bhToggleJournalRow = function(id, isChecked, event) {
 
 // Tastaturnavigation für das Kassabuch-Journal:
 // Pfeil Runter / Rauf, Shift + Pfeiltasten, Ctrl + Pfeiltasten, Leertaste, Strg+A, Escape
-window.bhHandleJournalKeyDown = function(event) {
+window.bhHandleJournalKeyDown = function (event) {
   // Eingaben in Textfeldern (z.B. der Suchleiste) nicht stören
   if (event.target.closest('input:not(.bh-journal-check), textarea, select')) {
     return;
@@ -1164,7 +1164,7 @@ window.bhHandleJournalKeyDown = function(event) {
 // Globaler Tastatur-Listener für den Journal-Tab (einmalig registrieren)
 if (!window._bhJournalKeydownListenerAttached) {
   window._bhJournalKeydownListenerAttached = true;
-  window.addEventListener('keydown', function(event) {
+  window.addEventListener('keydown', function (event) {
     if (window._bhActiveTab === 'journal') {
       window.bhHandleJournalKeyDown(event);
     }
@@ -1172,14 +1172,14 @@ if (!window._bhJournalKeydownListenerAttached) {
 }
 
 // "Alle sichtbaren auswählen" Umschalter
-window.bhToggleJournalSelectAll = function(isChecked) {
+window.bhToggleJournalSelectAll = function (isChecked) {
   const visibleRows = Array.from(document.querySelectorAll('#bh-journal-tbody tr[data-journal-id]:not(.d-none)'));
-  
+
   visibleRows.forEach(row => {
     const id = Number(row.getAttribute('data-journal-id'));
     window.bhSetJournalRowVisual(row, id, isChecked);
   });
-  
+
   if (isChecked && visibleRows.length > 0) {
     window._bhJournalAnchorId = Number(visibleRows[0].getAttribute('data-journal-id'));
     window._bhJournalFocusId = Number(visibleRows[visibleRows.length - 1].getAttribute('data-journal-id'));
@@ -1189,28 +1189,28 @@ window.bhToggleJournalSelectAll = function(isChecked) {
     window._bhJournalFocusId = null;
     window._bhLastCheckedJournalId = null;
   }
-  
+
   window.bhUpdateJournalSelectionUI();
 };
 
 // Auswahl vollständig leeren
-window.bhClearJournalSelection = function() {
+window.bhClearJournalSelection = function () {
   window._bhSelectedJournalIds.clear();
   window._bhLastCheckedJournalId = null;
   window._bhJournalAnchorId = null;
   window._bhJournalFocusId = null;
-  
+
   document.querySelectorAll('#bh-journal-tbody tr[data-journal-id]').forEach(row => {
     row.classList.remove('bh-row-selected');
     const cb = row.querySelector('.bh-journal-check');
     if (cb) cb.checked = false;
   });
-  
+
   window.bhUpdateJournalSelectionUI();
 };
 
 // Modal: Hilfe zu Tastaturkürzeln & Zeilenauswahl im Kassabuch-Journal
-window.bhOpenJournalHelpModal = function() {
+window.bhOpenJournalHelpModal = function () {
   let modalEl = document.getElementById('bhModalJournalHelp');
   if (!modalEl) {
     modalEl = document.createElement('div');
@@ -1295,17 +1295,17 @@ window.bhOpenJournalHelpModal = function() {
 };
 
 // Hilfsfunktion: Sucht den Kontonamen anhand der Nummer
-window.getAccountNameByCode = function(code) {
+window.getAccountNameByCode = function (code) {
   const acc = window._bhKontenrahmen.find(a => String(a.konto).trim() === String(code).trim());
   return acc ? acc.bezeichnung : 'Unbekannt';
 };
 
 // Live filter im Journal
-window.bhFilterJournal = function(query) {
+window.bhFilterJournal = function (query) {
   window._bhSavedJournalSearchQuery = query || '';
   const q = String(query || '').toLowerCase().trim();
   const rows = document.querySelectorAll('#bh-journal-tbody tr[data-journal-id]');
-  
+
   rows.forEach(row => {
     const text = row.textContent.toLowerCase();
     if (text.includes(q)) {
@@ -1314,12 +1314,12 @@ window.bhFilterJournal = function(query) {
       row.classList.add('d-none');
     }
   });
-  
+
   bhUpdateJournalMasterCheckbox();
 };
 
 // Zeilen-Klick Handler für Kontenrahmen
-window.bhHandleAccountRowClick = function(event, konto, rowIndex) {
+window.bhHandleAccountRowClick = function (event, konto, rowIndex) {
   if (event.target.closest('a, button, input, select')) return;
   if (typeof hasWriteAccess === 'function' && !hasWriteAccess('buchhaltung')) return;
   if (typeof window.bhOpenKontoModal === 'function') {
@@ -1328,12 +1328,12 @@ window.bhHandleAccountRowClick = function(event, konto, rowIndex) {
 };
 
 // RENDERING: TAB 3 – KONTENRAHMEN & BUDGET
-window.renderTabKontenrahmen = function(container) {
+window.renderTabKontenrahmen = function (container) {
   const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('buchhaltung') : true;
   let sortedKonten = [...window._bhKontenrahmen];
   const col = window._bhKontenSortCol;
   const asc = window._bhKontenSortAsc;
-  
+
   sortedKonten.sort((a, b) => {
     let valA, valB;
     if (col === '_veraenderung' || col === '_endsaldo') {
@@ -1354,7 +1354,7 @@ window.renderTabKontenrahmen = function(container) {
       valA = String(a[col] || '').toLowerCase();
       valB = String(b[col] || '').toLowerCase();
     }
-    
+
     if (valA < valB) return asc ? -1 : 1;
     if (valA > valB) return asc ? 1 : -1;
     return 0;
@@ -1363,7 +1363,7 @@ window.renderTabKontenrahmen = function(container) {
   const tableRows = sortedKonten.map(acc => {
     const bud = window._bhBudget.find(b => String(b.konto).trim() === String(acc.konto).trim());
     const budgetVal = bud ? Number(bud['budget_' + window._bhYear] || 0) : 0;
-    
+
     let classLabel = 'Aktiven';
     let classColor = 'bg-primary';
     const cat = bhGetAccountCategory(acc);
@@ -1371,7 +1371,7 @@ window.renderTabKontenrahmen = function(container) {
     if (cat.main === 'Ertrag') { classLabel = 'Ertrag'; classColor = 'bg-success'; }
     if (cat.main === 'Aufwand') { classLabel = 'Aufwand'; classColor = 'bg-danger'; }
     if (cat.main === 'Abschluss') { classLabel = 'Abschluss'; classColor = 'bg-dark'; }
-    
+
     return `
       <tr class="bh-account-row" ${canWrite ? `onclick="bhHandleAccountRowClick(event, '${acc.konto}', ${acc._rowIndex || 'null'})" title="Klicken zum Bearbeiten von Konto ${acc.konto}"` : ''}>
         <td data-col-id="konto" class="tk-col-konto"><a href="#" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${acc.konto}'); return false;" class="bh-konto-badge text-primary text-decoration-none" title="Kontoauszug anzeigen">${acc.konto}</a></td>
@@ -1396,7 +1396,7 @@ window.renderTabKontenrahmen = function(container) {
       </tr>
     `;
   }).join('');
-  
+
   container.innerHTML = `
     <div class="bh-report-section border border-light shadow-sm">
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap" style="gap:10px;">

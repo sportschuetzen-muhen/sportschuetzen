@@ -2855,15 +2855,18 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
     }
     entries = validRows.map((r, i) => {
       const subChar = String.fromCharCode(97 + i); // a, b, c...
+      const sClean = bhBankCleanKonto(r.kontoSoll) || r.kontoSoll;
+      const hClean = bhBankCleanKonto(r.kontoHaben) || r.kontoHaben;
       return {
         jahr: year,
         datum: bookingDate,
         beleg_nr: `${belegNr}${subChar}`,
         beschreibung: (r.beschreibung || beschreibung).trim(),
-        konto_soll: bhBankCleanKonto(r.kontoSoll) || r.kontoSoll,
-        konto_haben: bhBankCleanKonto(r.kontoHaben) || r.kontoHaben,
+        konto_soll: sClean,
+        konto_haben: hClean,
         betrag: Math.abs(Number(r.betrag)),
-        typ: 'Bank-Split'
+        typ: 'Bank-Split',
+        buchungstyp: (typeof getBuchungstyp === 'function') ? getBuchungstyp(sClean, hClean) : 'TRANSIT'
       };
     });
   } else if ((tx.isJahresbeitrag || (tx.matchedInvoice && String(tx.matchedInvoice.type || '').toLowerCase().includes('jahresbeitrag'))) && (!tx._customHabenEdited || tx.suggestedHaben === '3410') && typeof window.jbGetSplitBookings === 'function') {
@@ -2896,7 +2899,8 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
       konto_soll: kontoSoll,
       konto_haben: kontoHaben,
       betrag: Number(tx.amount || 0),
-      typ: 'Bank'
+      typ: 'Bank',
+      buchungstyp: (typeof getBuchungstyp === 'function') ? getBuchungstyp(kontoSoll, kontoHaben) : 'TRANSIT'
     }];
   }
 
@@ -3039,6 +3043,7 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
             konto_haben: String(e.konto_haben).trim(),
             betrag: Number(e.betrag || 0),
             typ: 'Bank',
+            buchungstyp: e.buchungstyp || ((typeof getBuchungstyp === 'function') ? getBuchungstyp(e.konto_soll, e.konto_haben) : 'TRANSIT'),
             created_at: new Date().toISOString()
           };
           if (typeof e.id === 'number') row.id = e.id;
@@ -3384,6 +3389,7 @@ window.bhBankBookAll = async function() {
             konto_haben: String(e.konto_haben).trim(),
             betrag: Number(e.betrag || 0),
             typ: 'Bank',
+            buchungstyp: e.buchungstyp || ((typeof getBuchungstyp === 'function') ? getBuchungstyp(e.konto_soll, e.konto_haben) : 'TRANSIT'),
             created_at: new Date().toISOString()
           };
           if (typeof e.id === 'number') row.id = e.id;
@@ -3694,6 +3700,7 @@ window.bhBankBookSelected = async function() {
             konto_haben: String(e.konto_haben).trim(),
             betrag: Number(e.betrag || 0),
             typ: 'Bank',
+            buchungstyp: e.buchungstyp || ((typeof getBuchungstyp === 'function') ? getBuchungstyp(e.konto_soll, e.konto_haben) : 'TRANSIT'),
             created_at: new Date().toISOString()
           };
           if (typeof e.id === 'number') row.id = e.id;

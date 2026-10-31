@@ -942,7 +942,7 @@ function renderFullJournalReport(journal) {
   const sortedJournal = [...journal].sort((a, b) => Number(a.id) - Number(b.id));
   
   const rows = sortedJournal.map(item => {
-    const bType = item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben);
+    const bType = typeof window.bhResolveItemBuchungstyp === 'function' ? window.bhResolveItemBuchungstyp(item) : (item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben));
     return `
       <tr class="bh-account-row">
         <td class="font-monospace text-muted small">${item.id}</td>
@@ -994,13 +994,13 @@ function renderRevisorenJournalReport(journal, hideTransit) {
   
   if (hideTransit) {
     displayJournal = displayJournal.filter(item => {
-      const bType = item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben);
+      const bType = typeof window.bhResolveItemBuchungstyp === 'function' ? window.bhResolveItemBuchungstyp(item) : (item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben));
       return bType !== 'TRANSIT';
     });
   }
   
   const rows = displayJournal.map(item => {
-    const bType = item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben);
+    const bType = typeof window.bhResolveItemBuchungstyp === 'function' ? window.bhResolveItemBuchungstyp(item) : (item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben));
     return `
       <tr class="bh-account-row">
         <td class="font-monospace text-muted small">${item.id}</td>
@@ -2189,7 +2189,7 @@ window.bhExportJournalToExcel = function() {
     let displayJournal = [...filteredJournal].sort((a, b) => Number(a.id) - Number(b.id));
     if (window._bhActiveExportView === 'revisoren_journal' && window._bhRevisorenHideTransit) {
       displayJournal = displayJournal.filter(item => {
-        const bType = item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben);
+        const bType = typeof window.bhResolveItemBuchungstyp === 'function' ? window.bhResolveItemBuchungstyp(item) : (item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben));
         return bType !== 'TRANSIT';
       });
     }
@@ -2199,7 +2199,7 @@ window.bhExportJournalToExcel = function() {
     displayJournal.forEach(item => {
       const sollName = getAccountNameByCode(item.konto_soll);
       const habenName = getAccountNameByCode(item.konto_haben);
-      const bType = item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben);
+      const bType = typeof window.bhResolveItemBuchungstyp === 'function' ? window.bhResolveItemBuchungstyp(item) : (item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben));
       
       let desc = item.beschreibung || '';
       if (desc.startsWith('"') && desc.endsWith('"')) {
@@ -2259,13 +2259,13 @@ window.bhPrintGVReport = function() {
     let displayJournal = [...filteredJournal].sort((a, b) => Number(a.id) - Number(b.id));
     if (isRevisoren && window._bhRevisorenHideTransit) {
       displayJournal = displayJournal.filter(item => {
-        const bType = item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben);
+        const bType = typeof window.bhResolveItemBuchungstyp === 'function' ? window.bhResolveItemBuchungstyp(item) : (item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben));
         return bType !== 'TRANSIT';
       });
     }
     
     const rows = displayJournal.map(item => {
-      const bType = item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben);
+      const bType = typeof window.bhResolveItemBuchungstyp === 'function' ? window.bhResolveItemBuchungstyp(item) : (item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben));
       return `
         <tr class="detail-row">
           <td class="code" style="width:40px;">${item.id}</td>

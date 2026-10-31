@@ -962,6 +962,7 @@ async function jbBankSyncToBuchhaltung(headerId, member, amount, dateStr, belegN
             konto_haben: String(s.konto_haben).trim(),
             betrag: Number(s.betrag || 0),
             typ: 'Bank',
+            buchungstyp: s.buchungstyp || ((typeof getBuchungstyp === 'function') ? getBuchungstyp(s.konto_soll, s.konto_haben) : 'ERTRAG'),
             created_at: new Date().toISOString()
           };
           if (typeof s.id === 'number') row.id = s.id;

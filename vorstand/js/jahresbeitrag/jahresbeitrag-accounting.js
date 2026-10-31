@@ -182,7 +182,8 @@ window.jbGetSplitBookings = function(options) {
       konto_soll: bankAccount,
       konto_haben: fallbackHaben,
       betrag: Math.round(fallbackAmount * 100) / 100,
-      typ: 'Bank'
+      typ: 'Bank',
+      buchungstyp: (typeof getBuchungstyp === 'function') ? getBuchungstyp(bankAccount, fallbackHaben) : 'ERTRAG'
     }];
   }
 
@@ -213,7 +214,8 @@ window.jbGetSplitBookings = function(options) {
         konto_soll: bankAccount,
         konto_haben: targetKonto,
         betrag: Math.round(amt * 100) / 100,
-        typ: 'Bank'
+        typ: 'Bank',
+        buchungstyp: (typeof getBuchungstyp === 'function') ? getBuchungstyp(bankAccount, targetKonto) : 'ERTRAG'
       });
       netCalculated += amt;
     } else {
@@ -227,7 +229,8 @@ window.jbGetSplitBookings = function(options) {
         konto_soll: targetKonto,
         konto_haben: bankAccount,
         betrag: Math.round(absAmt * 100) / 100,
-        typ: 'Bank'
+        typ: 'Bank',
+        buchungstyp: (typeof getBuchungstyp === 'function') ? getBuchungstyp(targetKonto, bankAccount) : 'ERTRAG'
       });
       netCalculated -= absAmt;
     }
@@ -248,7 +251,8 @@ window.jbGetSplitBookings = function(options) {
         konto_soll: bankAccount,
         konto_haben: '3800', // Sponsoring, Gönner & Spenden
         betrag: diff,
-        typ: 'Bank'
+        typ: 'Bank',
+        buchungstyp: (typeof getBuchungstyp === 'function') ? getBuchungstyp(bankAccount, '3800') : 'ERTRAG'
       });
     }
   }

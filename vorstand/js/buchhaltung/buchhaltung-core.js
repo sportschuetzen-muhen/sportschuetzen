@@ -843,3 +843,15 @@ window.getBuchungstyp = function(soll, haben) {
   }
   return 'TRANSIT';
 };
+
+// Ermittelt den effektiven Buchungstyp eines Journal-Eintrags resilient gegen veraltete TRANSIT-Defaults
+window.bhResolveItemBuchungstyp = function(item) {
+  if (!item) return 'TRANSIT';
+  const s = String(item.konto_soll || '').trim();
+  const h = String(item.konto_haben || '').trim();
+  const isGenuineTransit = (s.startsWith('109') || h.startsWith('109') || s.startsWith('119') || h.startsWith('119') || s.startsWith('13') || h.startsWith('13'));
+  if (item.buchungstyp && (item.buchungstyp !== 'TRANSIT' || isGenuineTransit)) {
+    return item.buchungstyp;
+  }
+  return typeof window.getBuchungstyp === 'function' ? window.getBuchungstyp(s, h) : (item.buchungstyp || 'TRANSIT');
+};
