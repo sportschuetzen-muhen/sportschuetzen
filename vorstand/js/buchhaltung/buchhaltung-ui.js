@@ -79,7 +79,12 @@ window.renderBuchhaltung = function () {
     </div>
   `;
 
-  return loadBuchhaltungData(false);
+  // Bei Rückkehr oder Initialisierung: Falls Cache vorhanden, sofort rendern & im Hintergrund mit Supabase synchronisieren
+  if (window._bhJournal && window._bhJournal.length > 0 && window._bhKontenrahmen && window._bhKontenrahmen.length > 0) {
+    renderActiveAccountingTab();
+    return loadBuchhaltungData(true, true);
+  }
+  return loadBuchhaltungData(false, true);
 };
 
 // Schaltet Tabs um

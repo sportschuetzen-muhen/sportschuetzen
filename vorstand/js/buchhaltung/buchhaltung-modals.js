@@ -3048,7 +3048,8 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
       typ: payload.typ || 'Kassa',
       buchungstyp: (typeof getBuchungstyp === 'function') ? getBuchungstyp(payload.konto_soll, payload.konto_haben) : 'TRANSIT'
     };
-    if (payload.id) {
+    const isEdit = Boolean(payload.id);
+    if (isEdit) {
       const targetId = Number(payload.id);
       const { data, error } = await supa.from('accounting_journal').update(jObj).eq('id', targetId).select().single();
       if (error) throw new Error(error.message || 'Fehler beim Aktualisieren des Buchungssatzes in Supabase');
@@ -3064,7 +3065,7 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
 
     // Supabase ist Single Source of Truth
 
-    showSuccess(payload.id ? "🎉 Buchungssatz erfolgreich aktualisiert!" : "🎉 Buchungssatz erfolgreich im Journal registriert!");
+    showSuccess(isEdit ? "🎉 Buchungssatz erfolgreich aktualisiert!" : "🎉 Buchungssatz erfolgreich im Journal registriert!");
     
     const modalEl = document.getElementById('bhModalNewEntry');
     if (modalEl) {
@@ -3081,6 +3082,13 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
       };
     }
 
+    savedEntry = {
+      ...savedEntry,
+      id: Number(savedEntry.id),
+      jahr: Number(savedEntry.jahr),
+      betrag: Number(savedEntry.betrag)
+    };
+
     if (savedEntry && savedEntry.id) {
       const numId = Number(savedEntry.id);
       window._bhSelectedJournalIds = window._bhSelectedJournalIds || new Set();
@@ -3094,11 +3102,10 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
       }
     }
 
-    if (payload.id) {
-      const idx = window._bhJournal.findIndex(j => Number(j.id) === Number(savedEntry.id));
-      if (idx !== -1) {
-        window._bhJournal[idx] = savedEntry;
-      }
+    window._bhJournal = window._bhJournal || [];
+    const idx = window._bhJournal.findIndex(j => Number(j.id) === Number(savedEntry.id));
+    if (idx !== -1) {
+      window._bhJournal[idx] = savedEntry;
     } else {
       window._bhJournal.unshift(savedEntry);
     }
@@ -3113,6 +3120,10 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
     if (exportXml && recipientData && recipientData.iban) {
       bhDownloadPain001Xml([savedEntry], recipientData);
     }
+
+    setTimeout(async () => {
+      if (typeof loadBuchhaltungData === 'function') await loadBuchhaltungData(true, true);
+    }, 1000);
   } catch (err) {
     if (window.UIConfirmKit && typeof window.UIConfirmKit.alert === 'function') {
       await window.UIConfirmKit.alert({
@@ -3126,7 +3137,7 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
   } finally {
     if (submitBtn) {
       submitBtn.disabled = false;
-      submitBtn.innerHTML = payload.id ? '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern' : '<i class="fas fa-check-circle me-1"></i> Buchung speichern';
+      submitBtn.innerHTML = isEdit ? '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern' : '<i class="fas fa-check-circle me-1"></i> Buchung speichern';
     }
     if (printBtn) printBtn.disabled = false;
     if (xmlBtn) xmlBtn.disabled = false;
