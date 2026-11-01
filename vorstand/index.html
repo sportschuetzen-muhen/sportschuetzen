@@ -27,6 +27,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
@@ -1256,6 +1257,7 @@
                                 <li><a class="dropdown-item text-danger" href="#" onclick="runJMAction('jahresmeisterschaftZuruecksetzen', 'Neues Jahr starten')">Neues Jahr starten (Saisonwechsel &amp; Auf-/Abstieg)</a></li>
                             </ul>
                         </div>
+                        <div class="dropdown"><button id="btn-jm-export-auswaertig" class="btn btn-sm btn-outline-success dropdown-toggle" type="button" data-bs-toggle="dropdown" title="Liste der Auswärtsschiessen als PDF oder Excel ausgeben"><i class="fas fa-file-export me-1"></i>Auswärtsschiessen exportieren</button><ul class="dropdown-menu dropdown-menu-end"><li><a class="dropdown-item" href="#" onclick="event.preventDefault(); jmExportAuswaertigPdf()"><i class="fas fa-file-pdf text-danger me-2"></i>Als PDF</a></li><li><a class="dropdown-item" href="#" onclick="event.preventDefault(); jmExportAuswaertigExcel()"><i class="fas fa-file-excel text-success me-2"></i>Als Excel (.xlsx)</a></li></ul></div>
                         <button id="btn-save-jm" class="btn btn-sm btn-outline-secondary write-protected" disabled onclick="saveJahresmeisterschaftData()">
                             💾 Gespeichert
                         </button>
@@ -2636,11 +2638,12 @@
     
 <!-- NEU: Skript für Jahresmeisterschaft (falls benötigt) -->
 <script src="js/jahresmeisterschaft/jahresmeisterschaft-core.js?v=20260925_4"></script>
-<script src="js/jahresmeisterschaft/jahresmeisterschaft-ui.js"></script>
-<script src="js/jahresmeisterschaft/jahresmeisterschaft-input.js"></script>
-<script src="js/jahresmeisterschaft/jahresmeisterschaft-manager.js"></script>
+<script src="js/jahresmeisterschaft/jahresmeisterschaft-ui.js?v=20261101_1"></script>
+<script src="js/jahresmeisterschaft/jahresmeisterschaft-input.js?v=20261101_1"></script>
+<script src="js/jahresmeisterschaft/jahresmeisterschaft-manager.js?v=20261101_1"></script>
 <script src="js/jahresmeisterschaft/jahresmeisterschaft-import.js"></script>
-<script src="js/jahresmeisterschaft/jahresmeisterschaft-inbox.js?v=20261024_1"></script>
+    <script src="js/jahresmeisterschaft/jahresmeisterschaft-export.js?v=20261101_1"></script>
+<script src="js/jahresmeisterschaft/jahresmeisterschaft-inbox.js?v=20261101_1"></script>
 
 <!-- NEU: Skripte für Endschiessen KK 50m -->
 <script src="js/endschiessen/endschiessen-core.js"></script>

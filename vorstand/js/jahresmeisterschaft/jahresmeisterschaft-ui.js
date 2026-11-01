@@ -156,15 +156,30 @@ function renderJahresmeisterschaft(grid) {
     let settingsHtml = `
         <div class="card rounded-4 border-0 shadow-sm mb-4">
             <div class="card-header bg-white py-3 px-4 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <h5 class="mb-0 fw-bold text-primary"><i class="fas fa-sliders-h text-primary me-2"></i>Allgemeine Einstellungen (Kopfzeilen)</h5>
+                <button type="button" class="btn btn-link text-decoration-none p-0 text-start" title="Wettkämpfe, Maximalpunkte und Häkchen ein- bzw. ausblenden"
+                        onclick="window._jmSettingsOpen = !window._jmSettingsOpen; document.getElementById('jm-settings-body').classList.toggle('d-none', !window._jmSettingsOpen); this.querySelector('.jm-settings-chevron').className = 'fas ms-2 jm-settings-chevron ' + (window._jmSettingsOpen ? 'fa-chevron-up' : 'fa-chevron-down');">
+                    <h5 class="mb-0 fw-bold text-primary d-inline"><i class="fas fa-sliders-h text-primary me-2"></i>Wettkämpfe &amp; Maximalpunkte</h5>
+                    <span class="badge bg-secondary-subtle text-secondary border ms-2 fw-normal">Für Fortgeschrittene</span>
+                    <i class="fas ms-2 jm-settings-chevron ${window._jmSettingsOpen ? 'fa-chevron-up' : 'fa-chevron-down'} text-primary"></i>
+                </button>
                 ${canWrite ? `
-                    <div class="d-flex gap-2">
-                        <button class="btn btn-sm btn-primary rounded-pill fw-semibold shadow-xs" onclick="addNewAuswaertigesSchiessen()"><i class="fas fa-plus me-1"></i>Neues Auswärtiges Schiessen</button>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button class="btn btn-sm btn-primary rounded-pill fw-semibold shadow-xs" onclick="addNewAuswaertigesSchiessen()" title="Legt eine neue Spalte für ein Auswärtsschiessen an (Name und Maximalpunkte werden abgefragt)"><i class="fas fa-plus me-1"></i>Neues Auswärtiges Schiessen</button>
                         <button class="btn btn-sm btn-outline-danger rounded-pill fw-semibold shadow-xs" onclick="openDeleteAuswaertigesModal()"><i class="fas fa-trash-alt me-1"></i>Auswärtiges Schiessen löschen</button>
                     </div>
                 ` : ''}
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-success rounded-pill fw-semibold shadow-xs dropdown-toggle" type="button" data-bs-toggle="dropdown" title="Liste der Auswärtsschiessen als PDF oder Excel ausgeben"><i class="fas fa-file-export me-1"></i>Auswärtsschiessen exportieren</button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); jmExportAuswaertigPdf()"><i class="fas fa-file-pdf text-danger me-2"></i>Als PDF</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); jmExportAuswaertigExcel()"><i class="fas fa-file-excel text-success me-2"></i>Als Excel (.xlsx)</a></li>
+                    </ul>
+                </div>
             </div>
-            <div class="card-body p-0 overflow-auto">
+            <div id="jm-settings-body" class="card-body p-0 overflow-auto ${window._jmSettingsOpen ? '' : 'd-none'}">
+                <div class="small text-muted px-4 py-2 border-bottom bg-light">
+                    Hier legst du fest, welche Wettkämpfe zählen (Häkchen bei «Aktiv»), wie sie heissen und wie viele Punkte maximal möglich sind. Auswärtsschiessen fügst du oben mit «Neues Auswärtiges Schiessen» hinzu. Die Resultate selbst trägst du in den Ranglisten weiter unten ein.
+                </div>
                 <table class="table table-bordered table-sm align-middle mb-0" style="min-width: 800px; font-size: 0.85rem; table-layout: fixed;">
                     <thead class="table-light">
                         <tr>
@@ -243,22 +258,57 @@ function renderJahresmeisterschaft(grid) {
     const isJuniorenActive = (jmActiveTab === 'junioren');
     const isMatrixActive = (jmActiveTab === 'matrix');
 
+    // Hinweisbanner: Archiv (schreibgeschützt) bzw. reine Leserechte
+    let jmInfoBanner = '';
+    if (jmCurrentJahr !== "current") {
+        jmInfoBanner = `
+            <div class="alert alert-secondary d-flex align-items-start mb-3 rounded-4">
+                <i class="fas fa-lock me-3 mt-1"></i>
+                <div><strong>Archiv ${escapeHtml(jmCurrentJahr)} – schreibgeschützt.</strong> Du siehst den Stand der abgeschlossenen Saison und kannst nichts ändern. Um Resultate zu erfassen, wähle oben im Auswahlfeld «Jahresmeisterschaft (aktuell)».</div>
+            </div>`;
+    } else if (!canWrite) {
+        jmInfoBanner = `
+            <div class="alert alert-info d-flex align-items-start mb-3 rounded-4">
+                <i class="fas fa-eye me-3 mt-1"></i>
+                <div><strong>Nur Ansicht.</strong> Du kannst die Ranglisten ansehen und exportieren, aber keine Resultate ändern.</div>
+            </div>`;
+    }
+
+    // Kurzanleitung für Neueinsteiger (aufklappbar)
+    const jmHelpHtml = `
+        <details class="mb-3 border rounded-4 bg-white shadow-xs">
+            <summary class="px-4 py-2 fw-semibold text-primary" style="cursor:pointer;"><i class="fas fa-question-circle me-2"></i>So funktioniert die Jahresmeisterschaft (Kurzanleitung)</summary>
+            <div class="px-4 pb-3 pt-2 small text-muted">
+                <ul class="mb-2 ps-3">
+                    <li><strong>Resultate erfassen:</strong> Tippe die Punkte direkt in die Zelle des Schützen ein. Prozente, Streichresultat, Top&nbsp;4 SMM, «Auswärtiges 1/2» und das Total berechnet das System selbst.</li>
+                    <li><strong>Automatisch übernehmen:</strong> Über «⚙️ Aktionen → Resultate importieren…» liest du Excel, PDF oder Fotos ein. Von Schützen eingereichte Belege findest du unter «Standblätter».</li>
+                    <li><strong>Speichern nicht vergessen:</strong> Der Button oben rechts zeigt, wie viele Änderungen noch nicht gespeichert sind. Erst nach dem Speichern sind sie für alle sichtbar.</li>
+                    <li><strong>Auswärtsschiessen:</strong> Erfasse jedes Schiessen in seiner eigenen Spalte. Die zwei prozentual besten zählen automatisch (gelb markiert). Mit «Auswärtsschiessen exportieren» erhältst du eine Liste als PDF oder Excel.</li>
+                    <li><strong>Saisonende:</strong> Zuerst «Archivieren», danach «Neues Jahr starten» (Auf- und Abstieg). Alte Saisons wählst du oben im Auswahlfeld aus; sie sind schreibgeschützt.</li>
+                </ul>
+                <div><span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle me-1">gelb</span>zählendes Auswärtsresultat
+                    <span class="badge bg-success-subtle text-success border border-success-subtle ms-3 me-1">grün</span>zählende SMM-Runde (Top&nbsp;4)
+                    <span class="ms-3 me-1 text-decoration-line-through">durchgestrichen</span>Streichresultat bzw. Streichrunde</div>
+            </div>
+        </details>`;
+
     // Bootstrap Tab-Layout mit Ansichts-Umschalter (Punkte / % / Kombi)
     let html = `
+        ${jmInfoBanner}
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <ul class="nav nav-tabs border-bottom-0 mb-0" id="jmTab" role="tablist">
                 <li class="nav-item" role="presentation">
-                    <button class="nav-link ${isLigenActive ? 'active' : ''} fw-bold text-dark px-4 py-2 border-0" id="ligen-tab" data-bs-toggle="tab" data-bs-target="#ligen-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; margin-right: 4px; background: rgba(0,0,0,0.03);" onclick="jmSetActiveTab('ligen')">
+                    <button class="nav-link ${isLigenActive ? 'active' : ''} fw-bold text-dark px-4 py-2 border-0" id="ligen-tab" data-bs-toggle="tab" data-bs-target="#ligen-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; margin-right: 4px; background: rgba(0,0,0,0.03);" title="Rangliste Liga 1 und Liga 2: hier erfasst du die Resultate" onclick="jmSetActiveTab('ligen')">
                         <i class="fas fa-list-ol me-2"></i>1. & 2. Liga
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
-                    <button class="nav-link ${isJuniorenActive ? 'active' : ''} fw-bold text-dark px-4 py-2 border-0" id="junioren-tab" data-bs-toggle="tab" data-bs-target="#junioren-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; margin-right: 4px; background: rgba(0,0,0,0.03);" onclick="jmSetActiveTab('junioren')">
+                    <button class="nav-link ${isJuniorenActive ? 'active' : ''} fw-bold text-dark px-4 py-2 border-0" id="junioren-tab" data-bs-toggle="tab" data-bs-target="#junioren-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; margin-right: 4px; background: rgba(0,0,0,0.03);" title="Eigene Rangliste für Nachwuchsschützen (U21) mit wählbaren Wettkämpfen" onclick="jmSetActiveTab('junioren')">
                         <i class="fas fa-user-graduate me-2"></i>Junioren-Wertung (U21)
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
-                    <button class="nav-link ${isMatrixActive ? 'active' : ''} fw-bold text-dark px-4 py-2 border-0" id="matrix-tab" data-bs-toggle="tab" data-bs-target="#matrix-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: rgba(0,0,0,0.03);" onclick="jmSetActiveTab('matrix')">
+                    <button class="nav-link ${isMatrixActive ? 'active' : ''} fw-bold text-dark px-4 py-2 border-0" id="matrix-tab" data-bs-toggle="tab" data-bs-target="#matrix-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: rgba(0,0,0,0.03);" title="Alle Spalten auf einen Blick (nur Ansicht, mit Excel-Export)" onclick="jmSetActiveTab('matrix')">
                         <i class="fas fa-table me-2"></i>Gesamt-Matrix (Alle Spalten)
                     </button>
                 </li>
@@ -280,7 +330,8 @@ function renderJahresmeisterschaft(grid) {
         </div>
         <div class="tab-content" id="jmTabContent">
             <div class="tab-pane fade ${isLigenActive ? 'show active' : ''}" id="ligen-pane" role="tabpanel" aria-labelledby="ligen-tab">
-                <!-- Allgemeine Einstellungen -->
+                <!-- Kurzanleitung & Allgemeine Einstellungen -->
+                ${jmHelpHtml}
                 ${settingsHtml}
                 ${ligenHtml}
             </div>
@@ -322,7 +373,7 @@ function checkLigaSizes() {
             const card = tbody1.closest('.card');
             card.parentNode.insertBefore(banner, card);
         }
-        banner.innerHTML = `<i class="fas fa-exclamation-triangle me-2"></i>Achtung: Liga 1 muss exakt 8 Schützen enthalten! (Aktuell: ${count})`;
+        banner.innerHTML = `<i class="fas fa-exclamation-triangle me-2"></i>Achtung: Liga 1 muss exakt 8 Schützen enthalten! (Aktuell: ${count}) <span class="fw-normal">Speichern ist erst möglich, wenn es genau 8 sind. Die Liga-Zuteilung ändert sich nur beim Saisonwechsel; melde dich bei Unklarheiten beim Administrator.</span>`;
     } else if (banner) {
         banner.remove();
     }
@@ -347,6 +398,10 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
     }
 
     const totalCol = hasStatusCol ? 19 : 18;
+
+    // Anzahl zählender Auswärtsresultate (Checkboxen «Auswärtiges 1/2» in Zeile 0) für die Markierung
+    const auswSlotCols = hasStatusCol ? [15, 16] : [14, 15];
+    const auswSlots = auswSlotCols.filter(sc => ['ja','j','x','1','true','yes','✓','✔','☑'].includes(String(grid[0] && grid[0][sc] !== undefined ? grid[0][sc] : '').trim().toLowerCase())).length;
     const colStreich = hasStatusCol ? 32 : 31;
     shooterRows.sort((a, b) => {
         const valA = parseFloat(String(a.rowData[totalCol] || '').replace(/%/g, '').trim()) || 0;
@@ -360,6 +415,19 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
         const nachname = s.rowData[1] || '';
         const shooterStreich = parseFloat(String(s.rowData[colStreich] || '0').replace(',', '.')) || 0;
         let streichMarked = false; // Garantiert, dass bei identischen Tiefstwerten visuell nur genau 1 Resultat gestrichen wird
+
+        // Zählende Auswärtsresultate (prozentual beste, gemäss aktiven Slots «Auswärtiges 1/2») ermitteln
+        const countedAuswCols = new Set();
+        if (auswSlots > 0) {
+            const auswResults = [];
+            visibleShooterCols.forEach(vc => {
+                if (vc < limitIndex) return;
+                const pts = parseFloat(String(s.rowData[vc] === undefined || s.rowData[vc] === null ? '' : s.rowData[vc]).replace(',', '.'));
+                const maxPts = parseFloat(String(grid[3][vc] || '').replace(',', '.')) || 100;
+                if (!isNaN(pts) && pts > 0 && maxPts > 0) auswResults.push({ col: vc, pct: (pts / maxPts) * 100 });
+            });
+            auswResults.sort((a, b) => b.pct - a.pct).slice(0, auswSlots).forEach(x => countedAuswCols.add(x.col));
+        }
 
         // Die 4 besten Mannschaftsrunden für diesen Schützen ermitteln
         const mRounds = [];
@@ -415,11 +483,13 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
                 // Auswärtsschiessen (ab Spalte limitIndex / 41 bzw. 42) sind reine Punkteresultate (z. B. 95)
                 const isSingleAuswaertig = (c >= limitIndex);
                 if (isSingleAuswaertig) {
+                    const isCountedAusw = countedAuswCols.has(c);
+                    const countedStyle = isCountedAusw ? 'background-color: #fff3cd; font-weight: 700; border-color: #ffc107;' : '';
                     return `<td style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}">
                         <input type="text" class="form-control form-control-sm write-protected text-center" 
-                               style="width: 100%; ${inputStyle}" ${canWrite ? '' : 'disabled readonly'} 
+                               style="width: 100%; ${inputStyle} ${countedStyle}" ${canWrite ? '' : 'disabled readonly'} 
                                value="${escapeHtml(val)}" 
-                               title="${escapeHtml(grid[2][c] || '')}: ${escapeHtml(val)} Punkte" 
+                               title="${escapeHtml(grid[2][c] || '')}: ${escapeHtml(val)} Punkte${isCountedAusw ? ' – zählt für die Jahresmeisterschaft (eines der besten Auswärtsresultate)' : ''}" 
                                onchange="handleCellEdit(${r}, ${c}, this.value, this)">
                     </td>`;
                 }
@@ -1651,13 +1721,13 @@ window.initMatrixScrollbars = initMatrixScrollbars;
 // === EXCEL-EXPORT (SHEETJS .XLSX) ===
 function jmExportMatrixExcel() {
     if (typeof XLSX === 'undefined') {
-        alert("SheetJS (XLSX) Bibliothek ist nicht verfügbar.");
+        UIConfirmKit.alert({ title: 'Export nicht möglich', message: 'Die Excel-Bibliothek (SheetJS) ist nicht geladen. Lade die Seite neu und versuche es nochmals.', type: 'danger' });
         return;
     }
 
     const grid = jmRawGrid;
     if (!grid || grid.length < 6) {
-        alert("Keine Daten zum Exportieren vorhanden.");
+        UIConfirmKit.alert({ title: 'Keine Daten', message: 'Es sind keine Daten zum Exportieren vorhanden.', type: 'warning' });
         return;
     }
 

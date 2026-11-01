@@ -758,14 +758,17 @@ async function jmImportStandblatt(logId) {
     let finalLizenz = lizenz;
 
     if (isMismatch && detName) {
-        const choice = confirm(
-            `⚠️ ACHTUNG: Namensabweichung erkannt!\n\n` +
-            `Auf dem Standblatt steht: "${detName}" (Lizenz: ${detShooter.lizenz || '-'})\n` +
-            `Eingereicht wurde es unter: "${vorname} ${nachname}" (Lizenz: ${lizenz})\n\n` +
-            `Möchtest du das Resultat (${erzielt} / ${maximal} Pkt) für den Beleg-Schützen "${detName}" übernehmen?\n\n` +
-            `[OK] = Für Beleg-Schütze "${detName}" übernehmen\n` +
-            `[Abbrechen] = Weiter zur Bestätigung für "${vorname} ${nachname}" oder Abbruch`
-        );
+        const choice = await UIConfirmKit.confirm({
+            title: 'Namensabweichung erkannt',
+            message:
+                `Auf dem Standblatt steht: <strong>${escapeHtml(detName)}</strong> (Lizenz: ${escapeHtml(detShooter.lizenz || '-')})<br>` +
+                `Eingereicht wurde es unter: <strong>${escapeHtml(vorname)} ${escapeHtml(nachname)}</strong> (Lizenz: ${escapeHtml(lizenz)})<br><br>` +
+                `Möchtest du das Resultat (${escapeHtml(erzielt)} / ${escapeHtml(maximal)} Pkt) für den Beleg-Schützen <strong>${escapeHtml(detName)}</strong> übernehmen?<br><br>` +
+                `<span class="text-muted small">«Weiter mit eingereichtem Namen» führt zur Bestätigung für ${escapeHtml(vorname)} ${escapeHtml(nachname)} bzw. zum Abbruch.</span>`,
+            type: 'warning',
+            confirmText: `Für ${detName} übernehmen`,
+            cancelText: 'Weiter mit eingereichtem Namen'
+        });
         if (choice) {
             finalVorname = detShooter.vorname || '';
             finalNachname = detShooter.nachname || '';
@@ -773,15 +776,24 @@ async function jmImportStandblatt(logId) {
             if (/^10\d{8}$/.test(rawDetLiz)) rawDetLiz = rawDetLiz.substring(2, 8);
             finalLizenz = rawDetLiz ? rawDetLiz.padStart(6, '0') : '';
         } else {
-            const confirmOrig = confirm(
-                `Soll das Resultat wirklich für "${vorname} ${nachname}" übernommen werden?\n\n` +
-                `[OK] = Ja, für "${vorname} ${nachname}" eintragen\n` +
-                `[Abbrechen] = Nicht übernehmen (Vorgang abbrechen)`
-            );
+            await jmWaitForDialogClose();
+            const confirmOrig = await UIConfirmKit.confirm({
+                title: 'Resultat übernehmen?',
+                message: `Soll das Resultat wirklich für <strong>${escapeHtml(vorname)} ${escapeHtml(nachname)}</strong> übernommen werden?`,
+                type: 'warning',
+                confirmText: `Ja, für ${vorname} ${nachname} eintragen`,
+                cancelText: 'Abbrechen'
+            });
             if (!confirmOrig) return;
         }
     } else {
-        if (!confirm(`Möchtest du das Standblatt für "${vorname} ${nachname}" (${erzielt} / ${maximal} Pkt beim "${anlass}") in die Jahresmeisterschaft übernehmen?`)) {
+        const okImport = await UIConfirmKit.confirm({
+            title: 'Standblatt übernehmen',
+            message: `Möchtest du das Standblatt für <strong>${escapeHtml(vorname)} ${escapeHtml(nachname)}</strong> (${escapeHtml(erzielt)} / ${escapeHtml(maximal)} Pkt beim «${escapeHtml(anlass)}») in die Jahresmeisterschaft übernehmen?`,
+            type: 'primary',
+            confirmText: 'Übernehmen'
+        });
+        if (!okImport) {
             return;
         }
     }
@@ -1026,7 +1038,13 @@ window.jmImportStandblatt = jmImportStandblatt;
  * Lehnt ein Standblatt ab
  */
 async function jmRejectStandblatt(logId) {
-    if (!confirm("Möchtest du dieses Standblatt wirklich ablehnen?")) {
+    const okReject = await UIConfirmKit.confirm({
+        title: 'Standblatt ablehnen',
+        message: 'Möchtest du dieses Standblatt wirklich ablehnen? Es wird ins Archiv der abgelehnten Belege verschoben.',
+        type: 'danger',
+        confirmText: 'Ablehnen'
+    });
+    if (!okReject) {
         return;
     }
 

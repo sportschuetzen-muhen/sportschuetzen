@@ -1,5 +1,12 @@
 // === SUB-MODUL: JAHRESMEISTERSCHAFT - MANAGER & NATIVE SUPABASE ENGINE ===
 
+// UIConfirmKit löst sein Promise bereits beim Klick auf; Bootstrap ignoriert show() während der Ausblend-Animation.
+// Zwischen verketteten Dialogen daher kurz warten, damit der Folgedialog sicher erscheint.
+function jmWaitForDialogClose() {
+    return new Promise(resolve => setTimeout(resolve, 400));
+}
+window.jmWaitForDialogClose = jmWaitForDialogClose;
+
 async function saveJahresmeisterschaftData() {
     if (jmPendingUpdates.length === 0 && jmPendingMoves.length === 0 && !jmExclusionsChanged) {
         showSuccess("Keine Änderungen zum Speichern vorhanden.");
@@ -9,10 +16,6 @@ async function saveJahresmeisterschaftData() {
     const tbody1 = document.getElementById('tbody-liga-1');
     if (tbody1 && tbody1.querySelectorAll('tr').length !== 8) {
         showError("Speichern blockiert: Liga 1 muss exakt 8 Schützen enthalten!");
-        return;
-    }
-
-    if (!confirm("Bist du sicher, dass du die Änderungen speichern möchtest?")) {
         return;
     }
 
@@ -80,8 +83,22 @@ async function saveJahresmeisterschaftData() {
 window.saveJahresmeisterschaftData = saveJahresmeisterschaftData;
 
 async function runJMAction(functionName, actionLabel) {
-    if (!confirm(`Möchtest du die Aktion "${actionLabel}" ausführen?`)) {
-        return;
+    // «Neues Jahr starten» hat weiter unten detaillierte Bestätigungen (Auf-/Abstieg, Archivierung) – keine doppelte Rückfrage
+    if (functionName === 'archiviereJahresmeisterschaft') {
+        const okArchive = await UIConfirmKit.confirm({
+            title: 'Saison archivieren',
+            message: 'Der aktuelle Stand wird als schreibgeschütztes Archiv gespeichert (inkl. Auf- und Absteiger-Badges). Die laufende Saison bleibt unverändert.<br><br>Tipp: Zum Saisonende zuerst archivieren, danach «Neues Jahr starten».',
+            type: 'primary',
+            confirmText: 'Archivieren'
+        });
+        if (!okArchive) return;
+    } else if (functionName !== 'jahresmeisterschaftZuruecksetzen') {
+        const okGeneric = await UIConfirmKit.confirm({
+            title: 'Aktion ausführen',
+            message: `Möchtest du die Aktion «${escapeHtml(actionLabel)}» ausführen?`,
+            type: 'primary'
+        });
+        if (!okGeneric) return;
     }
 
     const sb = getJMSupabaseClient();
@@ -132,20 +149,28 @@ async function runJMAction(functionName, actionLabel) {
             const absteigerNamen = standing.absteiger.map(s => `${s.vorname} ${s.nachname}`).join(', ') || 'Keine';
 
             // 2. Bestätigung mit Anzeige von Auf- und Abstieg
-            const doProceed = confirm(
-                `NEUES JAHR STARTEN (SAISONWECHSEL & AUF-/ABSTIEG)\n\n` +
-                `Folgende Schützen wechseln die Liga:\n` +
-                `▲ Aufsteiger in Liga 1: ${aufsteigerNamen}\n` +
-                `▼ Absteiger in Liga 2: ${absteigerNamen}\n\n` +
-                `Möchtest du mit dem Saisonwechsel fortfahren?`
-            );
+            const doProceed = await UIConfirmKit.confirm({
+                title: 'Neues Jahr starten (Saisonwechsel & Auf-/Abstieg)',
+                message:
+                    `Folgende Schützen wechseln die Liga:<br>` +
+                    `<strong class="text-success">▲ Aufsteiger in Liga 1:</strong> ${escapeHtml(aufsteigerNamen)}<br>` +
+                    `<strong class="text-danger">▼ Absteiger in Liga 2:</strong> ${escapeHtml(absteigerNamen)}<br><br>` +
+                    `<strong>Achtung:</strong> Alle Resultate werden auf 0 zurückgesetzt. Im nächsten Schritt kannst du die abgelaufene Saison vorher archivieren.<br><br>` +
+                    `Möchtest du mit dem Saisonwechsel fortfahren?`,
+                type: 'danger',
+                confirmText: 'Weiter zum Saisonwechsel'
+            });
             if (!doProceed) return;
 
             // 3. Optionale automatische Archivierung vor dem Nullen
-            const doArchive = confirm(
-                `Möchtest du die abgelaufene Saison vor dem Nullen archivieren?\n\n` +
-                `(Empfohlen: Sichert alle bisherigen Resultate inkl. Auf- und Absteiger-Badges)`
-            );
+            await jmWaitForDialogClose();
+            const doArchive = await UIConfirmKit.confirm({
+                title: 'Abgelaufene Saison archivieren?',
+                message: 'Möchtest du die abgelaufene Saison vor dem Nullen archivieren?<br><br>(Empfohlen: Sichert alle bisherigen Resultate inkl. Auf- und Absteiger-Badges.)',
+                type: 'primary',
+                confirmText: 'Ja, archivieren',
+                cancelText: 'Nein, ohne Archiv'
+            });
 
             if (doArchive) {
                 const prevYear = new Date().getFullYear();
@@ -166,7 +191,14 @@ async function runJMAction(functionName, actionLabel) {
                         await syncJMShootersToSupabase(sb, archivJahr, archivedGrid);
                     }
                 } else {
-                    if (!confirm("Archivierung übersprungen oder abgebrochen. Trotzdem mit dem Nullen für das neue Jahr fortfahren?")) {
+                    await jmWaitForDialogClose();
+                    const okSkip = await UIConfirmKit.confirm({
+                        title: 'Ohne Archiv fortfahren?',
+                        message: 'Die Archivierung wurde übersprungen oder abgebrochen. Möchtest du trotzdem mit dem Nullen für das neue Jahr fortfahren? Die bisherigen Resultate gehen dann verloren.',
+                        type: 'danger',
+                        confirmText: 'Trotzdem fortfahren'
+                    });
+                    if (!okSkip) {
                         return;
                     }
                 }
@@ -518,7 +550,12 @@ async function deleteAuswaertigesSchiessen(colIndex) {
     }
 
     const compName = (jmRawGrid[2] && jmRawGrid[2][colIndex]) || `Spalte ${colIndex + 1}`;
-    const confirmed = confirm(`Möchtest du das Auswärtsschießen «${compName}» (Spalte ${colIndex + 1}) inklusive aller eingetragenen Punkte unwiderruflich löschen?`);
+    const confirmed = await UIConfirmKit.confirm({
+        title: 'Auswärtsschiessen löschen',
+        message: `Möchtest du das Auswärtsschiessen «${escapeHtml(compName)}» (Spalte ${colIndex + 1}) inklusive aller eingetragenen Punkte unwiderruflich löschen?`,
+        type: 'danger',
+        confirmText: 'Unwiderruflich löschen'
+    });
     if (!confirmed) return;
 
     try {

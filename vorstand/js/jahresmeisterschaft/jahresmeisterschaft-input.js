@@ -51,7 +51,7 @@ function updateCalculatorAlertText(hasStatusCol) {
     
     const infoElem = document.getElementById('calc-info-text');
     if (infoElem) {
-        infoElem.innerHTML = `<i class="fas fa-info-circle me-1"></i> <strong>Wichtig:</strong> Bitte selbst prüfen, welches Resultat aus den folgenden Wettkämpfen das höchste ist, da dieses eingetragen werden sollte:<br><strong class="text-primary">${escapeHtml(names.join(', '))}</strong>`;
+        infoElem.innerHTML = `<i class="fas fa-info-circle me-1"></i> <strong>Wichtig:</strong> «Auswärtiges 1» und «Auswärtiges 2» berechnet das System automatisch aus den zwei prozentual besten Auswärtsschiessen (${escapeHtml(names.join(', '))}). Hier eingetragene Werte werden beim nächsten Berechnen überschrieben. Erfasse die Punkte deshalb direkt beim jeweiligen Auswärtsschiessen in der Rangliste.`;
     }
 }
 

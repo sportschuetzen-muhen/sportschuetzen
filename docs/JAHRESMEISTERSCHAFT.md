@@ -96,6 +96,12 @@ Die Auswertung der Jahresmeisterschaft erfolgt im Frontend über [`jahresmeister
 * **Horizontales Scrolling:** Ausgestattet mit Schnell-Scroll-Buttons (`[ ◀ Links ]`, `[ Rechts ▶ ]`), einer oberen synchronisierten Scrollleiste direkt über der Tabelle sowie automatischer Mausrad-Unterstützung (`wheel` auf `scrollLeft`).
 * **Multi-Sheet Excel-Export (`.xlsx` via SheetJS):** 1-Klick-Export aller Daten in eine strukturierte Excel-Arbeitsmappe mit drei Reitern (*Liga 1*, *Liga 2*, *Junioren U21*) und automatisch berechneten Spaltenbreiten.
 
+### 3.7 Export Auswärtsschiessen (PDF & Excel) & Bedienhilfen
+
+* **Export (`jahresmeisterschaft-export.js`):** Über «Auswärtsschiessen exportieren» (Modul-Header und Karte «Wettkämpfe & Maximalpunkte») entsteht eine Liste nur der Auswärtsschiessen als A4-Querformat-PDF (jsPDF + `jspdf-autotable`) oder Excel (`UIExportKit.dataToExcel`). `jmBuildAuswaertigData()` liest ausschliesslich aus dem geladenen `jmRawGrid` (auch für Archivjahre, mit/ohne Statusspalte), nimmt nur Schützen mit mindestens einem Resultat auf und rangiert beide Ligen gemeinsam nach der Summe der prozentual besten Resultate (Anzahl gemäss aktiven Checkboxen «Auswärtiges 1/2», max. 200 %; gleiche Summe = gleicher Rang). Der Export erfordert nur `jahresmeisterschaft.view` und schreibt nichts in die Datenbank.
+* **Markierung in der Rangliste:** Die zählenden Auswärtsresultate sind in den Ligatabellen gelb hinterlegt (gleiche Logik wie `updateTopAuswaertige`). «Auswärtiges 1/2» werden automatisch überschrieben, manuelle Werte im Rechner-Dialog gehen beim nächsten Berechnen verloren.
+* **Neueinsteiger-Hilfen:** Aufklappbare Kurzanleitung, Archiv- bzw. «Nur Ansicht»-Banner und die einklappbare Karte «Wettkämpfe & Maximalpunkte» (Standard: eingeklappt). Alle Dialoge nutzen `UIConfirmKit`; da dessen Promise schon beim Klick auflöst, wird zwischen verketteten Dialogen `jmWaitForDialogClose()` (400 ms) abgewartet. Die Rückfrage beim Speichern entfällt (Speichern-Button mit Änderungszähler genügt).
+
 ---
 
 ## 4. Resultate-Import & KI-Standblatt-Erkennung
