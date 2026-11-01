@@ -122,7 +122,15 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
 * **Ergebnis & Revisionssicherheit:** Alle Belegnummernkreise (`B_Wirt_`, `B_Zahl_`, `Kasse_`) bleiben 100% lückenlos, chronologisch getrennt und deckungsgleich mit den jeweiligen Bank-/Kontoauszügen. Am Stichtag saldiert das Konto `1099` exakt auf **CHF 0.00**.
 * **Intelligente Frontend- & Parser-Unterstützung:**
   - Wählt der Benutzer im Bankabgleich ein anderes Eigenkonto (`1000`, `1020`, `1021`, `1022`) als Gegenkonto aus, leitet das System dieses automatisch auf `1099` um und informiert mit einem Toast-Hinweis.
-  - Erkennt der CAMT-Parser im Verwendungszweck typische Übertragsmuster oder stimmt die IBAN der Gegenpartei mit einem der Vereinskonten überein, schlägt das System automatisch Stufe 1c `1099 Geldtransit` mit Match-Typ `rule` vor.
+  - Erkennt der CAMT-Parser im Verwendungszweck typische Übertragsmuster oder stimmt die IBAN der Gegenpartei mit einem der Vereinskonten überein, schlägt das System automatisch `1099 Geldtransit` mit Match-Typ `rule` vor.
+
+### 2.14 Zentrale Buchungsregeln (`accounting_bank_rules`) & Härtung des Duplikatsabgleichs
+* **Keine hartcodierten Regeln im Quellcode (Single Source of Truth):** Sämtliche Erkennungsmuster für Mieterträge (`3650`), Spendeneingänge/TWINT via RaiseNow (`3651`) sowie interne Kontoüberträge (`1099`) wurden via Migration `109` aus dem Code in die Datenbanktabelle `public.accounting_bank_rules` überführt. Benutzer können diese Regeln im Modal «Automatische Buchungsregeln verwalten» transparent einsehen, anpassen, sortieren und löschen.
+* **Persistenz & UUID-Integrität:** Regeln nutzen als Primärschlüssel standardmässig die UUID `id` der Tabelle `accounting_bank_rules` für atomare Upserts und Löschvorgänge in Supabase.
+* **Härtung gegen False-Positive Duplikate (`bhBankMatchText`):**
+  - Frühere CAMT-Einträge glichen generische Schlagwörter wie `Vermietung` und `Schützenhaus` ab, wodurch gleichhohe Mietzahlungen (z.B. CHF 300.00) fälschlicherweise als bereits im Journal gebucht markiert wurden.
+  - Der Duplikatsabgleich erfordert nun zwingend eine Übereinstimmung des Absender-/Empfängernamens oder eindeutige alphanumerische Beleg- bzw. Vertragsnummern (`V-YYYY-xxxx`, `LL...`, `RE-...`).
+  - Fallback-Matches bei identischem Betrag innerhalb von 4 Tagen prüfen strikt, dass im Journal-Buchungstext kein abweichender Parteiname hinterlegt ist.
 
 ---
 

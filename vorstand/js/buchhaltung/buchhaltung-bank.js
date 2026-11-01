@@ -62,24 +62,30 @@ window.saveBhBankRules = function(rules) {
   // 1. Supabase Persistence
   const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
   if (sb) {
-    const ruleRows = rules.map((r, i) => ({
-      rule_key: String(r.id || r.rule_key || `rule_${i}_${Date.now()}`),
-      label: String(r.label || ''),
-      pattern_party: String(r.pattern_party || ''),
-      pattern_text: String(r.pattern_text || ''),
-      pattern: String(r.pattern || ''),
-      prefix: String(r.prefix || r.label || ''),
-      soll: String(r.soll || '').split('|')[0].trim(),
-      haben: String(r.haben || '').split('|')[0].trim(),
-      scope: String(r.scope || 'all'),
-      amount_mode: String(r.amount_mode || 'any'),
-      amount_min: (r.amount_min !== undefined && r.amount_min !== null && r.amount_min !== '') ? Number(r.amount_min) : null,
-      amount_max: (r.amount_max !== undefined && r.amount_max !== null && r.amount_max !== '') ? Number(r.amount_max) : null,
-      sort_order: i,
-      updated_at: new Date().toISOString()
-    }));
+    const isUuid = id => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    const ruleRows = rules.map((r, i) => {
+      const row = {
+        label: String(r.label || ''),
+        pattern_party: String(r.pattern_party !== undefined && r.pattern_party !== null ? r.pattern_party : ''),
+        pattern_text: String(r.pattern_text !== undefined && r.pattern_text !== null ? r.pattern_text : ''),
+        pattern: String(r.pattern !== undefined && r.pattern !== null ? r.pattern : ''),
+        prefix: String(r.prefix || r.label || ''),
+        soll: String(r.soll || '').split('|')[0].trim(),
+        haben: String(r.haben || '').split('|')[0].trim(),
+        scope: String(r.scope || 'all'),
+        amount_mode: String(r.amount_mode || 'any'),
+        amount_min: (r.amount_min !== undefined && r.amount_min !== null && r.amount_min !== '') ? Number(r.amount_min) : null,
+        amount_max: (r.amount_max !== undefined && r.amount_max !== null && r.amount_max !== '') ? Number(r.amount_max) : null,
+        sort_order: i,
+        updated_at: new Date().toISOString()
+      };
+      if (isUuid(r.id)) {
+        row.id = r.id;
+      }
+      return row;
+    });
 
-    sb.from('accounting_bank_rules').upsert(ruleRows, { onConflict: 'rule_key' })
+    sb.from('accounting_bank_rules').upsert(ruleRows, { onConflict: 'id' })
       .then(({ error }) => {
         if (error) console.warn('[Buchhaltung Supabase] Error saving bank rules:', error);
         else console.log('✅ Bank-Regeln in Supabase gespeichert.');
@@ -97,7 +103,7 @@ window.fetchBhBankServerRules = async function() {
       if (!error && Array.isArray(sbRules) && sbRules.length > 0) {
         const mapped = sbRules.map(r => ({
           ...r,
-          id: r.rule_key,
+          id: r.id,
           label: r.label || '',
           pattern_party: r.pattern_party || '',
           pattern_text: r.pattern_text || '',
@@ -507,7 +513,7 @@ function bhBankMatchText(journalDesc, partyName, remittanceInfo, creditorReferen
 
   // 3. Name des Absenders / Empfängers (Wort-für-Wort, toleriert Invertierung "Muster Hans" vs "Hans Muster")
   if (partyName) {
-    const pWords = normalizeString(partyName).split(' ').filter(w => w.length >= 3 && !['herr','frau','dr','die','der','das','und','gmbh','ag'].includes(w));
+    const pWords = normalizeString(partyName).split(' ').filter(w => w.length >= 3 && !['herr','frau','dr','die','der','das','und','gmbh','ag','schuetzen','sportschuetzen','sportschützen','muhen'].includes(w));
     if (pWords.length >= 2) {
       const matchCount = pWords.filter(w => cleanJ.includes(w)).length;
       if (matchCount >= Math.min(2, pWords.length)) return true;
@@ -525,12 +531,17 @@ function bhBankMatchText(journalDesc, partyName, remittanceInfo, creditorReferen
     }
   }
 
-  // 5. Verwendungszweck-Schlagwörter
+  // 5. Spezifische Buchungs- / Vertrags- / Rechnungs-Codes im Verwendungszweck (z. B. V-2026-0041, LL2026-003LL oder Referenzen mit Ziffern >= 5 Zeichen)
   if (remittanceInfo) {
-    const rWords = normalizeString(remittanceInfo).split(' ').filter(w => w.length >= 4 && !['zahlung','gutschrift','ueberweisung','rechnung','danke','spesen','abrechnung','muhen'].includes(w));
-    if (rWords.length >= 2) {
-      const rMatchCount = rWords.filter(w => cleanJ.includes(w)).length;
-      if (rMatchCount >= 2) return true;
+    const specificCodes = String(remittanceInfo).match(/\b(?:v-\d{4}-\d{3,4}|ll\d{4}-\w+|re-\w+|\d{5,})\b/gi);
+    if (specificCodes && specificCodes.length > 0) {
+      const cleanJNoSpace = cleanJ.replace(/[^a-z0-9]/g, '');
+      for (const code of specificCodes) {
+        const cleanCode = code.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (cleanCode.length >= 5 && cleanJNoSpace.includes(cleanCode)) {
+          return true;
+        }
+      }
     }
   }
 
@@ -2097,76 +2108,8 @@ function bhBankMatchAll(transactions) {
         }
       }
 
-    // 1b. STUFE: AUTOMATISCHE VERMIETUNGS-REGEL & SYSTEM-PATTERNS (V-YYYY-XXXX, Miete, Mietvertrag)
-    if (!isJahresbeitrag && !isInvoice) {
-      const vMatch = (tx.remittanceInfo || '').match(/v-\d{4}-\d{3,4}/i) || (tx.partyName || '').match(/v-\d{4}-\d{3,4}/i);
-      const isMieteText = /miet/i.test(cleanRemittance) || /miet/i.test(cleanParty);
-
-      if (tx.isCredit && (vMatch || isMieteText)) {
-        matchType = 'rule';
-        const vCode = vMatch ? vMatch[0].toUpperCase() : '';
-        matchRuleName = vCode ? `Vermietung ${vCode}` : 'Vermietung Schützenhaus';
-        suggestedSoll = txBankKonto; // Dynamisch das erkannte Bankkonto (z.B. 1021 Wirtschaftskonto)
-        suggestedHaben = '3650'; // Mieterträge Schützenhaus
-        matchLabel = vCode ? `Vermietung ${vCode}` : 'Mietertrag Schützenhaus';
-        matchScore = 2;
-      } else if (tx.isCredit && /raisenow/i.test(cleanRemittance)) {
-        matchType = 'rule';
-        matchRuleName = 'RaiseNow Payout';
-        suggestedSoll = txBankKonto;
-        suggestedHaben = '3651';
-        matchLabel = 'Gutschrift RaiseNow';
-        matchScore = 2;
-      }
-    }
-
-    // 1c. STUFE: AUTOMATISCHE ERKENNUNG VON EIGENEN KONTOÜBERTRÄGEN & GELDTRANSIT (1099)
-    if (!isJahresbeitrag && !isInvoice && matchType === 'unknown') {
-      const cleanPartyIban = String(tx.partyIban || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-      const isOwnPartyIban = Boolean(
-        cleanPartyIban && (
-          cleanPartyIban.includes('533218786') || cleanPartyIban.startsWith('CH28') || // 1021 Wirtschaftskonto
-          cleanPartyIban.includes('36331')     || cleanPartyIban.startsWith('CH06') || // 1020 Zahlungskonto
-          cleanPartyIban.includes('07885129')  || cleanPartyIban.startsWith('CH81')    // 1022 Sparkonto
-        )
-      );
-
-      // Eigenname des Vereins als Zahler/Empfänger bedeutet immer interner Eigenübertrag!
-      const isOwnClubParty = (
-        cleanParty.includes('sportschützen muhen') ||
-        cleanParty.includes('sportschuetzen muhen') ||
-        cleanParty.includes('sg muhen') ||
-        cleanParty.includes('schützen muhen') ||
-        cleanParty.includes('schuetzen muhen')
-      );
-
-      // Jeder Buchungstext mit Übertrag / Umbuchung / Kontoübertrag / Bancomat
-      const isTransferText = (
-        /konto[uü]bertrag/i.test(cleanRemittance) || /konto[uü]bertrag/i.test(cleanParty) ||
-        /[uü]bertrag/i.test(cleanRemittance) || /[uü]bertrag/i.test(cleanParty) ||
-        /umbuchung/i.test(cleanRemittance) || /umbuchung/i.test(cleanParty) ||
-        /bancomat/i.test(cleanRemittance) || /bancomat/i.test(cleanParty)
-      );
-
-      if (isOwnPartyIban || isOwnClubParty || isTransferText) {
-        matchType = 'rule';
-        matchRuleName = 'Geldtransit (Kontoübertrag)';
-        matchLabel = 'Geldtransit 1099 (Transferkonto)';
-        matchRulePrefix = 'Kontoübertrag';
-        matchScore = 3;
-
-        if (tx.isCredit) {
-          suggestedSoll = txBankKonto;
-          suggestedHaben = '1099';
-        } else {
-          suggestedSoll = '1099';
-          suggestedHaben = txBankKonto;
-        }
-      }
-    }
-
-    // 2. STUFE: Benutzer-Regeln (Rules)
-    // Spezifischere Regeln (sowohl Empfänger als auch Verwendungszweck und/oder Betrag gesetzt) priorisieren
+    // 2. STUFE: Benutzer-Regeln aus Supabase (accounting_bank_rules)
+    // Mieterträge, RaiseNow, Lieferanten- und Standardregeln werden hier zentral und dynamisch abgeglichen
     matchRulePrefix = '';
     if (!isJahresbeitrag && !isInvoice && matchType === 'unknown') {
       const sortedRules = [...userRules].sort((a, b) => {
@@ -2319,6 +2262,52 @@ function bhBankMatchAll(transactions) {
             kontoHaben: p.haben || txBankKonto,
             betrag: p.betrag
           }));
+        }
+      }
+    }
+
+    // 2c. STUFE: FALLBACK FÜR EIGENE KONTOÜBERTRÄGE / GELDTRANSIT (1099)
+    // Greift nur als Sicherheitsnetz, falls keine spezifischere Benutzerregel in Stufe 2 gematcht hat
+    if (!isJahresbeitrag && !isInvoice && matchType === 'unknown') {
+      const cleanPartyIban = String(tx.partyIban || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      const isOwnPartyIban = Boolean(
+        cleanPartyIban && (
+          cleanPartyIban.includes('533218786') || cleanPartyIban.startsWith('CH28') || // 1021 Wirtschaftskonto
+          cleanPartyIban.includes('36331')     || cleanPartyIban.startsWith('CH06') || // 1020 Zahlungskonto
+          cleanPartyIban.includes('07885129')  || cleanPartyIban.startsWith('CH81')    // 1022 Sparkonto
+        )
+      );
+
+      // Eigenname des Vereins als Zahler/Empfänger bedeutet immer interner Eigenübertrag!
+      const isOwnClubParty = (
+        cleanParty.includes('sportschützen muhen') ||
+        cleanParty.includes('sportschuetzen muhen') ||
+        cleanParty.includes('sg muhen') ||
+        cleanParty.includes('schützen muhen') ||
+        cleanParty.includes('schuetzen muhen')
+      );
+
+      // Buchungstext mit Übertrag / Umbuchung / Kontoübertrag / Bancomat
+      const isTransferText = (
+        /konto[uü]bertrag/i.test(cleanRemittance) || /konto[uü]bertrag/i.test(cleanParty) ||
+        /[uü]bertrag/i.test(cleanRemittance) || /[uü]bertrag/i.test(cleanParty) ||
+        /umbuchung/i.test(cleanRemittance) || /umbuchung/i.test(cleanParty) ||
+        /bancomat/i.test(cleanRemittance) || /bancomat/i.test(cleanParty)
+      );
+
+      if (isOwnPartyIban || isOwnClubParty || isTransferText) {
+        matchType = 'rule';
+        matchRuleName = 'Geldtransit (Kontoübertrag)';
+        matchLabel = 'Geldtransit 1099 (Transferkonto)';
+        matchRulePrefix = 'Kontoübertrag';
+        matchScore = 3;
+
+        if (tx.isCredit) {
+          suggestedSoll = txBankKonto;
+          suggestedHaben = '1099';
+        } else {
+          suggestedSoll = '1099';
+          suggestedHaben = txBankKonto;
         }
       }
     }
@@ -2478,6 +2467,15 @@ function bhBankMatchAll(transactions) {
           // Falls ein Mitglied gematcht ist, nicht blind auf fremden Namen matchen
           if (matchedMember && !bhBankMatchText(j.beschreibung, '', '', '', matchedMember, null)) {
             return false;
+          }
+
+          // Falls partyName vorhanden ist, sicherstellen, dass im Journal-Text nicht ein völlig anderer Name steht
+          if (tx.partyName) {
+            const pWords = normalizeString(tx.partyName).split(' ').filter(w => w.length >= 3 && !['herr','frau','dr','die','der','das','und','gmbh','ag','schuetzen','sportschuetzen','sportschützen','muhen'].includes(w));
+            const cleanJ = normalizeString(j.beschreibung || '');
+            if (pWords.length > 0 && !pWords.some(w => cleanJ.includes(w))) {
+              return false; // Fremder Name im Journal -> Kein Blind-Match bei gleichem Betrag!
+            }
           }
           return true;
         });
@@ -2835,12 +2833,6 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
     }
   }
 
-  const cleanRemittance = (tx.remittanceInfo || '').toLowerCase();
-  const cleanParty = (tx.partyName || '').toLowerCase();
-  const vMatch = (tx.remittanceInfo || '').match(/v-\d{4}-\d{3,4}/i) || (tx.partyName || '').match(/v-\d{4}-\d{3,4}/i);
-  const isMieteText = /miet/i.test(cleanRemittance) || /miet/i.test(cleanParty);
-  const isRaiseNow = /raisenow/i.test(cleanRemittance);
-
   let beschreibung = '';
   if (tx._customRemittanceEdited && tx._customRemittance) {
     const party = (tx.partyName || '').trim();
@@ -2850,41 +2842,6 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
     } else {
       beschreibung = customTxt;
     }
-  } else if (vMatch || isMieteText || kontoHaben === '3650') {
-    const vCode = vMatch ? ` (${vMatch[0].toUpperCase()})` : '';
-    const party = tx.partyName ? `: ${tx.partyName}` : '';
-    const cleanRmt = (tx.remittanceInfo || '').replace(/v-\d{4}-\d{3,4}/i, '').replace(/miete/i, '').replace(/mietvertrag/i, '').trim();
-    beschreibung = `Vermietung Schützenhaus${vCode}${party}${cleanRmt ? ' - ' + cleanRmt : ''}`;
-  } else if (isRaiseNow) {
-    let extractedDate = '';
-    const rmt = tx.remittanceInfo || '';
-
-    const rangeMatch = rmt.match(/\b(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\s*-\s*(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b/);
-    if (rangeMatch) {
-      const [, y1, m1, d1, y2, m2, d2] = rangeMatch;
-      if (y1 === y2 && m1 === m2) {
-        extractedDate = `${d1}.${m1}. - ${d2}.${m2}.${y2}`;
-      } else {
-        extractedDate = `${d1}.${m1}.${y1} - ${d2}.${m2}.${y2}`;
-      }
-    }
-
-    if (!extractedDate) {
-      const singleIsoMatch = rmt.match(/\b(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b/);
-      if (singleIsoMatch) {
-        const [, y, m, d] = singleIsoMatch;
-        extractedDate = `${d}.${m}.${y}`;
-      }
-    }
-
-    if (!extractedDate) {
-      const swissMatch = rmt.match(/\b(\d{1,2}\.\d{1,2}\.(?:\d{4}|\d{2})?)\b/);
-      if (swissMatch) {
-        extractedDate = swissMatch[1];
-      }
-    }
-
-    beschreibung = `Wirtschaftseinnahme TWINT (RaiseNow${extractedDate ? ' vom ' + extractedDate : ''})`;
   } else if (tx.matchType === 'payment_order' && tx.matchedPaymentOrder) {
     const po = tx.matchedPaymentOrder;
     beschreibung = `Auszahlung ${po.order_nr} (${po.recipient_name}): ${po.beschreibung}`;
@@ -2899,6 +2856,26 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
     let prefix = (tx.matchRulePrefix || tx.matchRuleName || '').trim();
     let party  = (tx.partyName || '').trim();
     let rmt    = (tx.remittanceInfo || '').trim();
+
+    // Falls RaiseNow: Datum hübsch extrahieren falls vorhanden
+    if (/raisenow/i.test(rmt)) {
+      const rangeMatch = rmt.match(/\b(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\s*-\s*(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b/);
+      let extractedDate = '';
+      if (rangeMatch) {
+        const [, y1, m1, d1, y2, m2, d2] = rangeMatch;
+        extractedDate = (y1 === y2 && m1 === m2) ? `${d1}.${m1}. - ${d2}.${m2}.${y2}` : `${d1}.${m1}.${y1} - ${d2}.${m2}.${y2}`;
+      } else {
+        const singleIsoMatch = rmt.match(/\b(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b/);
+        if (singleIsoMatch) extractedDate = `${singleIsoMatch[3]}.${singleIsoMatch[2]}.${singleIsoMatch[1]}`;
+      }
+      if (extractedDate) rmt = `RaiseNow vom ${extractedDate}`;
+    }
+
+    // Vermietungscode hervorheben falls vorhanden (z. B. V-2026-0041)
+    const vMatch = rmt.match(/v-\d{4}-\d{3,4}/i) || (party ? party.match(/v-\d{4}-\d{3,4}/i) : null);
+    if (vMatch && !prefix.includes(vMatch[0].toUpperCase())) {
+      prefix = `${prefix} (${vMatch[0].toUpperCase()})`;
+    }
 
     if (rmt.toLowerCase().replace(/^(zahlung|gutschrift|überweisung|auszahlung)\s+/, '') === party.toLowerCase()) {
       rmt = '';
@@ -4134,7 +4111,7 @@ window.bhBankOpenRuleEditorModal = function(editIdx, prefillObj) {
   bootstrap.Modal.getOrCreateInstance(modalEl).show();
 };
 
-window.bhBankSaveRuleSubmit = function(e, editIdx) {
+window.bhBankSaveRuleSubmit = async function(e, editIdx) {
   e.preventDefault();
 
   const label        = document.getElementById('bhr-label').value.trim();
@@ -4177,7 +4154,15 @@ window.bhBankSaveRuleSubmit = function(e, editIdx) {
   const hasAnyFilter = Boolean(patternParty || patternText || (amountMode !== 'any' && amountMin !== ''));
 
   if (!label || !hasAnyFilter || !soll || !haben) {
-    alert('Bitte Regel-Bezeichnung, mindestens ein Filterkriterium (Empfänger, Verwendungszweck oder Betrag) sowie Soll- und Haben-Konto angeben.');
+    if (window.UIConfirmKit && typeof window.UIConfirmKit.alert === 'function') {
+      await window.UIConfirmKit.alert({
+        title: 'Pflichtfelder ausfüllen',
+        message: 'Bitte Regel-Bezeichnung, mindestens ein Filterkriterium (Empfänger, Verwendungszweck oder Betrag) sowie Soll- und Haben-Konto angeben.',
+        type: 'warning'
+      });
+    } else {
+      alert('Bitte Regel-Bezeichnung, mindestens ein Filterkriterium (Empfänger, Verwendungszweck oder Betrag) sowie Soll- und Haben-Konto angeben.');
+    }
     return;
   }
 
@@ -4201,6 +4186,10 @@ window.bhBankSaveRuleSubmit = function(e, editIdx) {
   const rules = window.getBhBankRules();
 
   if (editIdx >= 0 && editIdx < rules.length) {
+    const existing = rules[editIdx];
+    if (existing && existing.id) {
+      ruleObj.id = existing.id;
+    }
     rules[editIdx] = ruleObj;
     showToast(`✅ Regel "${label}" erfolgreich aktualisiert!`, 'success');
   } else {
@@ -4422,22 +4411,33 @@ window.bhBankManageRulesModal = function() {
   }
 };
 
-window.bhBankDeleteRule = function(idx) {
+window.bhBankDeleteRule = async function(idx) {
   const rules = window.getBhBankRules();
   const r = rules[idx];
-  const ok = confirm(`Regel "${r ? r.label : ''}" wirklich löschen?`);
-  if (!ok) return;
+  if (!r) return;
 
-  if (r) {
-    const ruleKey = r.id || r.rule_key;
-    const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
-    if (sb && ruleKey) {
-      sb.from('accounting_bank_rules').delete().eq('rule_key', ruleKey)
-        .then(({ error }) => {
-          if (error) console.warn('[Buchhaltung Supabase] Error deleting rule:', error);
-          else console.log('✅ Regel aus Supabase gelöscht.');
-        });
-    }
+  let confirmed = false;
+  if (window.UIConfirmKit && typeof window.UIConfirmKit.confirm === 'function') {
+    confirmed = await window.UIConfirmKit.confirm({
+      title: 'Regel löschen?',
+      message: `Möchtest du die Regel "${r.label}" wirklich unwiderruflich löschen?`,
+      type: 'danger',
+      confirmText: 'Löschen',
+      cancelText: 'Abbrechen'
+    });
+  } else {
+    confirmed = confirm(`Regel "${r.label}" wirklich löschen?`);
+  }
+  if (!confirmed) return;
+
+  const ruleId = r.id;
+  const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
+  if (sb && ruleId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(ruleId))) {
+    sb.from('accounting_bank_rules').delete().eq('id', ruleId)
+      .then(({ error }) => {
+        if (error) console.warn('[Buchhaltung Supabase] Error deleting rule:', error);
+        else console.log('✅ Regel aus Supabase gelöscht.');
+      });
   }
 
   rules.splice(idx, 1);
