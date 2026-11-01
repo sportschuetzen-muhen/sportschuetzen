@@ -3461,15 +3461,33 @@ window.bhBankBookAll = async function() {
     });
 
     // 2. Belegnummern im Vorfeld lückenlos und streng chronologisch vergeben
+    // Höchste vorhandene Belegnummern im Journal je Präfix ermitteln (Single Source of Truth)
+    const maxSeqs = {};
+    (window._bhJournal || []).forEach(j => {
+      if (Number(j.jahr) === activeYear && j.beleg_nr) {
+        const m = String(j.beleg_nr).match(/^(B_Zahl_|B_Wirt_|B_Spar_|B_Geno_|BK_)\d{4}-(\d+)/i);
+        if (m) {
+          let pfx = m[1].toUpperCase();
+          if (pfx === 'B_GENO_') pfx = 'B_SPAR_';
+          const num = parseInt(m[2], 10);
+          if (!isNaN(num)) {
+            maxSeqs[pfx] = Math.max(maxSeqs[pfx] || 0, num);
+          }
+        }
+      }
+    });
+
+    const runningSeqs = { ...maxSeqs };
     toBook.forEach(({ r }) => {
       const txBankKonto = isBankKontoCode(r.suggestedSoll) 
         ? r.suggestedSoll 
         : (isBankKontoCode(r.suggestedHaben) 
             ? r.suggestedHaben 
             : bhBankGetAccountForIban(r.accountIban, '1020'));
-      if (!r._batchBelegNr) {
-        r._batchBelegNr = r._projectedBelegNr || bhGetNextBankBelegNr(activeYear, txBankKonto);
-      }
+      const pfxRaw = getBankBelegPrefix(txBankKonto);
+      const pfxKey = pfxRaw.toUpperCase();
+      runningSeqs[pfxKey] = (runningSeqs[pfxKey] || 0) + 1;
+      r._batchBelegNr = `${pfxRaw}${activeYear}-${String(runningSeqs[pfxKey]).padStart(3, '0')}`;
     });
 
     // 2. Alle Buchungspakete lokal im RAM zusammenstellen
@@ -3768,15 +3786,33 @@ window.bhBankBookSelected = async function() {
     });
 
     // 2. Belegnummern lückenlos und chronologisch vergeben
+    // Höchste vorhandene Belegnummern im Journal je Präfix ermitteln (Single Source of Truth)
+    const maxSeqs = {};
+    (window._bhJournal || []).forEach(j => {
+      if (Number(j.jahr) === activeYear && j.beleg_nr) {
+        const m = String(j.beleg_nr).match(/^(B_Zahl_|B_Wirt_|B_Spar_|B_Geno_|BK_)\d{4}-(\d+)/i);
+        if (m) {
+          let pfx = m[1].toUpperCase();
+          if (pfx === 'B_GENO_') pfx = 'B_SPAR_';
+          const num = parseInt(m[2], 10);
+          if (!isNaN(num)) {
+            maxSeqs[pfx] = Math.max(maxSeqs[pfx] || 0, num);
+          }
+        }
+      }
+    });
+
+    const runningSeqs = { ...maxSeqs };
     toBook.forEach(({ r }) => {
       const txBankKonto = isBankKontoCode(r.suggestedSoll) 
         ? r.suggestedSoll 
         : (isBankKontoCode(r.suggestedHaben) 
             ? r.suggestedHaben 
             : bhBankGetAccountForIban(r.accountIban, '1020'));
-      if (!r._batchBelegNr) {
-        r._batchBelegNr = r._projectedBelegNr || bhGetNextBankBelegNr(activeYear, txBankKonto);
-      }
+      const pfxRaw = getBankBelegPrefix(txBankKonto);
+      const pfxKey = pfxRaw.toUpperCase();
+      runningSeqs[pfxKey] = (runningSeqs[pfxKey] || 0) + 1;
+      r._batchBelegNr = `${pfxRaw}${activeYear}-${String(runningSeqs[pfxKey]).padStart(3, '0')}`;
     });
 
     // 2. Alle Buchungspakete lokal zusammenstellen
@@ -4564,7 +4600,7 @@ window.bhBankOpenSplitModal = async function(txIdx) {
   const txBankKonto = bhBankGetAccountForIban(tx.accountIban, '1020');
   const activeYear = Number(window._bhYear || (tx.bookingDate ? tx.bookingDate.split('-')[0] : new Date().getFullYear()));
   if (!tx._batchBelegNr) {
-    tx._batchBelegNr = bhGetNextBankBelegNr(activeYear, txBankKonto);
+    tx._batchBelegNr = tx._projectedBelegNr || bhGetNextBankBelegNr(activeYear, txBankKonto);
   }
   if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
     window._bhBankTransactions[txIdx]._batchBelegNr = tx._batchBelegNr;
@@ -5020,7 +5056,7 @@ window.bhBankSaveSplitBooking = function(txIdx, andPrint = false) {
   const txBankKonto = bhBankGetAccountForIban(tx.accountIban, '1020');
   const activeYear = Number(window._bhYear || (tx.bookingDate ? tx.bookingDate.split('-')[0] : new Date().getFullYear()));
   if (!tx._batchBelegNr) {
-    tx._batchBelegNr = bhGetNextBankBelegNr(activeYear, txBankKonto);
+    tx._batchBelegNr = tx._projectedBelegNr || bhGetNextBankBelegNr(activeYear, txBankKonto);
   }
   if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
     window._bhBankTransactions[txIdx]._batchBelegNr = tx._batchBelegNr;
