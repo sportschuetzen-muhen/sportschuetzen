@@ -115,9 +115,14 @@ async function jmPopulateTargetCompetitions(selectedCol = -1, detectedName = '',
             opt.value = c;
             opt.textContent = `${title} (Spalte ${c + 1}, Max: ${maxPts})`;
             
-            if (cleanDetected) {
+            if (cleanDetected || catalogMatch) {
                 const cleanT = title.toLowerCase().replace(/[^a-z0-9äöü]/g, '');
-                if (cleanDetected.includes(cleanT) || cleanT.includes(cleanDetected)) {
+                const baseT = cleanT.replace(/\d{4}|current|jahr/g, '');
+                const baseDetected = cleanDetected.replace(/\d{4}|current|jahr/g, '');
+                const catBase = catalogMatch ? catalogMatch.anlass.toLowerCase().replace(/[^a-z0-9äöü]/g, '') : '';
+                
+                if ((baseT && baseDetected && (baseT.includes(baseDetected) || baseDetected.includes(baseT))) ||
+                    (catBase && (cleanT.includes(catBase) || catBase.includes(baseT)))) {
                     bestMatchCol = c;
                 }
             }
@@ -916,10 +921,12 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
 
     // 3. Schützen zeilenweise matchen
     const matchedShootersWithStiche = [];
+    const unmatchedShooters = [];
     const seenRows = new Set();
+    const matchedLineIndices = new Set();
     const escapeReg = str => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-    lines.forEach(l => {
+    lines.forEach((l, lIdx) => {
         const lineText = l.text;
         knownShooters.forEach(s => {
             if (seenRows.has(s.rowIndex)) return;
@@ -957,14 +964,38 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
 
                     const nMatch = cleanLine.match(new RegExp('\\b' + escapeReg(s.nachname) + '\\b', 'i'));
                     let searchLine = nMatch && nMatch.index !== undefined ? cleanLine.substring(nMatch.index) : cleanLine;
-                    const allNums = searchLine.match(/\b([4-9][0-9]|100|1[0-9]{2}|200|300|5[0-9]{2}|600)\b/g);
-                    if (allNums && allNums.length > 0) {
-                        shooterStiche['default'] = parseFloat(allNums[0]);
+
+                    // 1. Spezifische Suche nach Schlüsselwörtern Total / Resultat / Punkte
+                    const totMatch = searchLine.match(/(?:total|punkte|resultat|res|tot)[\s:=-]*(\d+(?:[.,]\d+)?)/i);
+                    if (totMatch) {
+                        shooterStiche['default'] = parseFloat(totMatch[1].replace(',', '.'));
+                    } else {
+                        // 2. Extraktion aller numerischen Werte (inkl. Dezimalstellen wie 621.0 oder 103.7)
+                        const rawNums = searchLine.match(/\b\d+(?:[.,]\d+)?\b/g);
+                        if (rawNums && rawNums.length > 0) {
+                            const candidates = rawNums
+                                .map(n => parseFloat(n.replace(',', '.')))
+                                .filter(num => !isNaN(num) && num <= 654); // Filtert z.B. 6-stellige PassNr/IDs aus
+
+                            if (candidates.length >= 2) {
+                                // Bei Serien (z.B. Meyton 6 Serien + Total) ist das Gesamttotal die letzte Zahl
+                                const lastNum = candidates[candidates.length - 1];
+                                const maxOther = Math.max(...candidates.slice(0, -1));
+                                if (lastNum >= maxOther || lastNum > 100) {
+                                    shooterStiche['default'] = lastNum;
+                                } else {
+                                    shooterStiche['default'] = candidates[0];
+                                }
+                            } else if (candidates.length === 1) {
+                                shooterStiche['default'] = candidates[0];
+                            }
+                        }
                     }
                 }
 
                 if (Object.keys(shooterStiche).length > 0) {
                     seenRows.add(s.rowIndex);
+                    matchedLineIndices.add(lIdx);
                     matchedShootersWithStiche.push({
                         rowIndex: s.rowIndex,
                         name: s.fullName,
@@ -975,6 +1006,36 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
                 }
             }
         });
+
+        // Unbekannte Schützen auf Ranglistenzeilen erkennen (sofern nicht gematcht)
+        if (!matchedLineIndices.has(lIdx)) {
+            const extMatch = lineText.match(/(?:^|\d+\s+)([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-\s]{2,}),\s*([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]{2,})/);
+            if (extMatch) {
+                const extNach = extMatch[1].trim();
+                const extVor = extMatch[2].trim();
+                const excludeHeader = /^(?:schiessanlage|freischützen|mannschaft|gruppenrangliste|rangliste|verein|sektion)$/i;
+                if (!excludeHeader.test(extNach) && !excludeHeader.test(extVor)) {
+                    const afterName = lineText.substring(extMatch.index + extMatch[0].length);
+                    const extNums = afterName.match(/\b\d+(?:[.,]\d+)?\b/g);
+                    if (extNums && extNums.length > 0) {
+                        const candidates = extNums
+                            .map(n => parseFloat(n.replace(',', '.')))
+                            .filter(num => !isNaN(num) && num <= 654);
+                        if (candidates.length > 0) {
+                            const extTotal = (candidates.length >= 2 && candidates[candidates.length - 1] >= Math.max(...candidates.slice(0, -1)))
+                                ? candidates[candidates.length - 1]
+                                : candidates[0];
+                            unmatchedShooters.push({
+                                name: `${extNach} ${extVor}`,
+                                lizenz: '',
+                                points: extTotal,
+                                matched: false
+                            });
+                        }
+                    }
+                }
+            }
+        }
     });
 
     // 4. Stiche zusammenstellen & Standard bestimmen
@@ -990,11 +1051,13 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
         const maxScore = ptsList.length > 0 ? Math.max(...ptsList) : 100;
         let forecastMax = catalogMatch ? catalogMatch.max_punkte : 100;
         if (!catalogMatch) {
-            if (/60\s*schuss|liegend/i.test(fullText) || maxScore > 300) forecastMax = 600;
+            if (/60\s*schuss|liegend/i.test(fullText) || maxScore > 300) forecastMax = (maxScore > 600 ? 654 : 600);
             else if (/kantonalstich|30\s*schuss/i.test(fullText) || maxScore > 200) forecastMax = 300;
             else if (/vereinsstich|verband|20\s*schuss/i.test(fullText) || maxScore > 150) forecastMax = 200;
             else if (/15\s*schuss|auszahlung|sektion/i.test(fullText) || (maxScore > 120 && maxScore <= 150)) forecastMax = 150;
             else forecastMax = 100;
+        } else if (maxScore > 600 && forecastMax === 600) {
+            forecastMax = 654; // Zehntelwertung bei 60 Schuss Liegendmatch
         }
 
         availableStiche = [{
@@ -1039,6 +1102,17 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
                 matched: true
             });
         }
+    });
+
+    // Schützen ausserhalb der Jahresmeisterschaft anhängen
+    unmatchedShooters.forEach(u => {
+        rows.push({
+            rowIndex: null,
+            name: u.name,
+            lizenz: u.lizenz || '',
+            points: u.points,
+            matched: false
+        });
     });
 
     _jmImportState.rows = rows;
@@ -1157,74 +1231,25 @@ async function jmReAnalyzeImport() {
 window.jmReAnalyzeImport = jmReAnalyzeImport;
 
 /**
- * Sendet ein Standblatt-Foto an die zentrale Gemini Vision OCR API.
+ * Sendet ein Standblatt-Foto oder einen Screenshot an die Gemini Vision OCR API
+ * und analysiert den extrahierten Text zeilenweise über jmProcessAuswaertigFromText.
  */
 async function jmProcessAuswaertigFromImage(base64Data, fileName) {
     const grid = jmRawGrid;
     if (!grid || grid.length < 6) return;
 
-    const shooters = [];
-    for (let r = 5; r < grid.length; r++) {
-        if (!grid[r] || r === 13 || r === 14) continue;
-        const nachname = String(grid[r][1] || '').trim();
-        const vorname = String(grid[r][2] || '').trim();
-        if (nachname || vorname) {
-            shooters.push({
-                id: r,
-                name: `${nachname} ${vorname}`.trim()
-            });
-        }
-    }
-
     try {
-        const res = await apiFetch("resultate", "action=ocr", {
+        const res = await apiFetch("resultate", "action=ocr_text", {
             method: "POST",
             body: JSON.stringify({
                 image: base64Data,
-                shooters: shooters,
-                round: "auswaertig",
                 model: "gemini-3-flash-preview"
             })
         });
 
         const data = await res.json();
-        if (data && data.success && Array.isArray(data.ergebnisse)) {
-            const matchedResults = [];
-            data.ergebnisse.forEach(item => {
-                if (item.id && item.points > 0) {
-                    matchedResults.push({
-                        rowIndex: parseInt(item.id),
-                        name: item.name || '',
-                        lizenz: '',
-                        points: item.points,
-                        matched: true
-                    });
-                }
-            });
-
-            const ptsList = matchedResults.map(r => r.points);
-            
-            // Katalog-Abgleich für OCR-Ergebnis
-            let catMatch = null;
-            if (typeof jmMatchCompetitionFromCatalog === 'function') {
-                const ocrText = [data.anlass, data.wettkampf, data.raw_text, data.ocr_text, fileName].filter(Boolean).join(' ');
-                catMatch = await jmMatchCompetitionFromCatalog(ocrText);
-            }
-
-            let maxPts = catMatch ? catMatch.max_punkte : (ptsList.length > 0 ? (Math.max(...ptsList) <= 100 ? 100 : 200) : 100);
-            const detectedTitle = catMatch
-                ? `${catMatch.anlass} ${jmCurrentJahr || new Date().getFullYear()}`
-                : (fileName ? fileName.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') : 'Standblatt Auswärtig');
-            const reason = catMatch ? `Katalog: ${catMatch.anlass} (Erkannt: "${catMatch.matchedKeyword}")` : 'Gemini Vision Erkennung';
-            
-            _jmImportState.rows = matchedResults;
-            _jmImportState.metadata = {
-                title: detectedTitle,
-                maxPoints: maxPts,
-                reason: reason,
-                fileName: fileName
-            };
-            await jmSetupAuswaertigPreview(detectedTitle, maxPts, reason, matchedResults, catMatch);
+        if (data && data.success && data.text) {
+            await jmProcessAuswaertigFromText(data.text, fileName);
             return;
         }
     } catch (ocrErr) {
