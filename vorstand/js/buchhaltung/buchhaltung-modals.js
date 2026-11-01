@@ -5417,6 +5417,9 @@ window.bhRenderPaymentOrdersModalContent = function() {
               </div>
 
               <div class="d-flex align-items-center gap-2 flex-wrap">
+                <button type="button" class="btn btn-sm btn-outline-warning text-dark fw-bold shadow-sm" onclick="if (typeof jmOpenGruppengewinneModal === 'function') jmOpenGruppengewinneModal();" title="Gruppengewinne (Konto 1301) verwalten & abrechnen">
+                  <i class="fas fa-trophy me-1 text-warning"></i>Gruppengewinne (1301)
+                </button>
                 <button type="button" class="btn btn-sm btn-success fw-bold shadow-sm" id="bh-po-batch-export-btn" onclick="bhExportSelectedPaymentOrders()" disabled>
                   <i class="fas fa-file-code me-1.5"></i>Sammel-pain.001 exportieren (<span id="bh-po-selected-count">0</span>)
                 </button>

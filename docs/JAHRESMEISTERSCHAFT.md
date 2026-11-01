@@ -107,6 +107,12 @@ Die Auswertung der Jahresmeisterschaft erfolgt im Frontend über [`jahresmeister
 * **Neueinsteiger-Hilfen & Asynchrone Dialoge:** Aufklappbare Kurzanleitung, Archiv- bzw. «Nur Ansicht»-Banner und die einklappbare Karte «Wettkämpfe & Maximalpunkte» (Standard: eingeklappt). Alle Bestätigungs-, Hinweis- und Eingabedialoge nutzen zentral `UIConfirmKit` (`confirm`, `alert` sowie das neu eingeführte `prompt` inkl. Formularfeld-Unterstützung). Promises lösen sauber auf `hidden.bs.modal` auf, womit Race Conditions bei verketteten Dialogen vollständig eliminiert sind.
 * **Performante Zelleingabe & Tastatur-Navigation (Paket B):** Bei der Punkteeingabe in Schützenzellen (`r > 4`) wird nicht mehr das gesamte Tabellen-DOM neu gerendert, sondern gezielt nur die betroffene Zeile via `updateShooterRowDOM(r)` nachgeführt (Totals, Top 4 SMM, Top 2 Auswärtige, Badges). Das Eingabefeld behält stets den Fokus. Mit `Enter` bzw. `ArrowDown` springt der Cursor direkt vertikal zum nächsten Schützen desselben Anlasses; mit `Tab` navigiert man horizontal durch die Zeile.
 
+### 3.8 Gruppengewinne bei Auswärtsschiessen & Aufteilung auf Schützen (Konto 1301)
+* **Fachlogik & Abrechnungsmodell:** Besuchen Mitglieder auswärtige Schiessen, übernimmt der Verein das Gruppendoppel (standardmässig CHF 30.00, frei übersteuerbar). Gruppengewinne darüber hinaus (`MAX(0, Gewinn - Doppel)`) werden zu gleichen Teilen auf die beteiligten Schützen aufgeteilt (`jahresmeisterschaft-gruppengewinne.js`).
+* **Erkennung beim PDF-Import:** Beim Einlesen von Auswärts-Ranglisten (`jahresmeisterschaft-import.js`) erkennt das System Gruppenstich-Ranglisten und Gruppengewinne (z.B. Rang 2 Gruppe Strohaus, CHF 120.00) automatisch und blendet ein Übernahme-Banner ein.
+* **Auszahlung & Verrechnung:** Schützen können mit 1 Klick entweder zur Verrechnung im Jahresbeitrag (Gutschrift Haben `1301` in `contributions_positions`) oder für eine Banküberweisung (`accounting_payment_orders` via ISO 20022 pain.001) übergeben werden. Fehlende IBANs können inline erfasst und direkt im Mitgliederstamm gesichert werden.
+* **Abrechnungs- & Quittungs-PDF:** Über `jmGenerateGruppengewinnPdf` wird ein DIN-A4 Abrechnungsbeleg mit Vereins-Header, Finanzaufstellung, Schützenliste und Revisionsvermerk erzeugt, der gedruckt oder der Jahresbeitragsrechnung beigelegt werden kann.
+
 ---
 
 ## 4. Resultate-Import & KI-Standblatt-Erkennung

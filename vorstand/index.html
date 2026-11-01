@@ -1248,6 +1248,9 @@
                         <button class="btn btn-sm btn-outline-info" type="button" onclick="openJMSchuetzenfesteModal()" title="Katalog bekannter Schützenfeste und Suchbegriffe bearbeiten">
                             <i class="fas fa-bullseye me-1"></i>Schützenfeste
                         </button>
+                        <button class="btn btn-sm btn-outline-warning text-dark fw-semibold" type="button" onclick="jmOpenGruppengewinneModal()" title="Gruppengewinne (Konto 1301) verwalten & abrechnen">
+                            <i class="fas fa-trophy me-1 text-warning"></i>Gruppengewinne (1301)
+                        </button>
                         <div class="dropdown">
                             <button class="btn btn-sm btn-outline-secondary dropdown-toggle write-protected" type="button" data-bs-toggle="dropdown">
                                 ⚙️ Aktionen
@@ -1256,6 +1259,7 @@
                                 <li><a class="dropdown-item text-primary fw-semibold" href="#" onclick="openJMStandblattInboxModal()"><i class="fas fa-inbox me-2"></i>Eingereichte Standblätter...</a></li>
                                 <li><a class="dropdown-item text-success fw-semibold" href="#" onclick="openJMImportModal()"><i class="fas fa-file-import me-2"></i>Resultate importieren...</a></li>
                                 <li><a class="dropdown-item text-info fw-semibold" href="#" onclick="openJMSchuetzenfesteModal()"><i class="fas fa-bullseye me-2"></i>Schützenfeste Katalog...</a></li>
+                                <li><a class="dropdown-item text-warning fw-semibold" href="#" onclick="jmOpenGruppengewinneModal()"><i class="fas fa-trophy me-2 text-warning"></i>Gruppengewinne (1301)...</a></li>
                                 <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item text-warning" href="#" onclick="runJMAction('archiviereJahresmeisterschaft', 'Jahr archivieren')">Archivieren (Aktuelles Jahr)</a></li>
                                 <li><a class="dropdown-item text-danger" href="#" onclick="runJMAction('jahresmeisterschaftZuruecksetzen', 'Neues Jahr starten')">Neues Jahr starten (Saisonwechsel &amp; Auf-/Abstieg)</a></li>
@@ -2015,6 +2019,9 @@
                 <!-- Vorschau-Bereich -->
                 <div id="jm-import-preview-container" class="mt-4 d-none">
                     <hr>
+                    <!-- Erkannte Gruppenwertung & Gewinn-Hinweis -->
+                    <div id="jm-import-group-detected-box" class="d-none mb-3"></div>
+
                     <!-- Konfigurationszeile für Auswärtige Schiessen (Anlass & Maximalpunkte) -->
                     <div id="jm-import-auswaertig-config" class="card bg-light border-danger border-opacity-25 p-3 mb-3 d-none rounded-3">
                         <div class="row g-2 align-items-center">
@@ -2819,6 +2826,7 @@
 <script src="js/jahresmeisterschaft/jahresmeisterschaft-import.js?v=20261101_2"></script>
     <script src="js/jahresmeisterschaft/jahresmeisterschaft-export.js?v=20261101_2"></script>
 <script src="js/jahresmeisterschaft/jahresmeisterschaft-inbox.js?v=20261101_1"></script>
+<script src="js/jahresmeisterschaft/jahresmeisterschaft-gruppengewinne.js?v=20261101_1"></script>
 
 <!-- NEU: Skripte für Endschiessen KK 50m -->
 <script src="js/endschiessen/endschiessen-core.js"></script>

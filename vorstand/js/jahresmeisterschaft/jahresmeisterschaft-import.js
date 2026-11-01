@@ -1115,6 +1115,19 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
         });
     });
 
+    // 3b. Allfällige Gruppenwertung und Gruppengewinne erkennen
+    if (typeof window.jmDetectGroupCompetitionFromImportLines === 'function') {
+        const detectedGroup = window.jmDetectGroupCompetitionFromImportLines(lines, fullText, fileName);
+        if (detectedGroup) {
+            _jmImportState.detectedGroup = {
+                ...detectedGroup,
+                anlass_name: detectedTitle
+            };
+        } else {
+            _jmImportState.detectedGroup = null;
+        }
+    }
+
     _jmImportState.rows = rows;
     await jmSetupAuswaertigPreview(detectedTitle, defaultStich.maxPoints, catalogReason || `${defaultStich.label} (Erkannt)`, rows, catalogMatch);
 }
@@ -1295,8 +1308,74 @@ async function jmSetupAuswaertigPreview(detectedTitle, forecastMax, forecastReas
         _jmImportState.isNewComp = true;
     }
 
+    // Gruppenwertung & Gewinnhinweis anzeigen (Konto 1301)
+    const groupBox = document.getElementById('jm-import-group-detected-box');
+    if (groupBox) {
+        if (_jmImportState.detectedGroup) {
+            const dg = _jmImportState.detectedGroup;
+            const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${v.toFixed(2)}`);
+            groupBox.className = 'alert alert-warning py-2.5 px-3 small d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3 shadow-sm border border-warning';
+            groupBox.innerHTML = `
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-warning text-dark fs-6"><i class="fas fa-trophy"></i></span>
+                    <div>
+                        <strong class="text-dark">Gruppenwertung & Gewinn erkannt:</strong>
+                        Gruppe <span class="badge bg-light text-dark border fw-bold">${dg.gruppe_name}</span> 
+                        ${dg.rang ? `(Rang ${dg.rang})` : ''} · 
+                        Gruppengewinn: <strong class="text-success">${fmtCurr(dg.gruppengewinn || 0)}</strong>
+                        (${dg.shooters.length} Schützen identifiziert)
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-dark fw-bold shadow-sm" onclick="window.jmOpenGroupEditorFromImport()">
+                    <i class="fas fa-coins me-1 text-warning"></i> Aufteilung prüfen & erfassen (Konto 1301)
+                </button>
+            `;
+            groupBox.classList.remove('d-none');
+        } else {
+            groupBox.classList.add('d-none');
+            groupBox.innerHTML = '';
+        }
+    }
+
     jmRenderPreview(matchedResults, 'auswaertig', _jmImportState.metadata);
 }
+
+/**
+ * Öffnet den Gruppeneditor aus der erkannten Import-Gruppe.
+ */
+window.jmOpenGroupEditorFromImport = function() {
+    if (!_jmImportState?.detectedGroup) return;
+    const dg = _jmImportState.detectedGroup;
+    const targetTitle = document.getElementById('jm-import-target-title')?.value || dg.anlass_name || _jmImportState.targetTitle;
+    
+    const membersList = (dg.shooters || []).map(s => ({
+        person_number: null,
+        schuetze_name: s.schuetze_name,
+        jahrgang: s.jahrgang || null,
+        punkte: s.punkte || null,
+        betrag: 0,
+        payout_method: 'jahresbeitrag',
+        iban: '',
+        status: 'offen'
+    }));
+
+    const groupPayload = {
+        id: null,
+        jahr: (window.jmCurrentJahr && window.jmCurrentJahr !== 'current') ? parseInt(window.jmCurrentJahr, 10) : new Date().getFullYear(),
+        anlass_name: targetTitle,
+        gruppe_name: dg.gruppe_name || 'Strohaus',
+        rang: dg.rang || null,
+        punkte_total: dg.punkte_total || null,
+        gruppendoppel: Number(dg.gruppendoppel || 30.00),
+        gruppengewinn: Number(dg.gruppengewinn || 0.00),
+        anzahl_schuetzen: membersList.length || 5,
+        members: membersList
+    };
+
+    if (typeof window.jmOpenGroupCompetitionEditor === 'function') {
+        window.jmOpenGroupCompetitionEditor(groupPayload);
+    }
+};
 
 /**
  * Extrahiert Schützen- und Punktdaten aus den rohen Tabellenzeilen (Verein, Verband, Kantonalstich, Mannschaft).
