@@ -114,13 +114,13 @@ async function jmPopulateTargetCompetitions(selectedCol = -1, detectedName = '',
             const opt = document.createElement('option');
             opt.value = c;
             opt.textContent = `${title} (Spalte ${c + 1}, Max: ${maxPts})`;
-            
+
             if (cleanDetected || catalogMatch) {
                 const cleanT = title.toLowerCase().replace(/[^a-z0-9äöü]/g, '');
                 const baseT = cleanT.replace(/\d{4}|current|jahr/g, '');
                 const baseDetected = cleanDetected.replace(/\d{4}|current|jahr/g, '');
                 const catBase = catalogMatch ? catalogMatch.anlass.toLowerCase().replace(/[^a-z0-9äöü]/g, '') : '';
-                
+
                 if ((baseT && baseDetected && (baseT.includes(baseDetected) || baseDetected.includes(baseT))) ||
                     (catBase && (cleanT.includes(catBase) || catBase.includes(baseT)))) {
                     bestMatchCol = c;
@@ -552,7 +552,7 @@ async function jmHandleFileUpload(file, type) {
     const reader = new FileReader();
 
     if (isCsv) {
-        reader.onload = function(e) {
+        reader.onload = function (e) {
             try {
                 const text = e.target.result;
                 const rows = jmParseCSV(text);
@@ -563,7 +563,7 @@ async function jmHandleFileUpload(file, type) {
         };
         reader.readAsText(file, 'UTF-8');
     } else {
-        reader.onload = function(e) {
+        reader.onload = function (e) {
             try {
                 const data = new Uint8Array(e.target.result);
                 if (typeof XLSX === 'undefined') {
@@ -677,14 +677,14 @@ async function jmProcessMannschaftFromPdf(arrayBuffer, fileName) {
     const seenRows = new Set();
 
     for (const s of gridShooters) {
-        const lizMatch = items.filter(it => 
-            it.text === s.lizenz || 
-            (s.shortLiz && it.text === s.shortLiz) || 
+        const lizMatch = items.filter(it =>
+            it.text === s.lizenz ||
+            (s.shortLiz && it.text === s.shortLiz) ||
             (s.lizenz && it.text.includes(s.lizenz))
         );
-        const nameMatch = items.filter(it => 
-            s.nachname.length >= 3 && 
-            it.text.toLowerCase().includes(s.nachname.toLowerCase()) && 
+        const nameMatch = items.filter(it =>
+            s.nachname.length >= 3 &&
+            it.text.toLowerCase().includes(s.nachname.toLowerCase()) &&
             it.text.toLowerCase().includes(s.vorname.substring(0, 3).toLowerCase())
         );
         const targetItems = lizMatch.length > 0 ? lizMatch : nameMatch;
@@ -854,7 +854,7 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
     let catalogMatch = null;
     let catalogReason = '';
     if (typeof jmMatchCompetitionFromCatalog === 'function') {
-        catalogMatch = await jmMatchCompetitionFromCatalog(fullText);
+        catalogMatch = await jmMatchCompetitionFromCatalog(fullText, fileName);
         if (catalogMatch) {
             detectedTitle = `${catalogMatch.anlass} ${jmCurrentJahr || new Date().getFullYear()}`;
             catalogReason = `Katalog: ${catalogMatch.anlass} (Erkannt: "${catalogMatch.matchedKeyword}")`;
@@ -1360,11 +1360,11 @@ async function jmSetupAuswaertigPreview(detectedTitle, forecastMax, forecastReas
 /**
  * Öffnet den Gruppeneditor aus der erkannten Import-Gruppe.
  */
-window.jmOpenGroupEditorFromImport = function() {
+window.jmOpenGroupEditorFromImport = function () {
     if (!_jmImportState?.detectedGroup) return;
     const dg = _jmImportState.detectedGroup;
     const targetTitle = document.getElementById('jm-import-target-title')?.value || dg.anlass_name || _jmImportState.targetTitle;
-    
+
     let shooters = dg.shooters || [];
     if (shooters.length === 0) {
         // Falls reine Einzelrangliste: Die 5 besten gematchten Schützen vorschlagen
@@ -1464,7 +1464,7 @@ function jmProcessImportRows(rows, type, fileName) {
             const rawLiz = String(row[lizCol] || '').trim();
             const nName = String(row[nameCol] || '').trim();
             const vName = String(row[vornameCol] || '').trim();
-            
+
             let tot = parseFloat(String(row[totCol] || '').replace(',', '.'));
             if (isNaN(tot) || tot <= 0) {
                 for (let c = 3; c < row.length; c++) {
@@ -1716,7 +1716,7 @@ function jmRenderPreview(parsedData, type, meta) {
         const currentScore = (targetCol !== -1 && grid[r][targetCol] !== undefined)
             ? (parseFloat(String(grid[r][targetCol] || '').replace(',', '.')) || 0)
             : 0;
-        
+
         if (nachname || vorname) {
             gridShooters.push({
                 rowIndex: r,

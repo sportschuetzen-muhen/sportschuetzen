@@ -560,13 +560,39 @@ async function deleteJMSchuetzenfest(id, anlass) {
 window.deleteJMSchuetzenfest = deleteJMSchuetzenfest;
 
 /**
- * Durchsucht den Text (aus PDF oder OCR) nach bekannten Schützenfesten aus dem Katalog.
- * Verwendet den bewährten Score-Algorithmus aus GAS festV2_resolveSchiessanlassFromText.
+ * Normalisiert Zeichenketten für robusten Text- und Namensabgleich.
+ * Entfernt Sonderzeichen, Bindestriche und bildet Umlaute standardisiert ab.
+ */
+function jmNormalizeCompetitionTerm(str) {
+    if (!str) return '';
+    return String(str)
+        .toLowerCase()
+        .replace(/ä/g, 'ae')
+        .replace(/ö/g, 'oe')
+        .replace(/ü/g, 'ue')
+        .replace(/ß/g, 'ss')
+        .replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Durchsucht den Text (aus PDF oder OCR) und Dateinamen nach bekannten Schützenfesten aus dem Katalog.
+ * 
+ * Robuste Zonierungs- und Scoring-Architektur:
+ * 1. Header-Zone (Zeilen 1–15 / erste 1'500 Zeichen): Massiver Bonus (+150 Pkt), da hier der echte Wettkampfname steht.
+ * 2. Dateinamen-Bonus (+100 Pkt): Falls im Dateinamen der Anlassname vorkommt.
+ * 3. Strikte Trennung von Anlass vs. Gastort:
+ *    - Anlass & Keywords sind primär.
+ *    - Ort im Header (+35 Pkt) unterstützt die Erkennung.
+ *    - Ort ausschliesslich im Body (Ergebniszeilen von Gastvereinen) erhält max. 1 Pkt und kann niemals
+ *      einen Wettkampf fälschlicherweise auslösen.
+ * 4. Bindestrich- und Umlaut-Toleranz via Normalisierung (z.B. "Bärenmoosschiessen" == "Bärenmoos-Schiessen").
+ * 5. Synergie-Bonus (+25 Pkt) mit bereits vorhandenen Spalten der aktuellen Jahresmeisterschaft.
  * 
  * @param {string} fullText - Der extrahierte Rohtext
- * @returns {object|null} - Bestes Match mit { anlass, ort, max_punkte, stich_typ, matchedKeyword, score } oder null
+ * @param {string} [fileName=''] - Optionaler Dateiname des hochgeladenen Dokuments
+ * @returns {Promise<object|null>} - Bestes Match mit { id, anlass, ort, max_punkte, stich_typ, matchedKeyword, score } oder null
  */
-async function jmMatchCompetitionFromCatalog(fullText) {
+async function jmMatchCompetitionFromCatalog(fullText, fileName = '') {
     if (!fullText || typeof fullText !== 'string' || fullText.trim().length === 0) {
         return null;
     }
@@ -574,7 +600,29 @@ async function jmMatchCompetitionFromCatalog(fullText) {
     const catalog = await loadJMSchuetzenfesteCatalog();
     if (!catalog || catalog.length === 0) return null;
 
-    const normText = fullText.toLowerCase();
+    // 1. Zonen aufbereiten
+    const headerLimit = Math.min(1500, fullText.length);
+    const headerText = fullText.substring(0, headerLimit);
+    const normHeader = headerText.toLowerCase();
+    const cleanHeader = jmNormalizeCompetitionTerm(headerText);
+
+    const normFull = fullText.toLowerCase();
+    const cleanFull = jmNormalizeCompetitionTerm(fullText);
+
+    const normFile = String(fileName || '').toLowerCase();
+    const cleanFile = jmNormalizeCompetitionTerm(fileName || '');
+
+    // Spalten der aktuellen Jahresmeisterschaft indizieren für Synergie-Bonus
+    const existingColBases = new Set();
+    if (typeof jmRawGrid !== 'undefined' && jmRawGrid && jmRawGrid[2]) {
+        for (let c = 40; c < jmRawGrid[2].length; c++) {
+            const colName = String(jmRawGrid[2][c] || '').trim();
+            if (colName && !colName.includes('%') && !colName.toLowerCase().startsWith('spalte')) {
+                existingColBases.add(jmNormalizeCompetitionTerm(colName));
+            }
+        }
+    }
+
     let bestMatch = null;
     let bestScore = 0;
     let bestKeyword = '';
@@ -583,19 +631,71 @@ async function jmMatchCompetitionFromCatalog(fullText) {
         if (item.is_active === false) continue;
 
         const aliases = (item.suchbegriffe ? item.suchbegriffe.split(';') : []).map(s => s.trim()).filter(Boolean);
-        const candidates = [item.ort, item.anlass, ...aliases];
+        const anlassTerms = [item.anlass, ...aliases];
+        const ortTerm = String(item.ort || '').trim();
 
         let currentScore = 0;
         let matchedTerm = '';
 
-        for (const c of candidates) {
-            const cleanC = String(c || '').trim().toLowerCase();
-            if (cleanC && cleanC.length >= 4 && normText.includes(cleanC)) {
-                // Punktzahl basierend auf Länge des Treffers
-                const weight = cleanC.length;
-                if (weight > currentScore) {
-                    currentScore = weight;
-                    matchedTerm = cleanC;
+        // A) Anlass & spezifische Suchbegriffe prüfen (PRIMÄR)
+        for (const term of anlassTerms) {
+            const rawTerm = String(term || '').trim().toLowerCase();
+            const cleanTerm = jmNormalizeCompetitionTerm(term);
+            if (cleanTerm.length < 4) continue;
+
+            // 1. Treffer im Dateinamen
+            if (cleanFile && (normFile.includes(rawTerm) || cleanFile.includes(cleanTerm))) {
+                const s = 100 + cleanTerm.length * 2;
+                if (s > currentScore) {
+                    currentScore = s;
+                    matchedTerm = term;
+                }
+            }
+
+            // 2. Treffer in der Header-Zone (Kopfzeilen des Dokuments)
+            if (normHeader.includes(rawTerm) || cleanHeader.includes(cleanTerm)) {
+                const s = 150 + cleanTerm.length * 3;
+                if (s > currentScore) {
+                    currentScore = s;
+                    matchedTerm = term;
+                }
+            }
+            // 3. Treffer im Volltext (Body)
+            else if (normFull.includes(rawTerm) || cleanFull.includes(cleanTerm)) {
+                const s = 25 + cleanTerm.length;
+                if (s > currentScore) {
+                    currentScore = s;
+                    matchedTerm = term;
+                }
+            }
+        }
+
+        // B) Ort prüfen (SEKUNDÄR - Gastvereine dürfen niemals das Schiessen überstimmen)
+        if (ortTerm) {
+            const rawOrt = ortTerm.toLowerCase();
+            const cleanOrt = jmNormalizeCompetitionTerm(ortTerm);
+
+            if (cleanOrt.length >= 4) {
+                // Ort steht im Header (z.B. durchführender Verein / Schiessanlage)
+                if (normHeader.includes(rawOrt) || cleanHeader.includes(cleanOrt)) {
+                    currentScore += 35;
+                    if (!matchedTerm) matchedTerm = ortTerm;
+                }
+                // Ort steht NUR im Body (z.B. Gastschütze/Gastverein in Rangliste):
+                // Erhält nur 1 Pkt und kann isoliert niemals einen Schwellenwert erreichen
+                else if (normFull.includes(rawOrt) || cleanFull.includes(cleanOrt)) {
+                    currentScore += 1;
+                }
+            }
+        }
+
+        // C) Synergie mit bestehenden Spalten der aktuellen Saison
+        if (currentScore > 0) {
+            const cleanAnlass = jmNormalizeCompetitionTerm(item.anlass);
+            for (const colBase of existingColBases) {
+                if (colBase.includes(cleanAnlass) || cleanAnlass.includes(colBase)) {
+                    currentScore += 25;
+                    break;
                 }
             }
         }
@@ -615,8 +715,9 @@ async function jmMatchCompetitionFromCatalog(fullText) {
         }
     }
 
-    // Mindest-Score von 5 Zeichen (z.B. "sulz " oder "moos" oder Anlass-Teil)
-    return bestScore >= 5 ? bestMatch : null;
+    // Mindest-Score von 25 Punkten erforderlich (schliesst isolierte Gastorte im Body mit Score 1 sicher aus)
+    return bestScore >= 25 ? bestMatch : null;
 }
 window.jmMatchCompetitionFromCatalog = jmMatchCompetitionFromCatalog;
+window.jmNormalizeCompetitionTerm = jmNormalizeCompetitionTerm;
 

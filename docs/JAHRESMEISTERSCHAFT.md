@@ -143,8 +143,10 @@ graph LR
    * **Robuste OCR-Pipeline via Gemini Vision (`action=ocr_text`):** Das Bild wird an Google Gemini übergeben und der extrahierte Volltext zeilenweise an den intelligenten Textparser (`jmProcessAuswaertigFromText`) weitergeleitet.
    * **Liegendmatch & Zehntelwertung (Meyton / Sius):** Unterstützt 60-Schuss-Liegendmatches (Max. 600 bzw. 654 Punkte bei Zehntelwertung). Erkennt in mehrspaltigen Serien Ranglistentotale am Zeilenende (z. B. `621.0`, `618.5`) und unterscheidet zuverlässig zwischen Vereinsmitgliedern und Schützen ausserhalb der Jahresmeisterschaft.
 5. **Intelligenter Schützenfeste-Katalogabgleich (`public.jm_competitions_catalog`):**
-   * Erkennt den Anlass anhand hinterlegter Suchbegriffe autonom (z.B. *Sulz* ➔ *Deisigrabenschiessen*, *Winterthur* ➔ *Winterthurer Liegendmatch*, *Moos Balsthal* ➔ *Balsthaler Liegendmatch*).
-   * Weist automatisch die korrekten Maximalpunkte (z.B. 100 vs. 600/654) und die passende Zielspalte in der aktuellen Saison zu.
+   * **Robuste Zonierungs- & Header-Erkennung:** Analysiert mit hoher Priorität den Dokumentkopf (Zeilen 1–15 bzw. erste 1'500 Zeichen) sowie den Dateinamen (+150/+100 Punkte), wo der eigentliche Wettkampfname steht.
+   * **Schutz vor Fehlzuordnungen durch Gastvereine:** Ortsnamen (`ort`), die ausschliesslich im Body der Rangliste bei Gastsektionen (z.B. *Balsthal-Klus*, *Sulz*, *Gipf-Oberfrick* als Gastgruppen beim *Bärenmoos-Schiessen*) vorkommen, werden mit minimalem Gewicht gewertet und können niemals den tatsächlichen Anlass überstimmen.
+   * **Bindestrich- & Normalisierungs-Toleranz:** Gleicht zusammengesetzte und getrennte Schreibweisen (z.B. *Bärenmoosschiessen* vs. *Bärenmoos-Schiessen*) ohne Zeichenverzerrung ab.
+   * Erkennt den Anlass autonom, prüft die Synergie mit bestehenden Spalten der aktuellen Jahresmeisterschaft und weist automatisch die korrekten Maximalpunkte (z.B. 100 vs. 600/654) sowie die passende Zielspalte in der aktuellen Saison zu.
    * Der Name des Anlasses und die Maximalpunkte (inkl. Schnellauswahl-Pills 100/150/200/600) sind im Vorschau-Modal frei editierbar.
 6. **Vorschau-Modal:**
    * Schützen können vor der Übernahme per Checkbox einzeln selektiert oder Punkte direkt überschrieben werden.
