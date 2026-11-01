@@ -25,6 +25,7 @@ Die Kleinkaliber-Jahresmeisterschaft der Sportschützen Muhen basierte historisc
 4. **`public.jm_competitions_catalog` (Schützenfeste-Katalog & Suchbegriffe):**
    - Hält alle bekannten Schützenfeste (z. B. Deisigraben, Bärenmoos, Winterthurer Liegendmatch), deren Standard-Maximalpunkte und semikolongetrennte Suchbegriffe (`suchbegriffe`).
    - Ermöglicht vollautomatisches Anlass- und Maximalpunkte-Matching bei PDF- und Screenshot-Uploads sowie Verwaltung direkt im Vorstandscockpit via globalem UI-Toolkit.
+   - **UI-Standard & Ergonomie:** Vollständig harmonisiert auf die globalen UI-Toolkits (`UIModalKit`, `TableKit`, `UIExportKit`, `UIConfirmKit`, `UIButtonKit`). Das Katalog-Modal ist frei verschieb-, vergrösser- und maximierbar mit flexiblem Tabellen-Layout ohne feste Höhenbegrenzung. Die Tabelle unterstützt Spalten-Resizing (Aufziehen/Verkleinern per Drag), persistente Breiten im `localStorage`, Klick-Sortierung sowie einen 1-Klick-Excel-Export (`.xlsx`). Status-Filter-Pills (*Alle*, *Aktiv*, *Inaktiv*) und ein Suchfeld mit Schnell-Löschung ergänzen die Steuerung.
 
 ---
 

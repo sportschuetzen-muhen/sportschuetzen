@@ -2540,39 +2540,72 @@
 
 <!-- MODAL: SCHÜTZENFESTE-KATALOG VERWALTUNG -->
 <div class="modal fade" id="jm-schuetzenfeste-modal" tabindex="-1" aria-labelledby="jmSchuetzenfesteModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
-        <div class="modal-content shadow-lg border-0">
-            <div class="modal-header bg-dark text-white py-3">
-                <h5 class="modal-title fw-bold" id="jmSchuetzenfesteModalLabel">
-                    <i class="fas fa-bullseye text-warning me-2"></i>Schützenfeste-Katalog &amp; Suchbegriffe
-                </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+    <div class="modal-dialog modal-xl modal-dialog-centered" style="max-width: 95vw;">
+        <div class="modal-content shadow-lg border-0 position-relative" style="height: 86vh; display: flex; flex-direction: column;">
+            <div class="modal-header bg-dark text-white py-2 px-3 d-flex align-items-center justify-content-between flex-shrink-0" style="user-select: none;">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-bullseye text-warning me-2"></i>
+                    <h5 class="modal-title fw-bold mb-0" id="jmSchuetzenfesteModalLabel" style="font-size: 1.05rem;">
+                        Schützenfeste-Katalog &amp; Suchbegriffe
+                    </h5>
+                </div>
+                <div class="d-flex align-items-center gap-1">
+                    <button type="button" class="btn btn-sm btn-link text-white p-0 rn-modal-maximize-btn me-2" title="Maximieren / Wiederherstellen" style="text-decoration: none; font-size: 0.95rem;">
+                        <i class="fas fa-expand"></i>
+                    </button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+                </div>
             </div>
-            <div class="modal-body p-3">
-                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-                    <div class="d-flex align-items-center gap-2">
-                        <div class="input-group input-group-sm" style="max-width: 320px;">
+            <div class="modal-body p-3 d-flex flex-column" style="flex: 1 1 auto; overflow: hidden; min-height: 0;">
+                <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2 flex-shrink-0">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <div class="input-group input-group-sm" style="width: 280px;">
                             <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
                             <input type="text" id="jm-catalog-search" class="form-control" placeholder="Anlass, Ort oder Suchbegriff..." oninput="jmFilterCatalogTable(this.value)">
+                            <button class="btn btn-outline-secondary" type="button" id="jm-catalog-search-clear" onclick="jmClearCatalogSearch()" title="Suche leeren" style="display: none;">
+                                <i class="fas fa-times"></i>
+                            </button>
                         </div>
-                        <span id="jm-catalog-count-badge" class="badge bg-light text-dark border">0 Schützenfeste</span>
+
+                        <div class="btn-group btn-group-sm" role="group" id="jm-catalog-status-filter-group" aria-label="Statusfilter">
+                            <button type="button" class="btn btn-outline-secondary active" id="btn-cat-filter-all" onclick="jmSetCatalogStatusFilter('all')">
+                                Alle <span id="jm-cat-count-all" class="badge bg-secondary ms-1">0</span>
+                            </button>
+                            <button type="button" class="btn btn-outline-success" id="btn-cat-filter-active" onclick="jmSetCatalogStatusFilter('active')">
+                                Aktiv <span id="jm-cat-count-active" class="badge bg-success ms-1">0</span>
+                            </button>
+                            <button type="button" class="btn btn-outline-warning" id="btn-cat-filter-inactive" onclick="jmSetCatalogStatusFilter('inactive')">
+                                Inaktiv <span id="jm-cat-count-inactive" class="badge bg-warning text-dark ms-1">0</span>
+                            </button>
+                        </div>
+
+                        <span id="jm-catalog-count-badge" class="badge bg-light text-muted border">0 Schützenfeste</span>
                     </div>
-                    <button type="button" class="btn btn-sm btn-success fw-bold" onclick="openJMSchuetzenfestEditModal()">
-                        <i class="fas fa-plus me-1"></i>Neues Schützenfest
-                    </button>
+
+                    <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-success fw-semibold" id="btn-export-catalog-excel" onclick="jmExportCatalogToExcel()" title="Katalog als Excel-Datei (.xlsx) exportieren">
+                            <i class="fas fa-file-excel me-1"></i>Excel
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-reload-catalog" onclick="jmReloadCatalogTable()" title="Katalog neu laden">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-success fw-bold" onclick="openJMSchuetzenfestEditModal()">
+                            <i class="fas fa-plus me-1"></i>Neues Schützenfest
+                        </button>
+                    </div>
                 </div>
 
-                <div class="table-responsive border rounded-3 bg-white" style="max-height: 520px; overflow-y: auto;">
-                    <table class="table table-hover table-sm align-middle mb-0" id="jm-catalog-table" style="font-size: 0.88rem;">
+                <div class="table-responsive border rounded-3 bg-white" style="flex: 1 1 auto; min-height: 0; overflow-y: auto;">
+                    <table class="table table-hover table-sm align-middle mb-0 tk-table-enhanced tk-table-resizable" id="jm-catalog-table" style="font-size: 0.88rem;">
                         <thead class="table-light sticky-top border-bottom">
                             <tr>
-                                <th style="width: 220px;">Anlass</th>
-                                <th style="width: 140px;">Ort</th>
-                                <th style="width: 90px;" class="text-center">Max. Pkt</th>
-                                <th style="width: 140px;">Disziplin</th>
-                                <th>Suchbegriffe (für autom. KI-/OCR-Erkennung)</th>
-                                <th style="width: 80px;" class="text-center">Aktiv</th>
-                                <th style="width: 90px;" class="text-end">Aktionen</th>
+                                <th data-col-id="anlass" data-sort-key="anlass" style="min-width: 180px; width: 220px;">Anlass</th>
+                                <th data-col-id="ort" data-sort-key="ort" style="min-width: 120px; width: 140px;">Ort</th>
+                                <th data-col-id="max_punkte" data-sort-key="max_punkte" style="min-width: 85px; width: 95px;" class="text-center">Max. Pkt</th>
+                                <th data-col-id="stich_typ" data-sort-key="stich_typ" style="min-width: 130px; width: 150px;">Disziplin</th>
+                                <th data-col-id="suchbegriffe" data-sort-key="suchbegriffe">Suchbegriffe (für autom. KI-/OCR-Erkennung)</th>
+                                <th data-col-id="is_active" data-sort-key="is_active" style="min-width: 80px; width: 85px;" class="text-center">Aktiv</th>
+                                <th data-col-id="aktionen" style="min-width: 105px; width: 110px;" class="text-end">Aktionen</th>
                             </tr>
                         </thead>
                         <tbody id="jm-catalog-table-body">
@@ -2581,9 +2614,12 @@
                     </table>
                 </div>
             </div>
-            <div class="modal-footer bg-light py-2 d-flex justify-content-between">
-                <span class="text-muted small"><i class="fas fa-info-circle me-1"></i>Änderungen im Katalog greifen sofort beim nächsten Upload oder Zwischenablage-Scan.</span>
-                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Schliessen</button>
+            <div class="modal-footer bg-light py-2 px-3 d-flex justify-content-between align-items-center position-relative flex-shrink-0">
+                <span class="text-muted small"><i class="fas fa-info-circle me-1 text-primary"></i>Änderungen im Katalog greifen sofort beim nächsten Upload oder Zwischenablage-Scan.</span>
+                <button type="button" class="btn btn-secondary btn-sm px-3" data-bs-dismiss="modal">Schliessen</button>
+                <div class="rn-modal-resizer" style="position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 1060; display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px; color: #94a3b8; user-select: none;" title="Grösse durch Ziehen verändern">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M11 1v10H1V11h10z M11 5v6H5V11h6z M11 9v2H9V11h2z"/></svg>
+                </div>
             </div>
         </div>
     </div>
@@ -2592,29 +2628,31 @@
 <!-- MODAL: SCHÜTZENFEST ERFASSEN / BEARBEITEN -->
 <div class="modal fade" id="jm-schuetzenfest-edit-modal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-md modal-dialog-centered">
-        <div class="modal-content shadow-lg border-0">
-            <div class="modal-header bg-primary text-white py-2 px-3">
-                <h6 class="modal-title mb-0" id="jm-schuetzenfest-edit-title">Schützenfest bearbeiten</h6>
+        <div class="modal-content shadow-lg border-0 position-relative">
+            <div class="modal-header bg-dark text-white py-2 px-3 d-flex align-items-center justify-content-between" style="user-select: none;">
+                <h6 class="modal-title mb-0 fw-bold" id="jm-schuetzenfest-edit-title">
+                    <i class="fas fa-bullseye text-warning me-2"></i>Schützenfest bearbeiten
+                </h6>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
             </div>
             <div class="modal-body p-3">
                 <input type="hidden" id="jm-catalog-edit-id">
                 <div class="mb-2">
-                    <label class="form-label small fw-bold mb-1">Anlass (Name des Schiessens):</label>
+                    <label class="form-label small fw-bold mb-1" for="jm-catalog-edit-anlass">Anlass (Name des Schiessens):</label>
                     <input type="text" id="jm-catalog-edit-anlass" class="form-control form-control-sm" placeholder="z. B. Deisigrabenschiessen" required>
                 </div>
                 <div class="row g-2 mb-2">
                     <div class="col-6">
-                        <label class="form-label small fw-bold mb-1">Ort / Sektion:</label>
+                        <label class="form-label small fw-bold mb-1" for="jm-catalog-edit-ort">Ort / Sektion:</label>
                         <input type="text" id="jm-catalog-edit-ort" class="form-control form-control-sm" placeholder="z. B. Sulz">
                     </div>
                     <div class="col-6">
-                        <label class="form-label small fw-bold mb-1">Maximalpunkte:</label>
+                        <label class="form-label small fw-bold mb-1" for="jm-catalog-edit-max">Maximalpunkte:</label>
                         <input type="number" id="jm-catalog-edit-max" class="form-control form-control-sm" placeholder="100" value="100">
                     </div>
                 </div>
                 <div class="mb-2">
-                    <label class="form-label small fw-bold mb-1">Disziplin / Programm:</label>
+                    <label class="form-label small fw-bold mb-1" for="jm-catalog-edit-stich-typ">Disziplin / Programm:</label>
                     <select id="jm-catalog-edit-stich-typ" class="form-select form-select-sm">
                         <option value="standard_100">Standard 10er-Stich (100 Pkt)</option>
                         <option value="liegend_600">Liegendmatch 60 Schuss (600 Pkt)</option>
@@ -2624,7 +2662,7 @@
                     </select>
                 </div>
                 <div class="mb-3">
-                    <label class="form-label small fw-bold mb-1">Suchbegriffe (mit Semikolon getrennt):</label>
+                    <label class="form-label small fw-bold mb-1" for="jm-catalog-edit-suchbegriffe">Suchbegriffe (mit Semikolon getrennt):</label>
                     <textarea id="jm-catalog-edit-suchbegriffe" class="form-control form-control-sm" rows="3" placeholder="z. B. deisigraben;deisigraben-schiessen;sulz deisigraben"></textarea>
                     <div class="form-text small" style="font-size: 11px;">Sobald einer dieser Begriffe im PDF oder Screenshot vorkommt, erkennt die KI diesen Anlass automatisch.</div>
                 </div>
@@ -2633,11 +2671,14 @@
                     <label class="form-check-label small fw-semibold" for="jm-catalog-edit-active">In Jahresmeisterschaft und Auswahllisten aktiv</label>
                 </div>
             </div>
-            <div class="modal-footer bg-light py-2">
+            <div class="modal-footer bg-light py-2 px-3 d-flex justify-content-between align-items-center">
                 <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Abbrechen</button>
                 <button type="button" class="btn btn-primary btn-sm fw-bold" id="btn-save-schuetzenfest" onclick="saveJMSchuetzenfest()">
                     <i class="fas fa-save me-1"></i>Speichern
                 </button>
+            </div>
+            <div class="rn-modal-resizer" style="position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 1060; display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px; color: #94a3b8; user-select: none;" title="Grösse durch Ziehen verändern">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M11 1v10H1V11h10z M11 5v6H5V11h6z M11 9v2H9V11h2z"/></svg>
             </div>
         </div>
     </div>
