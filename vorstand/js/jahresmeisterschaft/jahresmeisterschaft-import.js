@@ -14,7 +14,12 @@ let _jmImportState = {
     isNewComp: false,
     rows: [],
     metadata: {},
-    previewData: []
+    previewData: [],
+    availableStiche: [],
+    activeStichKey: null,
+    matchedShootersWithStiche: [],
+    lastUploadedFile: null,
+    lastArrayBuffer: null
 };
 
 /**
@@ -30,7 +35,12 @@ function openJMImportModal() {
         isNewComp: false,
         rows: [],
         metadata: {},
-        previewData: []
+        previewData: [],
+        availableStiche: [],
+        activeStichKey: null,
+        matchedShootersWithStiche: [],
+        lastUploadedFile: null,
+        lastArrayBuffer: null
     };
 
     const loadingElem = document.getElementById('jm-import-loading');
@@ -38,6 +48,12 @@ function openJMImportModal() {
 
     const auswConfig = document.getElementById('jm-import-auswaertig-config');
     if (auswConfig) auswConfig.classList.add('d-none');
+
+    const stichContainer = document.getElementById('jm-import-stich-container');
+    if (stichContainer) stichContainer.classList.add('d-none');
+
+    const stichPills = document.getElementById('jm-import-stich-pills');
+    if (stichPills) stichPills.innerHTML = '';
 
     const previewContainer = document.getElementById('jm-import-preview-container');
     if (previewContainer) previewContainer.classList.add('d-none');
@@ -196,6 +212,7 @@ async function jmHandleFileUpload(file, type) {
     if (!file) return;
 
     _jmImportState.type = type;
+    _jmImportState.lastUploadedFile = file;
     const loadingElem = document.getElementById('jm-import-loading');
     const loadingTitle = document.getElementById('jm-import-loading-title');
     const loadingDesc = document.getElementById('jm-import-loading-desc');
@@ -237,6 +254,7 @@ async function jmHandleFileUpload(file, type) {
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
             const arrayBuffer = await file.arrayBuffer();
+            _jmImportState.lastArrayBuffer = arrayBuffer;
 
             // Spezifischer Mannschafts-PDF-Import (Offizielles SMM Standblatt)
             if (type === 'mannschaft') {
@@ -254,7 +272,7 @@ async function jmHandleFileUpload(file, type) {
                 fullLines.push(...pageLines);
             }
 
-            if (fullLines.length > 0 && fullLines.join(' ').trim().length > 30) {
+            if (fullLines.length > 0 && fullLines.map(l => (l && l.text !== undefined ? l.text : l)).join(' ').trim().length > 30) {
                 // Digitales PDF mit Text (wie WinFire Bärenmoos oder Villmergen)
                 jmProcessAuswaertigFromText(fullLines, file.name);
                 if (loadingElem) loadingElem.classList.add('d-none');
@@ -527,37 +545,57 @@ function extractLinesFromPdfPage(textContent) {
     let currentLine = [];
     let currentY = null;
 
+    function buildLine(itemArr) {
+        itemArr.sort((a, b) => (a.transform ? a.transform[4] : 0) - (b.transform ? b.transform[4] : 0));
+        const lineText = itemArr.map(i => i.str.trim()).join(' ');
+        const lineItems = itemArr.map(i => ({
+            str: i.str.trim(),
+            x: i.transform ? i.transform[4] : 0,
+            y: i.transform ? i.transform[5] : 0
+        })).filter(i => i.str.length > 0);
+
+        return {
+            text: lineText,
+            items: lineItems,
+            toString() { return this.text; }
+        };
+    }
+
     for (const it of items) {
         const y = it.transform ? it.transform[5] : 0;
         if (currentY === null || Math.abs(currentY - y) <= 3.5) {
             currentLine.push(it);
             currentY = y;
         } else {
-            currentLine.sort((a, b) => (a.transform ? a.transform[4] : 0) - (b.transform ? b.transform[4] : 0));
-            lines.push(currentLine.map(i => i.str.trim()).join(' '));
+            lines.push(buildLine(currentLine));
             currentLine = [it];
             currentY = y;
         }
     }
     if (currentLine.length > 0) {
-        currentLine.sort((a, b) => (a.transform ? a.transform[4] : 0) - (b.transform ? b.transform[4] : 0));
-        lines.push(currentLine.map(i => i.str.trim()).join(' '));
+        lines.push(buildLine(currentLine));
     }
     return lines;
 }
 
 /**
  * Analysiert den reinen Text eines PDFs/Dokuments auf Schützen, Punkte und Schiessprogramme.
+ * Unterstützt Mehrfach-Stiche (z.B. Kranzstich, Vereinsstich, Auszahler) und Spalten-Lokalisierung.
  */
 function jmProcessAuswaertigFromText(linesOrText, fileName) {
     const grid = jmRawGrid;
     if (!grid || grid.length < 6) return;
 
-    const lines = Array.isArray(linesOrText)
-        ? linesOrText.map(l => l.trim()).filter(l => l.length > 0)
-        : String(linesOrText || '').split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+    const rawLines = Array.isArray(linesOrText) ? linesOrText : String(linesOrText || '').split(/\r?\n/);
+    const lines = rawLines.map(l => {
+        if (l && typeof l === 'object' && l.text !== undefined) {
+            return l;
+        }
+        const t = String(l || '').trim();
+        return { text: t, items: [], toString() { return this.text; } };
+    }).filter(l => l.text.length > 0);
 
-    const fullText = lines.join('\n');
+    const fullText = lines.map(l => l.text).join('\n');
 
     // Bekannte Schützen aus jmRawGrid indizieren (inkl. Jahrgang & Lizenz)
     let colJahrgang = -1;
@@ -592,137 +630,303 @@ function jmProcessAuswaertigFromText(linesOrText, fileName) {
         }
     }
 
-    // Wettkampf-Titel erkennen
+    // 1. Wettkampf-Titel erkennen
     let detectedTitle = fileName ? fileName.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') : 'Auswärtiges Schiessen';
     for (let i = 0; i < Math.min(10, lines.length); i++) {
-        const l = lines[i];
+        const l = lines[i].text;
         if (/(?:schiessen|stich|cup|fest|verband|verein|stumpenland|bärenmoos|freischiessen|sektion|gruppe)/i.test(l)) {
             detectedTitle = l;
             break;
         }
     }
 
-    // Schützen-Matching ZEILENWEISE
-    const matchedResults = [];
+    // 2. Tabellenkopf-Erkennung für Stiche (z.B. Kranzstich, Deisigrabenstich, Auszahler)
+    const ignoreColKeywords = ['rang', 'schütze', 'schuetze', 'schtze', 'name', 'vorname', 'jg', 'jahrgang', 'kat', 'kategorie', 'verein', 'sektion', 'gruppe', 'lizenz'];
+    const headerStichKeywords = /(?:kranzstich|vereinsstich|gruppenstich|sektionsstich|auszahler|auszahlung|stich|gabenstich|ehrengabe|kunst|militär)/i;
+
+    let detectedHeaderStiche = [];
+    let boundaries = [];
+
+    for (const l of lines) {
+        if (headerStichKeywords.test(l.text) && l.items && l.items.length >= 3) {
+            const cols = [];
+            for (const item of l.items) {
+                const t = item.str.trim();
+                const clean = t.toLowerCase().replace(/[^a-z0-9äöü]/g, '');
+                const isIgnored = ignoreColKeywords.some(ig => clean === ig || clean.startsWith(ig));
+                if (!isIgnored && t.length > 2) {
+                    cols.push({ name: t, key: clean, x: item.x });
+                }
+            }
+            if (cols.length >= 2) {
+                detectedHeaderStiche = cols;
+                break;
+            }
+        }
+    }
+
+    // Spalten-Grenzen für erkannte Stiche berechnen
+    if (detectedHeaderStiche.length > 0) {
+        for (let i = 0; i < detectedHeaderStiche.length; i++) {
+            const cur = detectedHeaderStiche[i];
+            const minX = i > 0 ? (detectedHeaderStiche[i - 1].x + cur.x) / 2 : cur.x - 40;
+            const maxX = i < detectedHeaderStiche.length - 1 ? (cur.x + detectedHeaderStiche[i + 1].x) / 2 : cur.x + 55;
+
+            let maxPts = 100;
+            if (/auszahl/i.test(cur.name)) maxPts = 600;
+            else if (/kantonal|30/i.test(cur.name)) maxPts = 300;
+            else if (/verein|verband|20/i.test(cur.name)) maxPts = 200;
+            else if (/15/i.test(cur.name)) maxPts = 150;
+
+            boundaries.push({
+                key: cur.key,
+                label: cur.name,
+                minX: minX,
+                maxX: maxX,
+                maxPoints: maxPts
+            });
+        }
+    }
+
+    // 3. Schützen zeilenweise matchen
+    const matchedShootersWithStiche = [];
     const seenRows = new Set();
     const escapeReg = str => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-    lines.forEach(line => {
+    lines.forEach(l => {
+        const lineText = l.text;
         knownShooters.forEach(s => {
             if (seenRows.has(s.rowIndex)) return;
 
-            const nachnameMatches = s.nachname && new RegExp('\\b' + escapeReg(s.nachname) + '\\b', 'i').test(line);
+            const nachnameMatches = s.nachname && new RegExp('\\b' + escapeReg(s.nachname) + '\\b', 'i').test(lineText);
             const vornameMatches = s.vorname && (
-                new RegExp('\\b' + escapeReg(s.vorname) + '\\b', 'i').test(line) ||
-                (s.vorname.length >= 3 && new RegExp('\\b' + escapeReg(s.vorname.substring(0, 3)), 'i').test(line))
+                new RegExp('\\b' + escapeReg(s.vorname) + '\\b', 'i').test(lineText) ||
+                (s.vorname.length >= 3 && new RegExp('\\b' + escapeReg(s.vorname.substring(0, 3)), 'i').test(lineText))
             );
-            const lizenzMatches = s.lizenz && s.lizenz !== '000000' && (line.includes(s.lizenz) || (s.shortLiz && line.includes(s.shortLiz)));
+            const lizenzMatches = s.lizenz && s.lizenz !== '000000' && (lineText.includes(s.lizenz) || (s.shortLiz && lineText.includes(s.shortLiz)));
 
             if ((nachnameMatches && vornameMatches) || lizenzMatches) {
-                // Punktzahlen AUS DIESER ZEILE extrahieren
-                // Jahrgänge und Lizenzen maskieren, um Fehlmatches zu verhindern
-                let cleanLine = line;
-                if (s.jg) {
-                    cleanLine = cleanLine.replace(new RegExp('\\b' + s.jg + '\\b', 'g'), ' ');
-                    const shortJg = String(s.jg).slice(-2);
-                    cleanLine = cleanLine.replace(new RegExp('\\b' + shortJg + '\\b', 'g'), ' ');
-                    const shortJgNum = String(parseInt(shortJg, 10));
-                    if (shortJgNum !== shortJg) {
-                        cleanLine = cleanLine.replace(new RegExp('\\b' + shortJgNum + '\\b', 'g'), ' ');
+                const shooterStiche = {};
+
+                if (boundaries.length > 0 && l.items && l.items.length > 0) {
+                    // Präzise Extraktion via Spalten-Koordinaten
+                    boundaries.forEach(b => {
+                        const colItems = l.items.filter(it => it.x >= b.minX && it.x < b.maxX);
+                        const nums = colItems.map(it => it.str).filter(str => /^\d+$/.test(str)).map(str => parseInt(str, 10));
+                        if (nums.length > 0) {
+                            shooterStiche[b.key] = nums[0]; // Erstes Element = Punktzahl, allfälliges zweites = Tiefschuss
+                        }
+                    });
+                } else {
+                    // Fallback Text-Extraktion (nur tatsächlichen Jahrgang des Schützen maskieren!)
+                    let cleanLine = lineText;
+                    if (s.jg) {
+                        cleanLine = cleanLine.replace(new RegExp('\\b' + s.jg + '\\b', 'g'), ' ');
+                        const shortJg = String(s.jg).slice(-2);
+                        cleanLine = cleanLine.replace(new RegExp('\\b' + shortJg + '\\b', 'g'), ' ');
+                    }
+                    cleanLine = cleanLine.replace(/\b(19\d{2}|20\d{2})\b/g, ' ');
+                    if (s.lizenz && s.lizenz !== '000000') cleanLine = cleanLine.replace(new RegExp('\\b' + s.lizenz + '\\b', 'g'), ' ');
+                    if (s.shortLiz) cleanLine = cleanLine.replace(new RegExp('\\b' + s.shortLiz + '\\b', 'g'), ' ');
+
+                    const nMatch = cleanLine.match(new RegExp('\\b' + escapeReg(s.nachname) + '\\b', 'i'));
+                    let searchLine = nMatch && nMatch.index !== undefined ? cleanLine.substring(nMatch.index) : cleanLine;
+                    const allNums = searchLine.match(/\b([4-9][0-9]|100|1[0-9]{2}|200|300|5[0-9]{2}|600)\b/g);
+                    if (allNums && allNums.length > 0) {
+                        shooterStiche['default'] = parseFloat(allNums[0]);
                     }
                 }
-                cleanLine = cleanLine.replace(/\b(19\d{2}|20\d{2})\b/g, ' ');
 
-                // Erkennt 1- oder 2-stelligen Jahrgang direkt nach dem Schützennamen (z.B. "Augsburger Beat 65", "Lars 04", "Simon 7")
-                const nameRegex = new RegExp('\\b(?:' + escapeReg(s.fullName) + '|' + escapeReg(s.vorname + ' ' + s.nachname) + ')\\s+(\\d{1,2})\\b', 'i');
-                const mJg = line.match(nameRegex);
-                if (mJg) {
-                    const detectedShortJg = mJg[1];
-                    cleanLine = cleanLine.replace(new RegExp('\\b' + detectedShortJg + '\\b', 'g'), ' ');
-                }
-
-                if (s.lizenz && s.lizenz !== '000000') {
-                    cleanLine = cleanLine.replace(new RegExp('\\b' + s.lizenz + '\\b', 'g'), ' ');
-                }
-                if (s.shortLiz) {
-                    cleanLine = cleanLine.replace(new RegExp('\\b' + s.shortLiz + '\\b', 'g'), ' ');
-                }
-
-                // Nur den Text NACH dem Schützennamen nach Resultaten durchsuchen,
-                // damit Rangnummern vor dem Namen (z.B. "45 Meier Hans 98") niemals als Punkte gewertet werden!
-                const nMatch = cleanLine.match(new RegExp('\\b' + escapeReg(s.nachname) + '\\b', 'i'));
-                let searchLine = cleanLine;
-                if (nMatch && nMatch.index !== undefined) {
-                    searchLine = cleanLine.substring(nMatch.index);
-                }
-
-                // Suche Punktzahlen im Schiessbereich (40..600 oder 10..600)
-                const allNums = searchLine.match(/\b([4-9][0-9]|100|1[0-9]{2}|200|300|5[0-9]{2}|600)\b/g);
-
-                let pts = null;
-                if (allNums && allNums.length > 0) {
-                    // Der erste Wert nach Name/Jahrgang/Gruppe ist in Schweizer Ranglisten der Haupt-/Kranzstich
-                    pts = parseFloat(allNums[0]);
-                }
-
-                if (pts !== null && !isNaN(pts) && pts > 0) {
-                    matchedResults.push({
+                if (Object.keys(shooterStiche).length > 0) {
+                    seenRows.add(s.rowIndex);
+                    matchedShootersWithStiche.push({
                         rowIndex: s.rowIndex,
                         name: s.fullName,
                         lizenz: s.lizenz,
-                        points: pts,
-                        matched: true
+                        matched: true,
+                        stiche: shooterStiche
                     });
-                    seenRows.add(s.rowIndex);
                 }
             }
         });
     });
 
-    // Kontext Schweizer Schiessprogramme:
-    // 6x10=60, 8x10=80, 10x10=100 (Gruppenstich), 12x10=120, 15x10=150, 20x10=200, 30x10=300, 60x10=600
-    const pointsList = matchedResults.map(r => r.points);
-    const maxScore = pointsList.length > 0 ? Math.max(...pointsList) : 100;
-    
-    let forecastMax = 100;
-    let forecastReason = '10 Schuss à 10 Pkt. (Gruppenstich G50)';
-    
-    if (/60\s*schuss|liegend/i.test(fullText) || maxScore > 300) {
-        forecastMax = 600;
-        forecastReason = '60 Schuss Liegendmatch / Meisterschaft (Max. 600)';
-    } else if (/kantonalstich|30\s*schuss/i.test(fullText) || maxScore > 200) {
-        forecastMax = 300;
-        forecastReason = '30 Schuss Programm (Max. 300)';
-    } else if (/vereinsstich|verband|20\s*schuss/i.test(fullText) || maxScore > 150) {
-        forecastMax = 200;
-        forecastReason = '20 Schuss Programm (Max. 200)';
-    } else if (/15\s*schuss|auszahlung|sektion/i.test(fullText) || (maxScore > 120 && maxScore <= 150)) {
-        forecastMax = 150;
-        forecastReason = '15 Schuss Programm (Max. 150)';
-    } else if (/12\s*schuss|6\s*x\s*20/i.test(fullText) || (maxScore > 100 && maxScore <= 120)) {
-        forecastMax = 120;
-        forecastReason = '12 Schuss bzw. 6x20 Programm (Max. 120)';
-    } else if (/8\s*schuss|8\s*x\s*10/i.test(fullText) || (maxScore > 60 && maxScore <= 80 && !fullText.includes('10 Schuss'))) {
-        forecastMax = 80;
-        forecastReason = '8 Schuss à 10 Pkt. (Max. 80)';
-    } else if (/6\s*schuss|6\s*x\s*10/i.test(fullText) || (maxScore <= 60 && !fullText.includes('10 Schuss'))) {
-        forecastMax = 60;
-        forecastReason = '6 Schuss à 10 Pkt. (Max. 60)';
+    // 4. Stiche zusammenstellen & Standard bestimmen
+    let availableStiche = [];
+    if (boundaries.length > 0) {
+        availableStiche = boundaries.map(b => ({
+            key: b.key,
+            label: b.label,
+            maxPoints: b.maxPoints
+        }));
     } else {
-        forecastMax = 100;
-        forecastReason = '10 Schuss à 10 Pkt. (Gruppenstich / Einzelstich)';
+        const ptsList = matchedShootersWithStiche.map(s => s.stiche['default']).filter(p => !isNaN(p) && p > 0);
+        const maxScore = ptsList.length > 0 ? Math.max(...ptsList) : 100;
+        let forecastMax = 100;
+        if (/60\s*schuss|liegend/i.test(fullText) || maxScore > 300) forecastMax = 600;
+        else if (/kantonalstich|30\s*schuss/i.test(fullText) || maxScore > 200) forecastMax = 300;
+        else if (/vereinsstich|verband|20\s*schuss/i.test(fullText) || maxScore > 150) forecastMax = 200;
+        else if (/15\s*schuss|auszahlung|sektion/i.test(fullText) || (maxScore > 120 && maxScore <= 150)) forecastMax = 150;
+        else forecastMax = 100;
+
+        availableStiche = [{
+            key: 'default',
+            label: 'Hauptstich',
+            maxPoints: forecastMax
+        }];
     }
 
-    _jmImportState.rows = matchedResults;
+    // Default-Stich: Bevorzuge Kranzstich, ansonsten ersten Nicht-Auszahler
+    let defaultStich = availableStiche.find(s => s.key.includes('kranz'));
+    if (!defaultStich) {
+        defaultStich = availableStiche.find(s => !s.key.includes('auszahl'));
+    }
+    if (!defaultStich) {
+        defaultStich = availableStiche[0];
+    }
+
+    _jmImportState.availableStiche = availableStiche;
+    _jmImportState.activeStichKey = defaultStich.key;
+    _jmImportState.matchedShootersWithStiche = matchedShootersWithStiche;
     _jmImportState.metadata = {
         title: detectedTitle,
-        maxPoints: forecastMax,
-        reason: forecastReason,
+        maxPoints: defaultStich.maxPoints,
+        reason: `${defaultStich.label} (Erkannt)`,
         fileName: fileName
     };
 
-    jmSetupAuswaertigPreview(detectedTitle, forecastMax, forecastReason, matchedResults);
+    // Stiche-Pills im Modal rendern
+    jmRenderStichPills(availableStiche, defaultStich.key);
+
+    // Vorschau-Reihen für den aktiven Stich aufbauen
+    const rows = [];
+    matchedShootersWithStiche.forEach(s => {
+        const pts = s.stiche[defaultStich.key];
+        if (pts !== null && !isNaN(pts) && pts > 0) {
+            rows.push({
+                rowIndex: s.rowIndex,
+                name: s.name,
+                lizenz: s.lizenz,
+                points: pts,
+                matched: true
+            });
+        }
+    });
+
+    _jmImportState.rows = rows;
+    jmSetupAuswaertigPreview(detectedTitle, defaultStich.maxPoints, `${defaultStich.label} (Erkannt)`, rows);
 }
+
+/**
+ * Rendert die interaktive Stich-Auswahlleiste (Pills) im Auswärts-Konfigurationsbereich.
+ */
+function jmRenderStichPills(stiche, activeKey) {
+    const container = document.getElementById('jm-import-stich-container');
+    const pillsGroup = document.getElementById('jm-import-stich-pills');
+    if (!container || !pillsGroup) return;
+
+    if (!stiche || stiche.length <= 1) {
+        container.classList.add('d-none');
+        pillsGroup.innerHTML = '';
+        return;
+    }
+
+    container.classList.remove('d-none');
+    let html = '';
+    stiche.forEach(s => {
+        const isActive = s.key === activeKey;
+        const btnClass = isActive ? 'btn-primary text-white' : 'btn-outline-primary';
+        const iconClass = isActive ? 'fas fa-dot-circle' : 'far fa-circle';
+        html += `
+            <button type="button" class="btn btn-sm ${btnClass} jm-stich-pill fw-semibold" 
+                    data-stich-key="${escapeHtml(s.key)}" 
+                    onclick="jmSelectImportStich('${escapeHtml(s.key)}')">
+                <i class="${iconClass} me-1"></i>${escapeHtml(s.label)} 
+                <span class="badge ${isActive ? 'bg-light text-primary' : 'bg-primary-subtle text-primary'} ms-1">Max. ${s.maxPoints}</span>
+            </button>
+        `;
+    });
+    pillsGroup.innerHTML = html;
+}
+window.jmRenderStichPills = jmRenderStichPills;
+
+/**
+ * Wechselt den aktiven Stich für den Import und aktualisiert die Vorschau sofort in Echtzeit.
+ */
+function jmSelectImportStich(stichKey) {
+    if (!_jmImportState.availableStiche || _jmImportState.availableStiche.length === 0) return;
+    const stich = _jmImportState.availableStiche.find(s => s.key === stichKey);
+    if (!stich) return;
+
+    _jmImportState.activeStichKey = stichKey;
+    _jmImportState.maxPoints = stich.maxPoints;
+
+    const maxInput = document.getElementById('jm-import-max-points');
+    if (maxInput) maxInput.value = stich.maxPoints;
+
+    const sourceBadge = document.getElementById('jm-import-max-source-badge');
+    if (sourceBadge) sourceBadge.innerText = `Stich: ${stich.label}`;
+
+    const reasonHint = document.getElementById('jm-import-prognose-hint');
+    if (reasonHint) reasonHint.innerText = `💡 ${stich.label} (Max. ${stich.maxPoints})`;
+
+    // UI-Pills umschalten
+    document.querySelectorAll('.jm-stich-pill').forEach(btn => {
+        const isCurrent = btn.getAttribute('data-stich-key') === stichKey;
+        btn.classList.toggle('btn-primary', isCurrent);
+        btn.classList.toggle('text-white', isCurrent);
+        btn.classList.toggle('btn-outline-primary', !isCurrent);
+        const icon = btn.querySelector('i');
+        if (icon) {
+            icon.className = isCurrent ? 'fas fa-dot-circle me-1' : 'far fa-circle me-1';
+        }
+    });
+
+    // Vorschau-Daten mit den Punkten dieses Stichs aktualisieren
+    const rows = [];
+    (_jmImportState.matchedShootersWithStiche || []).forEach(s => {
+        const pts = (s.stiche && s.stiche[stichKey] !== undefined) ? s.stiche[stichKey] : null;
+        if (pts !== null && !isNaN(pts) && pts > 0) {
+            rows.push({
+                rowIndex: s.rowIndex,
+                name: s.name,
+                lizenz: s.lizenz,
+                points: pts,
+                matched: s.matched
+            });
+        }
+    });
+
+    _jmImportState.rows = rows;
+    jmRenderPreview(rows, 'auswaertig', _jmImportState.metadata);
+}
+window.jmSelectImportStich = jmSelectImportStich;
+
+/**
+ * Liest das zuvor hochgeladene Dokument mit aktuellen Einstellungen erneut ein.
+ */
+async function jmReAnalyzeImport() {
+    if (!_jmImportState.lastUploadedFile && !_jmImportState.lastArrayBuffer) {
+        showError("Kein vorheriges Dokument im Speicher gefunden. Bitte Datei erneut auswählen.");
+        return;
+    }
+
+    const targetCompVal = document.getElementById('jm-import-target-competition')?.value;
+
+    if (_jmImportState.lastUploadedFile) {
+        await jmHandleFileUpload(_jmImportState.lastUploadedFile, _jmImportState.type || 'auswaertig');
+    }
+
+    // Vorherige manuelle Anlass-Auswahl wiederherstellen falls vorhanden
+    if (targetCompVal) {
+        const sel = document.getElementById('jm-import-target-competition');
+        if (sel) {
+            sel.value = targetCompVal;
+            jmOnTargetCompetitionChange();
+        }
+    }
+}
+window.jmReAnalyzeImport = jmReAnalyzeImport;
 
 /**
  * Sendet ein Standblatt-Foto an die zentrale Gemini Vision OCR API.
