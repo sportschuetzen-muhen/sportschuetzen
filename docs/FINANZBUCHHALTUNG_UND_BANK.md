@@ -110,12 +110,19 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
 * **Nahtlose Übernahme von Einzelbuchung auf Sammelbeleg (`bhSyncFromSingleEntry`):** Beginnt der Benutzer eine Buchung im Einzel-Tab (Datum, Empfänger/IBAN, Text, Soll/Haben-Konto, Betrag) und wechselt anschliessend auf den Reiter «Sammelbeleg & Auszahlungen», werden diese Eingaben automatisch in Position #1 übernommen, die Belegart (`bank`, `ausgabe`, `einnahme`, `frei`) intelligent abgeleitet und eine leere Folgezeile #2 für den Split bereitgestellt. Über die Schaltfläche «Aus Einzelbuchung übernehmen» kann der Transfer jederzeit auch manuell synchronisiert werden.
 * **Synchroner In-Memory Journal-Abgleich & Cache-Revalidierung:** Nach dem Speichern von Einzelbuchungen wird der von Supabase zurückgegebene Datensatz sofort atomar in `window._bhJournal` verankert (`unshift`), damit Kontoblätter (z.B. Kasse `1000`) und Saldenberechnungen unmittelbar ohne Seiten-Reload aktuell sind. Ergänzend stöbert ein asynchroner Hintergrund-Reload (`loadBuchhaltungData(true, true)`) alle Sequenzen ab, und beim Wiederbetreten des Moduls (`renderBuchhaltung`) sorgt ein Stale-While-Revalidate-Ablauf für unterbrechungsfreie Frische.
 
-### 2.13 Trennung der Belegnummernkreise & Geldtransit (1099) bei Kassen-/Banküberträgen
-* **Problemstellung & Invariante:** Werden Überträge zwischen flüssigen Mitteln (Kasse `1000` und Bank `1020`) direkt gegeneinander gebucht, kollidieren die unabhängigen Belegnummernkreise: Eine Direktbuchung via CAMT erzeugt eine `B_Zahl_`-Nummer, wodurch im Kassenbuch die physische Kassenbelegnummer fehlt und zeitlicher Valutaversatz zu falschen Kassenbeständen führt.
-* **Architektur:** Bargeldentnahmen und -einzahlungen laufen strikt über das neutrale Transferkonto `1099 Geldtransit`.
-  1. **Kassenseite:** Physische Entnahme vor Ort &rarr; `1099 an 1000` mit Beleg `Kasse_YYYY-xxx` am Entnahmetag.
-  2. **Bankseite:** Bankgutschrift via CAMT &rarr; `1020 an 1099` mit Beleg `B_Zahl_YYYY-xxx` am Bank-Valutatag.
-* **Ergebnis:** Beide Belegnummernkreise bleiben 100% lückenlos und chronologisch getrennt, während das Verrechnungskonto `1099` am Ende exakt auf CHF 0.00 saldiert. Bei manueller Wahl von `1000` im Bankabgleich leitet das System automatisch auf `1099` um.
+### 2.13 Trennung der Belegnummernkreise & Geldtransit (1099) bei Kassen- & Banküberträgen
+* **Problemstellung & Invariante:** Werden Überträge zwischen flüssigen Mitteln (Kasse `1000` und Bank `1020` oder Bankkonto an Bankkonto, z.B. Wirtschaftskonto `1021` und Zahlungskonto `1020`) direkt gegeneinander gebucht, kollidieren die unabhängigen Belegnummernkreise: Eine Direktbuchung im ersten Auszug (z.B. `B_Wirt_`) führt beim Einlesen des zweiten Auszugs (z.B. `B_Zahl_`) entweder zu einer doppelten Bilanzbuchung oder zu einer unverbuchten Lücke im Kontoauszug. Zudem führen Valuta- und Zeitversatz zu unstimmigen Zwischensalden.
+* **Architektur & Buchungsstandard:** Sämtliche Transfers zwischen liquiden Eigenkonten laufen strikt über das neutrale Verrechnungskonto `1099 Geldtransit (Transferkonto liquide Mittel)`.
+  1. **Kasse &harr; Bank:**
+     - Physische Kassenentnahme: `1099 an 1000` mit Beleg `Kasse_YYYY-xxx` am Entnahmetag.
+     - Bankgutschrift via CAMT: `1020 an 1099` mit Beleg `B_Zahl_YYYY-xxx` am Bank-Valutatag.
+  2. **Bank &harr; Bank (z.B. Wirtschaftskonto 1021 &harr; Zahlungskonto 1020):**
+     - CAMT Wirtschaftskonto (Belastung): `1099 an 1021` mit Beleg `B_Wirt_YYYY-xxx` am Belastungstag.
+     - CAMT Zahlungskonto (Gutschrift): `1020 an 1099` mit Beleg `B_Zahl_YYYY-xxx` am Gutschriftstag.
+* **Ergebnis & Revisionssicherheit:** Alle Belegnummernkreise (`B_Wirt_`, `B_Zahl_`, `Kasse_`) bleiben 100% lückenlos, chronologisch getrennt und deckungsgleich mit den jeweiligen Bank-/Kontoauszügen. Am Stichtag saldiert das Konto `1099` exakt auf **CHF 0.00**.
+* **Intelligente Frontend- & Parser-Unterstützung:**
+  - Wählt der Benutzer im Bankabgleich ein anderes Eigenkonto (`1000`, `1020`, `1021`, `1022`) als Gegenkonto aus, leitet das System dieses automatisch auf `1099` um und informiert mit einem Toast-Hinweis.
+  - Erkennt der CAMT-Parser im Verwendungszweck typische Übertragsmuster oder stimmt die IBAN der Gegenpartei mit einem der Vereinskonten überein, schlägt das System automatisch Stufe 1c `1099 Geldtransit` mit Match-Typ `rule` vor.
 
 ---
 

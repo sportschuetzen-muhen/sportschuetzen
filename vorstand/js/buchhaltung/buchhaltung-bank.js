@@ -741,10 +741,17 @@ window._bhUpdateTxKonto = function(idx, type, val) {
   }
 
   let code = resolveCode(val);
-  if (code === '1000') {
+  const isGegenkonto = (tx.isCredit && type === 'haben') || (!tx.isCredit && type === 'soll');
+  const isInternalLiquid = (code === '1000' || code === '1020' || code === '1021' || code === '1022');
+
+  if (code === '1000' || (isGegenkonto && isInternalLiquid)) {
+    const isBankTransfer = (code !== '1000');
     code = '1099';
     if (typeof showToast === 'function') {
-      showToast('💡 Für Geldtransfers zwischen Bank und Kasse wird Konto 1099 Geldtransit verwendet, um Kassen- und Bankbelege getrennt zu halten.', 'info', 'bottom-end', 4500);
+      const msg = isBankTransfer
+        ? '💡 Für Überträge zwischen eigenen Bankkonten (Zahlungs-, Wirtschafts-, Sparkonto) wird Konto 1099 Geldtransit verwendet, damit beide Bankauszüge (B_Zahl_ und B_Wirt_) ihre eigene, lückenlose Belegnummer erhalten.'
+        : '💡 Für Geldtransfers zwischen Bank und Kasse wird Konto 1099 Geldtransit verwendet, um Kassen- und Bankbelege getrennt zu halten.';
+      showToast(msg, 'info', 'bottom-end', 5000);
     }
     const inputEl = document.getElementById(type === 'soll' ? `bh-soll-${idx}` : `bh-haben-${idx}`);
     if (inputEl) {
@@ -2108,6 +2115,44 @@ function bhBankMatchAll(transactions) {
         suggestedHaben = '3651';
         matchLabel = 'Gutschrift RaiseNow';
         matchScore = 2;
+      }
+    }
+
+    // 1c. STUFE: AUTOMATISCHE ERKENNUNG VON EIGENEN KONTOÜBERTRÄGEN & GELDTRANSIT (1099)
+    if (!isJahresbeitrag && !isInvoice && matchType === 'unknown') {
+      const cleanPartyIban = String(tx.partyIban || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      const isOwnPartyIban = Boolean(
+        cleanPartyIban && (
+          cleanPartyIban.includes('533218786') || cleanPartyIban.startsWith('CH28') || // 1021 Wirtschaftskonto
+          cleanPartyIban.includes('36331')     || cleanPartyIban.startsWith('CH06') || // 1020 Zahlungskonto
+          cleanPartyIban.includes('07885129')  || cleanPartyIban.startsWith('CH81')    // 1022 Sparkonto
+        )
+      );
+
+      const isTransferText = (
+        /konto[uü]bertrag/i.test(cleanRemittance) || /konto[uü]bertrag/i.test(cleanParty) ||
+        /[uü]bertrag.*(?:wirtschaft|zahlung|verein|sparkonto)/i.test(cleanRemittance) ||
+        /[uü]bertrag.*(?:wirtschaft|zahlung|verein|sparkonto)/i.test(cleanParty) ||
+        /(?:wirtschaft|zahlung|verein|sparkonto).*[uü]bertrag/i.test(cleanRemittance) ||
+        /(?:wirtschaft|zahlung|verein|sparkonto).*[uü]bertrag/i.test(cleanParty) ||
+        /umbuchung/i.test(cleanRemittance) || /umbuchung/i.test(cleanParty) ||
+        /bancomat\s+einzahlung/i.test(cleanRemittance) || /bancomat\s+einzahlung/i.test(cleanParty)
+      );
+
+      if (isOwnPartyIban || isTransferText) {
+        matchType = 'rule';
+        matchRuleName = 'Geldtransit (Kontoübertrag)';
+        matchLabel = 'Geldtransit 1099 (Transferkonto)';
+        matchRulePrefix = 'Kontoübertrag';
+        matchScore = 3;
+
+        if (tx.isCredit) {
+          suggestedSoll = txBankKonto;
+          suggestedHaben = '1099';
+        } else {
+          suggestedSoll = '1099';
+          suggestedHaben = txBankKonto;
+        }
       }
     }
 
