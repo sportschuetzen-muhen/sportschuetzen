@@ -1256,6 +1256,10 @@ window.bhOpenEntryModal = function(entryId) {
   }
   
   const isEdit = Boolean(entryId);
+  if (!isEdit) {
+    window._bhKassaSammelRows = null;
+    window._bhSammelInitializedInCurrentModal = false;
+  }
 
   if (entryId) {
     const numId = Number(entryId);
@@ -1505,9 +1509,14 @@ window.bhOpenEntryModal = function(entryId) {
 
                 <div class="d-flex justify-content-between align-items-center mb-2">
                   <label class="form-label fw-bold small text-primary mb-0"><i class="fas fa-list-ol me-1"></i>Positionen des Sammelbelegs</label>
-                  <button type="button" class="btn btn-sm btn-outline-primary py-0.5 px-2 fw-semibold" onclick="bhAddKassaSammelRow()">
-                    <i class="fas fa-plus me-1"></i>Position hinzufügen
-                  </button>
+                  <div class="d-flex align-items-center gap-1.5">
+                    <button type="button" class="btn btn-sm btn-outline-secondary py-0.5 px-2 fw-semibold" onclick="bhSyncFromSingleEntry(true)" title="Bereits in der Einzelbuchung eingetragene Daten in Position 1 übernehmen">
+                      <i class="fas fa-sync-alt me-1"></i>Aus Einzelbuchung übernehmen
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-primary py-0.5 px-2 fw-semibold" onclick="bhAddKassaSammelRow()">
+                      <i class="fas fa-plus me-1"></i>Position hinzufügen
+                    </button>
+                  </div>
                 </div>
 
                 <div class="table-responsive border rounded-3 mb-3 bg-white" style="min-height: 180px;">
@@ -1714,27 +1723,163 @@ window.bhOpenEntryModal = function(entryId) {
   if (window.UIModalKit && typeof window.UIModalKit.makeMovableAndResizable === 'function') {
     window.UIModalKit.makeMovableAndResizable(modalEl);
   }
+
+  // Cleanup-Handler beim Schliessen des Modals
+  modalEl.addEventListener('hidden.bs.modal', () => {
+    window._bhKassaSammelRows = null;
+    window._bhSammelInitializedInCurrentModal = false;
+  }, { once: true });
 };
 
 // =====================================================================
 // KASSEN-SAMMELBELEG VERWALTUNG & LOGIK
 // =====================================================================
-window.bhInitKassaSammelbeleg = function() {
-  const y = Number(window._bhYear || new Date().getFullYear());
-  const belegEl = document.getElementById('bh-ks-beleg');
+window.bhSyncFromSingleEntry = function(force = false) {
+  const titelEl = document.getElementById('bh-ks-titel');
+  const datumEl = document.getElementById('bh-ks-datum');
   const artEl = document.getElementById('bh-ks-art');
-  const art = artEl ? artEl.value : 'bank';
-  if (belegEl && (!belegEl.value || belegEl.value.startsWith('Kasse_') || belegEl.value.startsWith('B_Zahl_') || belegEl.value.startsWith('ZA-') || belegEl.value.startsWith('BEL-'))) {
-    const pfx = (art === 'bank') ? 'ZA-' : (art === 'ausgabe' || art === 'einnahme' ? 'Kasse_' : 'BEL-');
-    belegEl.value = window.bhGetNextJournalBelegNr(y, pfx);
-  }
-  if (!window._bhKassaSammelRows || window._bhKassaSammelRows.length === 0) {
+
+  const singleDatum = document.getElementById('bhe-datum')?.value;
+  const singleDesc = document.getElementById('bhe-beschreibung')?.value?.trim() || '';
+  const singleSollRaw = document.getElementById('bhe-soll')?.value || '';
+  const singleHabenRaw = document.getElementById('bhe-haben')?.value || '';
+  const singleSoll = window.bhKontoResolveCode ? window.bhKontoResolveCode(singleSollRaw) : singleSollRaw;
+  const singleHaben = window.bhKontoResolveCode ? window.bhKontoResolveCode(singleHabenRaw) : singleHabenRaw;
+  const singleBetrag = document.getElementById('bhe-betrag')?.value || '';
+  const singleTyp = document.getElementById('bhe-typ')?.value || '';
+
+  // Begünstigte Person / Mitglied aus Einzelbuchung übernehmen
+  const singleMemberPn = document.getElementById('bhe-member-pn')?.value || '';
+  const singleMemberName = document.getElementById('bhe-member-name')?.value || '';
+  const singleMemberIban = document.getElementById('bhe-member-iban')?.value || '';
+  const singleMemberAddr = document.getElementById('bhe-member-address')?.value || '';
+  const singleMemberStreet = document.getElementById('bhe-member-street')?.value || '';
+  const singleMemberZip = document.getElementById('bhe-member-zip')?.value || '';
+  const singleMemberCity = document.getElementById('bhe-member-city')?.value || '';
+  const singleSaveIban = document.getElementById('bhe-save-iban-to-member')?.checked;
+
+  const hasSingleData = Boolean(
+    singleDesc || 
+    (singleBetrag && parseFloat(singleBetrag) > 0) || 
+    singleSoll || 
+    singleHaben || 
+    singleMemberName ||
+    singleMemberIban
+  );
+
+  if (!hasSingleData && !force) {
     window._bhKassaSammelRows = [
       { text: '', konto: '4000', kontoSoll: '', kontoHaben: '', betrag: '' },
       { text: '', konto: '4000', kontoSoll: '', kontoHaben: '', betrag: '' }
     ];
+    if (titelEl) titelEl.value = '';
+    window.bhUpdateKassaSammelArt();
+    return false;
   }
+
+  // 1. Datum übernehmen
+  if (datumEl && singleDatum) {
+    datumEl.value = singleDatum;
+  }
+
+  // 2. Begünstigte Person übernehmen
+  if (singleMemberName || singleMemberIban) {
+    if (document.getElementById('bh-ks-member-pn')) document.getElementById('bh-ks-member-pn').value = singleMemberPn;
+    if (document.getElementById('bh-ks-member-name')) document.getElementById('bh-ks-member-name').value = singleMemberName;
+    if (document.getElementById('bh-ks-member-iban')) document.getElementById('bh-ks-member-iban').value = singleMemberIban;
+    if (document.getElementById('bh-ks-member-address')) document.getElementById('bh-ks-member-address').value = singleMemberAddr;
+    if (document.getElementById('bh-ks-member-street')) document.getElementById('bh-ks-member-street').value = singleMemberStreet;
+    if (document.getElementById('bh-ks-member-zip')) document.getElementById('bh-ks-member-zip').value = singleMemberZip;
+    if (document.getElementById('bh-ks-member-city')) document.getElementById('bh-ks-member-city').value = singleMemberCity;
+    if (document.getElementById('bh-ks-member-search')) document.getElementById('bh-ks-member-search').value = singleMemberName;
+    if (document.getElementById('bh-ks-save-iban-to-member') && typeof singleSaveIban === 'boolean') {
+      document.getElementById('bh-ks-save-iban-to-member').checked = singleSaveIban;
+    }
+    const disp = document.getElementById('bh-ks-member-address-display');
+    if (disp) {
+      disp.textContent = singleMemberAddr || singleMemberName || 'Mitglied übernommen';
+      disp.classList.remove('text-muted');
+      disp.classList.add('text-success', 'fw-semibold');
+    }
+    const details = document.getElementById('bh-ks-member-details');
+    const indicator = document.getElementById('bh-ks-member-toggle-indicator');
+    if (details) details.style.display = 'block';
+    if (indicator) indicator.innerHTML = 'Ausblenden <i class="fas fa-chevron-up ms-1"></i>';
+  }
+
+  // 3. Art / Zahlweg intelligent ableiten
+  let derivedArt = 'bank';
+  if (singleHaben === '1020' || singleTyp === 'Bank' || singleTyp === 'Überweisung') {
+    derivedArt = 'bank';
+  } else if (singleHaben === '1000' || (singleTyp === 'Kassa' && singleSoll !== '1000')) {
+    derivedArt = 'ausgabe';
+  } else if (singleSoll === '1000' || singleTyp === 'Einnahme') {
+    derivedArt = 'einnahme';
+  } else if (singleSoll && singleHaben && singleSoll !== '1000' && singleSoll !== '1020' && singleHaben !== '1000' && singleHaben !== '1020') {
+    derivedArt = 'frei';
+  } else {
+    derivedArt = 'bank';
+  }
+  if (artEl) {
+    artEl.value = derivedArt;
+  }
+
+  // 4. Gesamttitel / Anlass (Belegkopf)
+  if (titelEl && singleDesc) {
+    titelEl.value = singleDesc;
+  }
+
+  // 5. Positionen belegen (Position 1 aus Einzelbuchung, Position 2 leere Folgezeile)
+  const pos1Konto = (derivedArt === 'einnahme') ? (singleHaben || '3000') : (singleSoll || '4000');
+  window._bhKassaSammelRows = [
+    {
+      text: singleDesc,
+      konto: pos1Konto,
+      kontoSoll: singleSoll || '',
+      kontoHaben: singleHaben || '',
+      betrag: (singleBetrag && parseFloat(singleBetrag) > 0) ? singleBetrag : ''
+    },
+    {
+      text: '',
+      konto: (derivedArt === 'einnahme') ? '3000' : '4000',
+      kontoSoll: '',
+      kontoHaben: '',
+      betrag: ''
+    }
+  ];
+
   window.bhUpdateKassaSammelArt();
+
+  if (typeof showSuccess === 'function' && hasSingleData) {
+    showSuccess('📋 Daten aus Einzelbuchung wurden in den Sammelbeleg übernommen.');
+  }
+
+  return true;
+};
+
+window.bhInitKassaSammelbeleg = function() {
+  const y = Number(window._bhYear || new Date().getFullYear());
+  const belegEl = document.getElementById('bh-ks-beleg');
+  const artEl = document.getElementById('bh-ks-art');
+
+  if (!window._bhSammelInitializedInCurrentModal) {
+    window._bhSammelInitializedInCurrentModal = true;
+    window.bhSyncFromSingleEntry(false);
+  } else if (!window._bhKassaSammelRows || window._bhKassaSammelRows.length === 0) {
+    window._bhKassaSammelRows = [
+      { text: '', konto: '4000', kontoSoll: '', kontoHaben: '', betrag: '' },
+      { text: '', konto: '4000', kontoSoll: '', kontoHaben: '', betrag: '' }
+    ];
+    window.bhUpdateKassaSammelArt();
+  }
+
+  const art = artEl ? artEl.value : 'bank';
+  if (belegEl && (!belegEl.value || belegEl.value.startsWith('Kasse_') || belegEl.value.startsWith('B_Zahl_') || belegEl.value.startsWith('ZA-') || belegEl.value.startsWith('BEL-'))) {
+    const pfx = (art === 'bank') ? 'ZA-' : (art === 'ausgabe' || art === 'einnahme' ? 'Kasse_' : 'BEL-');
+    belegEl.value = (pfx === 'ZA-' && typeof window.bhGetNextPaymentOrderNr === 'function')
+      ? window.bhGetNextPaymentOrderNr(y)
+      : window.bhGetNextJournalBelegNr(y, pfx);
+  }
 };
 
 window.bhUpdateKassaSammelArt = function() {
@@ -2115,6 +2260,8 @@ window.bhSaveKassaSammelbeleg = async function(event, printAfter = false, export
         const bsModal = bootstrap.Modal.getInstance(modalEl);
         if (bsModal) bsModal.hide();
       }
+      window._bhKassaSammelRows = null;
+      window._bhSammelInitializedInCurrentModal = false;
 
       if (document.getElementById('bhModalPaymentOrders')?.classList.contains('show') && typeof window.bhRenderPaymentOrdersModalContent === 'function') {
         window.bhRenderPaymentOrdersModalContent();
@@ -2194,6 +2341,8 @@ window.bhSaveKassaSammelbeleg = async function(event, printAfter = false, export
       const bsModal = bootstrap.Modal.getInstance(modalEl);
       if (bsModal) bsModal.hide();
     }
+    window._bhKassaSammelRows = null;
+    window._bhSammelInitializedInCurrentModal = false;
 
     if (typeof recalculateLiveAccountBalances === 'function') recalculateLiveAccountBalances();
     if (typeof updateAccountingKPIs === 'function') updateAccountingKPIs();
@@ -2851,6 +3000,8 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
         const modal = bootstrap.Modal.getInstance(modalEl);
         if (modal) modal.hide();
       }
+      window._bhKassaSammelRows = null;
+      window._bhSammelInitializedInCurrentModal = false;
 
       if (document.getElementById('bhModalPaymentOrders')?.classList.contains('show') && typeof window.bhRenderPaymentOrdersModalContent === 'function') {
         window.bhRenderPaymentOrdersModalContent();
@@ -2920,6 +3071,8 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
       const modal = bootstrap.Modal.getInstance(modalEl);
       if (modal) modal.hide();
     }
+    window._bhKassaSammelRows = null;
+    window._bhSammelInitializedInCurrentModal = false;
     
     if (!savedEntry) {
       savedEntry = {

@@ -104,6 +104,10 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
 * **Invariante & Klassifizierung:** Ausserordentliche Erlöse wie Kleiderverkauf (`8121`), Reinigungstücher (`8122`) und Entschädigungen (`8123`) sind in `public.accounting_accounts` strikt als `Ertrag` hinterlegt (nicht als Aufwand mit Negativsaldo). Kleidereinkauf (`8501`) und Sonderaufwände (`8500`) bilden den Gegenpol als `Ausserordentlicher Aufwand`.
 * **Gliederung & Sortierung:** Die Darstellung in den KMU-Finanzberichten (`renderErfolgsrechnungHTML`) und Controlling sortiert Untergruppen nicht alphabetisch, sondern strikt nach aufsteigender Kontonummer der enthaltenen Konten (34xx &rarr; 36xx &rarr; 38xx &rarr; 81xx und 40xx &rarr; 41xx &rarr; 42xx &rarr; 44xx &rarr; 60xx &rarr; 85xx &rarr; 89xx). Zinserträge (`8110`) und ausserordentliche Erträge (`812x`) werden in eigenständigen Subgruppen sauber getrennt.
 
+### 2.12 Ergonomie & Datenübernahme im Erfassungs-Modal (Einzelbuchung & Sammelbeleg)
+* **Ghost-Data-Schutz & State-Reset:** Um zu verhindern, dass Zeilen früherer Sammelbuchungen im Browser-Speicher verbleiben (`_bhKassaSammelRows`), werden Sammelbeleg-Zeilen beim Öffnen des Modals zur Neuerfassung, nach jedem erfolgreichen Speichern sowie beim Schliessen des Modals (`hidden.bs.modal`) garantiert geleert (`null`).
+* **Nahtlose Übernahme von Einzelbuchung auf Sammelbeleg (`bhSyncFromSingleEntry`):** Beginnt der Benutzer eine Buchung im Einzel-Tab (Datum, Empfänger/IBAN, Text, Soll/Haben-Konto, Betrag) und wechselt anschliessend auf den Reiter «Sammelbeleg & Auszahlungen», werden diese Eingaben automatisch in Position #1 übernommen, die Belegart (`bank`, `ausgabe`, `einnahme`, `frei`) intelligent abgeleitet und eine leere Folgezeile #2 für den Split bereitgestellt. Über die Schaltfläche «Aus Einzelbuchung übernehmen» kann der Transfer jederzeit auch manuell synchronisiert werden.
+
 ---
 
 ## 3. Datenmodell (Kern-Tabellen)
