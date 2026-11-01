@@ -128,8 +128,8 @@ window.renderRechnungen = function() {
         <button class="bh-tab-btn ${window._rechnungenActiveTab === 'kontakte' ? 'active' : ''}" id="rn-tab-btn-kontakte" onclick="rnSwitchTab('kontakte')">
           <i class="fas fa-address-book me-1.5"></i> Externe Kontakte
         </button>
-        <button class="bh-tab-btn ${window._rechnungenActiveTab === 'offen' ? 'active' : ''}" id="rn-tab-btn-offen" onclick="rnSwitchTab('offen')">
-          <i class="fas fa-list-ol me-1.5"></i> Offene Posten (Nebenrechnung)
+        <button class="bh-tab-btn ${window._rechnungenActiveTab === 'offen' || window._rechnungenActiveTab === 'revision' ? 'active' : ''}" id="rn-tab-btn-offen" onclick="rnSwitchTab('offen')">
+          <i class="fas fa-calculator me-1.5"></i> Revision & Auswertungen
         </button>
         <button class="bh-tab-btn ${window._rechnungenActiveTab === 'templates' ? 'active' : ''}" id="rn-tab-btn-templates" onclick="rnSwitchTab('templates')">
           <i class="fas fa-boxes-stacked me-1.5"></i> Artikelstamm & Positionen
@@ -166,8 +166,12 @@ window.renderActiveRechnungenTab = function() {
     renderTabContacts(content);
   } else if (window._rechnungenActiveTab === 'templates') {
     renderTabTemplates(content);
-  } else if (window._rechnungenActiveTab === 'offen') {
-    renderTabOffenePosten(content);
+  } else if (window._rechnungenActiveTab === 'offen' || window._rechnungenActiveTab === 'revision') {
+    if (typeof renderTabRevision === 'function') {
+      renderTabRevision(content);
+    } else {
+      renderTabOffenePosten(content);
+    }
   } else {
     window._rechnungenActiveTab = 'archiv';
     renderTabArchiv(content);
@@ -265,6 +269,9 @@ window.renderTabArchiv = function(content) {
         <h5 class="fw-bold text-primary mb-0"><i class="fas fa-filter me-2"></i>Filter & Rechnungs-Archiv</h5>
         <div class="d-flex gap-2 flex-wrap align-items-center">
           <div id="rn-column-toggle" class="d-inline-block"></div>
+          <button class="btn btn-sm btn-outline-success fw-bold shadow-sm" onclick="rnExportArchivToExcel()" title="Aktuell gefilterte Rechnungen als Excel-Datei (.xlsx) exportieren">
+            <i class="fas fa-file-excel me-1"></i> Excel Export
+          </button>
           <button class="btn btn-sm btn-outline-warning fw-bold shadow-sm write-protected" onclick="rnOpenBatchMahnungModal()" title="Alle fälligen offenen Rechnungen prüfen und per Klick gesammelt mahnen">
             <i class="fas fa-bullhorn me-1"></i> Fällige Mahnungen (${dueCount > 0 ? dueCount : 'Mahnlauf'})
           </button>
@@ -987,204 +994,803 @@ window.rnOpenDetailsModal = async function(invoiceId) {
 };
 
 // =====================================================================
-// TAB: OFFENE POSTEN (NEBENRECHNUNG PER MITGLIED)
+// EXPORT- & REVISIONS-SERVICES
 // =====================================================================
-window._rechnungenOffenePostenFilter = 'alle';
-window._rechnungenOpViewMode = 'single'; // 'single' (jede Rechnung einzeln) oder 'grouped' (nach Empfänger)
+window.rnExportArchivToExcel = function() {
+  if (window.UIExportKit && typeof window.UIExportKit.tableToExcel === 'function') {
+    window.UIExportKit.tableToExcel('#rn-invoices-table', {
+      filename: 'Rechnungs_Archiv',
+      sheetName: 'Rechnungen',
+      excludeHiddenColumns: true
+    });
+  } else if (window.UIConfirmKit) {
+    window.UIConfirmKit.alert({ title: 'Export-Fehler', message: 'Das UIExportKit steht derzeit nicht zur Verfügung.', type: 'danger' });
+  } else {
+    alert('UIExportKit steht nicht zur Verfügung.');
+  }
+};
+
+window.rnExportRevisionToExcel = function() {
+  const statusLabels = {
+    'offen': 'Offene_Posten_OP',
+    'bezahlt': 'Bezahlte_Posten_Einnahmen',
+    'alle': 'Rechnungsjournal_Alle',
+    'artikel': 'Artikel_Positionsjournal'
+  };
+  const modeKey = window._rechnungenReportStatus || 'offen';
+  const catKey = window._rechnungenOffenePostenFilter || 'alle';
+  const filename = `Revision_${statusLabels[modeKey] || 'Auswertung'}_${catKey}`;
+
+  if (window.UIExportKit && typeof window.UIExportKit.tableToExcel === 'function') {
+    window.UIExportKit.tableToExcel('#rn-revision-table', {
+      filename: filename,
+      sheetName: 'Revisionsliste',
+      excludeHiddenColumns: true
+    });
+  } else if (window.UIConfirmKit) {
+    window.UIConfirmKit.alert({ title: 'Export-Fehler', message: 'Das UIExportKit steht derzeit nicht zur Verfügung.', type: 'danger' });
+  } else {
+    alert('UIExportKit steht nicht zur Verfügung.');
+  }
+};
+
+window.rnExportRevisionDetailExcel = function() {
+  const currentFilter = window._rechnungenOffenePostenFilter || 'alle';
+  const reportStatus = window._rechnungenReportStatus || 'offen';
+  const allInvoices = window._invoices || [];
+
+  function matchesCategory(inv, cat) {
+    if (!cat || cat === 'alle') return true;
+    const t = String(inv.type || '').toLowerCase();
+    const src = String(inv.source_module || '').toLowerCase();
+    if (cat === 'Jahresbeitrag') return t.includes('jahresbeitrag') || src.includes('jahresbeitrag');
+    if (cat === 'Vermietung') return t.includes('vermietung') || src.includes('vermietung');
+    if (cat === 'Materialverkauf') return t.includes('material') || src.includes('inventar');
+    if (cat === 'Depot / Pfand' || cat === 'Depot') return t.includes('depot') || t.includes('pfand');
+    if (cat === 'Schulsport') return t.includes('schulsport');
+    if (cat === 'Sponsoring') return t.includes('sponsoring') || t.includes('gönner') || t.includes('goenner');
+    if (cat === 'Sonstige') return t.includes('sonstige') || t.includes('diverse');
+    return true;
+  }
+
+  const filteredInvoices = allInvoices.filter(inv => {
+    if (!matchesCategory(inv, currentFilter)) return false;
+    const st = String(inv.status || '').toLowerCase();
+    if (st === 'storniert') return false;
+    if (reportStatus === 'offen') {
+      return st !== 'bezahlt' && (inv.open_amount === undefined || Number(inv.open_amount) > 0);
+    }
+    if (reportStatus === 'bezahlt') {
+      return st === 'bezahlt' || (Number(inv.total_paid || 0) > 0 && Number(inv.open_amount || 0) === 0);
+    }
+    return true; // 'alle' oder 'artikel'
+  });
+
+  const detailRows = [];
+  filteredInvoices.forEach(inv => {
+    const posList = (inv.positions && inv.positions.length) ? inv.positions : ((window._invoicePositionsCache && window._invoicePositionsCache[inv.id]) || []);
+    const invDateStr = window.UIFormatKit ? window.UIFormatKit.formatDate(inv.created_at) : (rnFmtSwissDate(inv.created_at) || inv.created_at);
+    const payDateStr = inv.payment_date ? (window.UIFormatKit ? window.UIFormatKit.formatDate(inv.payment_date) : inv.payment_date) : '';
+
+    if (posList && posList.length) {
+      posList.forEach(p => {
+        const qty = Number(p.quantity || 1);
+        const up = Number(p.unit_price || 0);
+        const amt = Number(p.amount !== undefined ? p.amount : (qty * up));
+        detailRows.push({
+          'Rechnungs-ID': inv.id,
+          'Datum': invDateStr,
+          'Empfänger': inv.name || 'Unbekannt',
+          'Mitglieds-Nr': inv.PersonNumber || '',
+          'Kategorie': inv.type || '',
+          'Status': inv.status || 'offen',
+          'Pos-Nr': p.position_nr || 1,
+          'Artikel / Beschreibung': p.description || inv.type || 'Position',
+          'Gegenkonto': p.konto || '3000',
+          'Menge': qty,
+          'Einzelpreis CHF': up,
+          'Positionsbetrag CHF': amt,
+          'Rechnungs-Total CHF': Number(inv.total_amount || 0),
+          'Offener Saldo CHF': Number(inv.open_amount !== undefined ? inv.open_amount : inv.total_amount || 0),
+          'Zahlungsdatum': payDateStr
+        });
+      });
+    } else {
+      detailRows.push({
+        'Rechnungs-ID': inv.id,
+        'Datum': invDateStr,
+        'Empfänger': inv.name || 'Unbekannt',
+        'Mitglieds-Nr': inv.PersonNumber || '',
+        'Kategorie': inv.type || '',
+        'Status': inv.status || 'offen',
+        'Pos-Nr': 1,
+        'Artikel / Beschreibung': inv.type || 'Pauschale',
+        'Gegenkonto': '3000',
+        'Menge': 1,
+        'Einzelpreis CHF': Number(inv.total_amount || 0),
+        'Positionsbetrag CHF': Number(inv.total_amount || 0),
+        'Rechnungs-Total CHF': Number(inv.total_amount || 0),
+        'Offener Saldo CHF': Number(inv.open_amount !== undefined ? inv.open_amount : inv.total_amount || 0),
+        'Zahlungsdatum': payDateStr
+      });
+    }
+  });
+
+  if (!detailRows.length) {
+    if (window.UIConfirmKit) {
+      window.UIConfirmKit.alert({ title: 'Keine Daten', message: 'Für die gewählten Filter sind keine Positionen vorhanden.', type: 'warning' });
+    } else {
+      alert('Keine Positionen für den Export vorhanden.');
+    }
+    return;
+  }
+
+  if (window.UIExportKit && typeof window.UIExportKit.dataToExcel === 'function') {
+    window.UIExportKit.dataToExcel(detailRows, {
+      filename: `Revision_Artikel_Positionen_${currentFilter}_${reportStatus}`,
+      sheetName: 'Positionen'
+    });
+  } else {
+    alert('UIExportKit steht nicht zur Verfügung.');
+  }
+};
+
+window.rnPrintRevisionReport = function() {
+  const currentFilter = window._rechnungenOffenePostenFilter || 'alle';
+  const reportStatus = window._rechnungenReportStatus || 'offen';
+  const viewMode = window._rechnungenOpViewMode || 'single';
+
+  const categoryLabels = {
+    'alle': 'Alle Kategorien',
+    'Jahresbeitrag': 'Jahresbeiträge (Mitglieder)',
+    'Vermietung': 'Vermietung Schützenstube',
+    'Materialverkauf': 'Materialverkauf (Inventar)',
+    'Depot / Pfand': 'Depot / Pfand & Kautionen',
+    'Schulsport': 'Schulsport',
+    'Sponsoring': 'Sponsoring & Gönner',
+    'Sonstige': 'Sonstige / Diverse'
+  };
+
+  const statusTitles = {
+    'offen': 'Offene Posten per Stichtag (Debitorenspiegel / Bilanz 1100)',
+    'bezahlt': 'Bezahlte Posten (Einnahmen- & Zahlungsjournal)',
+    'alle': 'Rechnungsjournal (Vollständige Fakturenübersicht)',
+    'artikel': 'Positions- & Inventarjournal (Artikelbezug & Materialverkauf)'
+  };
+
+  const tableEl = document.getElementById('rn-revision-table');
+  if (!tableEl) {
+    window.print();
+    return;
+  }
+
+  const tableHtml = tableEl.outerHTML;
+  const nowDisplay = window.UIFormatKit ? window.UIFormatKit.formatDateTime(new Date()) : new Date().toLocaleString('de-CH');
+
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    alert('Druckfenster konnte nicht geöffnet werden. Bitte Pop-up-Blocker deaktivieren.');
+    return;
+  }
+
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html lang="de">
+      <head>
+        <meta charset="utf-8">
+        <title>Sportschützen Muhen - ${statusTitles[reportStatus] || 'Revisionsbericht'}</title>
+        <style>
+          body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #212529; padding: 25px; line-height: 1.35; margin: 0; }
+          .no-print { margin-bottom: 20px; padding: 12px; background: #e9ecef; border-radius: 6px; display: flex; gap: 10px; align-items: center; }
+          .no-print button { padding: 8px 16px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+          .btn-print { background: #0d6efd; color: #fff; }
+          .btn-close { background: #6c757d; color: #fff; }
+          .report-header { border-bottom: 3px double #0d6efd; padding-bottom: 12px; margin-bottom: 20px; }
+          .report-header h1 { font-size: 20px; margin: 0 0 4px 0; color: #0d6efd; text-transform: uppercase; letter-spacing: 0.5px; }
+          .report-header h2 { font-size: 15px; margin: 0 0 6px 0; color: #212529; font-weight: 600; }
+          .report-meta { font-size: 11.5px; color: #555; display: flex; gap: 20px; flex-wrap: wrap; }
+          .report-meta strong { color: #000; }
+          table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px; }
+          th { background-color: #f8f9fa; border: 1px solid #dee2e6; border-bottom: 2px solid #adb5bd; padding: 6px 8px; text-align: left; font-weight: 600; color: #333; }
+          td { border: 1px solid #dee2e6; padding: 5px 8px; vertical-align: middle; }
+          tr:nth-child(even) td { background-color: #fafbfc; }
+          .text-end { text-align: right !important; }
+          .text-center { text-align: center !important; }
+          .fw-bold { font-weight: bold !important; }
+          .font-monospace { font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace !important; }
+          .text-danger { color: #dc3545 !important; }
+          .text-success { color: #198754 !important; }
+          .text-primary { color: #0d6efd !important; }
+          .badge { display: inline-block; padding: 2px 5px; font-size: 9.5px; border-radius: 3px; font-weight: normal; border: 1px solid #ccc; background: #fff; }
+          tfoot tr td { background-color: #f1f3f5 !important; font-weight: bold; border-top: 2px solid #495057; font-size: 11.5px; }
+          @media print {
+            body { padding: 0; }
+            .no-print { display: none !important; }
+            @page { size: A4 landscape; margin: 1cm; }
+            tr { page-break-inside: avoid; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="no-print">
+          <button class="btn-print" onclick="window.print()">🖨️ Jetzt Drucken / Als PDF speichern</button>
+          <button class="btn-close" onclick="window.close()">Fenster schliessen</button>
+          <span style="font-size:12px; color:#555; margin-left:10px;">Tipp: Im Druckdialog als Ziel «Als PDF speichern» wählen.</span>
+        </div>
+
+        <div class="report-header">
+          <h1>Sportschützen Muhen &middot; Vereinsportal</h1>
+          <h2>${statusTitles[reportStatus] || 'Revisionsbericht'}</h2>
+          <div class="report-meta">
+            <div><strong>Filter:</strong> ${categoryLabels[currentFilter] || currentFilter}</div>
+            <div><strong>Ansicht:</strong> ${reportStatus === 'artikel' ? 'Positions-Detail' : (viewMode === 'single' ? 'Einzel-Belege' : 'Gruppiert nach Empfänger')}</div>
+            <div><strong>Stichtag / Erstellt am:</strong> ${nowDisplay}</div>
+          </div>
+        </div>
+
+        ${tableHtml}
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+};
+
+// =====================================================================
+// TAB: REVISION & AUSWERTUNGEN (HAUPT-CONTROLLER)
+// =====================================================================
+window._rechnungenReportStatus = window._rechnungenReportStatus || 'offen'; // 'offen', 'bezahlt', 'alle', 'artikel'
+window._rechnungenOffenePostenFilter = window._rechnungenOffenePostenFilter || 'alle';
+window._rechnungenOpViewMode = window._rechnungenOpViewMode || 'single'; // 'single' oder 'grouped'
+
+window.rnFilterRevisionStatus = function(status) {
+  window._rechnungenReportStatus = status;
+  const content = document.getElementById('rn-tab-content-container');
+  if (content) window.renderTabRevision(content);
+};
 
 window.rnFilterOffenePostenType = function(type) {
   window._rechnungenOffenePostenFilter = type;
   const content = document.getElementById('rn-tab-content-container');
-  if (content) window.renderTabOffenePosten(content);
+  if (content) window.renderTabRevision(content);
 };
 
 window.rnToggleOpViewMode = function(mode) {
   window._rechnungenOpViewMode = mode;
   const content = document.getElementById('rn-tab-content-container');
-  if (content) window.renderTabOffenePosten(content);
+  if (content) window.renderTabRevision(content);
 };
 
-window.renderTabOffenePosten = function(content) {
+window.renderTabRevision = function(content) {
   if (!content) return;
 
   const currentFilter = window._rechnungenOffenePostenFilter || 'alle';
+  const reportStatus = window._rechnungenReportStatus || 'offen';
   const viewMode = window._rechnungenOpViewMode || 'single';
 
   const categoryLabels = {
     'alle': 'Alle Posten',
-    'Jahresbeitrag': 'Jahresbeiträge (Mitglieder)',
+    'Jahresbeitrag': 'Jahresbeiträge',
     'Vermietung': 'Vermietung',
-    'Materialverkauf': 'Materialverkauf',
+    'Materialverkauf': 'Materialverkauf (Inventar)',
     'Depot / Pfand': 'Depot / Pfand',
     'Schulsport': 'Schulsport',
     'Sponsoring': 'Sponsoring / Gönner',
     'Sonstige': 'Sonstige / Diverse'
   };
 
-  const openInvoices = (window._invoices || []).filter(i => {
+  function matchesCategory(inv, cat) {
+    if (!cat || cat === 'alle') return true;
+    const t = String(inv.type || '').toLowerCase();
+    const src = String(inv.source_module || '').toLowerCase();
+    if (cat === 'Jahresbeitrag') return t.includes('jahresbeitrag') || src.includes('jahresbeitrag');
+    if (cat === 'Vermietung') return t.includes('vermietung') || src.includes('vermietung');
+    if (cat === 'Materialverkauf') return t.includes('material') || src.includes('inventar');
+    if (cat === 'Depot / Pfand' || cat === 'Depot') return t.includes('depot') || t.includes('pfand');
+    if (cat === 'Schulsport') return t.includes('schulsport');
+    if (cat === 'Sponsoring') return t.includes('sponsoring') || t.includes('gönner') || t.includes('goenner');
+    if (cat === 'Sonstige') return t.includes('sonstige') || t.includes('diverse');
+    return true;
+  }
+
+  const allInvoices = window._invoices || [];
+  const catInvoices = allInvoices.filter(i => matchesCategory(i, currentFilter));
+
+  // Zähler für Status-Schalter
+  const countOffen = catInvoices.filter(i => {
     const st = String(i.status || '').toLowerCase();
-    const isUnpaid = st === 'offen' || st === 'teilweise' || st === 'gemahnt';
-    if (!isUnpaid) return false;
+    return st !== 'bezahlt' && st !== 'storniert' && (i.open_amount === undefined || Number(i.open_amount) > 0);
+  }).length;
 
-    const t = String(i.type || '').toLowerCase();
-    if (currentFilter === 'Jahresbeitrag') return t.includes('jahresbeitrag');
-    if (currentFilter === 'Vermietung') return t.includes('vermietung');
-    if (currentFilter === 'Materialverkauf') return t.includes('material');
-    if (currentFilter === 'Depot / Pfand' || currentFilter === 'Depot') return t.includes('depot') || t.includes('pfand');
-    if (currentFilter === 'Schulsport') return t.includes('schulsport');
-    if (currentFilter === 'Sponsoring') return t.includes('sponsoring') || t.includes('gönner') || t.includes('goenner');
-    if (currentFilter === 'Sonstige') return t.includes('sonstige') || t.includes('diverse');
-    if (currentFilter === 'alle') return true;
-    return true; // 'alle'
-  });
-  
-  // Group open invoices by PersonNumber / Name
-  const memberGroup = {};
-  openInvoices.forEach(inv => {
-    const key = inv.PersonNumber ? String(inv.PersonNumber).trim() : (inv.name || 'Unbekannt').trim();
-    if (!memberGroup[key]) {
-      memberGroup[key] = {
-        key: key,
-        personNumber: inv.PersonNumber || '–',
-        name: inv.name || 'Unbekannt',
-        invoices: [],
-        totalOpen: 0
-      };
+  const countBezahlt = catInvoices.filter(i => {
+    const st = String(i.status || '').toLowerCase();
+    return st === 'bezahlt' || (Number(i.total_paid || 0) > 0 && Number(i.open_amount || 0) === 0);
+  }).length;
+
+  const countAlle = catInvoices.filter(i => String(i.status || '').toLowerCase() !== 'storniert').length;
+
+  // Formatierungs-Helfer (Richtlinie 9: Schweizer Standard)
+  const fmtMoney = (val) => {
+    if (window.UIFormatKit && typeof window.UIFormatKit.formatCurrency === 'function') {
+      return window.UIFormatKit.formatCurrency(val);
     }
-    memberGroup[key].invoices.push(inv);
-    memberGroup[key].totalOpen += Number(inv.total_amount || 0);
-  });
+    return 'CHF ' + Number(val || 0).toFixed(2);
+  };
 
-  const memberList = Object.values(memberGroup).sort((a, b) => a.name.localeCompare(b.name, 'de'));
-  const totalOpenSum = openInvoices.reduce((s, inv) => s + Number(inv.total_amount || 0), 0);
-  const totalOpenCount = openInvoices.length;
+  const fmtDate = (val) => {
+    if (window.UIFormatKit && typeof window.UIFormatKit.formatDate === 'function') {
+      const s = window.UIFormatKit.formatDate(val);
+      if (s && s !== '-') return s;
+    }
+    return rnFmtSwissDate(val) || val || '–';
+  };
 
-  let tableRowsHtml = '';
-  if (openInvoices.length === 0) {
-    tableRowsHtml = `
-      <tr>
-        <td colspan="${viewMode === 'single' ? 8 : 5}" class="text-center text-muted py-5">
-          <i class="fas fa-check-circle fa-3x text-success mb-3" style="opacity:0.5;"></i>
-          <h5>Keine offenen Posten in dieser Kategorie!</h5>
-          <p class="small text-muted">Alle Rechnungen für den gewählten Filter wurden vollständig beglichen.</p>
-        </td>
-      </tr>
-    `;
-  } else if (viewMode === 'single') {
-    // Einzelne Rechnungen anzeigen (jede Rechnung als eigene Zeile)
-    tableRowsHtml = openInvoices.map((inv, idx) => {
+  let tableHtml = '';
+  let kpi1Title = '';
+  let kpi1Value = '';
+  let kpi1Sub = '';
+  let kpi1Class = 'danger';
+
+  let kpi2Title = 'Beteiligte Debitoren';
+  let kpi2Value = '0 Personen';
+  let kpi2Sub = 'Empfänger / Kunden';
+
+  let kpi3Title = 'Beleg-Umfang';
+  let kpi3Value = '0 Dokumente';
+  let kpi3Sub = 'In aktueller Auswahl';
+
+  if (reportStatus === 'artikel') {
+    // =================================================================
+    // MODUS: ARTIKEL- & POSITIONSJOURNAL (INVENTAR / DETAILNACHWEIS)
+    // =================================================================
+    const articleRows = [];
+    catInvoices.forEach(inv => {
       const st = String(inv.status || '').toLowerCase();
-      const statusClass = st === 'gemahnt' ? 'bg-danger text-white' : 'bg-warning text-dark';
-      
-      let numberLabel = '';
-      if (inv.PersonNumber) {
-        if (String(inv.PersonNumber).startsWith('EXT')) {
-          const cId = String(inv.PersonNumber).replace('EXT-', '').replace('EXT:', '');
-          numberLabel = `<div class="text-muted" style="font-size:10px;"><i class="fas fa-address-card me-1 text-info"></i>Kontakt ID: ${escapeHtml(cId)}</div>`;
-        } else {
-          numberLabel = `<div class="text-muted" style="font-size:10px;">Mitglieds-Nr: ${escapeHtml(inv.PersonNumber)}</div>`;
-        }
+      if (st === 'storniert') return;
+
+      const posList = (inv.positions && inv.positions.length) ? inv.positions : ((window._invoicePositionsCache && window._invoicePositionsCache[inv.id]) || []);
+      if (posList && posList.length) {
+        posList.forEach(p => {
+          const qty = Number(p.quantity || 1);
+          const up = Number(p.unit_price || 0);
+          const amt = Number(p.amount !== undefined ? p.amount : (qty * up));
+          articleRows.push({
+            invoiceId: inv.id,
+            personNumber: inv.PersonNumber || '',
+            recipientName: inv.name || 'Unbekannt',
+            invoiceDate: inv.created_at,
+            type: inv.type || 'Rechnung',
+            status: inv.status || 'offen',
+            posNr: p.position_nr || 1,
+            description: p.description || inv.type || 'Position',
+            quantity: qty,
+            unitPrice: up,
+            amount: amt,
+            konto: p.konto || '3200'
+          });
+        });
+      } else {
+        articleRows.push({
+          invoiceId: inv.id,
+          personNumber: inv.PersonNumber || '',
+          recipientName: inv.name || 'Unbekannt',
+          invoiceDate: inv.created_at,
+          type: inv.type || 'Rechnung',
+          status: inv.status || 'offen',
+          posNr: 1,
+          description: inv.type || 'Pauschale',
+          quantity: 1,
+          unitPrice: Number(inv.total_amount || 0),
+          amount: Number(inv.total_amount || 0),
+          konto: '3000'
+        });
       }
+    });
 
-      const mgl = (window._mglData || []).find(x => String(x.PersonNumber) === String(inv.PersonNumber));
-      const nieMahnen = mgl && (mgl.Niemahnen === '1' || mgl.Niemahnen === true || mgl.Niemahnen === 1);
-      const nieMahnenBadge = nieMahnen ? `<span class="badge bg-secondary ms-1" style="font-size:9px;"><i class="fas fa-ban me-1"></i>Nie mahnen</span>` : '';
+    const totalPosSum = articleRows.reduce((s, r) => s + r.amount, 0);
+    const totalQty = articleRows.reduce((s, r) => s + r.quantity, 0);
+    const uniquePersons = new Set(articleRows.map(r => r.recipientName)).size;
+    const uniqueInvoices = new Set(articleRows.map(r => r.invoiceId)).size;
 
-      const createdDisplay = inv.created_at ? escapeHtml(String(inv.created_at).split(' ')[0]) : '–';
+    kpi1Title = 'Positionen-Gesamtumsatz';
+    kpi1Value = fmtMoney(totalPosSum);
+    kpi1Sub = `Summe aller Artikelzeilen (${categoryLabels[currentFilter] || currentFilter})`;
+    kpi1Class = 'primary';
 
-      return `
+    kpi2Title = 'Verkaufte Einheiten';
+    kpi2Value = `${totalQty} Stk.`;
+    kpi2Sub = `Abgesetzte Mengen über alle Belege`;
+
+    kpi3Title = 'Artikelzeilen';
+    kpi3Value = `${articleRows.length} Positionen`;
+    kpi3Sub = `In insgesamt ${uniqueInvoices} Rechnungen (${uniquePersons} Debitoren)`;
+
+    let rowsHtml = '';
+    if (!articleRows.length) {
+      rowsHtml = `
         <tr>
-          <td class="text-center fw-bold text-muted small" style="width:40px;">${idx + 1}</td>
-          <td>
-            <span class="bh-konto-badge bh-konto-soll-badge">#${escapeHtml(inv.id)}</span>
-          </td>
-          <td>
-            <div class="fw-bold text-primary mb-0">${escapeHtml(inv.name || 'Unbekannt')} ${nieMahnenBadge}</div>
-            ${numberLabel}
-          </td>
-          <td class="text-muted small font-monospace">${createdDisplay}</td>
-          <td>
-            <span class="badge bg-light text-dark border">${escapeHtml(inv.type || 'Rechnung')}</span>
-          </td>
-          <td class="text-center">
-            <span class="badge ${statusClass} px-2.5 py-1.5 rounded-pill small">${escapeHtml(inv.status || 'offen')}</span>
-          </td>
-          <td class="text-end fw-bold text-danger fs-6 font-monospace">
-            CHF ${Number(inv.total_amount || 0).toFixed(2)}
-          </td>
-          <td class="text-center" style="width:110px;">
-            <button class="btn btn-xs btn-outline-primary" onclick="rnOpenDetailsModal('${inv.id}')" title="Rechnungsdetails anzeigen">
-              <i class="fas fa-eye me-1"></i>Details
-            </button>
+          <td colspan="12" class="text-center text-muted py-5">
+            <i class="fas fa-boxes-stacked fa-3x text-secondary mb-3" style="opacity:0.4;"></i>
+            <h5>Keine Positionen in dieser Kategorie gefunden</h5>
+            <p class="small text-muted mb-0">Wähle eine andere Kategorie oder prüfe die Rechnungen.</p>
           </td>
         </tr>
       `;
-    }).join('');
+    } else {
+      rowsHtml = articleRows.map((r, idx) => {
+        const st = String(r.status || '').toLowerCase();
+        const statusBadge = (st === 'bezahlt') 
+          ? '<span class="badge bg-success-subtle text-success border border-success-subtle">bezahlt</span>'
+          : '<span class="badge bg-warning-subtle text-dark border border-warning-subtle">offen</span>';
+
+        return `
+          <tr>
+            <td class="text-center fw-bold text-muted small" style="width:40px;">${idx + 1}</td>
+            <td style="width:130px;"><span class="bh-konto-badge bh-konto-soll-badge">#${escapeHtml(r.invoiceId)}</span></td>
+            <td class="text-muted small" style="width:105px;">${escapeHtml(fmtDate(r.invoiceDate))}</td>
+            <td>
+              <div class="fw-bold text-dark mb-0">${escapeHtml(r.recipientName)}</div>
+              ${r.personNumber ? `<div class="text-muted" style="font-size:10px;">ID / Nr: ${escapeHtml(r.personNumber)}</div>` : ''}
+            </td>
+            <td style="width:130px;"><span class="badge bg-light text-dark border">${escapeHtml(r.type)}</span></td>
+            <td><strong>${escapeHtml(r.description)}</strong></td>
+            <td class="text-center font-monospace small" style="width:85px;"><span class="badge bg-light text-primary border">${escapeHtml(r.konto)}</span></td>
+            <td class="text-center fw-bold" style="width:70px;">${r.quantity}</td>
+            <td class="text-end font-monospace" style="width:105px;">${fmtMoney(r.unitPrice)}</td>
+            <td class="text-end fw-bold font-monospace text-primary" style="width:115px;">${fmtMoney(r.amount)}</td>
+            <td class="text-center" style="width:90px;">${statusBadge}</td>
+            <td class="text-center" style="width:80px;">
+              <button class="btn btn-xs btn-outline-primary" onclick="rnOpenDetailsModal('${r.invoiceId}')" title="Rechnungsdetails anzeigen">
+                <i class="fas fa-eye me-1"></i>Details
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    tableHtml = `
+      <div class="table-responsive">
+        <table class="table table-hover align-middle border mb-0" id="rn-revision-table">
+          <thead class="table-light small">
+            <tr>
+              <th style="width:40px;" class="text-center">#</th>
+              <th style="width:130px;">Rechnungs-ID</th>
+              <th style="width:105px;">Datum</th>
+              <th>Empfänger / Debitor</th>
+              <th style="width:130px;">Kategorie</th>
+              <th>Artikel / Position</th>
+              <th style="width:85px;" class="text-center">Konto</th>
+              <th style="width:70px;" class="text-center">Menge</th>
+              <th style="width:105px;" class="text-end">Einzelpreis</th>
+              <th style="width:115px;" class="text-end">Positionsbetrag</th>
+              <th style="width:90px;" class="text-center">Status</th>
+              <th style="width:80px;" class="text-center">Aktion</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+          ${articleRows.length > 0 ? `
+            <tfoot class="table-light fw-bold">
+              <tr>
+                <td colspan="7" class="text-end">TOTAL (${articleRows.length} Positionen):</td>
+                <td class="text-center">${totalQty} Stk.</td>
+                <td></td>
+                <td class="text-end text-primary fs-6 font-monospace">${fmtMoney(totalPosSum)}</td>
+                <td colspan="2"></td>
+              </tr>
+            </tfoot>
+          ` : ''}
+        </table>
+      </div>
+    `;
+
   } else {
-    // Nach Empfänger gruppierte Ansicht
-    tableRowsHtml = memberList.map((m, idx) => {
-      const invDetailsHtml = m.invoices.map(i => {
-        return `<span class="badge bg-light text-dark border me-1 mb-1">
-          #${escapeHtml(i.id)} (${escapeHtml(i.type || 'Rechnung')}) &middot; CHF ${Number(i.total_amount || 0).toFixed(2)}
-        </span>`;
+    // =================================================================
+    // MODUS: OFFENE POSTEN, BEZAHLTE POSTEN ODER ALLE FAKTUREN
+    // =================================================================
+    let targetList = catInvoices.filter(inv => {
+      const st = String(inv.status || '').toLowerCase();
+      if (st === 'storniert') return false;
+
+      if (reportStatus === 'offen') {
+        return st !== 'bezahlt' && (inv.open_amount === undefined || Number(inv.open_amount) > 0);
+      }
+      if (reportStatus === 'bezahlt') {
+        return st === 'bezahlt' || (Number(inv.total_paid || 0) > 0 && Number(inv.open_amount || 0) === 0);
+      }
+      return true; // 'alle'
+    });
+
+    // Gruppierung nach Person
+    const memberGroup = {};
+    targetList.forEach(inv => {
+      const key = inv.PersonNumber ? String(inv.PersonNumber).trim() : (inv.name || 'Unbekannt').trim();
+      if (!memberGroup[key]) {
+        memberGroup[key] = {
+          key: key,
+          personNumber: inv.PersonNumber || '–',
+          name: inv.name || 'Unbekannt',
+          invoices: [],
+          totalAmount: 0,
+          totalDisplay: 0
+        };
+      }
+      const amt = Number(inv.total_amount || 0);
+      let dispAmt = amt;
+      if (reportStatus === 'offen') {
+        dispAmt = Number(inv.open_amount !== undefined ? inv.open_amount : amt);
+      } else if (reportStatus === 'bezahlt') {
+        dispAmt = Number(inv.total_paid !== undefined ? inv.total_paid : amt);
+      }
+      memberGroup[key].invoices.push(inv);
+      memberGroup[key].totalAmount += amt;
+      memberGroup[key].totalDisplay += dispAmt;
+    });
+
+    const memberList = Object.values(memberGroup).sort((a, b) => a.name.localeCompare(b.name, 'de'));
+
+    const totalInvoicedSum = targetList.reduce((s, i) => s + Number(i.total_amount || 0), 0);
+    let totalDisplaySum = totalInvoicedSum;
+    if (reportStatus === 'offen') {
+      totalDisplaySum = targetList.reduce((s, i) => s + Number(i.open_amount !== undefined ? i.open_amount : i.total_amount || 0), 0);
+      kpi1Title = 'Offene Gesamtsumme';
+      kpi1Value = fmtMoney(totalDisplaySum);
+      kpi1Sub = `Ausstehende Forderungen (Debitoren / Bilanz 1100)`;
+      kpi1Class = 'danger';
+      kpi2Title = 'Säumige Empfänger';
+      kpi2Value = `${memberList.length} Personen`;
+      kpi2Sub = `Mit mindestens 1 offenen Rechnung`;
+      kpi3Title = 'Offene Dokumente';
+      kpi3Value = `${targetList.length} Rechnungen`;
+      kpi3Sub = `Status 'offen' oder 'gemahnt'`;
+    } else if (reportStatus === 'bezahlt') {
+      totalDisplaySum = targetList.reduce((s, i) => s + Number(i.total_paid !== undefined ? i.total_paid : i.total_amount || 0), 0);
+      kpi1Title = 'Eingenommener Betrag';
+      kpi1Value = fmtMoney(totalDisplaySum);
+      kpi1Sub = `Erfolgreich beglichene Forderungen (Einnahmen)`;
+      kpi1Class = 'success';
+      kpi2Title = 'Zahlende Debitoren';
+      kpi2Value = `${memberList.length} Personen`;
+      kpi2Sub = `Vollständig oder teilbeglichen`;
+      kpi3Title = 'Beglichene Dokumente';
+      kpi3Value = `${targetList.length} Rechnungen`;
+      kpi3Sub = `Status 'bezahlt'`;
+    } else {
+      kpi1Title = 'Gesamte Fakturierung';
+      kpi1Value = fmtMoney(totalInvoicedSum);
+      kpi1Sub = `Fakturierter Gesamtumsatz (${categoryLabels[currentFilter] || currentFilter})`;
+      kpi1Class = 'primary';
+      kpi2Title = 'Erfasste Debitoren';
+      kpi2Value = `${memberList.length} Personen`;
+      kpi2Sub = `In allen aktiven Fakturen`;
+      kpi3Title = 'Fakturierte Dokumente';
+      kpi3Value = `${targetList.length} Rechnungen`;
+      kpi3Sub = `Alle Rechnungsbelege`;
+    }
+
+    let rowsHtml = '';
+    if (!targetList.length) {
+      rowsHtml = `
+        <tr>
+          <td colspan="${viewMode === 'single' ? 10 : 6}" class="text-center text-muted py-5">
+            <i class="fas fa-check-circle fa-3x text-success mb-3" style="opacity:0.4;"></i>
+            <h5>Keine Rechnungen für den gewählten Filter vorhanden</h5>
+            <p class="small text-muted mb-0">Es liegen keine passenden Datensätze vor.</p>
+          </td>
+        </tr>
+      `;
+    } else if (viewMode === 'single') {
+      rowsHtml = targetList.map((inv, idx) => {
+        const st = String(inv.status || '').toLowerCase();
+        let statusBadge = `<span class="badge bg-warning-subtle text-dark border border-warning-subtle">${escapeHtml(inv.status || 'offen')}</span>`;
+        if (st === 'bezahlt') {
+          statusBadge = `<span class="badge bg-success-subtle text-success border border-success-subtle">bezahlt</span>`;
+        } else if (st === 'gemahnt') {
+          statusBadge = `<span class="badge bg-danger text-white">gemahnt (Stufe ${inv.mahnstufe || 1})</span>`;
+        }
+
+        const date1 = fmtDate(inv.created_at);
+        let date2 = '–';
+        if (reportStatus === 'bezahlt') {
+          date2 = fmtDate(inv.payment_date || inv.updated_at);
+        } else {
+          date2 = fmtDate(inv.due_date || inv.raw_due_date);
+        }
+
+        const amtTotal = Number(inv.total_amount || 0);
+        let amtDisplay = amtTotal;
+        if (reportStatus === 'offen') {
+          amtDisplay = Number(inv.open_amount !== undefined ? inv.open_amount : amtTotal);
+        } else if (reportStatus === 'bezahlt') {
+          amtDisplay = Number(inv.total_paid !== undefined ? inv.total_paid : amtTotal);
+        }
+
+        const mgl = (window._mglData || []).find(x => String(x.PersonNumber) === String(inv.PersonNumber));
+        const nieMahnen = mgl && (mgl.Niemahnen === '1' || mgl.Niemahnen === true || mgl.Niemahnen === 1);
+        const nieMahnenBadge = nieMahnen ? `<span class="badge bg-secondary ms-1" style="font-size:9px;"><i class="fas fa-ban me-1"></i>Nie mahnen</span>` : '';
+
+        return `
+          <tr>
+            <td class="text-center fw-bold text-muted small" style="width:40px;">${idx + 1}</td>
+            <td style="width:130px;"><span class="bh-konto-badge bh-konto-soll-badge">#${escapeHtml(inv.id)}</span></td>
+            <td>
+              <div class="fw-bold text-primary mb-0">${escapeHtml(inv.name || 'Unbekannt')} ${nieMahnenBadge}</div>
+              ${inv.PersonNumber ? `<div class="text-muted" style="font-size:10px;">ID / Nr: ${escapeHtml(inv.PersonNumber)}</div>` : ''}
+            </td>
+            <td class="text-muted small" style="width:110px;">${escapeHtml(date1)}</td>
+            <td class="text-muted small" style="width:115px;">${escapeHtml(date2)}</td>
+            <td style="width:130px;"><span class="badge bg-light text-dark border">${escapeHtml(inv.type || 'Rechnung')}</span></td>
+            <td class="text-center" style="width:110px;">${statusBadge}</td>
+            <td class="text-end font-monospace" style="width:120px;">${fmtMoney(amtTotal)}</td>
+            <td class="text-end fw-bold font-monospace ${reportStatus === 'offen' ? 'text-danger' : (reportStatus === 'bezahlt' ? 'text-success' : 'text-primary')}" style="width:125px;">
+              ${fmtMoney(amtDisplay)}
+            </td>
+            <td class="text-center" style="width:85px;">
+              <button class="btn btn-xs btn-outline-primary" onclick="rnOpenDetailsModal('${inv.id}')" title="Rechnungsdetails anzeigen">
+                <i class="fas fa-eye me-1"></i>Details
+              </button>
+            </td>
+          </tr>
+        `;
       }).join('');
 
-      const mgl = (window._mglData || []).find(x => String(x.PersonNumber) === String(m.personNumber));
-      const nieMahnen = mgl && (mgl.Niemahnen === '1' || mgl.Niemahnen === true || mgl.Niemahnen === 1);
-      const nieMahnenBadge = nieMahnen ? `<span class="badge bg-secondary ms-1" style="font-size:10px;"><i class="fas fa-ban me-1"></i>Nie mahnen</span>` : '';
-
-      return `
-        <tr>
-          <td class="text-center fw-bold text-muted small" style="width:40px;">${idx + 1}</td>
-          <td>
-            <div class="fw-bold text-primary mb-0">${escapeHtml(m.name)} ${nieMahnenBadge}</div>
-            <small class="text-muted">Mitglieds-Nr: ${escapeHtml(m.personNumber)}</small>
-          </td>
-          <td>
-            <div class="small mb-1"><span class="badge bg-danger text-white me-1">${m.invoices.length} Rechnung(en)</span></div>
-            <div>${invDetailsHtml}</div>
-          </td>
-          <td class="text-end fw-bold text-danger fs-6 font-monospace">
-            CHF ${m.totalOpen.toFixed(2)}
-          </td>
-          <td class="text-center" style="width:110px;">
-            <button class="btn btn-xs btn-outline-secondary" onclick="rnSwitchTab('archiv'); window._invoicesFilterStatus='offen'; renderActiveRechnungenTab();" title="Im Rechnungs-Archiv anzeigen">
-              <i class="fas fa-search me-1"></i>Details
-            </button>
-          </td>
-        </tr>
+      tableHtml = `
+        <div class="table-responsive">
+          <table class="table table-hover align-middle border mb-0" id="rn-revision-table">
+            <thead class="table-light small">
+              <tr>
+                <th style="width:40px;" class="text-center">#</th>
+                <th style="width:130px;">Rechnungs-ID</th>
+                <th>Empfänger / Debitor</th>
+                <th style="width:110px;">Rechnungsdatum</th>
+                <th style="width:115px;">${reportStatus === 'bezahlt' ? 'Zahlungsdatum' : 'Fälligkeit'}</th>
+                <th style="width:130px;">Kategorie</th>
+                <th style="width:110px;" class="text-center">Status</th>
+                <th style="width:120px;" class="text-end">Rechnungsbetrag</th>
+                <th style="width:125px;" class="text-end">${reportStatus === 'offen' ? 'Offener Saldo' : (reportStatus === 'bezahlt' ? 'Bezahlt' : 'Offener Rest')}</th>
+                <th style="width:85px;" class="text-center">Aktion</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+            ${targetList.length > 0 ? `
+              <tfoot class="table-light fw-bold">
+                <tr>
+                  <td colspan="7" class="text-end">TOTAL (${targetList.length} Rechnungen):</td>
+                  <td class="text-end font-monospace">${fmtMoney(totalInvoicedSum)}</td>
+                  <td class="text-end ${reportStatus === 'offen' ? 'text-danger' : (reportStatus === 'bezahlt' ? 'text-success' : 'text-primary')} fs-6 font-monospace">${fmtMoney(totalDisplaySum)}</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            ` : ''}
+          </table>
+        </div>
       `;
-    }).join('');
+
+    } else {
+      // Gruppierte Ansicht nach Person
+      rowsHtml = memberList.map((m, idx) => {
+        const invDetailsHtml = m.invoices.map(i => {
+          return `<span class="badge bg-light text-dark border me-1 mb-1">
+            #${escapeHtml(i.id)} (${escapeHtml(i.type || 'Rechnung')}) &middot; ${fmtMoney(i.total_amount)}
+          </span>`;
+        }).join('');
+
+        const mgl = (window._mglData || []).find(x => String(x.PersonNumber) === String(m.personNumber));
+        const nieMahnen = mgl && (mgl.Niemahnen === '1' || mgl.Niemahnen === true || mgl.Niemahnen === 1);
+        const nieMahnenBadge = nieMahnen ? `<span class="badge bg-secondary ms-1" style="font-size:10px;"><i class="fas fa-ban me-1"></i>Nie mahnen</span>` : '';
+
+        return `
+          <tr>
+            <td class="text-center fw-bold text-muted small" style="width:40px;">${idx + 1}</td>
+            <td style="width:260px;">
+              <div class="fw-bold text-primary mb-0">${escapeHtml(m.name)} ${nieMahnenBadge}</div>
+              <small class="text-muted">Mitglieds-Nr: ${escapeHtml(m.personNumber)}</small>
+            </td>
+            <td>
+              <div>${invDetailsHtml}</div>
+            </td>
+            <td class="text-center" style="width:110px;">
+              <span class="badge ${reportStatus === 'offen' ? 'bg-danger' : 'bg-primary'} text-white">${m.invoices.length} Beleg(e)</span>
+            </td>
+            <td class="text-end fw-bold font-monospace ${reportStatus === 'offen' ? 'text-danger' : 'text-primary'} fs-6" style="width:150px;">
+              ${fmtMoney(m.totalDisplay)}
+            </td>
+            <td class="text-center" style="width:85px;">
+              <button class="btn btn-xs btn-outline-secondary" onclick="rnSwitchTab('archiv'); window._invoicesFilterStatus='${reportStatus === 'bezahlt' ? 'bezahlt' : 'offen'}'; renderActiveRechnungenTab();" title="Im Rechnungs-Archiv anzeigen">
+                <i class="fas fa-search me-1"></i>Details
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      tableHtml = `
+        <div class="table-responsive">
+          <table class="table table-hover align-middle border mb-0" id="rn-revision-table">
+            <thead class="table-light small">
+              <tr>
+                <th style="width:40px;" class="text-center">#</th>
+                <th style="width:260px;">Empfänger / Debitor</th>
+                <th>Zugeordnete Rechnungen</th>
+                <th style="width:110px;" class="text-center">Anzahl</th>
+                <th style="width:150px;" class="text-end">${reportStatus === 'offen' ? 'Offener Gesamtsaldo' : (reportStatus === 'bezahlt' ? 'Bezahltes Total' : 'Gesamttotal')}</th>
+                <th style="width:85px;" class="text-center">Aktion</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+            ${memberList.length > 0 ? `
+              <tfoot class="table-light fw-bold">
+                <tr>
+                  <td colspan="3" class="text-end">TOTAL (${memberList.length} Empfänger):</td>
+                  <td class="text-center">${targetList.length} Rechnungen</td>
+                  <td class="text-end ${reportStatus === 'offen' ? 'text-danger' : 'text-primary'} fs-6 font-monospace">${fmtMoney(totalDisplaySum)}</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            ` : ''}
+          </table>
+        </div>
+      `;
+    }
   }
 
   content.innerHTML = `
-    <!-- Top Info & Print Header -->
+    <!-- Top Info & Action Header -->
     <div class="card border-0 shadow-sm p-4 bg-white rounded-4 mb-4">
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
         <div>
           <h4 class="mb-1 text-primary fw-bold">
-            <i class="fas fa-list-ol me-2"></i>Nebenrechnung: Offene Posten per Stichtag
+            <i class="fas fa-calculator me-2"></i>Revision & Rechnungs-Journal
           </h4>
           <p class="text-muted small mb-0">
-            Übersicht aller ausstehenden Rechnungsbeträge für die Generalversammlung & Revision.
+            Audit-fähige Übersichten für Revisoren, Vorstand & Generalversammlung (Offene & bezahlte Posten, Inventar- & Artikeljournal).
           </p>
         </div>
         <div class="d-flex gap-2 align-items-center flex-wrap">
-          <div class="btn-group btn-group-sm me-1" role="group">
-            <button type="button" class="btn ${viewMode === 'single' ? 'btn-primary active fw-bold' : 'btn-outline-secondary'}" onclick="rnToggleOpViewMode('single')" title="Jede offene Rechnung einzeln auflisten">
-              <i class="fas fa-file-invoice me-1"></i>Einzel-Posten (${openInvoices.length})
-            </button>
-            <button type="button" class="btn ${viewMode === 'grouped' ? 'btn-primary active fw-bold' : 'btn-outline-secondary'}" onclick="rnToggleOpViewMode('grouped')" title="Nach Person/Empfänger zusammenfassen">
-              <i class="fas fa-users me-1"></i>Nach Empfänger (${memberList.length})
-            </button>
-          </div>
-          <button class="btn btn-sm btn-outline-primary" onclick="window.print()">
-            <i class="fas fa-print me-1.5"></i>Liste Drucken / PDF
+          ${reportStatus !== 'artikel' ? `
+            <div class="btn-group btn-group-sm me-1" role="group">
+              <button type="button" class="btn ${viewMode === 'single' ? 'btn-primary active fw-bold' : 'btn-outline-secondary'}" onclick="rnToggleOpViewMode('single')" title="Jede Rechnung einzeln auflisten">
+                <i class="fas fa-file-invoice me-1"></i>Einzel-Posten
+              </button>
+              <button type="button" class="btn ${viewMode === 'grouped' ? 'btn-primary active fw-bold' : 'btn-outline-secondary'}" onclick="rnToggleOpViewMode('grouped')" title="Nach Person/Empfänger zusammenfassen">
+                <i class="fas fa-users me-1"></i>Nach Empfänger
+              </button>
+            </div>
+          ` : ''}
+          <button class="btn btn-sm btn-outline-success fw-bold shadow-sm" onclick="rnExportRevisionToExcel()" title="Tabelle als Excel-Datei (.xlsx) exportieren">
+            <i class="fas fa-file-excel me-1.5"></i>Excel Export
+          </button>
+          <button class="btn btn-sm btn-outline-primary fw-bold shadow-sm" onclick="rnExportRevisionDetailExcel()" title="Detail-Export inklusive aller Rechnungspositionen & verkaufter Artikel">
+            <i class="fas fa-boxes-stacked me-1.5"></i>Artikel-Detail Excel
+          </button>
+          <button class="btn btn-sm btn-outline-dark fw-bold shadow-sm" onclick="rnPrintRevisionReport()" title="A4-Druckansicht für die Revision erstellen">
+            <i class="fas fa-print me-1.5"></i>Drucken / PDF
           </button>
         </div>
       </div>
 
-      <!-- Filter Buttons Row (Alle 7 Rechnungstypen + Alle Posten) -->
+      <!-- Hauptstatus-Schalter (Offene Posten, Bezahlte Posten, Alle, Artikeljournal) -->
+      <div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
+        <button type="button" class="btn btn-sm ${reportStatus === 'offen' ? 'btn-danger text-white active fw-bold shadow-sm' : 'btn-outline-danger'}" onclick="rnFilterRevisionStatus('offen')">
+          <i class="fas fa-clock me-1.5"></i>🔴 Offene Posten (${countOffen})
+        </button>
+        <button type="button" class="btn btn-sm ${reportStatus === 'bezahlt' ? 'btn-success text-white active fw-bold shadow-sm' : 'btn-outline-success'}" onclick="rnFilterRevisionStatus('bezahlt')">
+          <i class="fas fa-check-circle me-1.5"></i>🟢 Bezahlte Posten (${countBezahlt})
+        </button>
+        <button type="button" class="btn btn-sm ${reportStatus === 'alle' ? 'btn-primary text-white active fw-bold shadow-sm' : 'btn-outline-primary'}" onclick="rnFilterRevisionStatus('alle')">
+          <i class="fas fa-list me-1.5"></i>🔵 Alle Fakturen (${countAlle})
+        </button>
+        <button type="button" class="btn btn-sm ${reportStatus === 'artikel' ? 'btn-dark text-white active fw-bold shadow-sm' : 'btn-outline-dark'}" onclick="rnFilterRevisionStatus('artikel')" title="Detailierte Auflistung der einzelnen Rechnungspositionen (Artikel, Mengen, Erlöse für Inventar & Material)">
+          <i class="fas fa-boxes-stacked me-1.5"></i>📦 Artikel- & Positionsjournal
+        </button>
+      </div>
+
+      <!-- Filter Buttons Row (Kategorien) -->
       <div class="d-flex gap-1.5 mb-4 flex-wrap bg-light p-2 rounded-3 border align-items-center">
         <span class="small text-muted fw-bold me-2"><i class="fas fa-filter me-1"></i>Kategorie:</span>
         <button class="btn btn-xs ${currentFilter === 'alle' ? 'btn-primary fw-bold shadow-sm' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('alle')">
@@ -1197,7 +1803,7 @@ window.renderTabOffenePosten = function(content) {
           <i class="fas fa-home me-1"></i> Vermietung
         </button>
         <button class="btn btn-xs ${currentFilter === 'Materialverkauf' ? 'btn-primary fw-bold shadow-sm' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('Materialverkauf')">
-          <i class="fas fa-tshirt me-1"></i> Materialverkauf
+          <i class="fas fa-tshirt me-1"></i> Materialverkauf (Inventar)
         </button>
         <button class="btn btn-xs ${currentFilter === 'Depot / Pfand' ? 'btn-primary fw-bold shadow-sm' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('Depot / Pfand')">
           <i class="fas fa-hand-holding-usd me-1"></i> Depot / Pfand
@@ -1216,70 +1822,36 @@ window.renderTabOffenePosten = function(content) {
       <!-- Summary KPI Row -->
       <div class="row g-3 mb-4">
         <div class="col-md-4">
-          <div class="bh-metric-card danger shadow-sm">
-            <div class="small text-muted fw-semibold">Offene Gesamtsumme</div>
-            <h2 class="fw-bold mt-1 mb-0 text-danger">CHF ${totalOpenSum.toFixed(2)}</h2>
-            <div class="small text-muted mt-1">Ausstehende Forderungen (${categoryLabels[currentFilter] || currentFilter})</div>
+          <div class="bh-metric-card ${kpi1Class} shadow-sm">
+            <div class="small text-muted fw-semibold">${kpi1Title}</div>
+            <h2 class="fw-bold mt-1 mb-0 text-${kpi1Class}">${kpi1Value}</h2>
+            <div class="small text-muted mt-1">${kpi1Sub}</div>
           </div>
         </div>
         <div class="col-md-4">
           <div class="bh-metric-card info shadow-sm">
-            <div class="small text-muted fw-semibold">Säumige Empfänger</div>
-            <h2 class="fw-bold mt-1 mb-0 text-info">${memberList.length} Personen</h2>
-            <div class="small text-muted mt-1">Mit mind. 1 offenen Rechnung</div>
+            <div class="small text-muted fw-semibold">${kpi2Title}</div>
+            <h2 class="fw-bold mt-1 mb-0 text-info">${kpi2Value}</h2>
+            <div class="small text-muted mt-1">${kpi2Sub}</div>
           </div>
         </div>
         <div class="col-md-4">
           <div class="bh-metric-card info shadow-sm">
-            <div class="small text-muted fw-semibold">Offene Dokumente</div>
-            <h2 class="fw-bold mt-1 mb-0 text-dark">${totalOpenCount} Dokumente</h2>
-            <div class="small text-muted mt-1">Status 'offen' oder 'gemahnt'</div>
+            <div class="small text-muted fw-semibold">${kpi3Title}</div>
+            <h2 class="fw-bold mt-1 mb-0 text-dark">${kpi3Value}</h2>
+            <div class="small text-muted mt-1">${kpi3Sub}</div>
           </div>
         </div>
       </div>
 
-      <!-- Offene Posten Tabelle -->
-      <div class="table-responsive">
-        <table class="table table-hover align-middle border">
-          <thead class="table-light small">
-            ${viewMode === 'single' ? `
-              <tr>
-                <th style="width:40px;" class="text-center">#</th>
-                <th style="width:140px;">Rechnungs-ID</th>
-                <th>Empfänger / Mitglied</th>
-                <th style="width:110px;">Datum</th>
-                <th style="width:140px;">Kategorie</th>
-                <th style="width:100px;" class="text-center">Status</th>
-                <th style="width:140px;" class="text-end">Offener Betrag</th>
-                <th style="width:110px;" class="text-center">Aktion</th>
-              </tr>
-            ` : `
-              <tr>
-                <th style="width:40px;" class="text-center">#</th>
-                <th style="width:250px;">Mitglied / Empfänger</th>
-                <th>Offene Rechnungen</th>
-                <th style="width:160px;" class="text-end">Offener Gesamtsaldo</th>
-                <th style="width:110px;" class="text-center">Aktion</th>
-              </tr>
-            `}
-          </thead>
-          <tbody>
-            ${tableRowsHtml}
-          </tbody>
-          ${openInvoices.length > 0 ? `
-            <tfoot class="table-light fw-bold">
-              <tr>
-                <td colspan="${viewMode === 'single' ? '6' : '3'}" class="text-end">TOTAL OFFENE POSTEN (${openInvoices.length} Rechnungen):</td>
-                <td class="text-end text-danger fs-6 font-monospace">CHF ${totalOpenSum.toFixed(2)}</td>
-                <td></td>
-              </tr>
-            </tfoot>
-          ` : ''}
-        </table>
-      </div>
+      <!-- Revisions-Tabelle -->
+      ${tableHtml}
     </div>
   `;
 };
+
+// Abwärtskompatibler Alias
+window.renderTabOffenePosten = window.renderTabRevision;
 
 // =====================================================================
 // TAB: EXTERNE KONTAKTE (STRENG NACH ID)

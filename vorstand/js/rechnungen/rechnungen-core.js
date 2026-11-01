@@ -60,7 +60,11 @@ window._rechnungenIsSupabase = false;
 // Formatierungshelfer für Schweizer Datumsanzeige (DD.MM.YYYY)
 function rnFmtSwissDate(val) {
   if (!val) return '';
-  if (typeof val === 'string' && val.includes('.')) return val;
+  if (typeof window.UIFormatKit !== 'undefined' && typeof window.UIFormatKit.formatDate === 'function') {
+    const res = window.UIFormatKit.formatDate(val);
+    if (res && res !== '-') return res;
+  }
+  if (typeof val === 'string' && /^\d{2}\.\d{2}\.\d{4}$/.test(val.trim())) return val.trim();
   const d = new Date(val);
   if (isNaN(d.getTime())) return String(val);
   const dd = String(d.getDate()).padStart(2, '0');
