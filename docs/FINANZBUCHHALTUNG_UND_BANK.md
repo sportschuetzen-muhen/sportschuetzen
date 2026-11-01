@@ -136,6 +136,10 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
   - **Mojibake- & Sonderzeichen-Resilienz:** Zeichenketten aus historischem UTF-8-Encoding (`├╝`, `├ñ`, etc.) werden in `normalizeString` vorab in saubere Umlaute überführt, um Fehlschläge bei Vereins- und Personennamen (z.B. Luginbühl, Villmergen) auszuschliessen.
   - Fallback-Matches bei identischem Betrag innerhalb von 4 Tagen prüfen strikt, dass im Journal-Buchungstext kein abweichender Parteiname hinterlegt ist (ausser bei Verwendungszweck-Treffern oder Anlass-Buchungen).
 
+### 2.15 Durchgängiger Direktabsprung in Kontoblatt & Kontoauszug (Drill-Down)
+* **Ergonomie & Prüfbarkeit:** Sämtliche im Portal angezeigten Kontonummern (in den KMU-Berichten, im Kontenrahmen, im Kassabuch-Journal sowie in der Soll/Ist-Controlling-Tabelle und den Revisorenberichten) fungieren als interaktive Badges (`.bh-konto-badge.clickable`).
+* **Sofort-Drilldown (`bhOpenKontoauszugModal`):** Ein Klick auf das Konten-Badge oder die Zeile öffnet unmittelbar das vollständige Kontoblatt des entsprechenden Kontos für das aktive Jahr mit allen Buchungen, Gegenkonten, Saldenverlauf, Belegnummern, Vollbildmodus, Excel-CSV- und PDF-Export. Innerhalb des Kontoblatts ermöglicht ein Klick auf das Gegenkonto einen direkten Quersprung in dessen Kontenverlauf.
+
 ---
 
 ## 3. Datenmodell (Kern-Tabellen)

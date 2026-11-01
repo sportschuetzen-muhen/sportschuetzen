@@ -4790,7 +4790,14 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
 
   let selectedKonto = String(kontoCode || '').trim();
   let acc = (window._bhKontenrahmen || []).find(a => String(a.konto).trim() === selectedKonto);
-  if (!acc && (window._bhKontenrahmen || []).length > 0) {
+  if (!acc && selectedKonto) {
+    const budgetAcc = (window._bhBudget || []).find(b => String(b.konto).trim() === selectedKonto);
+    acc = {
+      konto: selectedKonto,
+      bezeichnung: budgetAcc ? budgetAcc.bezeichnung : (window.getAccountNameByCode ? window.getAccountNameByCode(selectedKonto) : `Konto ${selectedKonto}`),
+      _dynamicEroeffnungssaldo: 0
+    };
+  } else if (!acc && (window._bhKontenrahmen || []).length > 0) {
     acc = window._bhKontenrahmen[0];
     selectedKonto = String(acc.konto).trim();
   }
@@ -4913,7 +4920,7 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
         <td class="tk-col-beleg"><span class="badge bg-light text-dark border font-monospace" style="font-size:11px;" title="Klicken zum Kopieren" onclick="event.stopPropagation(); navigator.clipboard.writeText('${entry.beleg_nr || ''}'); window.showToast ? window.showToast('Beleg-Nr kopiert: ${entry.beleg_nr || ''}', 'info') : null;">${entry.beleg_nr || '–'}</span></td>
         <td class="small fw-semibold text-dark tk-col-beschreibung">${window.escapeHtml ? window.escapeHtml(entry.beschreibung) : entry.beschreibung}</td>
         <td class="tk-col-gegenkonto">
-          <span class="bh-konto-badge">${entry.gegenKonto}</span>
+          <span class="bh-konto-badge clickable" style="cursor: pointer;" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${entry.gegenKonto}')" title="Zu Gegenkonto ${entry.gegenKonto} wechseln">${entry.gegenKonto}</span>
           <span class="text-muted ms-1 small d-none d-md-inline">${entry.gegenKontoName || ''}</span>
         </td>
         <td class="text-end fw-semibold ${sollColorClass} tk-col-soll">${entry.sollVal > 0 ? window.fmtChf(entry.sollVal) : '–'}</td>
@@ -4924,10 +4931,13 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
   }).join('');
 
   // Generate sorting list of all accounts for selector
-  const kontoOptions = window._bhKontenrahmen
-    .slice()
+  const allAccountsList = (window._bhKontenrahmen || []).slice();
+  if (acc && !allAccountsList.some(a => String(a.konto).trim() === selectedKonto)) {
+    allAccountsList.push(acc);
+  }
+  const kontoOptions = allAccountsList
     .sort((a, b) => parseInt(a.konto) - parseInt(b.konto))
-    .map(a => `<option value="${a.konto}" ${String(a.konto).trim() === selectedKonto ? 'selected' : ''}>${a.konto} - ${a.bezeichnung} (${window.bhGetAccountCategory(a).main})</option>`)
+    .map(a => `<option value="${a.konto}" ${String(a.konto).trim() === selectedKonto ? 'selected' : ''}>${a.konto} - ${a.bezeichnung} (${window.bhGetAccountCategory ? window.bhGetAccountCategory(a).main : ''})</option>`)
     .join('');
 
   const isFs = window._bhKontoauszugIsFullscreen;

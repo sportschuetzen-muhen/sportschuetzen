@@ -708,7 +708,7 @@ window.renderTabJournal = function (container) {
       <td data-col-id="beschreibung" class="small fw-semibold tk-col-beschreibung">${escapeHtml(item.beschreibung)}</td>
       <td data-col-id="konto_soll" class="tk-col-konto_soll">
         ${cleanSoll ? `
-          <span class="bh-konto-badge bh-konto-soll-badge ${cleanSoll === '1090' ? 'bg-info text-dark fw-bold' : ''}">${item.konto_soll}</span> 
+          <span class="bh-konto-badge bh-konto-soll-badge clickable ${cleanSoll === '1090' ? 'bg-info text-dark fw-bold' : ''}" style="cursor: pointer;" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${cleanSoll}')" title="Kontoblatt für Konto ${item.konto_soll} öffnen">${item.konto_soll}</span> 
           ${cleanSoll === '1090' ? '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1" style="font-size:10px;"><i class="fas fa-clock me-1"></i>Klärung</span>' : ''}
           ${cleanSoll === '1099' ? '<span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1" style="font-size:10px;"><i class="fas fa-exchange-alt me-1"></i>Geldtransit</span>' : ''}
           <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_soll)}</span>
@@ -720,7 +720,7 @@ window.renderTabJournal = function (container) {
       </td>
       <td data-col-id="konto_haben" class="tk-col-konto_haben">
         ${cleanHaben ? `
-          <span class="bh-konto-badge bh-konto-haben-badge ${cleanHaben === '1090' ? 'bg-info text-dark fw-bold' : ''}">${item.konto_haben}</span> 
+          <span class="bh-konto-badge bh-konto-haben-badge clickable ${cleanHaben === '1090' ? 'bg-info text-dark fw-bold' : ''}" style="cursor: pointer;" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${cleanHaben}')" title="Kontoblatt für Konto ${item.konto_haben} öffnen">${item.konto_haben}</span> 
           ${cleanHaben === '1090' ? '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1" style="font-size:10px;"><i class="fas fa-clock me-1"></i>Klärung</span>' : ''}
           ${cleanHaben === '1099' ? '<span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1" style="font-size:10px;"><i class="fas fa-exchange-alt me-1"></i>Geldtransit</span>' : ''}
           <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_haben)}</span>

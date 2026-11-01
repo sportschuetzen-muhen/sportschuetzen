@@ -621,9 +621,11 @@ function bhRenderControllingTable() {
     }
     
     rowsHTML += `
-      <tr class="bh-account-row">
+      <tr class="bh-account-row cursor-pointer" style="cursor: pointer;" onclick="bhOpenKontoauszugModal('${escapeHtml(item.konto)}')" title="Kontoauszug / Kontoblatt für Konto ${escapeHtml(item.konto)} (${escapeHtml(item.bezeichnung || '')}) öffnen">
         <td class="fw-bold text-dark">
-          <span class="badge bg-light text-primary border me-2">${escapeHtml(item.konto)}</span>
+          <span class="badge bg-light text-primary border me-2 bh-konto-badge clickable" style="cursor: pointer;" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${escapeHtml(item.konto)}')" title="Kontoblatt für Konto ${escapeHtml(item.konto)} öffnen">
+            <i class="fas fa-search me-1 small"></i>${escapeHtml(item.konto)}
+          </span>
           ${escapeHtml(item.bezeichnung || 'Ohne Bezeichnung')}
         </td>
         <td>${typeBadge}</td>
@@ -950,11 +952,11 @@ function renderFullJournalReport(journal) {
         <td class="font-monospace fw-bold text-dark">${item.beleg_nr}</td>
         <td class="small fw-semibold">${escapeHtml(item.beschreibung)}</td>
         <td>
-          <span class="bh-konto-badge bh-konto-soll-badge">${item.konto_soll}</span>
+          <span class="bh-konto-badge bh-konto-soll-badge clickable" style="cursor: pointer;" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${item.konto_soll}')" title="Kontoblatt für Konto ${item.konto_soll} öffnen">${item.konto_soll}</span>
           <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_soll)}</span>
         </td>
         <td>
-          <span class="bh-konto-badge bh-konto-haben-badge">${item.konto_haben}</span>
+          <span class="bh-konto-badge bh-konto-haben-badge clickable" style="cursor: pointer;" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${item.konto_haben}')" title="Kontoblatt für Konto ${item.konto_haben} öffnen">${item.konto_haben}</span>
           <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_haben)}</span>
         </td>
         <td class="text-end fw-bold text-primary">${fmtChf(item.betrag)}</td>
@@ -1008,11 +1010,11 @@ function renderRevisorenJournalReport(journal, hideTransit) {
         <td class="font-monospace fw-bold text-dark">${item.beleg_nr}</td>
         <td class="small fw-semibold">${escapeHtml(item.beschreibung)}</td>
         <td>
-          <span class="bh-konto-badge bh-konto-soll-badge">${item.konto_soll}</span>
+          <span class="bh-konto-badge bh-konto-soll-badge clickable" style="cursor: pointer;" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${item.konto_soll}')" title="Kontoblatt für Konto ${item.konto_soll} öffnen">${item.konto_soll}</span>
           <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_soll)}</span>
         </td>
         <td>
-          <span class="bh-konto-badge bh-konto-haben-badge">${item.konto_haben}</span>
+          <span class="bh-konto-badge bh-konto-haben-badge clickable" style="cursor: pointer;" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${item.konto_haben}')" title="Kontoblatt für Konto ${item.konto_haben} öffnen">${item.konto_haben}</span>
           <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_haben)}</span>
         </td>
         <td class="text-end fw-bold text-primary">${fmtChf(item.betrag)}</td>
@@ -1090,8 +1092,10 @@ function renderGVAuswertungReport(journal) {
     const diffSign = diff >= 0 ? '+' : '';
 
     return `
-      <tr class="bh-account-row">
-        <td class="font-monospace text-muted" style="width: 70px;">${acc.konto}</td>
+      <tr class="bh-account-row cursor-pointer" style="cursor: pointer;" onclick="bhOpenKontoauszugModal('${acc.konto}')" title="Kontoblatt für Konto ${acc.konto} (${escapeHtml(acc.bezeichnung || '')}) öffnen">
+        <td class="font-monospace" style="width: 70px;">
+          <span class="bh-konto-badge clickable" style="cursor: pointer;" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${acc.konto}')" title="Kontoblatt öffnen">${acc.konto}</span>
+        </td>
         <td class="fw-semibold text-dark">${acc.bezeichnung}</td>
         <td class="text-end fw-bold text-success">${fmtChf(istVal)}</td>
         <td class="text-end text-muted">${budgetVal > 0 ? fmtChf(budgetVal) : '–'}</td>
@@ -1109,8 +1113,10 @@ function renderGVAuswertungReport(journal) {
     const diffSign = diff >= 0 ? '+' : '';
 
     return `
-      <tr class="bh-account-row">
-        <td class="font-monospace text-muted" style="width: 70px;">${acc.konto}</td>
+      <tr class="bh-account-row cursor-pointer" style="cursor: pointer;" onclick="bhOpenKontoauszugModal('${acc.konto}')" title="Kontoblatt für Konto ${acc.konto} (${escapeHtml(acc.bezeichnung || '')}) öffnen">
+        <td class="font-monospace" style="width: 70px;">
+          <span class="bh-konto-badge clickable" style="cursor: pointer;" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${acc.konto}')" title="Kontoblatt öffnen">${acc.konto}</span>
+        </td>
         <td class="fw-semibold text-dark">${acc.bezeichnung}</td>
         <td class="text-end fw-bold text-danger">${fmtChf(istVal)}</td>
         <td class="text-end text-muted">${budgetVal > 0 ? fmtChf(budgetVal) : '–'}</td>

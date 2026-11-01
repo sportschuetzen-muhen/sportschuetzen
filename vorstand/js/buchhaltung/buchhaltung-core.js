@@ -214,6 +214,16 @@ if (!document.getElementById('buchhaltung-module-styles')) {
       color: #495057;
       font-family: monospace;
     }
+    .bh-konto-badge.clickable {
+      cursor: pointer;
+      transition: all 0.15s ease-in-out;
+      user-select: none;
+    }
+    .bh-konto-badge.clickable:hover {
+      filter: brightness(0.92);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 5px rgba(0,0,0,0.12);
+    }
     .bh-konto-soll-badge {
       background-color: rgba(13,110,253,0.1);
       color: #0d6efd;
