@@ -1348,15 +1348,17 @@
     function jmDetectGroupCompetitionFromImportLines(lines, fullText, fileName) {
         if (!lines || lines.length === 0) return null;
 
-        const isGroupDoc = /(?:gruppenstich|gruppenrangliste|gruppe|gruppen)/i.test(fullText);
-        if (!isGroupDoc) return null;
-
-        // Nach Muhen-Gruppe suchen (z.B. "Strohaus Muhen Sportschützen")
+        const escapeReg = str => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const isGroupDoc = /(?:gruppenstich|gruppenrangliste|gruppe|gruppen|mannschaft)/i.test(fullText);
+        
+        // =====================================================================
+        // FORMAT 1: WinFire Standard-Gruppenrangliste (z. B. Bärenmoosschiessen)
+        // =====================================================================
         let groupMatch = null;
         let groupLineIdx = -1;
 
         for (let i = 0; i < lines.length; i++) {
-            const t = lines[i].text || lines[i];
+            const t = (lines[i].text || lines[i] || '').trim();
             const m = t.match(/(?:^|\b)(\d+)\s+(\d+)\s+([A-Za-z0-9äöüÄÖÜß\-\s]+?)\s+Muhen/i);
             if (m) {
                 groupMatch = {
@@ -1378,48 +1380,144 @@
             }
         }
 
-        if (!groupMatch) return null;
-
-        // Schützen unterhalb der Gruppe aufsammeln (nächste 3–6 Zeilen)
-        const detectedShooters = [];
-        if (groupLineIdx >= 0) {
-            for (let i = groupLineIdx + 1; i < Math.min(lines.length, groupLineIdx + 10); i++) {
-                const lineText = lines[i].text || lines[i];
-                // Schützenzeile: Punkte Name Vorname Jahrgang
-                const sMatch = lineText.match(/(?:^|\s)(\d{2,3})\s+([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]+)\s+([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]+)\s+(\d{4}|\d{2})\b/);
-                if (sMatch) {
-                    detectedShooters.push({
-                        punkte: parseFloat(sMatch[1]),
-                        schuetze_name: `${sMatch[2]} ${sMatch[3]}`,
-                        jahrgang: parseInt(sMatch[4], 10)
-                    });
-                } else if (/^\d+\s+\d+\s+/.test(lineText.trim())) {
-                    // Nächste fremde Gruppe beginnt
-                    break;
+        if (groupMatch) {
+            // Schützen unterhalb der Gruppe aufsammeln (nächste 3–6 Zeilen)
+            const detectedShooters = [];
+            if (groupLineIdx >= 0) {
+                for (let i = groupLineIdx + 1; i < Math.min(lines.length, groupLineIdx + 10); i++) {
+                    const lineText = lines[i].text || lines[i];
+                    // Schützenzeile: Punkte Name Vorname Jahrgang
+                    const sMatch = lineText.match(/(?:^|\s)(\d{2,3})\s+([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]+)\s+([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]+)\s+(\d{4}|\d{2})\b/);
+                    if (sMatch) {
+                        detectedShooters.push({
+                            punkte: parseFloat(sMatch[1]),
+                            schuetze_name: `${sMatch[2]} ${sMatch[3]}`,
+                            jahrgang: parseInt(sMatch[4], 10)
+                        });
+                    } else if (/^\d+\s+\d+\s+/.test(lineText.trim())) {
+                        break;
+                    }
                 }
+            }
+
+            // Auszahlung suchen
+            let detectedAuszahlung = 0;
+            const auszMatch = fullText.match(/(?:auszahlung|gewinn|gabe)[\s\S]{0,100}?(?:150\.-[\s\n]+)?(\d{2,3})\.-/i);
+            if (auszMatch) {
+                detectedAuszahlung = parseFloat(auszMatch[1]);
+            } else {
+                const r2Match = fullText.match(/\b120\.-\b/);
+                if (r2Match) detectedAuszahlung = 120.00;
+            }
+
+            return {
+                gruppe_name: groupMatch.name || 'Strohaus',
+                rang: groupMatch.rang || null,
+                punkte_total: groupMatch.punkte || null,
+                gruppendoppel: 30.00,
+                gruppengewinn: detectedAuszahlung,
+                shooters: detectedShooters
+            };
+        }
+
+        // =====================================================================
+        // FORMAT 2: SIUS / Meyton / BLM Gruppenrangliste (z. B. Balsthaler Liegendmatch)
+        // Zeilenstruktur: Platz \n Muhen - Muhen 1 \n SNr \n Serien \n Total \n Schützen
+        // =====================================================================
+        const blmMatch = fullText.match(/(?:^|\n)(\d+)\.\s*\n\s*Muhen\s*[-–\t ]+\s*([A-Za-z0-9äöüÄÖÜß\-\t ]+)/i);
+        if (blmMatch) {
+            const blmRang = parseInt(blmMatch[1], 10);
+            const rawGrpName = blmMatch[2].replace(/\t+/g, ' ').trim();
+            const grpName = rawGrpName.replace(/^Muhen\s*/i, 'Muhen ') || 'Muhen 1';
+
+            // Schützen nach der Gruppe extrahieren (Name, Vorname, Total)
+            const blmShooters = [];
+            // Suche nach "Muhen - ..." im Volltext
+            const startIdx = fullText.indexOf(blmMatch[0]);
+            if (startIdx >= 0) {
+                const afterGroup = fullText.substring(startIdx);
+                // Regex für Schützenzeilen: SNr \n NACHNAME, \t VORNAME \n PassNr ... Total
+                const shooterRegex = /\n\d+\s*\n\s*([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]+),\s*([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]+)[\s\S]*?\n\s*(\d{3}(?:\.\d)?)\s*(?=\n\d+|\n\d+\.|$)/g;
+                let sMatch;
+                while ((sMatch = shooterRegex.exec(afterGroup)) !== null) {
+                    blmShooters.push({
+                        schuetze_name: `${sMatch[2]} ${sMatch[1]}`, // Vorname Nachname
+                        punkte: parseFloat(sMatch[3]),
+                        jahrgang: null
+                    });
+                    if (blmShooters.length >= 3) break; // Balsthal = 3er Gruppe
+                }
+            }
+
+            // Gesamtpunktzahl ermitteln
+            let blmTotal = null;
+            const totMatch = fullText.match(new RegExp(escapeReg(blmMatch[0]) + '[\\s\\S]*?(\\d{4}(?:\\.\\d)?)\\b'));
+            if (totMatch) blmTotal = parseFloat(totMatch[1]);
+
+            return {
+                gruppe_name: grpName,
+                rang: blmRang,
+                punkte_total: blmTotal,
+                gruppendoppel: 30.00,
+                gruppengewinn: 0.00, // Wird in SIUS/Meyton nicht abgedruckt -> per Bank überwiesen
+                shooters: blmShooters,
+                notice: 'Gruppenpreisgeld nicht auf der Rangliste abgedruckt (wird per Bank überwiesen). Bitte Betrag eintragen.'
+            };
+        }
+
+        // =====================================================================
+        // FORMAT 3: Sektionsliste mit Gruppenvermerk (z. B. 58. Siggenbergschiessen)
+        // Zeilen wie: Strohaus 186Fischer Marco ... / Strohaus 265Augsburger Beat ...
+        // =====================================================================
+        if (fullText.includes('Muhen') && /(?:Strohaus\s*[12]|Strohaus)/i.test(fullText)) {
+            const siggShooters1 = [];
+            const siggShooters2 = [];
+
+            lines.forEach(l => {
+                const t = (l.text || l || '').trim();
+                const m = t.match(/Strohaus\s*([12])\s*(\d{2})([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]+)\s+([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]+)\s+(\d{2,3})/);
+                if (m) {
+                    const grpNum = m[1];
+                    const jg = parseInt(m[2], 10) > 30 ? (1900 + parseInt(m[2], 10)) : (2000 + parseInt(m[2], 10));
+                    const sName = `${m[4]} ${m[3]}`; // Vorname Nachname
+                    const pts = parseFloat(m[5]);
+
+                    const item = { schuetze_name: sName, punkte: pts, jahrgang: jg };
+                    if (grpNum === '1') siggShooters1.push(item);
+                    else if (grpNum === '2') siggShooters2.push(item);
+                }
+            });
+
+            if (siggShooters1.length > 0) {
+                return {
+                    gruppe_name: 'Strohaus 1',
+                    rang: null,
+                    punkte_total: siggShooters1.reduce((a, b) => a + (b.punkte || 0), 0),
+                    gruppendoppel: 30.00,
+                    gruppengewinn: 0.00,
+                    shooters: siggShooters1,
+                    notice: 'Gruppe Strohaus 1 aus Sektionsliste extrahiert. Bitte Gewinnbetrag eintragen.'
+                };
             }
         }
 
-        // Nach Auszahlungsbetrag suchen
-        let detectedAuszahlung = 0;
-        // Bsp: Im Bärenmoos-PDF steht "120.-" im Auszahlungs-Block
-        const auszMatch = fullText.match(/(?:auszahlung|gewinn|gabe)[\s\S]{0,100}?(?:150\.-[\s\n]+)?(\d{2,3})\.-/i);
-        if (auszMatch) {
-            detectedAuszahlung = parseFloat(auszMatch[1]);
-        } else {
-            // Spezifische Suche nach "120.-" bei Rang 2
-            const r2Match = fullText.match(/\b120\.-\b/);
-            if (r2Match) detectedAuszahlung = 120.00;
+        // =====================================================================
+        // FORMAT 4: Reine Einzelrangliste für Muhen (z. B. Deisigrabenschiessen)
+        // =====================================================================
+        if (/Einzelrangliste\s+f[üu]r\s+Muhen/i.test(fullText) || (fullText.includes('Muhen') && !isGroupDoc)) {
+            return {
+                gruppe_name: 'Strohaus',
+                rang: null,
+                punkte_total: null,
+                gruppendoppel: 30.00,
+                gruppengewinn: 0.00,
+                shooters: [],
+                isSingleRankingOnly: true,
+                notice: 'Reine Einzelrangliste (keine Gruppenrangliste im Dokument). Gruppenpreise können manuell für die Top-5 Schützen erfasst werden.'
+            };
         }
 
-        return {
-            gruppe_name: groupMatch.name || 'Strohaus',
-            rang: groupMatch.rang || null,
-            punkte_total: groupMatch.punkte || null,
-            gruppendoppel: 30.00,
-            gruppengewinn: detectedAuszahlung,
-            shooters: detectedShooters
-        };
+        return null;
     }
 
     // Hilfsfunktion: Escape HTML
@@ -1457,3 +1555,4 @@
     window.jmDetectGroupCompetitionFromImportLines = jmDetectGroupCompetitionFromImportLines;
 
 })(window);
+

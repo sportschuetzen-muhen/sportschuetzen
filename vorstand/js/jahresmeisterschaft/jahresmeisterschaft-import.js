@@ -1314,22 +1314,39 @@ async function jmSetupAuswaertigPreview(detectedTitle, forecastMax, forecastReas
         if (_jmImportState.detectedGroup) {
             const dg = _jmImportState.detectedGroup;
             const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${v.toFixed(2)}`);
-            groupBox.className = 'alert alert-warning py-2.5 px-3 small d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3 shadow-sm border border-warning';
-            groupBox.innerHTML = `
-                <div class="d-flex align-items-center gap-2">
-                    <span class="badge bg-warning text-dark fs-6"><i class="fas fa-trophy"></i></span>
-                    <div>
-                        <strong class="text-dark">Gruppenwertung & Gewinn erkannt:</strong>
-                        Gruppe <span class="badge bg-light text-dark border fw-bold">${dg.gruppe_name}</span> 
-                        ${dg.rang ? `(Rang ${dg.rang})` : ''} · 
-                        Gruppengewinn: <strong class="text-success">${fmtCurr(dg.gruppengewinn || 0)}</strong>
-                        (${dg.shooters.length} Schützen identifiziert)
+
+            if (dg.isSingleRankingOnly) {
+                groupBox.className = 'alert alert-info py-2.5 px-3 small d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3 shadow-sm border border-info';
+                groupBox.innerHTML = `
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-info text-dark fs-6"><i class="fas fa-info-circle"></i></span>
+                        <div>
+                            <strong class="text-dark">Einzelrangliste für Muhen erkannt:</strong>
+                            ${dg.notice || 'Keine Gruppenrangliste im Dokument.'}
+                        </div>
                     </div>
-                </div>
-                <button type="button" class="btn btn-sm btn-dark fw-bold shadow-sm" onclick="window.jmOpenGroupEditorFromImport()">
-                    <i class="fas fa-coins me-1 text-warning"></i> Aufteilung prüfen & erfassen (Konto 1301)
-                </button>
-            `;
+                    <button type="button" class="btn btn-sm btn-outline-primary fw-bold shadow-sm" onclick="window.jmOpenGroupEditorFromImport()">
+                        <i class="fas fa-users me-1"></i> Gruppe mit Top-5 Schützen anlegen (1301)
+                    </button>
+                `;
+            } else {
+                groupBox.className = 'alert alert-warning py-2.5 px-3 small d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3 shadow-sm border border-warning';
+                groupBox.innerHTML = `
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-warning text-dark fs-6"><i class="fas fa-trophy"></i></span>
+                        <div>
+                            <strong class="text-dark">Gruppenwertung erkannt:</strong>
+                            Gruppe <span class="badge bg-light text-dark border fw-bold">${dg.gruppe_name}</span> 
+                            ${dg.rang ? `(Rang ${dg.rang})` : ''} · 
+                            ${dg.gruppengewinn > 0 ? `Gewinn: <strong class="text-success">${fmtCurr(dg.gruppengewinn)}</strong>` : '<span class="text-muted">(Gewinn noch eintragen)</span>'}
+                            (${dg.shooters ? dg.shooters.length : 0} Schützen identifiziert)
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-dark fw-bold shadow-sm" onclick="window.jmOpenGroupEditorFromImport()">
+                        <i class="fas fa-coins me-1 text-warning"></i> Aufteilung prüfen & erfassen (Konto 1301)
+                    </button>
+                `;
+            }
             groupBox.classList.remove('d-none');
         } else {
             groupBox.classList.add('d-none');
@@ -1348,7 +1365,18 @@ window.jmOpenGroupEditorFromImport = function() {
     const dg = _jmImportState.detectedGroup;
     const targetTitle = document.getElementById('jm-import-target-title')?.value || dg.anlass_name || _jmImportState.targetTitle;
     
-    const membersList = (dg.shooters || []).map(s => ({
+    let shooters = dg.shooters || [];
+    if (shooters.length === 0) {
+        // Falls reine Einzelrangliste: Die 5 besten gematchten Schützen vorschlagen
+        const validRows = (_jmImportState.rows || []).filter(r => r.matched && r.points > 0);
+        validRows.sort((a, b) => b.points - a.points);
+        shooters = validRows.slice(0, 5).map(r => ({
+            schuetze_name: r.name,
+            punkte: r.points
+        }));
+    }
+
+    const membersList = shooters.map(s => ({
         person_number: null,
         schuetze_name: s.schuetze_name,
         jahrgang: s.jahrgang || null,
