@@ -55,7 +55,33 @@ await UIConfirmKit.alert({
 });
 ```
 
-#### C) Robuste Fallback-Syntax:
+#### C) Eingabedialog (`Promise<string|Object|null>` via `UIConfirmKit.prompt`):
+```javascript
+// Einzelfeld:
+const archivJahr = await UIConfirmKit.prompt({
+  title: 'Saison archivieren',
+  message: 'Bitte gib das Jahr für das Archiv ein (z. B. 2025):',
+  defaultValue: '2025',
+  inputType: 'number',
+  confirmText: 'Archivieren',
+  validate: (val) => !/^\d{4}$/.test(val) ? 'Bitte eine 4-stellige Jahreszahl eingeben.' : null
+});
+if (!archivJahr) return; // Abgebrochen
+
+// Mehrere Formularfelder:
+const res = await UIConfirmKit.prompt({
+  title: 'Neues Auswärtsschiessen anlegen',
+  message: 'Erfasse die Angaben für das neue Schiessen:',
+  confirmText: 'Anlegen',
+  fields: [
+    { name: 'name', label: 'Name des Schiessens', placeholder: 'z. B. Freischiessen Zofingen', required: true },
+    { name: 'maxPunkte', label: 'Max. Punkte', type: 'number', defaultValue: '100', required: true }
+  ]
+});
+if (!res) return; // { name: '...', maxPunkte: '100' }
+```
+
+#### D) Robuste Fallback-Syntax:
 Bei Mutation von bestehendem Altwelt-Code empfiehlt sich folgende Übergangssyntax:
 ```javascript
 if (window.UIConfirmKit) {

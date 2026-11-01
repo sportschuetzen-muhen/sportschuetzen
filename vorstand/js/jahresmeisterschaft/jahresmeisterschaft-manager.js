@@ -1,9 +1,8 @@
 // === SUB-MODUL: JAHRESMEISTERSCHAFT - MANAGER & NATIVE SUPABASE ENGINE ===
 
-// UIConfirmKit löst sein Promise bereits beim Klick auf; Bootstrap ignoriert show() während der Ausblend-Animation.
-// Zwischen verketteten Dialogen daher kurz warten, damit der Folgedialog sicher erscheint.
+// UIConfirmKit löst Promises sauber auf hidden.bs.modal auf; Rückwärtskompatibilität für jmWaitForDialogClose:
 function jmWaitForDialogClose() {
-    return new Promise(resolve => setTimeout(resolve, 400));
+    return Promise.resolve();
 }
 window.jmWaitForDialogClose = jmWaitForDialogClose;
 
@@ -110,9 +109,19 @@ async function runJMAction(functionName, actionLabel) {
     try {
         if (functionName === 'archiviereJahresmeisterschaft') {
             const defaultYear = new Date().getFullYear();
-            const archivJahr = prompt("Bitte gib das Jahr für das Archiv ein (z.B. 2025):", defaultYear);
-            if (!archivJahr || !/^\d{4}$/.test(archivJahr)) {
-                showError("Ungültiges Jahr eingegeben. Aktion abgebrochen.");
+            const archivJahr = await UIConfirmKit.prompt({
+                title: 'Saison archivieren',
+                message: 'Bitte gib das Jahr für das Archiv ein (z. B. 2025):',
+                defaultValue: String(defaultYear),
+                inputType: 'number',
+                confirmText: 'Archivieren',
+                validate: (val) => {
+                    const num = parseInt(val, 10);
+                    if (!num || num < 2000 || num > 2100) return 'Bitte eine gültige vierstellige Jahreszahl (z. B. 2025) eingeben.';
+                    return null;
+                }
+            });
+            if (!archivJahr) {
                 return;
             }
 
@@ -163,7 +172,6 @@ async function runJMAction(functionName, actionLabel) {
             if (!doProceed) return;
 
             // 3. Optionale automatische Archivierung vor dem Nullen
-            await jmWaitForDialogClose();
             const doArchive = await UIConfirmKit.confirm({
                 title: 'Abgelaufene Saison archivieren?',
                 message: 'Möchtest du die abgelaufene Saison vor dem Nullen archivieren?<br><br>(Empfohlen: Sichert alle bisherigen Resultate inkl. Auf- und Absteiger-Badges.)',
@@ -174,8 +182,19 @@ async function runJMAction(functionName, actionLabel) {
 
             if (doArchive) {
                 const prevYear = new Date().getFullYear();
-                const archivJahr = prompt("Bitte gib das Jahr für das Archiv ein (z.B. 2025):", prevYear);
-                if (archivJahr && /^\d{4}$/.test(archivJahr)) {
+                const archivJahr = await UIConfirmKit.prompt({
+                    title: 'Saison vor Neustart archivieren',
+                    message: 'Bitte gib das Jahr für das Archiv ein (z. B. 2025):',
+                    defaultValue: String(prevYear),
+                    inputType: 'number',
+                    confirmText: 'Archivieren',
+                    validate: (val) => {
+                        const num = parseInt(val, 10);
+                        if (!num || num < 2000 || num > 2100) return 'Bitte eine gültige vierstellige Jahreszahl (z. B. 2025) eingeben.';
+                        return null;
+                    }
+                });
+                if (archivJahr) {
                     showLoadingOverlay(`Archiviere Saison ${archivJahr} in Supabase...`);
                     const archivedGrid = createArchivedGridWithStatus(jmRawGrid);
                     await sb.from('jm_seasons').upsert({
@@ -191,7 +210,6 @@ async function runJMAction(functionName, actionLabel) {
                         await syncJMShootersToSupabase(sb, archivJahr, archivedGrid);
                     }
                 } else {
-                    await jmWaitForDialogClose();
                     const okSkip = await UIConfirmKit.confirm({
                         title: 'Ohne Archiv fortfahren?',
                         message: 'Die Archivierung wurde übersprungen oder abgebrochen. Möchtest du trotzdem mit dem Nullen für das neue Jahr fortfahren? Die bisherigen Resultate gehen dann verloren.',
@@ -426,9 +444,21 @@ function buildNewSeasonGrid(grid, standing) {
 window.buildNewSeasonGrid = buildNewSeasonGrid;
 
 async function runDeleteArchivedYearAction(jahr) {
-    const confirmation = prompt(`Bist du absolut sicher, dass du das gesamte Archiv für das Jahr ${jahr} UNWIDERRUFLICH löschen möchtest?\n\nBitte tippe "${jahr}" zur Bestätigung ein:`);
-    if (confirmation !== jahr) {
-        showError("Löschvorgang abgebrochen. Die Bestätigung war nicht korrekt.");
+    const confirmation = await UIConfirmKit.prompt({
+        title: `Archiv ${jahr} unwiderruflich löschen`,
+        message: `Bist du absolut sicher, dass du das gesamte Archiv für das Jahr <strong>${escapeHtml(jahr)}</strong> UNWIDERRUFLICH löschen möchtest?<br><br>Tippe <code>${escapeHtml(jahr)}</code> zur Bestätigung ein:`,
+        type: 'danger',
+        confirmText: 'Unwiderruflich löschen',
+        cancelText: 'Abbrechen',
+        placeholder: String(jahr),
+        validate: (val) => {
+            if (String(val || '').trim() !== String(jahr).trim()) {
+                return `Bitte tippe exakt "${jahr}" ein, um das Löschen zu bestätigen.`;
+            }
+            return null;
+        }
+    });
+    if (!confirmation) {
         return;
     }
     
@@ -459,16 +489,30 @@ async function runDeleteArchivedYearAction(jahr) {
 window.runDeleteArchivedYearAction = runDeleteArchivedYearAction;
 
 async function addNewAuswaertigesSchiessen() {
-    const name = prompt("Gib den Namen des neuen Auswärtsschießens ein (z. B. 'Freischießen Zofingen'):");
-    if (!name || name.trim() === "") return;
-    
-    const maxPunkteStr = prompt("Gib die maximale Punktzahl für dieses Schießen ein (z. B. '100'):", "100");
-    if (maxPunkteStr === null) return;
-    const maxPunkte = parseInt(maxPunkteStr);
-    if (isNaN(maxPunkte) || maxPunkte <= 0) {
-        showError("Ungültige Punktzahl eingegeben.");
-        return;
-    }
+    const res = await UIConfirmKit.prompt({
+        title: 'Neues Auswärtsschiessen anlegen',
+        message: 'Erfasse die Angaben für das neue Schiessen:',
+        confirmText: 'Schiessen anlegen',
+        cancelText: 'Abbrechen',
+        fields: [
+            { name: 'name', label: 'Name des Schiessens', placeholder: 'z. B. Freischiessen Zofingen', required: true },
+            { name: 'maxPunkte', label: 'Max. Punkte', type: 'number', defaultValue: '100', placeholder: '100', required: true }
+        ],
+        validate: (values) => {
+            if (!values.name || values.name.trim() === '') {
+                return 'Bitte gib einen Namen für das Schiessen ein.';
+            }
+            const pts = parseInt(values.maxPunkte, 10);
+            if (isNaN(pts) || pts <= 0) {
+                return 'Die maximale Punktzahl muss grösser als 0 sein (z. B. 100).';
+            }
+            return null;
+        }
+    });
+    if (!res) return;
+
+    const name = res.name.trim();
+    const maxPunkte = parseInt(res.maxPunkte, 10);
 
     const sb = getJMSupabaseClient();
     if (!sb || !jmRawGrid || jmRawGrid.length < 5) {

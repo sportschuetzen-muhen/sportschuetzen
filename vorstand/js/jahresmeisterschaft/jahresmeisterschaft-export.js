@@ -272,3 +272,4 @@ async function jmExportAuswaertigPdf() {
     });
 }
 window.jmExportAuswaertigPdf = jmExportAuswaertigPdf;
+

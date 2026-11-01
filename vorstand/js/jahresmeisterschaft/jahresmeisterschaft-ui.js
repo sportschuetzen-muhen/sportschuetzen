@@ -476,7 +476,9 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
                     const totalBg = (colIndex % 2 === 1) ? 'background-color: #e2e6ea;' : '';
                     const totalText = val !== '' ? (escapeHtml(val) + ' %') : '0.00 %';
                     return `<td style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}">
-                        <input type="text" class="form-control form-control-sm fw-bold text-center text-primary" style="width: 100%; ${totalBg}" readonly value="${totalText}">
+                        <input type="text" class="form-control form-control-sm fw-bold text-center text-primary" 
+                               style="width: 100%; ${totalBg}" readonly value="${totalText}" 
+                               data-cell="total" data-r="${r}" data-c="${c}">
                     </td>`;
                 }
 
@@ -489,8 +491,10 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
                         <input type="text" class="form-control form-control-sm write-protected text-center" 
                                style="width: 100%; ${inputStyle} ${countedStyle}" ${canWrite ? '' : 'disabled readonly'} 
                                value="${escapeHtml(val)}" 
+                               data-r="${r}" data-c="${c}" data-cell="input"
                                title="${escapeHtml(grid[2][c] || '')}: ${escapeHtml(val)} Punkte${isCountedAusw ? ' – zählt für die Jahresmeisterschaft (eines der besten Auswärtsresultate)' : ''}" 
-                               onchange="handleCellEdit(${r}, ${c}, this.value, this)">
+                               onchange="handleCellEdit(${r}, ${c}, this.value, this)"
+                               onkeydown="handleCellKeydown(event, ${r}, ${c}, this)">
                     </td>`;
                 }
 
@@ -535,11 +539,15 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
                     let displayVal = escapeHtml(val);
                     if (jmViewMode === 'percent' && pctStr) displayVal = pctStr;
 
+                    const titleTooltip = isTopAuswaertiges 
+                        ? `Auswärtiges ${normalCol === 14 ? '1' : '2'} (wird automatisch aus den beiden besten Auswärtsschiessen ermittelt)${pctStr ? ` | ${pctStr}` : ''}`
+                        : (pctStr ? `Wert: ${escapeHtml(val)} | Prozent: ${pctStr}` : '');
+
                     cellContent = `
-                        <input type="text" class="form-control form-control-sm write-protected cursor-pointer text-center" 
-                               style="width: 100%; ${calcBg}" readonly value="${displayVal}" 
-                               title="${pctStr ? `Wert: ${escapeHtml(val)} | Prozent: ${pctStr}` : ''}"
-                               onclick="${canWrite ? `openAuswaertigesCalculator(${r}, ${c})` : ''}">
+                        <input type="text" class="form-control form-control-sm write-protected text-center" 
+                               style="width: 100%; cursor: default; ${calcBg}" readonly value="${displayVal}" 
+                               data-r="${r}" data-c="${c}"
+                               title="${titleTooltip}">
                     `;
                     if (jmViewMode === 'both' && pctStr) {
                         cellContent += `
@@ -561,6 +569,7 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
                         <div class="position-relative">
                             <input type="text" class="form-control form-control-sm text-center ${isStruck ? 'text-muted text-decoration-line-through opacity-75' : (isGreen ? 'text-success fw-bold' : (pct > 0 ? 'text-primary fw-bold' : 'text-muted'))}" 
                                    style="width: 100%; ${inputStyle}" readonly value="${displayVal}"
+                                   data-r="${r}" data-c="${c}"
                                    title="${escapeHtml(val)} Punkte (Max: ${grid[3][c] || '–'})${isMannschaftStreich ? ' [SMM Streichrunde (zählt nicht)]' : (isCountedMannschaft ? ' [Top 4 SMM gewertet]' : (isStreich ? ' [Haupt-Streichresultat]' : ''))}">
                         </div>
                     `;
@@ -588,7 +597,10 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
                         <div class="d-flex flex-column align-items-center">
                             <input type="text" class="form-control form-control-sm write-protected text-center ${isStruck ? 'text-decoration-line-through text-muted opacity-75' : (isCountedMannschaft ? 'fw-semibold' : '')}" 
                                    style="width: 100%; ${inputStyle}" ${canWrite ? '' : 'disabled readonly'} 
-                                   value="${escapeHtml(val)}" onchange="handleCellEdit(${r}, ${c}, this.value, this)">
+                                   value="${escapeHtml(val)}" 
+                                   data-r="${r}" data-c="${c}" data-cell="input"
+                                   onchange="handleCellEdit(${r}, ${c}, this.value, this)"
+                                   onkeydown="handleCellKeydown(event, ${r}, ${c}, this)">
                             <div class="mt-1" style="min-height: 16px;">
                                 ${pctStr ? `
                                     <span class="badge ${badgeClass} px-1 py-0" 
@@ -612,8 +624,10 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
                         <input type="text" class="form-control form-control-sm write-protected text-center ${isStruck ? 'text-muted text-decoration-line-through opacity-75' : (isCountedMannschaft ? 'fw-bold' : '')}" 
                                style="width: 100%; ${inputStyle}" ${canWrite ? '' : 'disabled readonly'} 
                                value="${escapeHtml(val)}" 
+                               data-r="${r}" data-c="${c}" data-cell="input"
                                title="${pctStr ? `Prozent: ${pctStr}` : ''}${titleNote}"
-                               onchange="handleCellEdit(${r}, ${c}, this.value, this)">
+                               onchange="handleCellEdit(${r}, ${c}, this.value, this)"
+                               onkeydown="handleCellKeydown(event, ${r}, ${c}, this)">
                     `;
                 }
 
@@ -1271,7 +1285,10 @@ function buildMatrixLigaTable(title, grid, startRow, endRow, canWrite, hasStatus
                         <div class="d-flex flex-column align-items-center">
                             <input type="text" class="form-control form-control-sm write-protected text-center px-1 py-1 fw-bold ${isMannschaftStreich || isStreich ? 'text-decoration-line-through text-muted opacity-75' : ''}" 
                                    style="width: 100%; min-width: 60px; font-size: 0.9rem; ${colCategoryStyle}" ${canWrite ? '' : 'disabled readonly'} 
-                                   value="${escapeHtml(val)}" onchange="handleCellEdit(${r}, ${c}, this.value, this)">
+                                   value="${escapeHtml(val)}" 
+                                   data-r="${r}" data-c="${c}" data-cell="input"
+                                   onchange="handleCellEdit(${r}, ${c}, this.value, this)"
+                                   onkeydown="handleCellKeydown(event, ${r}, ${c}, this)">
                             <div class="mt-1" style="min-height: 16px;">
                                 ${badgeHtml}
                             </div>
@@ -1283,8 +1300,10 @@ function buildMatrixLigaTable(title, grid, startRow, endRow, canWrite, hasStatus
                         <input type="text" class="form-control form-control-sm write-protected text-center px-1 py-1 fw-bold ${isMannschaftStreich || isStreich ? 'text-muted text-decoration-line-through opacity-75' : ''}" 
                                style="width: 100%; min-width: 60px; font-size: 0.9rem; ${colCategoryStyle}" ${canWrite ? '' : 'disabled readonly'} 
                                value="${escapeHtml(val)}" 
+                               data-r="${r}" data-c="${c}" data-cell="input"
                                title="${pctStr ? `Prozent: ${pctStr}` : ''}${isMannschaftStreich ? ' [SMM Streichrunde]' : (isCountedMannschaft ? ' [Top 4 SMM]' : '')}"
-                               onchange="handleCellEdit(${r}, ${c}, this.value, this)">
+                               onchange="handleCellEdit(${r}, ${c}, this.value, this)"
+                               onkeydown="handleCellKeydown(event, ${r}, ${c}, this)">
                     `;
                 }
 
@@ -1572,7 +1591,10 @@ function buildMatrixJuniorenTable(title, grid, canWrite, hasStatusCol, statusCol
                             <div class="d-flex flex-column align-items-center">
                                 <input type="text" class="form-control form-control-sm write-protected text-center px-1 py-1 fw-bold ${isMannschaftStreich || isStreich ? 'text-decoration-line-through text-muted opacity-75' : ''}" 
                                        style="width: 100%; min-width: 60px; font-size: 0.9rem; ${colCategoryStyle}" ${canWrite ? '' : 'disabled readonly'} 
-                                       value="${escapeHtml(val)}" onchange="handleCellEdit(${r}, ${c}, this.value, this)">
+                                       value="${escapeHtml(val)}" 
+                                       data-r="${r}" data-c="${c}" data-cell="input"
+                                       onchange="handleCellEdit(${r}, ${c}, this.value, this)"
+                                       onkeydown="handleCellKeydown(event, ${r}, ${c}, this)">
                                 <div class="mt-1" style="min-height: 16px;">
                                     ${badgeHtml}
                                 </div>
@@ -1583,7 +1605,9 @@ function buildMatrixJuniorenTable(title, grid, canWrite, hasStatusCol, statusCol
                             <input type="text" class="form-control form-control-sm write-protected text-center px-1 py-1 fw-bold ${isMannschaftStreich || isStreich ? 'text-muted text-decoration-line-through opacity-75' : ''}" 
                                    style="width: 100%; min-width: 60px; font-size: 0.9rem; ${colCategoryStyle}" ${canWrite ? '' : 'disabled readonly'} 
                                    value="${escapeHtml(val)}" 
-                                   onchange="handleCellEdit(${r}, ${c}, this.value, this)">
+                                   data-r="${r}" data-c="${c}" data-cell="input"
+                                   onchange="handleCellEdit(${r}, ${c}, this.value, this)"
+                                   onkeydown="handleCellKeydown(event, ${r}, ${c}, this)">
                         `;
                     }
 

@@ -1827,8 +1827,11 @@
         }
 
         let resolved = false;
+        let pendingResult = false;
+        let safetyTimer = null;
 
         function cleanup() {
+          if (safetyTimer) { clearTimeout(safetyTimer); safetyTimer = null; }
           okBtn.removeEventListener('click', onOk);
           cancelBtn.removeEventListener('click', onCancel);
           closeBtn.removeEventListener('click', onCancel);
@@ -1836,26 +1839,35 @@
           modalEl.removeEventListener('shown.bs.modal', onShown);
         }
 
-        function onOk() {
+        function finish(val) {
+          if (resolved) return;
           resolved = true;
           cleanup();
-          if (bsModal) bsModal.hide();
-          resolve(true);
+          resolve(val);
+        }
+
+        function onOk() {
+          pendingResult = true;
+          if (bsModal && modalEl.classList.contains('show')) {
+            safetyTimer = setTimeout(() => finish(true), 600);
+            bsModal.hide();
+          } else {
+            finish(true);
+          }
         }
 
         function onCancel() {
-          resolved = true;
-          cleanup();
-          if (bsModal) bsModal.hide();
-          resolve(false);
+          pendingResult = false;
+          if (bsModal && modalEl.classList.contains('show')) {
+            safetyTimer = setTimeout(() => finish(false), 600);
+            bsModal.hide();
+          } else {
+            finish(false);
+          }
         }
 
         function onHidden() {
-          if (!resolved) {
-            resolved = true;
-            cleanup();
-            resolve(false);
-          }
+          finish(pendingResult);
         }
 
         function onShown() {
@@ -1940,27 +1952,34 @@
         }
 
         let resolved = false;
+        let safetyTimer = null;
 
         function cleanup() {
+          if (safetyTimer) { clearTimeout(safetyTimer); safetyTimer = null; }
           okBtn.removeEventListener('click', onDismiss);
           closeBtn.removeEventListener('click', onDismiss);
           modalEl.removeEventListener('hidden.bs.modal', onHidden);
           modalEl.removeEventListener('shown.bs.modal', onShown);
         }
 
-        function onDismiss() {
+        function finish() {
+          if (resolved) return;
           resolved = true;
           cleanup();
-          if (bsModal) bsModal.hide();
           resolve();
         }
 
-        function onHidden() {
-          if (!resolved) {
-            resolved = true;
-            cleanup();
-            resolve();
+        function onDismiss() {
+          if (bsModal && modalEl.classList.contains('show')) {
+            safetyTimer = setTimeout(() => finish(), 600);
+            bsModal.hide();
+          } else {
+            finish();
           }
+        }
+
+        function onHidden() {
+          finish();
         }
 
         function onShown() {
@@ -1977,6 +1996,210 @@
         } else {
           window.alert(message.replace(/<[^>]*>?/gm, ''));
           resolve();
+        }
+      });
+    },
+
+    /**
+     * Öffnet einen asynchronen Eingabedialog (liefert Promise<string|Object|null>).
+     * Unterstützt ein einzelnes Eingabefeld oder mehrere strukturierte Formularfelder (options.fields).
+     * @param {Object|string} options
+     * @returns {Promise<string|Object|null>}
+     */
+    prompt(options = {}) {
+      if (typeof options === 'string') {
+        options = { message: options };
+      }
+      return new Promise((resolve) => {
+        const modalEl = ensureConfirmModalDOM();
+        const bsModal = confirmModalInstance || (typeof bootstrap !== 'undefined' && bootstrap.Modal ? bootstrap.Modal.getOrCreateInstance(modalEl) : null);
+
+        const titleEl = modalEl.querySelector('#uiConfirmTitle');
+        const bodyEl = modalEl.querySelector('#uiConfirmBody');
+        const iconWrapper = modalEl.querySelector('#uiConfirmIconWrapper');
+        const iconEl = modalEl.querySelector('#uiConfirmIcon');
+        const cancelBtn = modalEl.querySelector('#uiConfirmCancelBtn');
+        const okBtn = modalEl.querySelector('#uiConfirmOkBtn');
+        const closeBtn = modalEl.querySelector('#uiConfirmCloseBtn');
+
+        const type = options.type || 'primary';
+        const title = options.title || 'Eingabe erforderlich';
+        const message = options.message || options.text || '';
+        const cancelText = options.cancelText || 'Abbrechen';
+        const confirmText = options.confirmText || options.okText || 'OK';
+
+        titleEl.textContent = title;
+        cancelBtn.textContent = cancelText;
+        cancelBtn.style.display = '';
+        okBtn.textContent = confirmText;
+
+        okBtn.className = 'btn btn-sm px-3 fw-semibold shadow-xs';
+        if (type === 'danger') {
+          iconWrapper.style.backgroundColor = '#fee2e2';
+          iconWrapper.style.color = '#dc2626';
+          iconEl.className = 'fas fa-exclamation-triangle';
+          okBtn.classList.add('btn-danger', 'text-white');
+        } else if (type === 'warning') {
+          iconWrapper.style.backgroundColor = '#fef3c7';
+          iconWrapper.style.color = '#d97706';
+          iconEl.className = 'fas fa-exclamation-circle';
+          okBtn.classList.add('btn-warning', 'text-dark');
+        } else {
+          iconWrapper.style.backgroundColor = '#dbeafe';
+          iconWrapper.style.color = '#2563eb';
+          iconEl.className = 'fas fa-edit';
+          okBtn.classList.add('btn-primary', 'text-white');
+        }
+
+        const hasFields = Array.isArray(options.fields) && options.fields.length > 0;
+        let formHtml = `<div class="mb-2 text-secondary" style="font-size: 0.92rem; line-height: 1.5;">${message}</div>`;
+
+        if (hasFields) {
+          formHtml += `<div class="d-flex flex-column gap-2 mt-2">`;
+          options.fields.forEach((f, idx) => {
+            const fieldId = `uiPromptField_${idx}`;
+            const fType = f.type || 'text';
+            const fVal = (f.defaultValue !== undefined && f.defaultValue !== null) ? String(f.defaultValue) : '';
+            const fPlace = f.placeholder || '';
+            const fLabel = f.label ? `<label for="${fieldId}" class="form-label small fw-semibold text-dark mb-1">${f.label}</label>` : '';
+            formHtml += `
+              <div>
+                ${fLabel}
+                <input type="${fType}" id="${fieldId}" data-field-name="${f.name || `field_${idx}`}" 
+                       class="form-control form-control-sm ui-prompt-input" 
+                       value="${fVal.replace(/"/g, '&quot;')}" placeholder="${fPlace.replace(/"/g, '&quot;')}" 
+                       style="border-radius: 6px;">
+              </div>`;
+          });
+          formHtml += `</div>`;
+        } else {
+          const defVal = (options.defaultValue !== undefined && options.defaultValue !== null) ? String(options.defaultValue) : (options.value || '');
+          const placeholder = options.placeholder || '';
+          const inputType = options.inputType || (options.type === 'number' ? 'number' : 'text');
+          formHtml += `
+            <div class="mt-2">
+              <input type="${inputType}" id="uiPromptSingleInput" class="form-control form-control-sm ui-prompt-input" 
+                     value="${defVal.replace(/"/g, '&quot;')}" placeholder="${placeholder.replace(/"/g, '&quot;')}" 
+                     style="border-radius: 6px;">
+            </div>`;
+        }
+        formHtml += `<div id="uiPromptError" class="text-danger small mt-2 fw-semibold" style="display: none;"></div>`;
+        bodyEl.innerHTML = formHtml;
+
+        const errorEl = bodyEl.querySelector('#uiPromptError');
+        const inputs = Array.from(bodyEl.querySelectorAll('.ui-prompt-input'));
+
+        let resolved = false;
+        let pendingResult = null;
+        let safetyTimer = null;
+
+        function cleanup() {
+          if (safetyTimer) { clearTimeout(safetyTimer); safetyTimer = null; }
+          okBtn.removeEventListener('click', onOk);
+          cancelBtn.removeEventListener('click', onCancel);
+          closeBtn.removeEventListener('click', onCancel);
+          modalEl.removeEventListener('hidden.bs.modal', onHidden);
+          modalEl.removeEventListener('shown.bs.modal', onShown);
+          inputs.forEach(inp => inp.removeEventListener('keydown', onInputKeydown));
+        }
+
+        function finish(val) {
+          if (resolved) return;
+          resolved = true;
+          cleanup();
+          resolve(val);
+        }
+
+        function collectValues() {
+          if (hasFields) {
+            const result = {};
+            options.fields.forEach((f, idx) => {
+              const inp = bodyEl.querySelector(`#uiPromptField_${idx}`);
+              result[f.name || `field_${idx}`] = inp ? inp.value.trim() : '';
+            });
+            return result;
+          } else {
+            const single = bodyEl.querySelector('#uiPromptSingleInput');
+            return single ? single.value.trim() : '';
+          }
+        }
+
+        function onOk() {
+          const val = collectValues();
+          if (typeof options.validate === 'function') {
+            const err = options.validate(val);
+            if (err) {
+              if (errorEl) {
+                errorEl.innerHTML = `<i class="fas fa-exclamation-circle me-1"></i>${err}`;
+                errorEl.style.display = 'block';
+              }
+              const firstInvalid = inputs[0];
+              if (firstInvalid) firstInvalid.focus();
+              return;
+            }
+          } else if (options.required) {
+            const isFilled = hasFields ? Object.values(val).every(v => v !== '') : val !== '';
+            if (!isFilled) {
+              if (errorEl) {
+                errorEl.innerHTML = `<i class="fas fa-exclamation-circle me-1"></i>Bitte fülle alle Pflichtfelder aus.`;
+                errorEl.style.display = 'block';
+              }
+              return;
+            }
+          }
+
+          pendingResult = val;
+          if (bsModal && modalEl.classList.contains('show')) {
+            safetyTimer = setTimeout(() => finish(pendingResult), 600);
+            bsModal.hide();
+          } else {
+            finish(pendingResult);
+          }
+        }
+
+        function onCancel() {
+          pendingResult = null;
+          if (bsModal && modalEl.classList.contains('show')) {
+            safetyTimer = setTimeout(() => finish(null), 600);
+            bsModal.hide();
+          } else {
+            finish(null);
+          }
+        }
+
+        function onHidden() {
+          finish(pendingResult);
+        }
+
+        function onShown() {
+          if (inputs.length > 0) {
+            inputs[0].focus();
+            if (typeof inputs[0].select === 'function') inputs[0].select();
+          }
+        }
+
+        function onInputKeydown(e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            onOk();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            onCancel();
+          }
+        }
+
+        inputs.forEach(inp => inp.addEventListener('keydown', onInputKeydown));
+        okBtn.addEventListener('click', onOk);
+        cancelBtn.addEventListener('click', onCancel);
+        closeBtn.addEventListener('click', onCancel);
+        modalEl.addEventListener('hidden.bs.modal', onHidden, { once: true });
+        modalEl.addEventListener('shown.bs.modal', onShown, { once: true });
+
+        if (bsModal) {
+          bsModal.show();
+        } else {
+          const fallbackVal = window.prompt(message.replace(/<[^>]*>?/gm, ''), options.defaultValue || '');
+          resolve(fallbackVal);
         }
       });
     }
@@ -2889,6 +3112,7 @@
   window.UIConfirmKit = UIConfirmKit;
   window.confirmAsync = UIConfirmKit.confirm;
   window.alertAsync = UIConfirmKit.alert;
+  window.promptAsync = UIConfirmKit.prompt;
 
   window.UIFormat = UIFormat;
   window.UIFormatKit = UIFormat;
