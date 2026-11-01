@@ -22,6 +22,9 @@ Die Kleinkaliber-Jahresmeisterschaft der Sportschützen Muhen basierte historisc
 3. **`public.contest_ocr_logs` (Audit, Standblatt-Erfassung & Inbox):**
    - Revisionssicheres Logging aller Standblatt-Uploads (Schütze, Rohpunkte, Maximum, Bild-URL in Cloudflare R2, Status `pending`/`imported`/`rejected`).
    - Autorisierung via RLS (`50_contest_ocr_logs_jm_rbac.sql`): Berechtigung `jahresmeisterschaft.view` für Inbox-Einsicht und `jahresmeisterschaft.manage` für 1-Klick-Übernahme.
+4. **`public.jm_competitions_catalog` (Schützenfeste-Katalog & Suchbegriffe):**
+   - Hält alle bekannten Schützenfeste (z. B. Deisigraben, Bärenmoos, Winterthurer Liegendmatch), deren Standard-Maximalpunkte und semikolongetrennte Suchbegriffe (`suchbegriffe`).
+   - Ermöglicht vollautomatisches Anlass- und Maximalpunkte-Matching bei PDF- und Screenshot-Uploads sowie Verwaltung direkt im Vorstandscockpit via globalem UI-Toolkit.
 
 ---
 
@@ -127,11 +130,15 @@ graph LR
    * Erkennt die Wettkampfrunde (1–7) autonom aus dem Dokumentkopf und extrahiert alle 8 Schützen inklusive Punkten.
 3. **Auswärtige PDF-Ranglisten:**
    * Textblöcke werden über y-Koordinaten zu konsistenten Tabellenzeilen gruppiert (`extractLinesFromPdfPage`). Schützen aus Muhen werden via Lizenz- und Namensabgleich unter Maskierung von Jahrgängen exakt zugeordnet.
-4. **Foto-Upload & Gemini Vision OCR:**
+4. **Foto-Upload, Screenshot-Paste (Strg+V) & Gemini Vision OCR:**
    * Konvertiert Smartphone-Formate (inkl. Apple `.heic` via `heic2any`) clientseitig zu JPEG.
-   * Gemini 2.5 Flash prognostiziert das Programmmaximum anhand typischer Schweizer Schiessprogramme ($60, 80, 100, 120, 150, 200, 300, 600$) und liefert eine nachvollziehbare Begründung.
-5. **Vorschau-Modal:**
-   * Schützen können vor der Übernahme per Checkbox einzeln selektiert oder korrigiert werden.
+   * **Direktes Einfügen aus Zwischenablage (`Strg + V`):** Ranglisten-Ausschnitte (z. B. via Snipping-Tool) können ohne Dateispeicherung direkt ins Modal eingefügt und mit Gemini Vision analysiert werden.
+5. **Intelligenter Schützenfeste-Katalogabgleich (`public.jm_competitions_catalog`):**
+   * Erkennt den Anlass anhand hinterlegter Suchbegriffe autonom (z.B. *Sulz* ➔ *Deisigrabenschiessen*, *Winterthur* ➔ *Winterthurer Liegendmatch*).
+   * Weist automatisch die korrekten Maximalpunkte (z.B. 100 vs. 600) und Disziplin zu.
+   * Der Name des Anlasses und die Maximalpunkte (inkl. Schnellauswahl-Pills 100/150/200/600) sind im Vorschau-Modal frei editierbar.
+6. **Vorschau-Modal:**
+   * Schützen können vor der Übernahme per Checkbox einzeln selektiert oder Punkte direkt überschrieben werden.
 
 ---
 

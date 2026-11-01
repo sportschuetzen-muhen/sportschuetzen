@@ -82,9 +82,10 @@ function openJMImportModal() {
 window.openJMImportModal = openJMImportModal;
 
 /**
- * Befüllt das Ziel-Anlass-Dropdown für Auswärtige Schiessen (Spalten ab 41/42).
+ * Befüllt das Ziel-Anlass-Dropdown für Auswärtige Schiessen (Spalten ab 41/42)
+ * sowie bekannte Schützenfeste aus dem Katalog (public.jm_competitions_catalog).
  */
-function jmPopulateTargetCompetitions(selectedCol = -1, detectedName = '') {
+async function jmPopulateTargetCompetitions(selectedCol = -1, detectedName = '', catalogMatch = null) {
     const selectElem = document.getElementById('jm-import-target-competition');
     if (!selectElem) return;
 
@@ -101,6 +102,11 @@ function jmPopulateTargetCompetitions(selectedCol = -1, detectedName = '') {
     let bestMatchCol = -1;
     const cleanDetected = detectedName.toLowerCase().replace(/[^a-z0-9äöü]/g, '');
 
+    // 1. Spalten aus aktueller Saison
+    const grpExisting = document.createElement('optgroup');
+    grpExisting.label = 'Spalten in aktueller Jahresmeisterschaft';
+
+    let existingCount = 0;
     for (let c = startDynamic; c < grid[2].length; c++) {
         const title = String(grid[2][c] || '').trim();
         if (title && !title.includes('%') && !title.toLowerCase().startsWith('spalte')) {
@@ -115,24 +121,72 @@ function jmPopulateTargetCompetitions(selectedCol = -1, detectedName = '') {
                     bestMatchCol = c;
                 }
             }
-            selectElem.appendChild(opt);
+            grpExisting.appendChild(opt);
+            existingCount++;
+        }
+    }
+    if (existingCount > 0) {
+        selectElem.appendChild(grpExisting);
+    }
+
+    // 2. Bekannte Schützenfeste aus dem Katalog
+    let matchedCatalogOptValue = null;
+    if (typeof loadJMSchuetzenfesteCatalog === 'function') {
+        const catalog = await loadJMSchuetzenfesteCatalog();
+        const grpCatalog = document.createElement('optgroup');
+        grpCatalog.label = 'Bekannte Schützenfeste (Katalog)';
+
+        catalog.filter(item => item.is_active !== false).forEach(item => {
+            const opt = document.createElement('option');
+            opt.value = `cat_${item.id}`;
+            opt.setAttribute('data-anlass', item.anlass);
+            opt.setAttribute('data-ort', item.ort || '');
+            opt.setAttribute('data-max', item.max_punkte || 100);
+            opt.textContent = `⭐ ${item.anlass} (${item.ort || 'Katalog'}, Max: ${item.max_punkte})`;
+
+            if (catalogMatch && catalogMatch.id === item.id) {
+                matchedCatalogOptValue = `cat_${item.id}`;
+            } else if (!cleanDetected && !matchedCatalogOptValue && cleanDetected && item.anlass.toLowerCase().includes(cleanDetected)) {
+                matchedCatalogOptValue = `cat_${item.id}`;
+            }
+            grpCatalog.appendChild(opt);
+        });
+        if (grpCatalog.children.length > 0) {
+            selectElem.appendChild(grpCatalog);
         }
     }
 
-    // Option für neuen Anlass
+    // 3. Option für neuen freien Anlass
     const newOpt = document.createElement('option');
     newOpt.value = 'new';
     newOpt.textContent = detectedName ? `➕ Neuen Anlass anlegen: "${detectedName}"` : `➕ Neuen Anlass anlegen...`;
     selectElem.appendChild(newOpt);
 
+    // Selektion bestimmen
     if (selectedCol !== -1) {
         selectElem.value = String(selectedCol);
     } else if (bestMatchCol !== -1) {
         selectElem.value = String(bestMatchCol);
-    } else if (selectElem.options.length > 1) {
+    } else if (matchedCatalogOptValue) {
+        selectElem.value = matchedCatalogOptValue;
+    } else if (existingCount > 0) {
         selectElem.selectedIndex = 0;
     } else {
         selectElem.value = 'new';
+    }
+
+    // Titel-Eingabefeld initial synchronisieren
+    const titleInput = document.getElementById('jm-import-target-title');
+    if (titleInput) {
+        if (detectedName) {
+            titleInput.value = detectedName;
+        } else if (selectElem.value.startsWith('cat_')) {
+            const opt = selectElem.selectedOptions[0];
+            titleInput.value = `${opt.getAttribute('data-anlass')} ${jmCurrentJahr || new Date().getFullYear()}`;
+        } else if (selectElem.value !== 'new') {
+            const colIdx = parseInt(selectElem.value);
+            titleInput.value = String(grid[2][colIdx] || '').trim();
+        }
     }
 }
 
@@ -146,22 +200,46 @@ function jmOnTargetCompetitionChange() {
     const val = selectElem.value;
     const grid = jmRawGrid;
     const maxInput = document.getElementById('jm-import-max-points');
+    const titleInput = document.getElementById('jm-import-target-title');
 
-    if (val === 'new') {
+    if (val.startsWith('cat_')) {
+        const opt = selectElem.selectedOptions[0];
+        const catAnlass = opt?.getAttribute('data-anlass') || 'Auswärtiges Schiessen';
+        const catMax = parseFloat(opt?.getAttribute('data-max')) || 100;
+
         _jmImportState.isNewComp = true;
         _jmImportState.targetCol = -1;
-        _jmImportState.targetTitle = _jmImportState.metadata.title || 'Auswärtiges Schiessen';
+        _jmImportState.targetTitle = `${catAnlass} ${jmCurrentJahr || new Date().getFullYear()}`;
+        _jmImportState.maxPoints = catMax;
+
+        if (titleInput) titleInput.value = _jmImportState.targetTitle;
+        if (maxInput) maxInput.value = catMax;
+
+        const sourceBadge = document.getElementById('jm-import-max-source-badge');
+        if (sourceBadge) sourceBadge.innerText = "Katalog";
+
+        const hint = document.getElementById('jm-import-prognose-hint');
+        if (hint) hint.innerText = `💡 Katalog: ${catAnlass} (Max: ${catMax})`;
+
+    } else if (val === 'new') {
+        _jmImportState.isNewComp = true;
+        _jmImportState.targetCol = -1;
+        _jmImportState.targetTitle = titleInput?.value || _jmImportState.metadata.title || 'Auswärtiges Schiessen';
     } else {
         const colIdx = parseInt(val);
         _jmImportState.isNewComp = false;
         _jmImportState.targetCol = colIdx;
         _jmImportState.targetTitle = String(grid[2][colIdx] || '').trim();
 
+        if (titleInput) titleInput.value = _jmImportState.targetTitle;
+
         if (grid[3] && grid[3][colIdx]) {
             const existingMax = parseFloat(grid[3][colIdx]);
             if (!isNaN(existingMax) && existingMax > 0 && maxInput) {
                 maxInput.value = existingMax;
                 _jmImportState.maxPoints = existingMax;
+                const sourceBadge = document.getElementById('jm-import-max-source-badge');
+                if (sourceBadge) sourceBadge.innerText = "Spalte " + (colIdx + 1);
             }
         }
     }
@@ -172,6 +250,34 @@ function jmOnTargetCompetitionChange() {
     }
 }
 window.jmOnTargetCompetitionChange = jmOnTargetCompetitionChange;
+
+/**
+ * Event-Handler für manuelle Eingabe im Anlass-Namen-Feld.
+ */
+function jmOnTargetTitleInput(val) {
+    _jmImportState.targetTitle = (val || '').trim();
+}
+window.jmOnTargetTitleInput = jmOnTargetTitleInput;
+
+/**
+ * Schnellauswahl der Maximalpunkte via Pills (100, 150, 200, 600).
+ */
+function jmQuickSetMaxPoints(pts) {
+    _jmImportState.maxPoints = pts;
+    const maxInput = document.getElementById('jm-import-max-points');
+    if (maxInput) maxInput.value = pts;
+
+    const sourceBadge = document.getElementById('jm-import-max-source-badge');
+    if (sourceBadge) sourceBadge.innerText = "Schnellauswahl";
+
+    const hint = document.getElementById('jm-import-prognose-hint');
+    if (hint) hint.innerText = `💡 Manuell: Max. ${pts} Pkt`;
+
+    if (_jmImportState.rows && _jmImportState.rows.length > 0) {
+        jmRenderPreview(_jmImportState.rows, 'auswaertig', _jmImportState.metadata);
+    }
+}
+window.jmQuickSetMaxPoints = jmQuickSetMaxPoints;
 
 /**
  * Event-Handler bei manueller Änderung der Maximalpunkte.
@@ -204,6 +310,114 @@ function jmParseCSV(text) {
         });
     });
 }
+
+/**
+ * Verarbeitet einen Screenshot aus der Windows-Zwischenablage (Strg+V).
+ */
+async function jmHandlePastedImage(blob) {
+    if (!blob) return;
+    const file = new File([blob], `screenshot_${Date.now()}.png`, { type: blob.type || 'image/png' });
+
+    // Thumbnail im Vorschau-Bereich anzeigen
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+        const thumbCont = document.getElementById('jm-import-thumbnail-container');
+        const thumbImg = document.getElementById('jm-import-thumbnail-img');
+        if (thumbCont && thumbImg) {
+            thumbImg.src = ev.target.result;
+            thumbCont.classList.remove('d-none');
+        }
+        _jmImportState.lastThumbnailUrl = ev.target.result;
+    };
+    reader.readAsDataURL(blob);
+
+    await jmHandleFileUpload(file, 'auswaertig');
+}
+window.jmHandlePastedImage = jmHandlePastedImage;
+
+/**
+ * Holt aktiv ein Bild aus der Zwischenablage via Clipboard API.
+ */
+async function jmPasteFromClipboard() {
+    try {
+        if (navigator.clipboard && navigator.clipboard.read) {
+            const clipboardItems = await navigator.clipboard.read();
+            for (const item of clipboardItems) {
+                const imageType = item.types.find(type => type.startsWith('image/'));
+                if (imageType) {
+                    const blob = await item.getType(imageType);
+                    await jmHandlePastedImage(blob);
+                    return;
+                }
+            }
+            if (typeof UIConfirmKit !== 'undefined') {
+                await UIConfirmKit.alert({
+                    title: 'Kein Screenshot gefunden',
+                    message: 'In deiner Zwischenablage befindet sich aktuell kein Bild. Drücke z.B. Win+Shift+S, ziehe einen Ausschnitt und drücke dann Strg+V im Portal.',
+                    type: 'warning'
+                });
+            } else {
+                alert("In deiner Zwischenablage befindet sich aktuell kein Bild. Bitte mit Win+Shift+S einen Screenshot erstellen.");
+            }
+        } else {
+            if (typeof UIConfirmKit !== 'undefined') {
+                await UIConfirmKit.alert({
+                    title: 'Zwischenablage einfügen',
+                    message: 'Drücke einfach Strg + V auf deiner Tastatur, um deinen Screenshot direkt in dieses Fenster einzufügen.',
+                    type: 'info'
+                });
+            }
+        }
+    } catch (err) {
+        console.warn("Clipboard Read Hinweis:", err);
+        if (typeof UIConfirmKit !== 'undefined') {
+            await UIConfirmKit.alert({
+                title: 'Tastatur-Kürzel nutzen',
+                message: 'Der direkte Zugriff auf die Zwischenablage wurde vom Browser blockiert. Drücke einfach Strg + V auf deiner Tastatur!',
+                type: 'info'
+            });
+        }
+    }
+}
+window.jmPasteFromClipboard = jmPasteFromClipboard;
+
+/**
+ * Öffnet die Grossansicht des eingefügten Screenshots in der Lightbox.
+ */
+function jmShowPastedImagePreview() {
+    const thumbImg = document.getElementById('jm-import-thumbnail-img');
+    if (thumbImg && thumbImg.src) {
+        const photoModal = document.getElementById('jm-standblatt-photo-modal');
+        const modalImg = document.getElementById('jm-standblatt-photo-img');
+        const modalTitle = document.getElementById('jm-standblatt-photo-title');
+        if (photoModal && modalImg) {
+            modalImg.src = thumbImg.src;
+            if (modalTitle) modalTitle.innerText = "Eingefügter Screenshot (Zwischenablage)";
+            bootstrap.Modal.getOrCreateInstance(photoModal).show();
+        }
+    }
+}
+window.jmShowPastedImagePreview = jmShowPastedImagePreview;
+
+// Globaler Paste-Listener für das Import-Modal
+document.addEventListener('paste', async (e) => {
+    const modal = document.getElementById('jm-import-modal');
+    if (!modal || !modal.classList.contains('show')) return;
+
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+            e.preventDefault();
+            const blob = items[i].getAsFile();
+            if (blob) {
+                await jmHandlePastedImage(blob);
+                break;
+            }
+        }
+    }
+});
 
 /**
  * Verarbeitet den Datei-Upload für alle 5 Wettkampfarten (Excel, CSV, PDF, Foto, HEIC).
@@ -274,7 +488,7 @@ async function jmHandleFileUpload(file, type) {
 
             if (fullLines.length > 0 && fullLines.map(l => (l && l.text !== undefined ? l.text : l)).join(' ').trim().length > 30) {
                 // Digitales PDF mit Text (wie WinFire Bärenmoos oder Villmergen)
-                jmProcessAuswaertigFromText(fullLines, file.name);
+                await jmProcessAuswaertigFromText(fullLines, file.name);
                 if (loadingElem) loadingElem.classList.add('d-none');
                 return;
             } else {
@@ -582,7 +796,7 @@ function extractLinesFromPdfPage(textContent) {
  * Analysiert den reinen Text eines PDFs/Dokuments auf Schützen, Punkte und Schiessprogramme.
  * Unterstützt Mehrfach-Stiche (z.B. Kranzstich, Vereinsstich, Auszahler) und Spalten-Lokalisierung.
  */
-function jmProcessAuswaertigFromText(linesOrText, fileName) {
+async function jmProcessAuswaertigFromText(linesOrText, fileName) {
     const grid = jmRawGrid;
     if (!grid || grid.length < 6) return;
 
@@ -630,13 +844,25 @@ function jmProcessAuswaertigFromText(linesOrText, fileName) {
         }
     }
 
-    // 1. Wettkampf-Titel erkennen
+    // 1. Wettkampf-Titel erkennen via Schützenfeste-Katalog
     let detectedTitle = fileName ? fileName.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') : 'Auswärtiges Schiessen';
-    for (let i = 0; i < Math.min(10, lines.length); i++) {
-        const l = lines[i].text;
-        if (/(?:schiessen|stich|cup|fest|verband|verein|stumpenland|bärenmoos|freischiessen|sektion|gruppe)/i.test(l)) {
-            detectedTitle = l;
-            break;
+    let catalogMatch = null;
+    let catalogReason = '';
+    if (typeof jmMatchCompetitionFromCatalog === 'function') {
+        catalogMatch = await jmMatchCompetitionFromCatalog(fullText);
+        if (catalogMatch) {
+            detectedTitle = `${catalogMatch.anlass} ${jmCurrentJahr || new Date().getFullYear()}`;
+            catalogReason = `Katalog: ${catalogMatch.anlass} (Erkannt: "${catalogMatch.matchedKeyword}")`;
+        }
+    }
+
+    if (!catalogMatch) {
+        for (let i = 0; i < Math.min(10, lines.length); i++) {
+            const l = lines[i].text;
+            if (/(?:schiessen|stich|cup|fest|verband|verein|stumpenland|bärenmoos|freischiessen|sektion|gruppe)/i.test(l)) {
+                detectedTitle = l;
+                break;
+            }
         }
     }
 
@@ -762,16 +988,18 @@ function jmProcessAuswaertigFromText(linesOrText, fileName) {
     } else {
         const ptsList = matchedShootersWithStiche.map(s => s.stiche['default']).filter(p => !isNaN(p) && p > 0);
         const maxScore = ptsList.length > 0 ? Math.max(...ptsList) : 100;
-        let forecastMax = 100;
-        if (/60\s*schuss|liegend/i.test(fullText) || maxScore > 300) forecastMax = 600;
-        else if (/kantonalstich|30\s*schuss/i.test(fullText) || maxScore > 200) forecastMax = 300;
-        else if (/vereinsstich|verband|20\s*schuss/i.test(fullText) || maxScore > 150) forecastMax = 200;
-        else if (/15\s*schuss|auszahlung|sektion/i.test(fullText) || (maxScore > 120 && maxScore <= 150)) forecastMax = 150;
-        else forecastMax = 100;
+        let forecastMax = catalogMatch ? catalogMatch.max_punkte : 100;
+        if (!catalogMatch) {
+            if (/60\s*schuss|liegend/i.test(fullText) || maxScore > 300) forecastMax = 600;
+            else if (/kantonalstich|30\s*schuss/i.test(fullText) || maxScore > 200) forecastMax = 300;
+            else if (/vereinsstich|verband|20\s*schuss/i.test(fullText) || maxScore > 150) forecastMax = 200;
+            else if (/15\s*schuss|auszahlung|sektion/i.test(fullText) || (maxScore > 120 && maxScore <= 150)) forecastMax = 150;
+            else forecastMax = 100;
+        }
 
         availableStiche = [{
             key: 'default',
-            label: 'Hauptstich',
+            label: catalogMatch ? catalogMatch.anlass : 'Hauptstich',
             maxPoints: forecastMax
         }];
     }
@@ -791,7 +1019,7 @@ function jmProcessAuswaertigFromText(linesOrText, fileName) {
     _jmImportState.metadata = {
         title: detectedTitle,
         maxPoints: defaultStich.maxPoints,
-        reason: `${defaultStich.label} (Erkannt)`,
+        reason: catalogReason || `${defaultStich.label} (Erkannt)`,
         fileName: fileName
     };
 
@@ -814,7 +1042,7 @@ function jmProcessAuswaertigFromText(linesOrText, fileName) {
     });
 
     _jmImportState.rows = rows;
-    jmSetupAuswaertigPreview(detectedTitle, defaultStich.maxPoints, `${defaultStich.label} (Erkannt)`, rows);
+    await jmSetupAuswaertigPreview(detectedTitle, defaultStich.maxPoints, catalogReason || `${defaultStich.label} (Erkannt)`, rows, catalogMatch);
 }
 
 /**
@@ -975,17 +1203,28 @@ async function jmProcessAuswaertigFromImage(base64Data, fileName) {
             });
 
             const ptsList = matchedResults.map(r => r.points);
-            const maxPts = ptsList.length > 0 ? (Math.max(...ptsList) <= 100 ? 100 : 200) : 100;
-            const detectedTitle = fileName ? fileName.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') : 'Standblatt Auswärtig';
+            
+            // Katalog-Abgleich für OCR-Ergebnis
+            let catMatch = null;
+            if (typeof jmMatchCompetitionFromCatalog === 'function') {
+                const ocrText = [data.anlass, data.wettkampf, data.raw_text, data.ocr_text, fileName].filter(Boolean).join(' ');
+                catMatch = await jmMatchCompetitionFromCatalog(ocrText);
+            }
+
+            let maxPts = catMatch ? catMatch.max_punkte : (ptsList.length > 0 ? (Math.max(...ptsList) <= 100 ? 100 : 200) : 100);
+            const detectedTitle = catMatch
+                ? `${catMatch.anlass} ${jmCurrentJahr || new Date().getFullYear()}`
+                : (fileName ? fileName.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') : 'Standblatt Auswärtig');
+            const reason = catMatch ? `Katalog: ${catMatch.anlass} (Erkannt: "${catMatch.matchedKeyword}")` : 'Gemini Vision Erkennung';
             
             _jmImportState.rows = matchedResults;
             _jmImportState.metadata = {
                 title: detectedTitle,
                 maxPoints: maxPts,
-                reason: 'Gemini Vision Erkennung',
+                reason: reason,
                 fileName: fileName
             };
-            jmSetupAuswaertigPreview(detectedTitle, maxPts, 'KI-Standblatt-Erkennung', matchedResults);
+            await jmSetupAuswaertigPreview(detectedTitle, maxPts, reason, matchedResults, catMatch);
             return;
         }
     } catch (ocrErr) {
@@ -994,24 +1233,28 @@ async function jmProcessAuswaertigFromImage(base64Data, fileName) {
 
     // Fallback falls OCR nicht antwortet
     const fallbackTitle = fileName ? fileName.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') : 'Auswärtiges Schiessen';
-    jmSetupAuswaertigPreview(fallbackTitle, 100, 'Manuelle Erfassung (KI-Fallback)', []);
+    await jmSetupAuswaertigPreview(fallbackTitle, 100, 'Manuelle Erfassung (KI-Fallback)', [], null);
 }
 
 /**
  * Richtet die Konfigurationsleiste und Vorschau für Auswärtige Schiessen ein.
  */
-function jmSetupAuswaertigPreview(detectedTitle, forecastMax, forecastReason, matchedResults) {
+async function jmSetupAuswaertigPreview(detectedTitle, forecastMax, forecastReason, matchedResults, catalogMatch = null) {
     const configCard = document.getElementById('jm-import-auswaertig-config');
     if (configCard) configCard.classList.remove('d-none');
 
-    // Dropdown mit Anlässen befüllen
-    jmPopulateTargetCompetitions(-1, detectedTitle);
+    // Dropdown mit Anlässen und Katalog befüllen
+    await jmPopulateTargetCompetitions(-1, detectedTitle, catalogMatch);
 
     const maxInput = document.getElementById('jm-import-max-points');
     if (maxInput) maxInput.value = forecastMax;
 
+    const titleInput = document.getElementById('jm-import-target-title');
+    if (titleInput) titleInput.value = detectedTitle;
+    _jmImportState.targetTitle = detectedTitle;
+
     const sourceBadge = document.getElementById('jm-import-max-source-badge');
-    if (sourceBadge) sourceBadge.innerText = "KI-Prognose";
+    if (sourceBadge) sourceBadge.innerText = catalogMatch ? "Katalog" : "KI-Prognose";
 
     const reasonHint = document.getElementById('jm-import-prognose-hint');
     if (reasonHint) reasonHint.innerText = `💡 ${forecastReason}`;
@@ -1019,8 +1262,9 @@ function jmSetupAuswaertigPreview(detectedTitle, forecastMax, forecastReason, ma
     _jmImportState.maxPoints = forecastMax;
 
     const selectElem = document.getElementById('jm-import-target-competition');
-    if (selectElem && selectElem.value !== 'new') {
+    if (selectElem && selectElem.value !== 'new' && !selectElem.value.startsWith('cat_')) {
         _jmImportState.targetCol = parseInt(selectElem.value);
+        _jmImportState.isNewComp = false;
     } else {
         _jmImportState.targetCol = -1;
         _jmImportState.isNewComp = true;
@@ -1652,7 +1896,10 @@ async function jmCommitImport() {
                     }
                 }
             } else {
-                // Bestehender Anlass: Maximalpunkte in Zeile 3 aktualisieren
+                // Bestehender Anlass: Titel (falls im Feld angepasst) und Maximalpunkte aktualisieren
+                if (grid[2] && newTitle) {
+                    grid[2][targetCol] = newTitle;
+                }
                 if (grid[3]) {
                     grid[3][targetCol] = maxPts;
                 }
