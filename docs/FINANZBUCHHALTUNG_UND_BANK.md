@@ -24,6 +24,7 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
   - `1000`: Kasse (Bargeld Munition, Kiosk)
   - `1020`: Bank / Postfinance (Vereinskonto)
   - `1090`: Noch abzuklärende Bankzahlungen (Transit / Klärungskonto)
+  - `1099`: Geldtransit / Transferkonto liquide Mittel (Kasse <-> Bank Überträge)
   - `1100`: Debitoren / Offene Forderungen (Schnittstelle zu `public.invoices`)
   - `2000`: Kreditoren (Offene Verbindlichkeiten)
   - `3000`: Ertrag Jahresbeiträge (Schnittstelle zu `contributions_header`)
@@ -107,6 +108,13 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
 ### 2.12 Ergonomie & Datenübernahme im Erfassungs-Modal (Einzelbuchung & Sammelbeleg)
 * **Ghost-Data-Schutz & State-Reset:** Um zu verhindern, dass Zeilen früherer Sammelbuchungen im Browser-Speicher verbleiben (`_bhKassaSammelRows`), werden Sammelbeleg-Zeilen beim Öffnen des Modals zur Neuerfassung, nach jedem erfolgreichen Speichern sowie beim Schliessen des Modals (`hidden.bs.modal`) garantiert geleert (`null`).
 * **Nahtlose Übernahme von Einzelbuchung auf Sammelbeleg (`bhSyncFromSingleEntry`):** Beginnt der Benutzer eine Buchung im Einzel-Tab (Datum, Empfänger/IBAN, Text, Soll/Haben-Konto, Betrag) und wechselt anschliessend auf den Reiter «Sammelbeleg & Auszahlungen», werden diese Eingaben automatisch in Position #1 übernommen, die Belegart (`bank`, `ausgabe`, `einnahme`, `frei`) intelligent abgeleitet und eine leere Folgezeile #2 für den Split bereitgestellt. Über die Schaltfläche «Aus Einzelbuchung übernehmen» kann der Transfer jederzeit auch manuell synchronisiert werden.
+
+### 2.13 Trennung der Belegnummernkreise & Geldtransit (1099) bei Kassen-/Banküberträgen
+* **Problemstellung & Invariante:** Werden Überträge zwischen flüssigen Mitteln (Kasse `1000` und Bank `1020`) direkt gegeneinander gebucht, kollidieren die unabhängigen Belegnummernkreise: Eine Direktbuchung via CAMT erzeugt eine `B_Zahl_`-Nummer, wodurch im Kassenbuch die physische Kassenbelegnummer fehlt und zeitlicher Valutaversatz zu falschen Kassenbeständen führt.
+* **Architektur:** Bargeldentnahmen und -einzahlungen laufen strikt über das neutrale Transferkonto `1099 Geldtransit`.
+  1. **Kassenseite:** Physische Entnahme vor Ort &rarr; `1099 an 1000` mit Beleg `Kasse_YYYY-xxx` am Entnahmetag.
+  2. **Bankseite:** Bankgutschrift via CAMT &rarr; `1020 an 1099` mit Beleg `B_Zahl_YYYY-xxx` am Bank-Valutatag.
+* **Ergebnis:** Beide Belegnummernkreise bleiben 100% lückenlos und chronologisch getrennt, während das Verrechnungskonto `1099` am Ende exakt auf CHF 0.00 saldiert. Bei manueller Wahl von `1000` im Bankabgleich leitet das System automatisch auf `1099` um.
 
 ---
 

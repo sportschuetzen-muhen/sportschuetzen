@@ -740,7 +740,18 @@ window._bhUpdateTxKonto = function(idx, type, val) {
     return matches.length > 0 ? String(matches[0].konto).trim() : s;
   }
 
-  const code = resolveCode(val);
+  let code = resolveCode(val);
+  if (code === '1000') {
+    code = '1099';
+    if (typeof showToast === 'function') {
+      showToast('💡 Für Geldtransfers zwischen Bank und Kasse wird Konto 1099 Geldtransit verwendet, um Kassen- und Bankbelege getrennt zu halten.', 'info', 'bottom-end', 4500);
+    }
+    const inputEl = document.getElementById(type === 'soll' ? `bh-soll-${idx}` : `bh-haben-${idx}`);
+    if (inputEl) {
+      inputEl.value = '1099 | Geldtransit (Transferkonto liquide Mittel)';
+      inputEl.classList.remove('bh-konto-empty');
+    }
+  }
   if (type === 'soll') {
     tx.suggestedSoll = code;
     tx._customSollEdited = true;

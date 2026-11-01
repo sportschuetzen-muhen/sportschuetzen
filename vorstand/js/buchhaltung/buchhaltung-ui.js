@@ -686,9 +686,10 @@ window.renderTabJournal = function (container) {
         badgeLabel = 'ERTRAG';
       }
     } else if (bTyp === 'TRANSIT') {
-      amountClass = isTransitKlaerung ? 'text-info fw-bold' : 'text-muted';
-      badgeClass = isTransitKlaerung ? 'bg-info text-dark' : 'bg-secondary text-white';
-      badgeLabel = isTransitKlaerung ? 'KLÄRUNG 1090' : 'TRANSIT';
+      const isGeldtransit = cleanSoll === '1099' || cleanHaben === '1099';
+      amountClass = isTransitKlaerung ? 'text-info fw-bold' : (isGeldtransit ? 'text-primary fw-semibold' : 'text-muted');
+      badgeClass = isTransitKlaerung ? 'bg-info text-dark' : (isGeldtransit ? 'bg-primary-subtle text-primary border border-primary-subtle' : 'bg-secondary text-white');
+      badgeLabel = isTransitKlaerung ? 'KLÄRUNG 1090' : (isGeldtransit ? 'GELDTRANSIT' : 'TRANSIT');
     }
 
     return `
@@ -704,6 +705,7 @@ window.renderTabJournal = function (container) {
         ${cleanSoll ? `
           <span class="bh-konto-badge bh-konto-soll-badge ${cleanSoll === '1090' ? 'bg-info text-dark fw-bold' : ''}">${item.konto_soll}</span> 
           ${cleanSoll === '1090' ? '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1" style="font-size:10px;"><i class="fas fa-clock me-1"></i>Klärung</span>' : ''}
+          ${cleanSoll === '1099' ? '<span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1" style="font-size:10px;"><i class="fas fa-exchange-alt me-1"></i>Geldtransit</span>' : ''}
           <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_soll)}</span>
         ` : `
           <span class="badge bg-warning text-dark border border-warning" title="Soll-Konto fehlt (Klicken auf Bearbeiten zum Nacherfassen)">
@@ -715,6 +717,7 @@ window.renderTabJournal = function (container) {
         ${cleanHaben ? `
           <span class="bh-konto-badge bh-konto-haben-badge ${cleanHaben === '1090' ? 'bg-info text-dark fw-bold' : ''}">${item.konto_haben}</span> 
           ${cleanHaben === '1090' ? '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1" style="font-size:10px;"><i class="fas fa-clock me-1"></i>Klärung</span>' : ''}
+          ${cleanHaben === '1099' ? '<span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1" style="font-size:10px;"><i class="fas fa-exchange-alt me-1"></i>Geldtransit</span>' : ''}
           <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_haben)}</span>
         ` : `
           <span class="badge bg-warning text-dark border border-warning" title="Haben-Konto fehlt (Klicken auf Bearbeiten zum Nacherfassen)">

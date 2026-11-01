@@ -343,7 +343,7 @@ window.bhDetermineAutoBelegPrefix = function(soll, haben, typ) {
   const t = String(typ || '').trim();
 
   // Bei Bankauszahlungen an Mitglieder / Lieferanten: Zahlungsauftrag ZA-
-  if ((h === '1020' && s !== '1000') || t === 'Überweisung') return 'ZA-';
+  if ((h === '1020' && s !== '1000' && s !== '1099') || t === 'Überweisung') return 'ZA-';
 
   // Prio 1: Bankkonten (Zahlungskonto 1020, Wirtschaft 1021, Anteilschein/Geno 1022)
   if (s === '1020' || h === '1020') return 'B_Zahl_';
@@ -389,7 +389,7 @@ window.bhCalcSplitGroupBalance = function(entries, baseBeleg) {
 
   // Falls nicht über Präfix bekannt: Liquiditätskonten prüfen (1020, 1000, 1021, 1022, 1090)
   if (!anchor) {
-    const liquidAccounts = ['1020', '1000', '1021', '1022', '1090'];
+    const liquidAccounts = ['1020', '1000', '1021', '1022', '1090', '1099'];
     for (const acc of liquidAccounts) {
       const hasAcc = entries.some(e => cleanKonto(e.konto_soll || e.kontoSoll) === acc || cleanKonto(e.konto_haben || e.kontoHaben) === acc);
       if (hasAcc) {
