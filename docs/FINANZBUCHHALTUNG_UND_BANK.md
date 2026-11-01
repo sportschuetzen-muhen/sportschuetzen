@@ -63,9 +63,12 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
 
 ### 2.6 Zweistufige Auszahlungen, Zahlungsaufträge & ISO 20022 pain.001 Sammel-Export
 * **Problemstellung & Anwendungsfall:** Vorfinanzierte Auslagen von Mitgliedern (z.B. Gruppendoppel für Schiessanlässe, Munition oder Materialspesen) müssen mit detailliertem Nachweis vergütet werden.
-* **Differenzierung Zahlweg (Kasse vs. Bank):**
-  - **Kasse (`1000`):** Barauszahlungen erfolgen unmittelbar physisch vor Ort. Das System vergibt direkt die finale Belegnummer `Kasse_YYYY-xxx`, bucht den Satz sofort ins Hauptjournal (`accounting_journal`) und druckt den Kassenbeleg.
-  - **Bank (`1020` via pain.001):** Um Chronologie-Brüche und Geisterbuchungen im Journal zu verhindern (da das Geld die Bank erst Tage später nach E-Banking-Upload verlässt), wird bei Banküberweisungen **keine** `B_Zahl_`-Nummer vorab vergeben. Stattdessen wird der Vorgang als **Zahlungsauftrag** (`ZA-YYYY-xxx`) in `public.accounting_payment_orders` mit Status `pendent` gespeichert. Die automatische Nummernvergabe (`bhGetNextPaymentOrderNr` / `bhResolveSafePaymentOrderNr`) wertet sowohl in der Einzel- als auch in der Sammelbeleg-Erfassung direkt die bestehenden Einträge in `accounting_payment_orders` aus und verhindert vor dem Datenbank-Insert jegliche `order_nr`-Duplikate.
+* **Differenzierung Zahlweg & standardisierte Belegnummernkreise:**
+  - **Kasse (`1000`):** Barauszahlungen und -einnahmen erhalten lückenlos das Präfix `Kasse_YYYY-xxx` und werden sofort im Hauptjournal verbucht.
+  - **Zahlungskonto Bank (`1020`):** Reguläre Bankbuchungen im Journal erhalten fortlaufend `B_Zahl_YYYY-xxx`.
+  - **Wirtschaftskonto Bank (`1021`):** Bankbuchungen des Wirtschaftskontos erhalten fortlaufend `B_Wirt_YYYY-xxx`.
+  - **Sparkonto Bank (`1022`):** Bankbuchungen des Sparkontos (Zinsen, Liquiditätstransfers) erhalten standardisiert `B_Spar_YYYY-xxx` (rückwärtskompatibel zu Altbeständen `B_Geno_`).
+  - **Bankauszahlungs-Aufträge (pain.001 via `1020`):** Wird explizit der Aktionstyp «Überweisung Bank» gewählt oder eine Bank-XML exportiert, vergibt das System die Vorgangsnummer `ZA-YYYY-xxx` in `public.accounting_payment_orders` mit Status `pendent`. Erst nach dem Bankvollzug und CAMT-Import wird die endgültige `B_Zahl_YYYY-xxx` chronologisch vergeben.
 * **ISO 20022 pain.001 Sammel- & Einzel-Export:**
   - Über das Modal «Zahlungsaufträge» (`bhOpenPaymentOrdersModal`) können mehrere erfasste Auszahlungen an unterschiedliche Mitglieder ausgewählt und in **einer einzigen normierten Sammel-XML** (`pain.001.001.03.ch.02` via `bhDownloadPain001BatchXml`) gebündelt werden.
   - Alternativ kann direkt beim Erfassen eine Einzel-XML heruntergeladen werden. Der Status wechselt auf `exportiert`.

@@ -268,7 +268,8 @@ window.bhGetNextJournalBelegNr = function(year, prefix = 'Kasse_') {
   if (cleanPrefix.toUpperCase() === 'ZA' && typeof window.bhGetNextPaymentOrderNr === 'function') {
     return window.bhGetNextPaymentOrderNr(y);
   }
-  const regex = new RegExp(`^${cleanPrefix}[-_]${y}[-_](\\d+)`, 'i');
+  const altPattern = (cleanPrefix === 'B_Spar') ? '(?:B_Spar|B_Geno)' : cleanPrefix;
+  const regex = new RegExp(`^${altPattern}[-_]${y}[-_](\\d+)`, 'i');
   let maxSeq = 0;
   (window._bhJournal || []).forEach(j => {
     if (Number(j.jahr) === y && j.beleg_nr) {
@@ -343,12 +344,12 @@ window.bhDetermineAutoBelegPrefix = function(soll, haben, typ) {
   const t = String(typ || '').trim();
 
   // Bei Bankauszahlungen an Mitglieder / Lieferanten: Zahlungsauftrag ZA-
-  if ((h === '1020' && s !== '1000' && s !== '1099') || t === 'Überweisung') return 'ZA-';
+  if (t === 'Überweisung') return 'ZA-';
 
   // Prio 1: Bankkonten (Zahlungskonto 1020, Wirtschaft 1021, Anteilschein/Geno 1022)
   if (s === '1020' || h === '1020') return 'B_Zahl_';
   if (s === '1021' || h === '1021') return 'B_Wirt_';
-  if (s === '1022' || h === '1022') return 'B_Geno_';
+  if (s === '1022' || h === '1022') return 'B_Spar_';
 
   // Prio 2: Kasse (Konto 1000 oder Aktionstyp Kassa)
   if (s === '1000' || h === '1000' || t === 'Kassa') return 'Kasse_';
@@ -378,7 +379,7 @@ window.bhCalcSplitGroupBalance = function(entries, baseBeleg) {
   let anchor = '';
   if (strBase.startsWith('B_Zahl_')) anchor = '1020';
   else if (strBase.startsWith('B_Wirt_')) anchor = '1021';
-  else if (strBase.startsWith('B_Geno_')) anchor = '1022';
+  else if (strBase.startsWith('B_Spar_') || strBase.startsWith('B_Geno_')) anchor = '1022';
   else if (strBase.startsWith('Kasse_')) anchor = '1000';
 
   const cleanKonto = (val) => {
@@ -2952,7 +2953,7 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
     let savedEntry = null;
 
     // 1. BANK-ÜBERWEISUNG (NEUANLAGE) -> ALS ZAHLUNGSAUFTRAG VORMERKEN (KEINE BELEGNUMMER-BLOCKIERUNG IM JOURNAL!)
-    if (!payload.id && (String(payload.konto_haben).trim() === '1020' || payload.typ === 'Überweisung')) {
+    if (!payload.id && (exportXml || payload.typ === 'Überweisung' || (payload.beleg_nr && payload.beleg_nr.startsWith('ZA-')))) {
       const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
       if (!supa) throw new Error("Supabase-Client nicht verfügbar");
 

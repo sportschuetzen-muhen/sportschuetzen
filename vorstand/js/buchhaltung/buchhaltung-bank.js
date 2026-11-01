@@ -2727,14 +2727,15 @@ function getBankBelegPrefix(kontoCode) {
   const c = String(kontoCode || '').trim();
   if (c === '1021') return 'B_Wirt_';
   if (c === '1020') return 'B_Zahl_';
-  if (c === '1022') return 'B_Geno_';
+  if (c === '1022') return 'B_Spar_';
   return 'BK_';
 }
 
 function bhGetNextBankBelegSeq(year, bankKonto = '1020') {
   const y = Number(year || new Date().getFullYear());
   const prefix = getBankBelegPrefix(bankKonto);
-  const regex = new RegExp(`^(?:${prefix}|BK[-_])${y}[-_](\\d+)`, 'i');
+  const altPfx = (prefix === 'B_Spar_') ? '(?:B_Spar_|B_Geno_)' : prefix;
+  const regex = new RegExp(`^(?:${altPfx}|BK[-_])${y}[-_](\\d+)`, 'i');
   let maxSeq = 0;
   
   (window._bhJournal || []).forEach(j => {
@@ -2772,9 +2773,10 @@ function bhCalculateProjectedBankBelegNrs(allRows, year) {
   const maxSeqs = {};
   journal.forEach(j => {
     if (Number(j.jahr) === y && j.beleg_nr) {
-      const m = String(j.beleg_nr).match(/^(B_Zahl_|B_Wirt_|B_Geno_|BK_)\d{4}-(\d+)/i);
+      const m = String(j.beleg_nr).match(/^(B_Zahl_|B_Wirt_|B_Spar_|B_Geno_|BK_)\d{4}-(\d+)/i);
       if (m) {
-        const pfx = m[1].toUpperCase();
+        let pfx = m[1].toUpperCase();
+        if (pfx === 'B_GENO_') pfx = 'B_SPAR_';
         const num = parseInt(m[2], 10);
         if (!isNaN(num)) {
           maxSeqs[pfx] = Math.max(maxSeqs[pfx] || 0, num);
