@@ -127,10 +127,11 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
 ### 2.14 Zentrale Buchungsregeln (`accounting_bank_rules`) & Härtung des Duplikatsabgleichs
 * **Keine hartcodierten Regeln im Quellcode (Single Source of Truth):** Sämtliche Erkennungsmuster für Mieterträge (`3650`), Spendeneingänge/TWINT via RaiseNow (`3651`) sowie interne Kontoüberträge (`1099`) wurden via Migration `109` aus dem Code in die Datenbanktabelle `public.accounting_bank_rules` überführt. Benutzer können diese Regeln im Modal «Automatische Buchungsregeln verwalten» transparent einsehen, anpassen, sortieren und löschen.
 * **Persistenz & UUID-Integrität:** Regeln nutzen als Primärschlüssel standardmässig die UUID `id` der Tabelle `accounting_bank_rules` für atomare Upserts und Löschvorgänge in Supabase.
-* **Härtung gegen False-Positive Duplikate (`bhBankMatchText`):**
-  - Frühere CAMT-Einträge glichen generische Schlagwörter wie `Vermietung` und `Schützenhaus` ab, wodurch gleichhohe Mietzahlungen (z.B. CHF 300.00) fälschlicherweise als bereits im Journal gebucht markiert wurden.
-  - Der Duplikatsabgleich erfordert nun zwingend eine Übereinstimmung des Absender-/Empfängernamens oder eindeutige alphanumerische Beleg- bzw. Vertragsnummern (`V-YYYY-xxxx`, `LL...`, `RE-...`).
-  - Fallback-Matches bei identischem Betrag innerhalb von 4 Tagen prüfen strikt, dass im Journal-Buchungstext kein abweichender Parteiname hinterlegt ist.
+* **Härtung gegen False-Positive Duplikate & Split-Buchungs-Schutz (`bhBankMatchText` / `bhBankMatchAll`):**
+  - Frühere CAMT-Einträge glichen generische Schlagwörter wie `Vermietung` und `Schützenhaus` ab, wodurch gleichhohe Mietzahlungen (z.B. CHF 300.00) fälschlicherweise als bereits im Journal gebucht markiert wurden. Solche generischen Begriffe bleiben im Schlagwortabgleich strikt ausgeschlossen.
+  - **Fallback für Split- / Sammelbuchungen:** Split-Gruppen im Journal (z.B. Bareinzahlungen aufgeteilt auf Einnahmen/Miete/Reinigung oder Schiessanlass-Doppel) verfügen über einen dedizierten Betrags- und Datums-Fallback ($\le 4$ Tage bei identischem Netto-Bankfluss), sodass sie beim CAMT-Wiedereinlesen zuverlässig als `alreadyBooked` erkannt werden, selbst wenn die einzelnen Journalzeilen abweichende fachliche Anlassbeschreibungen statt Bankparteien tragen.
+  - **Mojibake- & Sonderzeichen-Resilienz:** Zeichenketten aus historischem UTF-8-Encoding (`├╝`, `├ñ`, etc.) werden in `normalizeString` vorab in saubere Umlaute überführt, um Fehlschläge bei Vereins- und Personennamen (z.B. Luginbühl, Villmergen) auszuschliessen.
+  - Fallback-Matches bei identischem Betrag innerhalb von 4 Tagen prüfen strikt, dass im Journal-Buchungstext kein abweichender Parteiname hinterlegt ist (ausser bei Verwendungszweck-Treffern oder Anlass-Buchungen).
 
 ---
 

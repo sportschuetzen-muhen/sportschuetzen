@@ -383,7 +383,16 @@ function formatSwissDate(val) {
 }
 
 function normalizeString(s) {
-  return (s || '')
+  return String(s || '')
+    .replace(/├╝/g, 'ü')
+    .replace(/├ñ/g, 'ä')
+    .replace(/├╢/g, 'ö')
+    .replace(/├£/g, 'Ü')
+    .replace(/├ä/g, 'Ä')
+    .replace(/├Ц/g, 'Ö')
+    .replace(/├й/g, 'é')
+    .replace(/├и/g, 'è')
+    .replace(/├а/g, 'à')
     .toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9 ]/g, ' ')
@@ -517,6 +526,8 @@ function bhBankMatchText(journalDesc, partyName, remittanceInfo, creditorReferen
     if (pWords.length >= 2) {
       const matchCount = pWords.filter(w => cleanJ.includes(w)).length;
       if (matchCount >= Math.min(2, pWords.length)) return true;
+      // Auch 1 Treffer genügt, wenn das gematchte Wort mindestens 5 Zeichen lang ist (z.B. Villmergen, Mettau, Burkhalter)
+      if (matchCount >= 1 && pWords.some(w => w.length >= 5 && cleanJ.includes(w))) return true;
     } else if (pWords.length === 1 && pWords[0].length >= 4) {
       if (cleanJ.includes(pWords[0])) return true;
     }
@@ -542,6 +553,17 @@ function bhBankMatchText(journalDesc, partyName, remittanceInfo, creditorReferen
           return true;
         }
       }
+    }
+
+    // Spezifische Textwörter aus dem Verwendungszweck (ausser generische Vermietungs- und Standard-Stoppwörter)
+    const rWords = normalizeString(remittanceInfo).split(' ').filter(w =>
+      w.length >= 4 && !['zahlung','gutschrift','ueberweisung','rechnung','danke','spesen','abrechnung','muhen','vermietung','schuetzenhaus','schutzenhaus','miete','depot'].includes(w)
+    );
+    if (rWords.length >= 2) {
+      const rMatchCount = rWords.filter(w => cleanJ.includes(w)).length;
+      if (rMatchCount >= 2) return true;
+    } else if (rWords.length === 1 && rWords[0].length >= 5) {
+      if (cleanJ.includes(rWords[0])) return true;
     }
   }
 
@@ -2450,7 +2472,50 @@ function bhBankMatchAll(transactions) {
         }
       }
 
-      // C. Fallback: Exakter Betrag + sehr enges Datumsfenster (<= 4 Tage)
+      // C. Fallback für Split-Gruppen: Exakter Netto-Bankbetrag + sehr enges Datumsfenster (<= 4 Tage)
+      if (!alreadyBooked || !matchedJournalEntry) {
+        for (const [grpKey, grp] of journalGroups.entries()) {
+          if (usedGroupKeys.has(grpKey)) continue;
+          const netGrp = getGroupNetBankAmount(grp, tx.isCredit, txBankKonto);
+          if (Math.abs(netGrp - tx.amount) < 0.05) {
+            const days = bhBankDaysDiff(grp.datum, tx.bookingDate);
+            if (days <= 4) {
+              const cleanGrp = normalizeString(grp.allDescriptions || '');
+
+              // Falls ein spezifischer Vertragscode (V-2026-xxxx) vorhanden ist, muss dieser übereinstimmen
+              const txCodes = String(tx.remittanceInfo || '').match(/v-\d{4}-\d{3,4}/i);
+              const grpCodes = String(grp.allDescriptions || '').match(/v-\d{4}-\d{3,4}/i);
+              if (txCodes && grpCodes && txCodes[0].toLowerCase() !== grpCodes[0].toLowerCase()) {
+                continue; // Abweichender Mietvertrag -> Kein Blind-Match!
+              }
+
+              // Falls partyName vorhanden ist, sicherstellen, dass im Journal-Text nicht ein völlig fremder Name steht
+              if (tx.partyName) {
+                const pWords = normalizeString(tx.partyName).split(' ').filter(w => w.length >= 3 && !['herr','frau','dr','die','der','das','und','gmbh','ag','schuetzen','sportschuetzen','sportschützen','muhen'].includes(w));
+                if (pWords.length > 0 && !pWords.some(w => cleanGrp.includes(w))) {
+                  // Wenn Verwendungszweck matcht oder es sich um interne/Anlass-Buchungen handelt (z.B. "10m DMM", "Wirtschaft"), ist es zulässig
+                  const rWords = normalizeString(tx.remittanceInfo).split(' ').filter(w => w.length >= 4 && !['zahlung','gutschrift','ueberweisung','rechnung','danke','spesen','abrechnung','muhen','vermietung','schuetzenhaus','schutzenhaus','miete','depot'].includes(w));
+                  const rMatches = rWords.some(w => cleanGrp.includes(w));
+                  const isGenericOrEventDesc = /dmm|wettschiessen|verbandsschiessen|stiche|bancomat|wirtschaft|meisterschaft|schiessen|reinigung/i.test(cleanGrp);
+                  if (!rMatches && !isGenericOrEventDesc) {
+                    continue;
+                  }
+                }
+              }
+
+              alreadyBooked = true;
+              matchedJournalEntry = grp.entries[0];
+              bookedDate = bookedDate || formatSwissDate(grp.datum || tx.bookingDate);
+              matchLabel = `Im Journal gebucht (${grp.belegNr})`;
+              usedGroupKeys.add(grpKey);
+              grp.entryIds.forEach(id => usedJournalIds.add(id));
+              break;
+            }
+          }
+        }
+      }
+
+      // D. Fallback Einzelbuchung: Exakter Betrag + sehr enges Datumsfenster (<= 4 Tage)
       if (!alreadyBooked) {
         const fallbackSingle = journalHistory.find(j => {
           if (usedJournalIds.has(j.id)) return false;
@@ -2474,7 +2539,11 @@ function bhBankMatchAll(transactions) {
             const pWords = normalizeString(tx.partyName).split(' ').filter(w => w.length >= 3 && !['herr','frau','dr','die','der','das','und','gmbh','ag','schuetzen','sportschuetzen','sportschützen','muhen'].includes(w));
             const cleanJ = normalizeString(j.beschreibung || '');
             if (pWords.length > 0 && !pWords.some(w => cleanJ.includes(w))) {
-              return false; // Fremder Name im Journal -> Kein Blind-Match bei gleichem Betrag!
+              // Falls Verwendungszweck-Wörter matchen (z. B. "Siggenthal 2025"), trotzdem gelten lassen
+              const rWords = normalizeString(tx.remittanceInfo).split(' ').filter(w => w.length >= 4 && !['zahlung','gutschrift','ueberweisung','rechnung','danke','spesen','abrechnung','muhen','vermietung','schuetzenhaus','schutzenhaus','miete','depot'].includes(w));
+              if (!rWords.some(w => cleanJ.includes(w))) {
+                return false; // Fremder Name im Journal -> Kein Blind-Match bei gleichem Betrag!
+              }
             }
           }
           return true;
