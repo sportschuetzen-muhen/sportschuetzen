@@ -5,7 +5,7 @@
 
 window._bhBankTransactions = window._bhBankTransactions || [];
 window._bhBankMatchResults = window._bhBankMatchResults || [];
-window._bhBankActiveFilter = window._bhBankActiveFilter || 'all';
+window._bhBankActiveFilter = window._bhBankActiveFilter || 'offen';
 
 // Synchroner / Asynchroner Abruf der Bank-Regeln (Server-Sync + LocalStorage Fallback)
 window.getBhBankRules = function() {
@@ -345,7 +345,7 @@ function bhBankStatsBannerHTML() {
 // Render Results Table
 // ---------------------------------------------------------------------
 window._bhBankSortCol = window._bhBankSortCol || 'date';
-window._bhBankSortAsc = window._bhBankSortAsc !== undefined ? window._bhBankSortAsc : true;
+window._bhBankSortAsc = window._bhBankSortAsc !== undefined ? window._bhBankSortAsc : false; // Default: absteigend (neueste oben)
 
 window.bhBankSortTable = function(col) {
   if (window._bhBankSortCol === col) {
@@ -1417,7 +1417,9 @@ window.bhBankHandleFiles = async function(files) {
   try {
     window._bhBankTransactions = uniqueTxs;
     window._bhBankMatchResults = bhBankMatchAll(uniqueTxs);
-    window._bhBankActiveFilter = 'all';
+    window._bhBankSortCol = 'date';
+    window._bhBankSortAsc = false; // Neueste Buchungen sofort oben anzeigen
+    window._bhBankActiveFilter = (uniqueTxs.some(t => !t.alreadyBooked)) ? 'offen' : 'all';
 
     renderTabBankabgleich(document.getElementById('bh-tab-content-container'));
     showToast(`✅ ${processedFilesCount} Datei(en) eingelesen! Insges. ${uniqueTxs.length} Transaktionen analysiert.`, 'success');
@@ -2129,17 +2131,24 @@ function bhBankMatchAll(transactions) {
         )
       );
 
-      const isTransferText = (
-        /konto[uü]bertrag/i.test(cleanRemittance) || /konto[uü]bertrag/i.test(cleanParty) ||
-        /[uü]bertrag.*(?:wirtschaft|zahlung|verein|sparkonto)/i.test(cleanRemittance) ||
-        /[uü]bertrag.*(?:wirtschaft|zahlung|verein|sparkonto)/i.test(cleanParty) ||
-        /(?:wirtschaft|zahlung|verein|sparkonto).*[uü]bertrag/i.test(cleanRemittance) ||
-        /(?:wirtschaft|zahlung|verein|sparkonto).*[uü]bertrag/i.test(cleanParty) ||
-        /umbuchung/i.test(cleanRemittance) || /umbuchung/i.test(cleanParty) ||
-        /bancomat\s+einzahlung/i.test(cleanRemittance) || /bancomat\s+einzahlung/i.test(cleanParty)
+      // Eigenname des Vereins als Zahler/Empfänger bedeutet immer interner Eigenübertrag!
+      const isOwnClubParty = (
+        cleanParty.includes('sportschützen muhen') ||
+        cleanParty.includes('sportschuetzen muhen') ||
+        cleanParty.includes('sg muhen') ||
+        cleanParty.includes('schützen muhen') ||
+        cleanParty.includes('schuetzen muhen')
       );
 
-      if (isOwnPartyIban || isTransferText) {
+      // Jeder Buchungstext mit Übertrag / Umbuchung / Kontoübertrag / Bancomat
+      const isTransferText = (
+        /konto[uü]bertrag/i.test(cleanRemittance) || /konto[uü]bertrag/i.test(cleanParty) ||
+        /[uü]bertrag/i.test(cleanRemittance) || /[uü]bertrag/i.test(cleanParty) ||
+        /umbuchung/i.test(cleanRemittance) || /umbuchung/i.test(cleanParty) ||
+        /bancomat/i.test(cleanRemittance) || /bancomat/i.test(cleanParty)
+      );
+
+      if (isOwnPartyIban || isOwnClubParty || isTransferText) {
         matchType = 'rule';
         matchRuleName = 'Geldtransit (Kontoübertrag)';
         matchLabel = 'Geldtransit 1099 (Transferkonto)';
@@ -2344,16 +2353,33 @@ function bhBankMatchAll(transactions) {
       });
 
       if (matchHist) {
-        matchType = 'journal';
-        if (tx.isCredit) {
-          suggestedSoll = txBankKonto;
-          suggestedHaben = matchHist.konto_haben;
+        let histSoll = tx.isCredit ? txBankKonto : matchHist.konto_soll;
+        let histHaben = tx.isCredit ? matchHist.konto_haben : txBankKonto;
+
+        // Sicherheitsnetz: Wenn alte Journal-Einträge (z.B. aus Vorjahren) direkt Bank an Bank
+        // oder Bank an Kasse gebucht wurden (1000, 1020, 1021, 1022), niemals direkt buchen,
+        // sondern IMMER auf 1099 Geldtransit umleiten!
+        const gegenKonto = tx.isCredit ? histHaben : histSoll;
+        const isLiquidGegen = ['1000', '1020', '1021', '1022'].includes(String(gegenKonto || '').trim());
+
+        if (isLiquidGegen) {
+          if (tx.isCredit) {
+            suggestedSoll = txBankKonto;
+            suggestedHaben = '1099';
+          } else {
+            suggestedSoll = '1099';
+            suggestedHaben = txBankKonto;
+          }
+          matchType = 'rule';
+          matchLabel = 'Geldtransit 1099 (Transferkonto)';
+          matchScore = 2;
         } else {
-          suggestedSoll = matchHist.konto_soll;
-          suggestedHaben = txBankKonto;
+          matchType = 'journal';
+          suggestedSoll = histSoll;
+          suggestedHaben = histHaben;
+          matchLabel = 'Aus Journal-Historie';
+          matchScore = 1;
         }
-        matchLabel = 'Aus Journal-Historie';
-        matchScore = 1;
       }
     }
 
