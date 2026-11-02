@@ -188,4 +188,10 @@ Die in der Jahresmeisterschaft erfassten 7 Rohrunden der Schweizer Mannschaftsme
 ## 8. Schnittstelle zum Endschiessen (`syncEndschiessenToJM`)
 Das Endschiessen (Saisonabschluss KK 50m) bildet einen zählenden Wertungswettkampf der Jahresmeisterschaft. Über die im Modul Endschiessen integrierte 1-Klick-Schnittstelle (`syncEndschiessenToJM` in `vorstand/js/endschiessen/endschiessen-core.js`) werden die Endstich-Ganzpunkte (max. 200 Punkte) der lizenzierten Schützen atomar in die Meisterschaftsspalte *Endschiessen* / *Schlussmatch* von `public.jm_seasons.raw_grid` übertragen. Ein vorgängiger Vorher-Nachher-Abgleich verhindert Fehleingaben und manuelle Doppelerfassungen.
 
+---
+
+## 9. Gruppengewinne auswärtige Schiessen (Konto 1301) & Jahresbeitrag
+Bei auswärtigen Schiessen (Gruppenwettkämpfe) übernimmt der Verein reglementarisch das Gruppendoppel (standardmässig CHF 30.00). Darüber hinaus erzielte Gewinne bilden den Schützen-Überschuss und werden über das Bilanz-Transitkonto **1301** geführt (`jahresmeisterschaft-gruppengewinne.js`). Über die Schnittstelle zum Jahresbeitrag (`jmTransferCurrentCompToJahresbeitrag`) werden die Gewinnanteile der Schützen direkt als Abzugsposition im Jahresbeitrag verrechnet und revisionssicher auf der QR-Rechnung ausgewiesen. Die PostgreSQL-Berechnung `calculate_member_contributions` bezieht die Gewinne aus `group_competition_members` dynamisch und idempotent ein, sodass Neuberechnungen oder Rücksetzungen im Jahresbeitrag die Gewinne stets konsistent erhalten.
+
+
 

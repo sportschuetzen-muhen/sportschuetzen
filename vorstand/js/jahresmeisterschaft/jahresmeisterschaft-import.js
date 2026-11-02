@@ -1376,16 +1376,33 @@ window.jmOpenGroupEditorFromImport = function () {
         }));
     }
 
-    const membersList = shooters.map(s => ({
-        person_number: null,
-        schuetze_name: s.schuetze_name,
-        jahrgang: s.jahrgang || null,
-        punkte: s.punkte || null,
-        betrag: 0,
-        payout_method: 'jahresbeitrag',
-        iban: '',
-        status: 'offen'
-    }));
+    const membersList = shooters.map(s => {
+        let foundPn = s.person_number || null;
+        let foundIban = s.iban || '';
+        const allMembers = window._mglData || [];
+        if (!foundPn && allMembers.length > 0) {
+            const clean = (s.schuetze_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const mObj = allMembers.find(m => {
+                const mFull1 = `${m.LastName || m.last_name || ''}${m.FirstName || m.first_name || ''}`.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const mFull2 = `${m.FirstName || m.first_name || ''}${m.LastName || m.last_name || ''}`.toLowerCase().replace(/[^a-z0-9]/g, '');
+                return clean === mFull1 || clean === mFull2;
+            });
+            if (mObj) {
+                foundPn = mObj.PersonNumber || mObj.person_number;
+                foundIban = mObj.IBAN || mObj.iban || '';
+            }
+        }
+        return {
+            person_number: foundPn ? parseInt(foundPn, 10) : null,
+            schuetze_name: s.schuetze_name,
+            jahrgang: s.jahrgang || null,
+            punkte: s.punkte || null,
+            betrag: 0,
+            payout_method: 'jahresbeitrag',
+            iban: foundIban,
+            status: 'offen'
+        };
+    });
 
     const groupPayload = {
         id: null,

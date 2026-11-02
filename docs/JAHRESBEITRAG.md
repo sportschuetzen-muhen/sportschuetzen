@@ -359,6 +359,14 @@ Wird eine Jahresbeitrags-Rechnung (`JB-26-XXXX`) im Rechnungsmodul gelöscht –
 * **Doppelklick-Schutz & Spinner:** Schreibvorgänge wie Beitragsberechnung, manuelle Zahlungsverbuchung und automatischer Bankabgleich sind über `UIButtonKit.withLoading` mit sichtbarem Spinner und ausnahmslosem `finally`-Reset gegen Double-Submits gehärtet.
 * **Tonalität:** Alle Dialogtexte und Benachrichtigungen sprechen Anwender einheitlich in der vereinsnahen Du-Form an.
 
+---
+
+### 8.9 Gruppengewinne Auswärtige Schiessen (Konto 1301) & Idempotenz-Kontrakt
+* **Idempotente Beitragsberechnung:** Die PostgreSQL-Funktion `calculate_member_contributions` liest alle für das Beitragsjahr erfassten Gruppengewinne aus `public.group_competition_members` (mit `payout_method = 'jahresbeitrag'`) automatisch ein und generiert Positionen mit `source_field = '1301'` und Haben-Konto `1301`. Ein Klick auf *«Alle Beiträge berechnen»* löscht übertragene Gewinne nicht mehr, sondern synchronisiert sie stets idempotent mit dem aktuellen Stand.
+* **Transparenz & Anzeige:** In der Beitragsübersicht weist ein Badge in der Spalte Gesamt den Gruppengewinn-Abzug direkt aus. Im Rechnungs-Inspektor Modal (`jbShowPositionen`) wird die Position mit Trophy-Icon und Herkunftshinweis (Anlass, Gruppe, Rang) transparent dargestellt.
+* **Reset- & Löschkaskade:** Beim Zurücksetzen des Beitragsjahres via `jbResetYear()` werden alle zugehörigen Schützen in `group_competition_members` atomar von `status = 'verrechnet'` wieder auf `status = 'offen'` zurückgesetzt. Beim Löschen einer Gruppe in der Jahresmeisterschaft (`jmDeleteGroupCompetition`) greift eine Löschsperre, falls die Jahresbeitragsrechnung bereits versendet oder bezahlt wurde; bei unversendeten Entwürfen wird die Gutschriftzeile automatisch aus `contributions_positions` und `invoice_positions` entfernt.
+
+
 
 
 

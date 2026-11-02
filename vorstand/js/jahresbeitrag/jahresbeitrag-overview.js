@@ -548,6 +548,14 @@ function jbRenderRows(data) {
     const safeName = (name || '').replace(/'/g, "\\'");
     const isSent = effStatus === 'versendet';
 
+    // Gruppengewinn-Abzug (Konto 1301) ermitteln
+    const mPos = _jbPositionsCache[r.id] || [];
+    const winPos = mPos.filter(p => p.source_field === '1301' || p.sourcefield === '1301' || p.konto === '1301');
+    const totalWin = winPos.reduce((sum, p) => sum + Math.abs(Number(p.betrag || 0)), 0);
+    const winBadgeHtml = totalWin > 0 
+      ? `<div class="small text-success fw-normal mt-0.5" style="font-size: 10px;" title="Abzug Gruppengewinn auswärtige Schiessen (Konto 1301): -${fmtChf(totalWin)}"><i class="fas fa-trophy text-warning me-0.5"></i>-${fmtChf(totalWin)}</div>` 
+      : '';
+
     return `<tr class="${rowBg}" ${rowStyle}>
       <td class="align-middle py-2 tk-col-name" data-col-id="name">
         <a href="#" class="text-decoration-none fw-semibold ${isOffen ? 'text-primary' : 'text-secondary'}"
@@ -558,7 +566,10 @@ function jbRenderRows(data) {
         </div>
       </td>
       <td class="align-middle tk-col-kat" data-col-id="kat">${katHtml}</td>
-      <td class="text-end fw-bold align-middle pe-4 ${isOffen ? 'text-danger' : 'text-muted'} tk-col-gesamt" data-col-id="gesamt" style="font-size: 14px;">${fmtChf(r.Gesamt)}</td>
+      <td class="text-end fw-bold align-middle pe-4 ${isOffen ? 'text-danger' : 'text-muted'} tk-col-gesamt" data-col-id="gesamt" style="font-size: 14px;">
+        ${fmtChf(r.Gesamt)}
+        ${winBadgeHtml}
+      </td>
       <td class="align-middle tk-col-status" data-col-id="status">${statusHtml}</td>
       <td class="small align-middle tk-col-date" data-col-id="date">${fmtDate(r.payment_date)}</td>
       <td class="align-middle tk-col-method" data-col-id="method">${methodHtml}</td>
@@ -731,13 +742,20 @@ function jbRenderModalContent(header, pos, m, name) {
   // Positions-Zeilen mit Haben-Konto
   const posRows = pos.length > 0 ? pos.map(p => {
     const rawKonto = p.konto || (typeof window.jbResolveAccountForPosition === 'function' ? window.jbResolveAccountForPosition(p.source_field || p.sourcefield || p.key, p.beschreibung || p.name) : '3000');
+    const isCredit = (p.typ === 'Kredit' || p.typ === 'Credit' || Number(p.betrag) < 0);
+    const isGroupWin = (p.source_field === '1301' || p.sourcefield === '1301' || rawKonto === '1301');
+
     return `
-    <tr>
+    <tr class="${isGroupWin ? 'table-warning-subtle' : ''}">
       <td class="text-muted small tk-col-nr">${p.position_nr || p.positionnr || '–'}</td>
-      <td class="fw-semibold text-dark tk-col-desc">${p.beschreibung || p.name || '–'}</td>
+      <td class="fw-semibold text-dark tk-col-desc">
+        ${isGroupWin ? '<i class="fas fa-trophy text-warning me-1.5" title="Gruppengewinn auswärtiges Schiessen (Konto 1301)"></i>' : ''}
+        ${p.beschreibung || p.name || '–'}
+        ${isGroupWin ? '<div class="text-muted small fw-normal" style="font-size: 10px;"><i class="fas fa-info-circle me-1 text-primary"></i>Auswärtiges Schiessen · Verrechnung via Transitkonto 1301</div>' : ''}
+      </td>
       <td class="tk-col-typ">
-        <span class="badge ${p.typ === 'Kredit' ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-primary-subtle text-primary border border-primary-subtle'}">
-          ${p.typ}
+        <span class="badge ${isCredit ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-primary-subtle text-primary border border-primary-subtle'}">
+          ${isCredit ? 'Gutschrift' : 'Belastung'}
         </span>
       </td>
       <td class="tk-col-konto">
@@ -745,8 +763,8 @@ function jbRenderModalContent(header, pos, m, name) {
           ${escapeHtml(rawKonto)}
         </span>
       </td>
-      <td class="text-end fw-bold ${p.typ === 'Kredit' ? 'text-success' : 'text-dark'} tk-col-amount">
-        ${p.typ === 'Kredit' ? '-' : ''}${fmtChf(Math.abs(p.betrag))}
+      <td class="text-end fw-bold ${isCredit ? 'text-success' : 'text-dark'} tk-col-amount">
+        ${isCredit ? '-' : ''}${fmtChf(Math.abs(p.betrag))}
       </td>
     </tr>
   `;
@@ -1920,6 +1938,21 @@ async function jbResetYear(mode) {
     if (mode === 'all') {
       const { error: partErr } = await supa.from('member_participations').delete().eq('year', yr);
       if (partErr) console.warn("Supabase participations delete warning:", partErr);
+    }
+
+    // Verrechnete Gruppengewinne für dieses Jahr wieder auf 'offen' zurücksetzen
+    try {
+      const { data: compRows } = await supa.from('group_competitions').select('id').eq('jahr', yr);
+      if (compRows && compRows.length > 0) {
+        const compIds = compRows.map(c => c.id);
+        await supa.from('group_competition_members')
+          .update({ status: 'offen', contribution_position_id: null, updated_at: new Date().toISOString() })
+          .in('competition_id', compIds)
+          .eq('status', 'verrechnet');
+        console.log(`[Jahresbeitrag Reset] Gruppengewinne für Jahr ${yr} wieder auf 'offen' zurückgestellt.`);
+      }
+    } catch (resetGgErr) {
+      console.warn("Konnte Gruppengewinne bei Reset nicht zurücksetzen:", resetGgErr);
     }
     
     showToast(`🎉 Zurücksetzen des Jahres ${_jbYear} in Supabase erfolgreich abgeschlossen!`);

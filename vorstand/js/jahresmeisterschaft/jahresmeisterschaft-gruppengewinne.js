@@ -1,9 +1,9 @@
-/**
+﻿/**
  * ==============================================================================
  * jahresmeisterschaft-gruppengewinne.js
- * Modul: Verwaltung, Schützen-Zuordnung & Auszahlung/Verrechnung von Gruppengewinnen
+ * Modul: Verwaltung, SchÃ¼tzen-Zuordnung & Auszahlung/Verrechnung von Gruppengewinnen
  * Konto: 1301 Transit Gruppengewinne
- * Sportschützen Muhen (Saison 2026+)
+ * SportschÃ¼tzen Muhen (Saison 2026+)
  * ==============================================================================
  */
 
@@ -22,7 +22,7 @@
     }
 
     /**
-     * Ermittelt das aktive Jahr für Gruppengewinne.
+     * Ermittelt das aktive Jahr fÃ¼r Gruppengewinne.
      */
     function getActiveYear() {
         if (_jmActiveCompYear) return _jmActiveCompYear;
@@ -34,14 +34,14 @@
     }
 
     /**
-     * Lädt alle Gruppengewinne und zugehörige Schützen für ein Jahr aus Supabase.
+     * LÃ¤dt alle Gruppengewinne und zugehÃ¶rige SchÃ¼tzen fÃ¼r ein Jahr aus Supabase.
      */
     async function jmLoadGroupCompetitions(year) {
         const yr = year || getActiveYear();
         _jmActiveCompYear = yr;
         const supa = getSupa();
         if (!supa) {
-            console.warn("[Gruppengewinne] Kein Supabase-Client verfügbar.");
+            console.warn("[Gruppengewinne] Kein Supabase-Client verfÃ¼gbar.");
             return [];
         }
 
@@ -72,7 +72,7 @@
     }
 
     /**
-     * Öffnet das zentrale Übersichts-Modal für Gruppengewinne.
+     * Ã–ffnet das zentrale Ãœbersichts-Modal fÃ¼r Gruppengewinne.
      */
     async function jmOpenGruppengewinneModal(year) {
         const yr = year || getActiveYear();
@@ -91,7 +91,7 @@
     }
 
     /**
-     * Erstellt das DOM für das Hauptmodal.
+     * Erstellt das DOM fÃ¼r das Hauptmodal.
      */
     function createGruppengewinneModalDOM() {
         const div = document.createElement('div');
@@ -106,8 +106,8 @@
                         <div class="d-flex align-items-center gap-2">
                             <span class="badge bg-warning text-dark fs-6"><i class="fas fa-trophy"></i></span>
                             <div>
-                                <h5 class="modal-title fw-bold mb-0">Gruppengewinne Auswärtige Schiessen (Konto 1301)</h5>
-                                <div class="small text-white-50">Erfassung, Schützen-Zuordnung & Auszahlung/Verrechnung von Gewinnen</div>
+                                <h5 class="modal-title fw-bold mb-0">Gruppengewinne AuswÃ¤rtige Schiessen (Konto 1301)</h5>
+                                <div class="small text-white-50">Erfassung, SchÃ¼tzen-Zuordnung & Auszahlung/Verrechnung von Gewinnen</div>
                             </div>
                         </div>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
@@ -117,10 +117,10 @@
                         <div class="alert alert-info py-2 px-3 small d-flex align-items-start gap-2 mb-3 shadow-sm border-0">
                             <i class="fas fa-info-circle fa-lg mt-1 text-primary"></i>
                             <div>
-                                <strong>Vereinsregel für auswärtige Schiessen:</strong>
-                                Der Verein übernimmt das Gruppendoppel (standardmässig <strong>CHF 30.00</strong>, frei übersteuerbar).
-                                Gruppengewinne darüber hinaus stehen vollumfänglich den beteiligten Schützen zu und werden zu gleichen Teilen aufgeteilt.
-                                Die Verrechnung erfolgt primär über einen Abzug bei der <strong>Jahresbeitragsrechnung</strong> oder per <strong>Banküberweisung (pain.001)</strong> über das Transitkonto <strong>1301</strong>.
+                                <strong>Vereinsregel fÃ¼r auswÃ¤rtige Schiessen:</strong>
+                                Der Verein Ã¼bernimmt das Gruppendoppel (standardmÃ¤ssig <strong>CHF 30.00</strong>, frei Ã¼bersteuerbar).
+                                Gruppengewinne darÃ¼ber hinaus stehen vollumfÃ¤nglich den beteiligten SchÃ¼tzen zu und werden zu gleichen Teilen aufgeteilt.
+                                Die Verrechnung erfolgt primÃ¤r Ã¼ber einen Abzug bei der <strong>Jahresbeitragsrechnung</strong> oder per <strong>BankÃ¼berweisung (pain.001)</strong> Ã¼ber das Transitkonto <strong>1301</strong>.
                             </div>
                         </div>
 
@@ -133,7 +133,7 @@
                                     <option value="2025">2025</option>
                                     <option value="2024">2024</option>
                                 </select>
-                                <input type="text" id="jm-gg-search" class="form-select form-select-sm" style="width: 220px;" placeholder="🔍 Anlass / Gruppe suchen..." oninput="window.jmFilterGruppengewinneTable()">
+                                <input type="text" id="jm-gg-search" class="form-select form-select-sm" style="width: 220px;" placeholder="ðŸ” Anlass / Gruppe suchen..." oninput="window.jmFilterGruppengewinneTable()">
                             </div>
                             <div class="d-flex align-items-center gap-2">
                                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.jmReloadGruppengewinneList()" title="Liste neu laden">
@@ -145,7 +145,7 @@
                             </div>
                         </div>
 
-                        <!-- Tabelle der Gruppenwettkämpfe -->
+                        <!-- Tabelle der GruppenwettkÃ¤mpfe -->
                         <div class="card shadow-sm border-0">
                             <div class="card-body p-0">
                                 <div class="table-responsive" style="max-height: 520px;">
@@ -157,8 +157,8 @@
                                                 <th class="text-center" style="width: 7%;">Rang</th>
                                                 <th class="text-end" style="width: 10%;">Doppel</th>
                                                 <th class="text-end" style="width: 11%;">Gewinn</th>
-                                                <th class="text-end" style="width: 12%;">Überschuss</th>
-                                                <th class="text-center" style="width: 10%;">Schützen</th>
+                                                <th class="text-end" style="width: 12%;">Ãœberschuss</th>
+                                                <th class="text-center" style="width: 10%;">SchÃ¼tzen</th>
                                                 <th class="text-center" style="width: 14%;">Aktionen</th>
                                             </tr>
                                         </thead>
@@ -176,7 +176,7 @@
                     </div>
                     <div class="modal-footer py-2 px-3 bg-light d-flex justify-content-between">
                         <div class="small text-muted" id="jm-gg-summary-text">
-                            Gesamt-Überschuss Schützen (Konto 1301): <span class="fw-bold text-dark">CHF 0.00</span>
+                            Gesamt-Ãœberschuss SchÃ¼tzen (Konto 1301): <span class="fw-bold text-dark">CHF 0.00</span>
                         </div>
                         <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Schliessen</button>
                     </div>
@@ -206,8 +206,8 @@
                 <tr>
                     <td colspan="8" class="text-center py-5 text-muted">
                         <i class="fas fa-trophy fa-2x mb-2 text-black-50 opacity-50 d-block"></i>
-                        Noch keine Gruppengewinne für die Saison ${yr} erfasst.<br>
-                        <span class="small">Klicke oben auf <strong>«Neuer Gruppengewinn erfassen»</strong> oder importiere eine Rangliste im Auswärts-Import.</span>
+                        Noch keine Gruppengewinne fÃ¼r die Saison ${yr} erfasst.<br>
+                        <span class="small">Klicke oben auf <strong>Â«Neuer Gruppengewinn erfassenÂ»</strong> oder importiere eine Rangliste im AuswÃ¤rts-Import.</span>
                     </td>
                 </tr>
             `;
@@ -231,7 +231,7 @@
 
             const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${v.toFixed(2)}`);
 
-            // Auszahlungsstatus der Schützen
+            // Auszahlungsstatus der SchÃ¼tzen
             const allVerrechnet = members.length > 0 && members.every(m => m.status === 'verrechnet' || m.status === 'ausgefuehrt');
             const hasPendent = members.some(m => m.status === 'offen' || m.status === 'in_zahlung');
             let statusBadge = `<span class="badge bg-secondary">Offen</span>`;
@@ -240,7 +240,7 @@
             } else if (hasPendent && members.some(m => m.status === 'verrechnet' || m.status === 'ausgefuehrt')) {
                 statusBadge = `<span class="badge bg-info text-dark">Teilweise verrechnet</span>`;
             } else if (ueberschuss === 0) {
-                statusBadge = `<span class="badge bg-light text-muted border">Kein Überschuss</span>`;
+                statusBadge = `<span class="badge bg-light text-muted border">Kein Ãœberschuss</span>`;
             }
 
             return `
@@ -269,19 +269,19 @@
                     </td>
                     <td class="text-center">
                         <span class="badge bg-secondary-subtle text-dark border" title="${members.map(m => m.schuetze_name).join(', ')}">
-                            <i class="fas fa-users me-1 text-muted"></i>${count} Schützen
+                            <i class="fas fa-users me-1 text-muted"></i>${count} SchÃ¼tzen
                         </span>
                         <div class="text-muted" style="font-size: 10px;">je ${fmtCurr(perShooter)}</div>
                     </td>
                     <td class="text-center pe-3">
                         <div class="btn-group btn-group-sm">
-                            <button type="button" class="btn btn-outline-primary" onclick="window.jmOpenGroupCompetitionEditor('${comp.id}')" title="Gruppe & Schützen bearbeiten">
+                            <button type="button" class="btn btn-outline-primary" onclick="window.jmOpenGroupCompetitionEditor('${comp.id}')" title="Gruppe & SchÃ¼tzen bearbeiten">
                                 <i class="fas fa-pen"></i>
                             </button>
                             <button type="button" class="btn btn-outline-secondary" onclick="window.jmGenerateGruppengewinnPdf('${comp.id}')" title="Abrechnungs- & Quittungs-PDF drucken">
                                 <i class="fas fa-file-pdf text-danger"></i>
                             </button>
-                            <button type="button" class="btn btn-outline-danger" onclick="window.jmDeleteGroupCompetition('${comp.id}')" title="Gruppe löschen">
+                            <button type="button" class="btn btn-outline-danger" onclick="window.jmDeleteGroupCompetition('${comp.id}')" title="Gruppe lÃ¶schen">
                                 <i class="fas fa-trash-alt"></i>
                             </button>
                         </div>
@@ -299,7 +299,7 @@
         const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${v.toFixed(2)}`);
         sumEl.innerHTML = `
             Erfasster Gruppengewinn: <strong class="text-success">${fmtCurr(totalGewinn)}</strong> | 
-            Netto-Überschuss für Schützen (Konto 1301): <strong class="text-primary">${fmtCurr(totalUeberschuss)}</strong>
+            Netto-Ãœberschuss fÃ¼r SchÃ¼tzen (Konto 1301): <strong class="text-primary">${fmtCurr(totalUeberschuss)}</strong>
         `;
     }
 
@@ -333,17 +333,52 @@
     }
 
     /**
-     * Löscht einen Gruppengewinn nach Rückbestätigung.
+     * LÃ¶scht einen Gruppengewinn nach RÃ¼ckbestÃ¤tigung.
      */
     async function jmDeleteGroupCompetition(id) {
         const comp = window._jmGroupCompetitions.find(c => String(c.id) === String(id));
         const name = comp ? `${comp.gruppe_name} (${comp.anlass_name})` : 'diesen Gruppengewinn';
+        const supa = getSupa();
+        if (!supa) return;
+
+        // 1. Prüfen, ob Schützen bereits im Jahresbeitrag verrechnet sind und ob Rechnungen gesperrt sind
+        const { data: dbMembers } = await supa.from('group_competition_members').select('*').eq('competition_id', id);
+        const verrechnete = (dbMembers || []).filter(m => m.status === 'verrechnet' && m.contribution_position_id);
+
+        if (verrechnete.length > 0) {
+            const yr = comp ? (comp.jahr || getActiveYear()) : getActiveYear();
+            for (const vm of verrechnete) {
+                if (vm.person_number) {
+                    const headId = `CH-${yr}-${vm.person_number}`;
+                    const { data: head } = await supa.from('contributions_header').select('invoice_id').eq('id', headId).maybeSingle();
+                    if (head && head.invoice_id) {
+                        const { data: inv } = await supa.from('invoices').select('id, mail_status, total_paid').eq('id', head.invoice_id).maybeSingle();
+                        if (inv && (inv.mail_status === 'versendet' || (inv.total_paid && Number(inv.total_paid) > 0))) {
+                            if (window.UIConfirmKit) {
+                                await UIConfirmKit.alert({
+                                    title: 'Löschen gesperrt',
+                                    message: `Der Gruppengewinn «${name}» kann nicht gelöscht werden, da für ${vm.schuetze_name} (PN: ${vm.person_number}) die Jahresbeitragsrechnung bereits versendet oder bezahlt wurde. Aus Revisionsgründen (GoBD / OR 957ff) ist eine Löschung gesperrt.`,
+                                    type: 'danger'
+                                });
+                            } else {
+                                alert(`Löschen gesperrt: Rechnung für ${vm.schuetze_name} bereits versendet oder bezahlt.`);
+                            }
+                            return;
+                        }
+                    }
+                }
+            }
+        }
 
         let confirmed = false;
+        const msgExtra = verrechnete.length > 0 
+            ? `<br><br><span class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>Hinweis: ${verrechnete.length} Gutschrift(en) im Jahresbeitrag werden automatisch zurückgenommen und offene Rechnungsentwürfe neu saldiert.</span>`
+            : '';
+
         if (window.UIConfirmKit) {
             confirmed = await UIConfirmKit.confirm({
                 title: 'Gruppengewinn löschen?',
-                message: `Möchtest du ${name} wirklich unwiderruflich löschen? Allfällige Schützenzuordnungen werden ebenfalls entfernt.`,
+                message: `Möchtest du «${name}» wirklich unwiderruflich löschen? Allfällige Schützenzuordnungen werden ebenfalls entfernt.${msgExtra}`,
                 type: 'danger',
                 confirmText: 'Ja, löschen',
                 cancelText: 'Abbrechen'
@@ -354,10 +389,39 @@
 
         if (!confirmed) return;
 
-        const supa = getSupa();
-        if (!supa) return;
-
         try {
+            // 2. Allfällige Gutschriftspositionen im Jahresbeitrag bereinigen
+            const yr = comp ? (comp.jahr || getActiveYear()) : getActiveYear();
+            for (const vm of verrechnete) {
+                if (vm.contribution_position_id) {
+                    await supa.from('contributions_positions').delete().eq('id', vm.contribution_position_id);
+                    if (vm.person_number) {
+                        const headId = `CH-${yr}-${vm.person_number}`;
+                        const { data: allPos } = await supa.from('contributions_positions').select('betrag').eq('header_id', headId);
+                        const newGesamt = (allPos || []).reduce((acc, p) => acc + Number(p.betrag || 0), 0);
+                        await supa.from('contributions_header').update({ gesamt: Math.max(0, newGesamt) }).eq('id', headId);
+
+                        // Ggf. Entwurfsrechnung im RechnungsCore synchronisieren
+                        const { data: head } = await supa.from('contributions_header').select('invoice_id').eq('id', headId).maybeSingle();
+                        if (head && head.invoice_id) {
+                            const { data: inv } = await supa.from('invoices').select('id, mail_status, total_paid').eq('id', head.invoice_id).maybeSingle();
+                            if (inv && (!inv.mail_status || inv.mail_status === 'entwurf') && (!inv.total_paid || Number(inv.total_paid) === 0)) {
+                                if (comp?.gruppe_name) {
+                                    await supa.from('invoice_positions').delete().eq('invoice_id', inv.id).ilike('description', `%${comp.gruppe_name}%`);
+                                }
+                                await supa.from('invoices').update({
+                                    total_amount: Math.max(0, newGesamt),
+                                    open_amount: Math.max(0, newGesamt),
+                                    pdf_url: null,
+                                    pdf_storage_path: null,
+                                    updated_at: new Date().toISOString()
+                                }).eq('id', inv.id);
+                            }
+                        }
+                    }
+                }
+            }
+
             const { error } = await supa.from('group_competitions').delete().eq('id', id);
             if (error) throw error;
 
@@ -376,12 +440,12 @@
     }
 
     // ==========================================================================
-    // DETAIL-EDITOR & SCHÜTZEN-ZUORDNUNG
+    // DETAIL-EDITOR & SCHÃœTZEN-ZUORDNUNG
     // ==========================================================================
 
     /**
-     * Öffnet den Detail-Editor für eine Gruppe (oder neu).
-     * @param {string|object|null} compOrId ID, bestehendes Objekt oder null für Neuerfassung
+     * Ã–ffnet den Detail-Editor fÃ¼r eine Gruppe (oder neu).
+     * @param {string|object|null} compOrId ID, bestehendes Objekt oder null fÃ¼r Neuerfassung
      */
     async function jmOpenGroupCompetitionEditor(compOrId) {
         let comp = null;
@@ -410,7 +474,7 @@
 
         _jmCurrentEditingComp = JSON.parse(JSON.stringify(comp));
 
-        // Mitglieder-Stamm für Dropdowns und IBAN-Vervollständigung sicherstellen
+        // Mitglieder-Stamm fÃ¼r Dropdowns und IBAN-VervollstÃ¤ndigung sicherstellen
         await ensureMembersLoaded();
 
         let modalEl = document.getElementById('jmGruppengewinnEditModal');
@@ -426,7 +490,7 @@
     }
 
     /**
-     * Lädt aktive Mitglieder zur Auswahl & IBAN-Ermittlung
+     * LÃ¤dt aktive Mitglieder zur Auswahl & IBAN-Ermittlung
      */
     let _allMembersCache = null;
     async function ensureMembersLoaded() {
@@ -448,7 +512,7 @@
     }
 
     /**
-     * Erstellt das DOM für das Bearbeitungs-Modal.
+     * Erstellt das DOM fÃ¼r das Bearbeitungs-Modal.
      */
     function createGruppengewinnEditModalDOM() {
         const div = document.createElement('div');
@@ -464,7 +528,7 @@
                             <span class="badge bg-warning text-dark"><i class="fas fa-edit"></i></span>
                             <div>
                                 <h5 class="modal-title fw-bold mb-0" id="jm-edit-modal-title">Gruppengewinn erfassen & aufteilen</h5>
-                                <div class="small text-white-50">Konto 1301 · Doppel abziehen & Gewinnanteil je Schütze festlegen</div>
+                                <div class="small text-white-50">Konto 1301 Â· Doppel abziehen & Gewinnanteil je SchÃ¼tze festlegen</div>
                             </div>
                         </div>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
@@ -479,7 +543,7 @@
                                 <div class="row g-2">
                                     <div class="col-md-5">
                                         <label class="form-label small fw-bold mb-1">Anlass / Schiessen *</label>
-                                        <input type="text" class="form-control form-control-sm" id="jme-anlass" placeholder="z. B. 14. Bärenmoosschiessen 2026" required>
+                                        <input type="text" class="form-control form-control-sm" id="jme-anlass" placeholder="z. B. 14. BÃ¤renmoosschiessen 2026" required>
                                     </div>
                                     <div class="col-md-3">
                                         <label class="form-label small fw-bold mb-1">Gruppenname *</label>
@@ -512,11 +576,11 @@
                                                 </div>
                                             </div>
                                             <div class="d-flex align-items-center gap-2">
-                                                <label class="small fw-bold text-primary mb-0">Netto-Überschuss Schützen:</label>
+                                                <label class="small fw-bold text-primary mb-0">Netto-Ãœberschuss SchÃ¼tzen:</label>
                                                 <span class="badge bg-primary fs-6 px-3 py-1.5" id="jme-ueberschuss-badge">CHF 0.00</span>
                                             </div>
                                             <div class="d-flex align-items-center gap-2">
-                                                <label class="small fw-bold text-dark mb-0">Betrag je Schütze:</label>
+                                                <label class="small fw-bold text-dark mb-0">Betrag je SchÃ¼tze:</label>
                                                 <span class="badge bg-warning text-dark fs-6 px-3 py-1.5" id="jme-pershooter-badge">CHF 0.00</span>
                                             </div>
                                         </div>
@@ -525,15 +589,15 @@
                             </div>
                         </div>
 
-                        <!-- 2. Beteiligte Schützen & Gewinnaufteilung -->
+                        <!-- 2. Beteiligte SchÃ¼tzen & Gewinnaufteilung -->
                         <div class="card shadow-sm border-0">
                             <div class="card-header bg-white py-2 d-flex align-items-center justify-content-between border-bottom small">
                                 <span class="fw-bold text-dark">
-                                    <i class="fas fa-users me-1 text-primary"></i> 2. Beteiligte Schützen & Zuweisung (<span id="jme-shooter-count">0</span>)
+                                    <i class="fas fa-users me-1 text-primary"></i> 2. Beteiligte SchÃ¼tzen & Zuweisung (<span id="jme-shooter-count">0</span>)
                                 </span>
                                 <div class="d-flex align-items-center gap-2">
                                     <button type="button" class="btn btn-xs btn-outline-primary fw-semibold" onclick="window.jmAddShooterRowToEditor()">
-                                        <i class="fas fa-user-plus me-1"></i> Schütze hinzufügen
+                                        <i class="fas fa-user-plus me-1"></i> SchÃ¼tze hinzufÃ¼gen
                                     </button>
                                 </div>
                             </div>
@@ -542,16 +606,16 @@
                                     <table class="table table-sm table-hover align-middle mb-0" id="jme-shooters-table">
                                         <thead class="table-light small text-muted border-bottom">
                                             <tr>
-                                                <th class="ps-3" style="width: 25%;">Schütze (Name / Mitglied)</th>
+                                                <th class="ps-3" style="width: 25%;">SchÃ¼tze (Name / Mitglied)</th>
                                                 <th class="text-center" style="width: 10%;">Punkte</th>
                                                 <th class="text-end" style="width: 14%;">Gewinnanteil</th>
                                                 <th style="width: 20%;">Auszahlungsweg</th>
-                                                <th style="width: 24%;">IBAN (für Überweisung)</th>
+                                                <th style="width: 24%;">IBAN (fÃ¼r Ãœberweisung)</th>
                                                 <th class="text-center" style="width: 7%;"></th>
                                             </tr>
                                         </thead>
                                         <tbody id="jme-shooters-body" class="small">
-                                            <!-- Dynamische Schützenzeilen -->
+                                            <!-- Dynamische SchÃ¼tzenzeilen -->
                                         </tbody>
                                     </table>
                                 </div>
@@ -564,10 +628,10 @@
                                 <i class="fas fa-file-pdf me-1 text-danger"></i> Beleg drucken (PDF)
                             </button>
                             <button type="button" class="btn btn-sm btn-outline-info text-dark" id="jme-transfer-jb-btn" onclick="window.jmTransferCurrentCompToJahresbeitrag()">
-                                <i class="fas fa-file-invoice-dollar me-1 text-primary"></i> In Jahresbeitrag übertragen
+                                <i class="fas fa-file-invoice-dollar me-1 text-primary"></i> In Jahresbeitrag Ã¼bertragen
                             </button>
                             <button type="button" class="btn btn-sm btn-outline-primary" id="jme-transfer-po-btn" onclick="window.jmTransferCurrentCompToPaymentOrder()">
-                                <i class="fas fa-file-export me-1"></i> Bank-Überweisung (pain.001)
+                                <i class="fas fa-file-export me-1"></i> Bank-Ãœberweisung (pain.001)
                             </button>
                         </div>
                         <div class="d-flex gap-2">
@@ -584,7 +648,7 @@
     }
 
     /**
-     * Befüllt die Felder des Detail-Editors
+     * BefÃ¼llt die Felder des Detail-Editors
      */
     function populateEditorFields(comp) {
         document.getElementById('jme-anlass').value = comp.anlass_name || '';
@@ -604,14 +668,14 @@
     }
 
     /**
-     * Rendert die Schützen-Zeilen im Detail-Editor
+     * Rendert die SchÃ¼tzen-Zeilen im Detail-Editor
      */
     function renderShooterRows(members) {
         const tbody = document.getElementById('jme-shooters-body');
         if (!tbody) return;
 
         if (!members || members.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-muted">Noch keine Schützen zugewiesen. Klicke oben auf «Schütze hinzufügen».</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-muted">Noch keine SchÃ¼tzen zugewiesen. Klicke oben auf Â«SchÃ¼tze hinzufÃ¼genÂ».</td></tr>`;
             document.getElementById('jme-shooter-count').innerText = '0';
             return;
         }
@@ -620,6 +684,10 @@
 
         tbody.innerHTML = members.map((m, idx) => {
             const memberObj = findMemberByPn(m.person_number) || findMemberByName(m.schuetze_name);
+            if (memberObj) {
+                if (!m.person_number) m.person_number = memberObj.person_number;
+                if (!m.iban && memberObj.iban) m.iban = memberObj.iban;
+            }
             const currentIban = m.iban || memberObj?.iban || '';
             const hasIban = Boolean(currentIban && currentIban.trim().length > 10);
             const payoutMethod = m.payout_method || 'jahresbeitrag';
@@ -630,7 +698,7 @@
                         <input type="text" class="form-control form-control-sm fw-semibold jme-shooter-name" value="${escapeHtml(m.schuetze_name || '')}" placeholder="Vorname Nachname" onchange="window.jmOnShooterNameChange(${idx}, this.value)">
                         <input type="hidden" class="jme-shooter-pn" value="${m.person_number || memberObj?.person_number || ''}">
                         <div class="text-muted" style="font-size: 10px;">
-                            ${m.person_number || memberObj?.person_number ? `PN: ${m.person_number || memberObj.person_number}` : '<span class="text-warning">Nicht im Mitgliederstamm verknüpft</span>'}
+                            ${m.person_number || memberObj?.person_number ? `PN: ${m.person_number || memberObj.person_number}` : '<span class="text-warning">Nicht im Mitgliederstamm verknÃ¼pft</span>'}
                         </div>
                     </td>
                     <td class="text-center">
@@ -645,7 +713,7 @@
                     <td>
                         <select class="form-select form-select-sm jme-shooter-method" onchange="window.jmOnShooterMethodChange(${idx}, this.value)">
                             <option value="jahresbeitrag" ${payoutMethod === 'jahresbeitrag' ? 'selected' : ''}>Verrechnung Jahresbeitrag</option>
-                            <option value="bank" ${payoutMethod === 'bank' ? 'selected' : ''}>Banküberweisung (pain.001)</option>
+                            <option value="bank" ${payoutMethod === 'bank' ? 'selected' : ''}>BankÃ¼berweisung (pain.001)</option>
                             <option value="kasse" ${payoutMethod === 'kasse' ? 'selected' : ''}>Barauszahlung (Kasse 1000)</option>
                             <option value="pendent" ${payoutMethod === 'pendent' ? 'selected' : ''}>Pendent / Unklar</option>
                         </select>
@@ -663,7 +731,7 @@
                         ` : ''}
                     </td>
                     <td class="text-center pe-3">
-                        <button type="button" class="btn btn-xs btn-outline-danger" onclick="window.jmRemoveShooterRow(${idx})" title="Schütze entfernen">
+                        <button type="button" class="btn btn-xs btn-outline-danger" onclick="window.jmRemoveShooterRow(${idx})" title="SchÃ¼tze entfernen">
                             <i class="fas fa-times"></i>
                         </button>
                     </td>
@@ -688,7 +756,7 @@
     }
 
     /**
-     * Fügt eine neue Schützenzeile hinzu.
+     * FÃ¼gt eine neue SchÃ¼tzenzeile hinzu.
      */
     function jmAddShooterRowToEditor() {
         if (!_jmCurrentEditingComp) return;
@@ -708,7 +776,7 @@
     }
 
     /**
-     * Entfernt eine Schützenzeile.
+     * Entfernt eine SchÃ¼tzenzeile.
      */
     function jmRemoveShooterRow(idx) {
         if (!_jmCurrentEditingComp || !_jmCurrentEditingComp.members) return;
@@ -718,7 +786,7 @@
     }
 
     /**
-     * Berechnet den Überschuss und den Betrag je Schütze live neu.
+     * Berechnet den Ãœberschuss und den Betrag je SchÃ¼tze live neu.
      */
     function jmRecalculateCurrentComp() {
         const doppel = parseFloat(document.getElementById('jme-doppel')?.value || 30) || 0;
@@ -740,12 +808,12 @@
 
         if (badgePerShooter) badgePerShooter.innerText = fmtCurr(perShooter);
 
-        // Zeilen-Beträge aktualisieren, sofern nicht manuell abweichend editiert
+        // Zeilen-BetrÃ¤ge aktualisieren, sofern nicht manuell abweichend editiert
         const rows = document.querySelectorAll('#jme-shooters-body tr');
         rows.forEach((r, idx) => {
             const betragInput = r.querySelector('.jme-shooter-betrag');
             if (betragInput && _jmCurrentEditingComp?.members?.[idx]) {
-                // Wenn noch 0 oder Standardwert, automatisch nachführen
+                // Wenn noch 0 oder Standardwert, automatisch nachfÃ¼hren
                 if (_jmCurrentEditingComp.members[idx].betrag === 0 || !_jmCurrentEditingComp.members[idx]._manualAmount) {
                     betragInput.value = perShooter.toFixed(2);
                     _jmCurrentEditingComp.members[idx].betrag = perShooter;
@@ -763,8 +831,10 @@
             if (mObj.iban && !_jmCurrentEditingComp.members[idx].iban) {
                 _jmCurrentEditingComp.members[idx].iban = mObj.iban;
             }
-            renderShooterRows(_jmCurrentEditingComp.members);
+        } else {
+            _jmCurrentEditingComp.members[idx].person_number = null;
         }
+        renderShooterRows(_jmCurrentEditingComp.members);
     }
 
     function jmOnShooterPointsChange(idx, val) {
@@ -789,7 +859,7 @@
     }
 
     /**
-     * Speichert den aktuellen Gruppengewinn und alle Schützen in Supabase.
+     * Speichert den aktuellen Gruppengewinn und alle SchÃ¼tzen in Supabase.
      */
     async function jmSaveCurrentComp() {
         const btn = document.getElementById('jme-save-btn');
@@ -822,6 +892,15 @@
         const doppel = parseFloat(document.getElementById('jme-doppel')?.value) || 30.00;
         const gewinn = parseFloat(document.getElementById('jme-gewinn')?.value) || 0.00;
         const members = _jmCurrentEditingComp?.members || [];
+        for (const m of members) {
+            if (!m.person_number) {
+                const mObj = findMemberByName(m.schuetze_name);
+                if (mObj) {
+                    m.person_number = mObj.person_number;
+                    if (!m.iban && mObj.iban) m.iban = mObj.iban;
+                }
+            }
+        }
 
         const payloadComp = {
             jahr: _jmCurrentEditingComp?.jahr || getActiveYear(),
@@ -850,8 +929,8 @@
                 _jmCurrentEditingComp.id = compId;
             }
 
-            // Schützen speichern / synchronisieren
-            // 1. Bestehende löschen und neu einfügen
+            // SchÃ¼tzen speichern / synchronisieren
+            // 1. Bestehende lÃ¶schen und neu einfÃ¼gen
             await supa.from('group_competition_members').delete().eq('competition_id', compId);
 
             if (members.length > 0) {
@@ -872,14 +951,14 @@
                 const { error: memErr } = await supa.from('group_competition_members').insert(memberInserts);
                 if (memErr) throw memErr;
 
-                // Allfällige neue IBANs im Mitgliederstamm speichern
+                // AllfÃ¤llige neue IBANs im Mitgliederstamm speichern
                 const rows = document.querySelectorAll('#jme-shooters-body tr');
                 for (let i = 0; i < rows.length; i++) {
                     const saveCheck = rows[i].querySelector('.jme-save-iban-check');
                     if (saveCheck && saveCheck.checked && members[i] && members[i].person_number && members[i].iban) {
                         try {
                             await supa.from('members').update({ iban: members[i].iban }).eq('person_number', parseInt(members[i].person_number, 10));
-                            console.log(`[Gruppengewinne] IBAN für Mitglied ${members[i].person_number} im Profil gespeichert.`);
+                            console.log(`[Gruppengewinne] IBAN fÃ¼r Mitglied ${members[i].person_number} im Profil gespeichert.`);
                         } catch (ibErr) {
                             console.warn("Konnte IBAN nicht im Mitgliederstamm sichern:", ibErr);
                         }
@@ -897,7 +976,7 @@
             await jmRenderGruppengewinneList(getActiveYear());
 
             if (typeof showSuccess === 'function') {
-                showSuccess(`Gruppengewinn für ${gruppe} (${anlass}) erfolgreich gespeichert!`);
+                showSuccess(`Gruppengewinn fÃ¼r ${gruppe} (${anlass}) erfolgreich gespeichert!`);
             }
         } catch (err) {
             console.error("[Gruppengewinne] Speicherfehler:", err);
@@ -914,7 +993,7 @@
     // ==========================================================================
 
     /**
-     * Überträgt die offenen Beträge der aktuellen Gruppe als Gutschrift in den Jahresbeitrag.
+     * ÃœbertrÃ¤gt die offenen BetrÃ¤ge der aktuellen Gruppe als Gutschrift in den Jahresbeitrag.
      */
     async function jmTransferCurrentCompToJahresbeitrag() {
         if (!_jmCurrentEditingComp || !_jmCurrentEditingComp.id) {
@@ -952,10 +1031,28 @@
 
         let successCount = 0;
         const yr = getActiveYear();
+        const failedShooters = [];
 
         for (const m of members) {
-            if (!m.person_number) continue;
-            const pnStr = String(m.person_number);
+            let pn = m.person_number;
+            if (!pn) {
+                const found = findMemberByName(m.schuetze_name);
+                if (found) {
+                    pn = found.person_number;
+                    m.person_number = pn;
+                    if (m.id) {
+                        await supa.from('group_competition_members').update({ person_number: pn }).eq('id', m.id);
+                    }
+                }
+            }
+
+            if (!pn) {
+                console.warn(`[Gruppengewinne] Schütze ${m.schuetze_name} hat keine Personennummer und wird übersprungen.`);
+                failedShooters.push(m.schuetze_name);
+                continue;
+            }
+
+            const pnStr = String(pn);
             const headId = `CH-${yr}-${pnStr}`;
 
             try {
@@ -1002,6 +1099,31 @@
                 const newGesamt = (allPos || []).reduce((acc, p) => acc + Number(p.betrag || 0), 0);
                 await supa.from('contributions_header').update({ gesamt: Math.max(0, newGesamt) }).eq('id', headId);
 
+                // Falls bereits ein Rechnungsentwurf im RechnungsCore existiert (und noch unversendet/unbezahlt ist):
+                // Diesen direkt mit der neuen Gutschrift synchronisieren!
+                if (head && head.invoice_id) {
+                    const { data: inv } = await supa.from('invoices').select('id, mail_status, total_paid').eq('id', head.invoice_id).maybeSingle();
+                    if (inv && (!inv.mail_status || inv.mail_status === 'entwurf') && (!inv.total_paid || Number(inv.total_paid) === 0)) {
+                        await supa.from('invoice_positions').insert({
+                            invoice_id: inv.id,
+                            position_nr: nextPosNr,
+                            description: posDesc,
+                            quantity: 1,
+                            unit_price: creditAmount,
+                            amount: creditAmount,
+                            konto: '1301'
+                        });
+                        await supa.from('invoices').update({
+                            total_amount: Math.max(0, newGesamt),
+                            open_amount: Math.max(0, newGesamt),
+                            pdf_url: null,
+                            pdf_storage_path: null,
+                            updated_at: new Date().toISOString()
+                        }).eq('id', inv.id);
+                        console.log(`[Gruppengewinne] Rechnungsentwurf ${inv.id} automatisch aktualisiert.`);
+                    }
+                }
+
                 // Status in group_competition_members auf verrechnet setzen
                 if (m.id) {
                     await supa.from('group_competition_members').update({
@@ -1016,6 +1138,14 @@
             }
         }
 
+        if (failedShooters.length > 0 && window.UIConfirmKit) {
+            await UIConfirmKit.alert({
+                title: 'Schützen ohne Mitgliedsnummer',
+                message: `Folgende Schützen konnten nicht im Mitgliederstamm gefunden werden und wurden nicht übertragen: ${failedShooters.join(', ')}. Bitte verknüpfe sie im Editor.`,
+                type: 'warning'
+            });
+        }
+
         renderShooterRows(_jmCurrentEditingComp.members);
         if (typeof showSuccess === 'function') {
             showSuccess(`🎉 ${successCount} Schütze(n) erfolgreich im Jahresbeitrag ${yr} gutgeschrieben!`);
@@ -1023,16 +1153,16 @@
     }
 
     // ==========================================================================
-    // SCHNITTSTELLE 2: BANK-ÜBERWEISUNG (ISO 20022 pain.001 via Konto 1301)
+    // SCHNITTSTELLE 2: BANK-ÃœBERWEISUNG (ISO 20022 pain.001 via Konto 1301)
     // ==========================================================================
 
     /**
-     * Erstellt Zahlungsaufträge für Schützen mit Banküberweisung.
+     * Erstellt ZahlungsauftrÃ¤ge fÃ¼r SchÃ¼tzen mit BankÃ¼berweisung.
      */
     async function jmTransferCurrentCompToPaymentOrder() {
         if (!_jmCurrentEditingComp || !_jmCurrentEditingComp.id) {
             if (window.UIConfirmKit) {
-                await UIConfirmKit.alert({ title: 'Zuerst speichern', message: 'Bitte speichere den Gruppengewinn zuerst, bevor du Zahlungsaufträge erstellst.', type: 'warning' });
+                await UIConfirmKit.alert({ title: 'Zuerst speichern', message: 'Bitte speichere den Gruppengewinn zuerst, bevor du ZahlungsauftrÃ¤ge erstellst.', type: 'warning' });
             }
             return;
         }
@@ -1040,23 +1170,23 @@
         const members = (_jmCurrentEditingComp.members || []).filter(m => m.payout_method === 'bank' && m.betrag > 0 && m.status !== 'in_zahlung' && m.status !== 'ausgefuehrt');
         if (members.length === 0) {
             if (window.UIConfirmKit) {
-                await UIConfirmKit.alert({ title: 'Keine Positionen für Banküberweisung', message: 'Es gibt keine Schützen mit Methode «Banküberweisung» und offenem Betrag.', type: 'info' });
+                await UIConfirmKit.alert({ title: 'Keine Positionen fÃ¼r BankÃ¼berweisung', message: 'Es gibt keine SchÃ¼tzen mit Methode Â«BankÃ¼berweisungÂ» und offenem Betrag.', type: 'info' });
             }
             return;
         }
 
-        // Prüfen, ob alle eine gültige IBAN haben
+        // PrÃ¼fen, ob alle eine gÃ¼ltige IBAN haben
         const missingIban = members.filter(m => !m.iban || m.iban.trim().length < 15);
         if (missingIban.length > 0) {
             const names = missingIban.map(m => m.schuetze_name).join(', ');
             if (window.UIConfirmKit) {
                 await UIConfirmKit.alert({
                     title: 'IBAN fehlt',
-                    message: `Folgende Schützen haben keine gültige IBAN hinterlegt: ${names}. Bitte trage die IBAN ein oder stelle auf «Verrechnung Jahresbeitrag» um.`,
+                    message: `Folgende SchÃ¼tzen haben keine gÃ¼ltige IBAN hinterlegt: ${names}. Bitte trage die IBAN ein oder stelle auf Â«Verrechnung JahresbeitragÂ» um.`,
                     type: 'warning'
                 });
             } else {
-                alert(`IBAN fehlt für: ${names}`);
+                alert(`IBAN fehlt fÃ¼r: ${names}`);
             }
             return;
         }
@@ -1064,14 +1194,14 @@
         let confirmed = false;
         if (window.UIConfirmKit) {
             confirmed = await UIConfirmKit.confirm({
-                title: 'Zahlungsaufträge erstellen?',
-                message: `Möchtest du für ${members.length} Schütze(n) Zahlungsaufträge (Konto 1301 an Bank 1020) im Gesamtbetrag von CHF ${members.reduce((a, b) => a + Number(b.betrag), 0).toFixed(2)} erstellen? Diese können anschliessend im Menü Finanzbuchhaltung als ISO 20022 pain.001 XML heruntergeladen werden.`,
+                title: 'ZahlungsauftrÃ¤ge erstellen?',
+                message: `MÃ¶chtest du fÃ¼r ${members.length} SchÃ¼tze(n) ZahlungsauftrÃ¤ge (Konto 1301 an Bank 1020) im Gesamtbetrag von CHF ${members.reduce((a, b) => a + Number(b.betrag), 0).toFixed(2)} erstellen? Diese kÃ¶nnen anschliessend im MenÃ¼ Finanzbuchhaltung als ISO 20022 pain.001 XML heruntergeladen werden.`,
                 type: 'primary',
-                confirmText: 'Ja, Zahlungsaufträge anlegen',
+                confirmText: 'Ja, ZahlungsauftrÃ¤ge anlegen',
                 cancelText: 'Abbrechen'
             });
         } else {
-            confirmed = confirm(`Zahlungsaufträge für ${members.length} Schützen anlegen?`);
+            confirmed = confirm(`ZahlungsauftrÃ¤ge fÃ¼r ${members.length} SchÃ¼tzen anlegen?`);
         }
 
         if (!confirmed) return;
@@ -1085,7 +1215,7 @@
 
         for (const m of members) {
             try {
-                // Nächste Auftrags-Nr ZA-YYYY-xxx ermitteln
+                // NÃ¤chste Auftrags-Nr ZA-YYYY-xxx ermitteln
                 let nextNr = `ZA-${yr}-001`;
                 const { data: poRows } = await supa.from('accounting_payment_orders').select('order_nr').ilike('order_nr', `ZA-${yr}-%`).order('created_at', { ascending: false }).limit(1);
                 if (poRows && poRows.length > 0) {
@@ -1130,13 +1260,13 @@
                 m.payment_order_id = insPo.id;
                 createdCount++;
             } catch (err) {
-                console.error(`Fehler beim Erstellen des Zahlungsauftrags für ${m.schuetze_name}:`, err);
+                console.error(`Fehler beim Erstellen des Zahlungsauftrags fÃ¼r ${m.schuetze_name}:`, err);
             }
         }
 
         renderShooterRows(_jmCurrentEditingComp.members);
         if (typeof showSuccess === 'function') {
-            showSuccess(`🎉 ${createdCount} Zahlungsauftrag/-aufträge für Banküberweisung angelegt!`);
+            showSuccess(`ðŸŽ‰ ${createdCount} Zahlungsauftrag/-auftrÃ¤ge fÃ¼r BankÃ¼berweisung angelegt!`);
         }
     }
 
@@ -1211,23 +1341,23 @@
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(16);
         doc.setTextColor(30, 64, 120);
-        doc.text('SPORTSCHÜTZEN MUHEN', 15, 18);
+        doc.text('SPORTSCHÃœTZEN MUHEN', 15, 18);
 
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(9);
         doc.setTextColor(100, 100, 100);
-        doc.text('Gegründet 1928 · 5037 Muhen · www.sportschuetzen-muhen.ch', 15, 23);
+        doc.text('GegrÃ¼ndet 1928 Â· 5037 Muhen Â· www.sportschuetzen-muhen.ch', 15, 23);
 
         // Beleg-Titel
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(14);
         doc.setTextColor(20, 20, 20);
-        doc.text('Abrechnungsbeleg: Gruppengewinn Auswärtiges Schiessen', 15, 34);
+        doc.text('Abrechnungsbeleg: Gruppengewinn AuswÃ¤rtiges Schiessen', 15, 34);
 
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(9);
         doc.setTextColor(80, 80, 80);
-        doc.text(`Abrechnungsdatum: ${todayStr} · Buchungskonto: 1301 Transit Gruppengewinne`, 15, 39);
+        doc.text(`Abrechnungsdatum: ${todayStr} Â· Buchungskonto: 1301 Transit Gruppengewinne`, 15, 39);
 
         // Stammdaten-Box
         doc.setDrawColor(210, 215, 225);
@@ -1260,9 +1390,9 @@
         const finHead = [['Finanzielle Aufstellung', 'Betrag (CHF)', 'Buchungsziel']];
         const finBody = [
             ['Gruppengewinn Ausrichter (Brutto)', fmtCurr(gewinn), 'Geldeingang Bank 1020'],
-            ['Abzug Gruppendoppel (Verein)', `- ${fmtCurr(doppel)}`, 'Rückerstattung Aufwand 4200'],
-            ['Netto-Überschuss für Schützen', fmtCurr(ueberschuss), 'Transitkonto 1301'],
-            ['Anteil je Schütze (bei ' + count + ' Schützen)', fmtCurr(perShooter), 'Auszahlung / Verrechnung']
+            ['Abzug Gruppendoppel (Verein)', `- ${fmtCurr(doppel)}`, 'RÃ¼ckerstattung Aufwand 4200'],
+            ['Netto-Ãœberschuss fÃ¼r SchÃ¼tzen', fmtCurr(ueberschuss), 'Transitkonto 1301'],
+            ['Anteil je SchÃ¼tze (bei ' + count + ' SchÃ¼tzen)', fmtCurr(perShooter), 'Auszahlung / Verrechnung']
         ];
 
         doc.autoTable({
@@ -1286,8 +1416,8 @@
             }
         });
 
-        // Schützen-Verteiler-Tabelle
-        const shooterHead = [['Rang', 'Name des Schützen', 'Pkt.', 'Anteil', 'Auszahlungsweg / Details', 'Visum / Quittung']];
+        // SchÃ¼tzen-Verteiler-Tabelle
+        const shooterHead = [['Rang', 'Name des SchÃ¼tzen', 'Pkt.', 'Anteil', 'Auszahlungsweg / Details', 'Visum / Quittung']];
         const shooterBody = members.map((m, idx) => {
             const methodLabel = m.payout_method === 'jahresbeitrag'
                 ? 'Verrechnung Jahresbeitrag'
@@ -1326,11 +1456,11 @@
         doc.setFontSize(8);
         doc.setFont('helvetica', 'italic');
         doc.setTextColor(120, 120, 120);
-        doc.text('Revisionssicherer Buchungsvermerk gemäss Vereinsreglement Sportschützen Muhen (OR 957ff).', 15, finalY);
-        doc.text('Der Überschuss wird ordnungsgemäss über das Bilanz-Transitkonto 1301 geführt und bei Jahresabschluss auf Null saldiert.', 15, finalY + 4);
+        doc.text('Revisionssicherer Buchungsvermerk gemÃ¤ss Vereinsreglement SportschÃ¼tzen Muhen (OR 957ff).', 15, finalY);
+        doc.text('Der Ãœberschuss wird ordnungsgemÃ¤ss Ã¼ber das Bilanz-Transitkonto 1301 gefÃ¼hrt und bei Jahresabschluss auf Null saldiert.', 15, finalY + 4);
 
         doc.setFont('helvetica', 'normal');
-        doc.text('Für die Richtigkeit (Schützenmeister / Kassier): __________________________________', 15, finalY + 15);
+        doc.text('FÃ¼r die Richtigkeit (SchÃ¼tzenmeister / Kassier): __________________________________', 15, finalY + 15);
 
         // Download / Anzeige
         const safeName = (comp.gruppe_name || 'Gruppe').replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -1342,7 +1472,7 @@
     // ==========================================================================
 
     /**
-     * Analysiert Textzeilen auf Gruppen und allfällige Gruppenauszahlungen.
+     * Analysiert Textzeilen auf Gruppen und allfÃ¤llige Gruppenauszahlungen.
      * Wird von jahresmeisterschaft-import.js aufgerufen.
      */
     function jmDetectGroupCompetitionFromImportLines(lines, fullText, fileName) {
@@ -1352,14 +1482,14 @@
         const isGroupDoc = /(?:gruppenstich|gruppenrangliste|gruppe|gruppen|mannschaft)/i.test(fullText);
         
         // =====================================================================
-        // FORMAT 1: WinFire Standard-Gruppenrangliste (z. B. Bärenmoosschiessen)
+        // FORMAT 1: WinFire Standard-Gruppenrangliste (z. B. BÃ¤renmoosschiessen)
         // =====================================================================
         let groupMatch = null;
         let groupLineIdx = -1;
 
         for (let i = 0; i < lines.length; i++) {
             const t = (lines[i].text || lines[i] || '').trim();
-            const m = t.match(/(?:^|\b)(\d+)\s+(\d+)\s+([A-Za-z0-9äöüÄÖÜß\-\s]+?)\s+Muhen/i);
+            const m = t.match(/(?:^|\b)(\d+)\s+(\d+)\s+([A-Za-z0-9Ã¤Ã¶Ã¼Ã„Ã–ÃœÃŸ\-\s]+?)\s+Muhen/i);
             if (m) {
                 groupMatch = {
                     rang: parseInt(m[1], 10),
@@ -1381,13 +1511,13 @@
         }
 
         if (groupMatch) {
-            // Schützen unterhalb der Gruppe aufsammeln (nächste 3–6 Zeilen)
+            // SchÃ¼tzen unterhalb der Gruppe aufsammeln (nÃ¤chste 3â€“6 Zeilen)
             const detectedShooters = [];
             if (groupLineIdx >= 0) {
                 for (let i = groupLineIdx + 1; i < Math.min(lines.length, groupLineIdx + 10); i++) {
                     const lineText = lines[i].text || lines[i];
-                    // Schützenzeile: Punkte Name Vorname Jahrgang
-                    const sMatch = lineText.match(/(?:^|\s)(\d{2,3})\s+([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]+)\s+([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]+)\s+(\d{4}|\d{2})\b/);
+                    // SchÃ¼tzenzeile: Punkte Name Vorname Jahrgang
+                    const sMatch = lineText.match(/(?:^|\s)(\d{2,3})\s+([A-ZÃ„Ã–Ãœ][a-zA-ZÃ¤Ã¶Ã¼Ã„Ã–ÃœÃŸ\-]+)\s+([A-ZÃ„Ã–Ãœ][a-zA-ZÃ¤Ã¶Ã¼Ã„Ã–ÃœÃŸ\-]+)\s+(\d{4}|\d{2})\b/);
                     if (sMatch) {
                         detectedShooters.push({
                             punkte: parseFloat(sMatch[1]),
@@ -1422,22 +1552,22 @@
 
         // =====================================================================
         // FORMAT 2: SIUS / Meyton / BLM Gruppenrangliste (z. B. Balsthaler Liegendmatch)
-        // Zeilenstruktur: Platz \n Muhen - Muhen 1 \n SNr \n Serien \n Total \n Schützen
+        // Zeilenstruktur: Platz \n Muhen - Muhen 1 \n SNr \n Serien \n Total \n SchÃ¼tzen
         // =====================================================================
-        const blmMatch = fullText.match(/(?:^|\n)(\d+)\.\s*\n\s*Muhen\s*[-–\t ]+\s*([A-Za-z0-9äöüÄÖÜß\-\t ]+)/i);
+        const blmMatch = fullText.match(/(?:^|\n)(\d+)\.\s*\n\s*Muhen\s*[-â€“\t ]+\s*([A-Za-z0-9Ã¤Ã¶Ã¼Ã„Ã–ÃœÃŸ\-\t ]+)/i);
         if (blmMatch) {
             const blmRang = parseInt(blmMatch[1], 10);
             const rawGrpName = blmMatch[2].replace(/\t+/g, ' ').trim();
             const grpName = rawGrpName.replace(/^Muhen\s*/i, 'Muhen ') || 'Muhen 1';
 
-            // Schützen nach der Gruppe extrahieren (Name, Vorname, Total)
+            // SchÃ¼tzen nach der Gruppe extrahieren (Name, Vorname, Total)
             const blmShooters = [];
             // Suche nach "Muhen - ..." im Volltext
             const startIdx = fullText.indexOf(blmMatch[0]);
             if (startIdx >= 0) {
                 const afterGroup = fullText.substring(startIdx);
-                // Regex für Schützenzeilen: SNr \n NACHNAME, \t VORNAME \n PassNr ... Total
-                const shooterRegex = /\n\d+\s*\n\s*([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]+),\s*([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]+)[\s\S]*?\n\s*(\d{3}(?:\.\d)?)\s*(?=\n\d+|\n\d+\.|$)/g;
+                // Regex fÃ¼r SchÃ¼tzenzeilen: SNr \n NACHNAME, \t VORNAME \n PassNr ... Total
+                const shooterRegex = /\n\d+\s*\n\s*([A-ZÃ„Ã–Ãœ][a-zA-ZÃ¤Ã¶Ã¼Ã„Ã–ÃœÃŸ\-]+),\s*([A-ZÃ„Ã–Ãœ][a-zA-ZÃ¤Ã¶Ã¼Ã„Ã–ÃœÃŸ\-]+)[\s\S]*?\n\s*(\d{3}(?:\.\d)?)\s*(?=\n\d+|\n\d+\.|$)/g;
                 let sMatch;
                 while ((sMatch = shooterRegex.exec(afterGroup)) !== null) {
                     blmShooters.push({
@@ -1459,9 +1589,9 @@
                 rang: blmRang,
                 punkte_total: blmTotal,
                 gruppendoppel: 30.00,
-                gruppengewinn: 0.00, // Wird in SIUS/Meyton nicht abgedruckt -> per Bank überwiesen
+                gruppengewinn: 0.00, // Wird in SIUS/Meyton nicht abgedruckt -> per Bank Ã¼berwiesen
                 shooters: blmShooters,
-                notice: 'Gruppenpreisgeld nicht auf der Rangliste abgedruckt (wird per Bank überwiesen). Bitte Betrag eintragen.'
+                notice: 'Gruppenpreisgeld nicht auf der Rangliste abgedruckt (wird per Bank Ã¼berwiesen). Bitte Betrag eintragen.'
             };
         }
 
@@ -1475,7 +1605,7 @@
 
             lines.forEach(l => {
                 const t = (l.text || l || '').trim();
-                const m = t.match(/Strohaus\s*([12])\s*(\d{2})([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]+)\s+([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]+)\s+(\d{2,3})/);
+                const m = t.match(/Strohaus\s*([12])\s*(\d{2})([A-ZÃ„Ã–Ãœ][a-zA-ZÃ¤Ã¶Ã¼Ã„Ã–ÃœÃŸ\-]+)\s+([A-ZÃ„Ã–Ãœ][a-zA-ZÃ¤Ã¶Ã¼Ã„Ã–ÃœÃŸ\-]+)\s+(\d{2,3})/);
                 if (m) {
                     const grpNum = m[1];
                     const jg = parseInt(m[2], 10) > 30 ? (1900 + parseInt(m[2], 10)) : (2000 + parseInt(m[2], 10));
@@ -1502,9 +1632,9 @@
         }
 
         // =====================================================================
-        // FORMAT 4: Reine Einzelrangliste für Muhen (z. B. Deisigrabenschiessen)
+        // FORMAT 4: Reine Einzelrangliste fÃ¼r Muhen (z. B. Deisigrabenschiessen)
         // =====================================================================
-        if (/Einzelrangliste\s+f[üu]r\s+Muhen/i.test(fullText) || (fullText.includes('Muhen') && !isGroupDoc)) {
+        if (/Einzelrangliste\s+f[Ã¼u]r\s+Muhen/i.test(fullText) || (fullText.includes('Muhen') && !isGroupDoc)) {
             return {
                 gruppe_name: 'Strohaus',
                 rang: null,
@@ -1513,7 +1643,7 @@
                 gruppengewinn: 0.00,
                 shooters: [],
                 isSingleRankingOnly: true,
-                notice: 'Reine Einzelrangliste (keine Gruppenrangliste im Dokument). Gruppenpreise können manuell für die Top-5 Schützen erfasst werden.'
+                notice: 'Reine Einzelrangliste (keine Gruppenrangliste im Dokument). Gruppenpreise kÃ¶nnen manuell fÃ¼r die Top-5 SchÃ¼tzen erfasst werden.'
             };
         }
 
