@@ -519,8 +519,8 @@
     
     /**
      * Ermittelt verfügbare Schiessen für die Auswahl im Editor:
-     * 1. Aus der aktuellen Jahresmeisterschaft (Spalten in jmRawGrid)
-     * 2. Aus dem Schützenfeste-Katalog (public.jm_competitions_catalog)
+     * 1. Bereits in Jahresmeisterschaft vorhanden (Spalten in jmRawGrid)
+     * 2. Noch nicht in Jahresmeisterschaft erfasst (aus public.jm_competitions_catalog)
      */
     async function getAvailableCompetitionsForSelection() {
         const list = {
@@ -528,8 +528,21 @@
             catalog: []
         };
 
-        // 1. Aus Jahresmeisterschaft (jmRawGrid)
+        const norm = str => {
+            if (!str) return '';
+            return String(str)
+                .toLowerCase()
+                .replace(/ä/g, 'ae')
+                .replace(/ö/g, 'oe')
+                .replace(/ü/g, 'ue')
+                .replace(/ß/g, 'ss')
+                .replace(/[^a-z0-9]/g, '');
+        };
+
+        // 1. Aus Jahresmeisterschaft (jmRawGrid) ab Spalte 41
         const grid = window.jmRawGrid;
+        const existingNorms = new Set();
+
         if (grid && Array.isArray(grid) && grid.length > 5 && grid[2]) {
             let hasStatusCol = false;
             if (grid[4]) {
@@ -552,26 +565,135 @@
                         maxPts: maxPts,
                         shooterCount: shooterCount
                     });
+                    existingNorms.add(norm(title));
                 }
             }
         }
 
-        // 2. Aus Schützenfeste-Katalog
+        // 2. Aus Schützenfeste-Katalog: NUR Schiessen, die NOCH NICHT in der Jahresmeisterschaft erfasst sind!
         if (typeof window.loadJMSchuetzenfesteCatalog === 'function') {
             try {
                 const cat = await window.loadJMSchuetzenfesteCatalog();
-                list.catalog = (cat || []).filter(c => c.is_active !== false).map(c => ({
-                    id: c.id,
-                    title: c.anlass,
-                    ort: c.ort,
-                    maxPts: c.max_punkte
-                }));
+                (cat || []).filter(c => c.is_active !== false).forEach(c => {
+                    const catNorm = norm(c.anlass);
+                    const keywords = String(c.suchbegriffe || '').split(';').map(k => norm(k)).filter(Boolean);
+
+                    // Prüfen ob bereits in existingNorms vorhanden
+                    let isAlreadyInJM = false;
+                    for (const ex of existingNorms) {
+                        if (ex === catNorm || ex.includes(catNorm) || catNorm.includes(ex)) {
+                            isAlreadyInJM = true;
+                            break;
+                        }
+                        if (keywords.some(kw => kw.length > 3 && (ex.includes(kw) || kw.includes(ex)))) {
+                            isAlreadyInJM = true;
+                            break;
+                        }
+                    }
+
+                    // Nur aufnehmen, wenn NOCH NICHT in der Jahresmeisterschaft vorhanden!
+                    if (!isAlreadyInJM) {
+                        list.catalog.push({
+                            id: c.id,
+                            title: c.anlass,
+                            ort: c.ort,
+                            maxPts: c.max_punkte
+                        });
+                    }
+                });
             } catch (e) {
                 console.warn('[Gruppengewinne] Schützenfeste-Katalog konnte nicht geladen werden:', e);
             }
         }
 
         return list;
+    }
+
+    /**
+     * Findet die zugehörige Spalte in jmRawGrid anhand des Anlassnamens.
+     */
+    function findJMColumnForAnlass(anlassName) {
+        const grid = window.jmRawGrid;
+        if (!grid || !Array.isArray(grid) || grid.length < 6 || !grid[2]) return null;
+
+        let hasStatusCol = false;
+        if (grid[4]) {
+            hasStatusCol = grid[4].some(cell => String(cell || '').trim().toLowerCase() === 'status');
+        }
+        const limitIndex = hasStatusCol ? 42 : 41;
+
+        const norm = str => {
+            if (!str) return '';
+            return String(str)
+                .toLowerCase()
+                .replace(/ä/g, 'ae')
+                .replace(/ö/g, 'oe')
+                .replace(/ü/g, 'ue')
+                .replace(/ß/g, 'ss')
+                .replace(/[^a-z0-9]/g, '');
+        };
+
+        const targetNorm = norm(anlassName);
+        if (!targetNorm) return null;
+
+        // 1. Exakter Match
+        for (let c = limitIndex; c < grid[2].length; c++) {
+            const title = String(grid[2][c] || '').trim();
+            if (!title || title.toLowerCase().startsWith('spalte')) continue;
+            if (title.toLowerCase() === anlassName.toLowerCase()) {
+                return { colIndex: c, title };
+            }
+        }
+
+        // 2. Normalisierter Match
+        for (let c = limitIndex; c < grid[2].length; c++) {
+            const title = String(grid[2][c] || '').trim();
+            if (!title || title.toLowerCase().startsWith('spalte')) continue;
+            const colNorm = norm(title);
+            if (colNorm === targetNorm) {
+                return { colIndex: c, title };
+            }
+        }
+
+        // 3. Teilstring Match (z. B. "Deisigrabenschiessen" in "26. Deisigrabenschiessen 2026")
+        for (let c = limitIndex; c < grid[2].length; c++) {
+            const title = String(grid[2][c] || '').trim();
+            if (!title || title.toLowerCase().startsWith('spalte')) continue;
+            const colNorm = norm(title);
+            if (colNorm.includes(targetNorm) || targetNorm.includes(colNorm)) {
+                return { colIndex: c, title };
+            }
+            const targetClean = targetNorm.replace(/\d+/g, '');
+            const colClean = colNorm.replace(/\d+/g, '');
+            if (targetClean.length > 4 && colClean.length > 4 && (colClean.includes(targetClean) || targetClean.includes(colClean))) {
+                return { colIndex: c, title };
+            }
+        }
+
+        // 4. Katalog-Suchbegriffe Match
+        if (window._jmCatalogCache && window._jmCatalogCache.length > 0) {
+            const catEntry = window._jmCatalogCache.find(cat => {
+                const cNorm = norm(cat.anlass);
+                if (cNorm === targetNorm || targetNorm.includes(cNorm) || cNorm.includes(targetNorm)) return true;
+                const kw = String(cat.suchbegriffe || '').split(';').map(k => norm(k)).filter(Boolean);
+                return kw.some(k => k.length > 3 && (targetNorm.includes(k) || k.includes(targetNorm)));
+            });
+
+            if (catEntry) {
+                const catNorm = norm(catEntry.anlass);
+                const catKws = String(catEntry.suchbegriffe || '').split(';').map(k => norm(k)).filter(Boolean);
+                for (let c = limitIndex; c < grid[2].length; c++) {
+                    const title = String(grid[2][c] || '').trim();
+                    if (!title || title.toLowerCase().startsWith('spalte')) continue;
+                    const colNorm = norm(title);
+                    if (colNorm.includes(catNorm) || catNorm.includes(colNorm) || catKws.some(k => k.length > 3 && colNorm.includes(k))) {
+                        return { colIndex: c, title };
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -587,27 +709,27 @@
 
         let optionsHtml = '<option value="">-- Schiessen aus Dropdown wählen oder frei eingeben --</option>';
 
-        // 1. Aus aktueller Jahresmeisterschaft
+        // 1. Bereits in Jahresmeisterschaft vorhanden
         if (available.jmCols && available.jmCols.length > 0) {
-            optionsHtml += `<optgroup label="🏆 Aus aktueller Jahresmeisterschaft (${curYear})">`;
+            optionsHtml += `<optgroup label="✅ Bereits in Jahresmeisterschaft vorhanden (${curYear})">`;
             available.jmCols.forEach(col => {
-                const countStr = col.shooterCount > 0 ? ` (${col.shooterCount} Resultate vorhanden)` : ' (Noch keine Resultate)';
+                const countStr = col.shooterCount > 0 ? ` (${col.shooterCount} Resultate)` : ' (Noch keine Resultate)';
                 optionsHtml += `<option value="${escapeHtml(col.title)}" data-source="jm" data-col="${col.colIndex}" data-count="${col.shooterCount}">${escapeHtml(col.title)}${countStr}</option>`;
             });
             optionsHtml += '</optgroup>';
         }
 
-        // 2. Aus Schützenfeste-Katalog
+        // 2. Noch nicht in Jahresmeisterschaft erfasst (aus Katalog)
         if (available.catalog && available.catalog.length > 0) {
-            optionsHtml += '<optgroup label="📋 Aus Schützenfeste-Katalog">';
+            optionsHtml += '<optgroup label="📋 Noch nicht in Jahresmeisterschaft erfasst (aus Festkatalog)">';
             available.catalog.forEach(cat => {
                 const ortStr = cat.ort ? ` (${cat.ort})` : '';
-                optionsHtml += `<option value="${escapeHtml(cat.title)}" data-source="catalog">${escapeHtml(cat.title)}${ortStr} · Max. ${cat.maxPts}</option>`;
+                optionsHtml += `<option value="${escapeHtml(cat.title)}" data-source="catalog">${escapeHtml(cat.title)}${ortStr}</option>`;
             });
             optionsHtml += '</optgroup>';
         }
 
-        optionsHtml += '<option value="__custom__">✏️ Anderer / Neuer Anlass (manuell eintippen)...</option>';
+        optionsHtml += '<option value="__custom__">✏️ Anderer / Eigener Anlass (manuell eingeben)...</option>';
         select.innerHTML = optionsHtml;
 
         // Datalist befüllen
@@ -622,7 +744,10 @@
 
         // Vorselektion
         if (selectedAnlass) {
-            const found = Array.from(select.options).find(opt => opt.value.toLowerCase() === selectedAnlass.toLowerCase());
+            const matched = findJMColumnForAnlass(selectedAnlass);
+            const selectValue = matched ? matched.title : selectedAnlass;
+
+            const found = Array.from(select.options).find(opt => opt.value.toLowerCase() === selectValue.toLowerCase());
             if (found) {
                 select.value = found.value;
             } else {
@@ -650,8 +775,7 @@
     }
 
     /**
-     * Prüft, ob für den gewählten Anlass Resultate in der Jahresmeisterschaft existieren
-     * und steuert die Sichtbarkeit des 1-Klick Übernahme-Banners.
+     * Prüft, ob für den gewählten Anlass Resultate in der Jahresmeisterschaft existieren.
      */
     function checkAnlassJMSyncBanner(anlassTitle) {
         const banner = document.getElementById('jme-jm-sync-banner');
@@ -666,53 +790,25 @@
             return;
         }
 
+        const matched = findJMColumnForAnlass(title);
+        if (!matched) {
+            banner.classList.add('d-none');
+            banner.classList.remove('d-flex');
+            if (quickBtn) quickBtn.style.display = 'none';
+            return;
+        }
+
         const grid = window.jmRawGrid;
-        if (!grid || !Array.isArray(grid) || grid.length < 6 || !grid[2]) {
-            banner.classList.add('d-none');
-            banner.classList.remove('d-flex');
-            if (quickBtn) quickBtn.style.display = 'none';
-            return;
-        }
-
-        let hasStatusCol = false;
-        if (grid[4]) {
-            hasStatusCol = grid[4].some(cell => String(cell || '').trim().toLowerCase() === 'status');
-        }
-        const limitIndex = hasStatusCol ? 42 : 41;
-
-        const norm = str => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        const cleanTarget = norm(title);
-
-        let matchCol = -1;
-        let matchTitle = '';
-        for (let c = limitIndex; c < grid[2].length; c++) {
-            const t = String(grid[2][c] || '').trim();
-            if (!t || t.toLowerCase().startsWith('spalte')) continue;
-            const cleanT = norm(t);
-            if (cleanT === cleanTarget || cleanT.includes(cleanTarget) || cleanTarget.includes(cleanT)) {
-                matchCol = c;
-                matchTitle = t;
-                break;
-            }
-        }
-
-        if (matchCol === -1) {
-            banner.classList.add('d-none');
-            banner.classList.remove('d-flex');
-            if (quickBtn) quickBtn.style.display = 'none';
-            return;
-        }
-
         let count = 0;
         for (let r = 5; r < grid.length; r++) {
             if (r === 13 || r === 14) continue;
-            const val = parseFloat(String(grid[r]?.[matchCol] || '').replace(',', '.'));
+            const val = parseFloat(String(grid[r]?.[matched.colIndex] || '').replace(',', '.'));
             if (!isNaN(val) && val > 0) count++;
         }
 
         const colNameEl = document.getElementById('jme-jm-sync-colname');
         const countEl = document.getElementById('jme-jm-sync-count');
-        if (colNameEl) colNameEl.innerText = `«${matchTitle}»`;
+        if (colNameEl) colNameEl.innerText = `«${matched.title}»`;
         if (countEl) countEl.innerText = count;
 
         if (count > 0) {
@@ -728,21 +824,35 @@
 
     /**
      * Event-Handler: Auswahl im Anlass-Dropdown geändert.
+     * Wenn ein Schiessen aus der Jahresmeisterschaft gewählt wird:
+     * SOFORT AUTOMATISCH DIE SCHÜTZEN UND RESULTATE ÜBERNEHMEN!
      */
-    function jmOnAnlassSelectChange(val) {
+    async function jmOnAnlassSelectChange(val) {
         const input = document.getElementById('jme-anlass');
         if (!input) return;
 
         if (val === '__custom__') {
             input.value = '';
             input.focus();
-        } else if (val) {
+            if (_jmCurrentEditingComp) _jmCurrentEditingComp.anlass_name = '';
+            checkAnlassJMSyncBanner('');
+            return;
+        }
+
+        if (val) {
             input.value = val;
             if (_jmCurrentEditingComp) {
                 _jmCurrentEditingComp.anlass_name = val;
             }
+
+            // Automatische Übernahme der Schützen & Punkte aus der Jahresmeisterschaft!
+            const matched = findJMColumnForAnlass(val);
+            if (matched) {
+                jmPopulateShootersFromJMRawGrid(matched.title, true);
+            } else {
+                checkAnlassJMSyncBanner(val);
+            }
         }
-        checkAnlassJMSyncBanner(input.value);
     }
 
     /**
@@ -763,7 +873,14 @@
                 select.value = '';
             }
         }
-        checkAnlassJMSyncBanner(val);
+
+        // Wenn noch keine Schützen erfasst sind und ein JM-Schiessen getippt wird:
+        const matched = findJMColumnForAnlass(val.trim());
+        if (matched && (!_jmCurrentEditingComp?.members || _jmCurrentEditingComp.members.length === 0)) {
+            jmPopulateShootersFromJMRawGrid(matched.title, true);
+        } else {
+            checkAnlassJMSyncBanner(val);
+        }
     }
 
     /**
@@ -781,56 +898,28 @@
 
     /**
      * 1-Klick-Übernahme: Liest die Schützen und Punkte dieses Schiessens direkt aus der Jahresmeisterschaft!
+     * @param {string} [forceAnlassName] - Optionaler Anlass-Name
+     * @param {boolean} [isAuto=false] - Ob der Aufruf automatisch beim Auswählen im Dropdown erfolgte
      */
-    function jmPopulateShootersFromJMRawGrid(forceAnlassName) {
+    function jmPopulateShootersFromJMRawGrid(forceAnlassName, isAuto = false) {
         const anlassName = (forceAnlassName || document.getElementById('jme-anlass')?.value || _jmCurrentEditingComp?.anlass_name || '').trim();
-        if (!anlassName) {
-            if (window.UIConfirmKit) {
-                UIConfirmKit.alert({ title: 'Kein Anlass gewählt', message: 'Bitte wähle zuerst ein Schiessen aus der Jahresmeisterschaft.', type: 'warning' });
-            } else {
-                alert('Bitte zuerst ein Schiessen auswählen.');
-            }
-            return;
-        }
+        if (!anlassName) return false;
 
-        const grid = window.jmRawGrid;
-        if (!grid || !Array.isArray(grid) || grid.length < 6 || !grid[2]) {
-            if (window.UIConfirmKit) {
-                UIConfirmKit.alert({ title: 'Keine Daten geladen', message: 'In der aktuellen Jahresmeisterschaft sind keine Tabellendaten geladen.', type: 'warning' });
-            }
-            return;
-        }
-
-        let hasStatusCol = false;
-        if (grid[4]) {
-            hasStatusCol = grid[4].some(cell => String(cell || '').trim().toLowerCase() === 'status');
-        }
-        const limitIndex = hasStatusCol ? 42 : 41;
-
-        const norm = str => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        const cleanTarget = norm(anlassName);
-
-        let foundCol = -1;
-        for (let c = limitIndex; c < grid[2].length; c++) {
-            const title = String(grid[2][c] || '').trim();
-            if (!title || title.toLowerCase().startsWith('spalte')) continue;
-            const cleanTitle = norm(title);
-            if (cleanTitle === cleanTarget || cleanTitle.includes(cleanTarget) || cleanTarget.includes(cleanTitle)) {
-                foundCol = c;
-                break;
-            }
-        }
-
-        if (foundCol === -1) {
-            if (window.UIConfirmKit) {
+        const matched = findJMColumnForAnlass(anlassName);
+        if (!matched) {
+            if (!isAuto && window.UIConfirmKit) {
                 UIConfirmKit.alert({
                     title: 'Schiessen nicht im Grid',
-                    message: `Für «${anlassName}» wurde keine Auswärtsschiessen-Spalte in der aktuellen Jahresmeisterschaft gefunden. Du kannst die Schützen manuell erfassen.`,
+                    message: `Für «${anlassName}» wurde keine passende Auswärtsschiessen-Spalte in der Jahresmeisterschaft gefunden. Du kannst die Schützen manuell erfassen.`,
                     type: 'info'
                 });
             }
-            return;
+            return false;
         }
+
+        const grid = window.jmRawGrid;
+        const foundCol = matched.colIndex;
+        const matchedTitle = matched.title;
 
         const headerRow = grid[4] || [];
         const colNachname = headerRow.findIndex(t => String(t || '').trim().toLowerCase() === 'nachname');
@@ -861,21 +950,22 @@
         }
 
         if (detected.length === 0) {
-            if (window.UIConfirmKit) {
+            if (!isAuto && window.UIConfirmKit) {
                 UIConfirmKit.alert({
                     title: 'Keine Resultate vorhanden',
-                    message: `In der Spalte «${grid[2][foundCol]}» sind noch keine Schützenresultate eingetragen.`,
+                    message: `In der Spalte «${matchedTitle}» sind noch keine Schützenresultate eingetragen.`,
                     type: 'info'
                 });
             }
-            return;
+            return false;
         }
 
         // Nach Punkten absteigend sortieren
         detected.sort((a, b) => b.punkte - a.punkte);
 
-        // Die 5 besten Schützen auswählen
-        const topShooters = detected.slice(0, 5);
+        // Bis zu 5 Schützen übernehmen (oder alle vorhandenen falls weniger als 5)
+        const countToTake = Math.min(5, detected.length);
+        const topShooters = detected.slice(0, countToTake);
 
         _jmCurrentEditingComp.members = topShooters.map(s => {
             let pn = null;
@@ -903,15 +993,44 @@
         // Punkte Total der Gruppe berechnen
         const sumPts = _jmCurrentEditingComp.members.reduce((a, b) => a + (b.punkte || 0), 0);
         _jmCurrentEditingComp.punkte_total = Math.round(sumPts * 10) / 10;
+        _jmCurrentEditingComp.anzahl_schuetzen = _jmCurrentEditingComp.members.length;
+
         const punkteInput = document.getElementById('jme-punkte');
         if (punkteInput) punkteInput.value = _jmCurrentEditingComp.punkte_total;
+
+        // Anlass-Textfeld auf genauen Spaltentitel setzen
+        const anlassInput = document.getElementById('jme-anlass');
+        if (anlassInput && anlassInput.value !== matchedTitle) {
+            anlassInput.value = matchedTitle;
+            _jmCurrentEditingComp.anlass_name = matchedTitle;
+        }
 
         renderShooterRows(_jmCurrentEditingComp.members);
         jmRecalculateCurrentComp();
 
-        if (typeof showSuccess === 'function') {
-            showSuccess(`🎉 5 Schützen für «${grid[2][foundCol]}» aus der Jahresmeisterschaft übernommen (Total: ${_jmCurrentEditingComp.punkte_total} Pkt.)!`);
+        // Erfolgs-Banner anzeigen
+        const banner = document.getElementById('jme-jm-sync-banner');
+        if (banner) {
+            banner.className = 'alert alert-success py-1.5 px-3 small d-flex align-items-center justify-content-between mb-3 shadow-xs border';
+            banner.innerHTML = `
+                <div class="d-flex align-items-center gap-2">
+                    <i class="fas fa-check-circle text-success fa-lg"></i>
+                    <div>
+                        <strong>${_jmCurrentEditingComp.members.length} Schützen & Punkte</strong> (Total: ${_jmCurrentEditingComp.punkte_total} Pkt.) automatisch aus der Jahresmeisterschaft «${matchedTitle}» übernommen!
+                    </div>
+                </div>
+                <button type="button" class="btn btn-xs btn-outline-success fw-semibold" onclick="window.jmPopulateShootersFromJMRawGrid('${escapeHtml(matchedTitle)}')">
+                    <i class="fas fa-sync-alt me-1"></i> Erneut laden
+                </button>
+            `;
+            banner.classList.remove('d-none');
         }
+
+        if (typeof showSuccess === 'function') {
+            showSuccess(`🎉 ${_jmCurrentEditingComp.members.length} Schützen für «${matchedTitle}» automatisch aus Jahresmeisterschaft übernommen!`);
+        }
+
+        return true;
     }
 
     function createGruppengewinnEditModalDOM() {
