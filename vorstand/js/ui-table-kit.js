@@ -2062,13 +2062,24 @@
             const fVal = (f.defaultValue !== undefined && f.defaultValue !== null) ? String(f.defaultValue) : '';
             const fPlace = f.placeholder || '';
             const fLabel = f.label ? `<label for="${fieldId}" class="form-label small fw-semibold text-dark mb-1">${f.label}</label>` : '';
+            const dlHtml = Array.isArray(f.datalist) ? `
+              <datalist id="${fieldId}_dl">
+                ${f.datalist.map(opt => {
+                  const val = typeof opt === 'object' ? (opt.value !== undefined ? opt.value : '') : opt;
+                  const lbl = typeof opt === 'object' ? (opt.label || '') : '';
+                  return `<option value="${String(val).replace(/"/g, '&quot;')}">${lbl ? String(lbl).replace(/"/g, '&quot;') : ''}</option>`;
+                }).join('')}
+              </datalist>` : '';
+            const listAttr = Array.isArray(f.datalist) ? `list="${fieldId}_dl"` : (f.list ? `list="${f.list}"` : '');
             formHtml += `
               <div>
                 ${fLabel}
                 <input type="${fType}" id="${fieldId}" data-field-name="${f.name || `field_${idx}`}" 
+                       ${listAttr}
                        class="form-control form-control-sm ui-prompt-input" 
                        value="${fVal.replace(/"/g, '&quot;')}" placeholder="${fPlace.replace(/"/g, '&quot;')}" 
                        style="border-radius: 6px;">
+                ${dlHtml}
               </div>`;
           });
           formHtml += `</div>`;

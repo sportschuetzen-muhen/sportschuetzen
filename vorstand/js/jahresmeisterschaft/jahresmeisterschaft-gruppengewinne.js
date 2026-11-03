@@ -1,9 +1,9 @@
 ﻿/**
  * ==============================================================================
  * jahresmeisterschaft-gruppengewinne.js
- * Modul: Verwaltung, SchÃ¼tzen-Zuordnung & Auszahlung/Verrechnung von Gruppengewinnen
+ * Modul: Verwaltung, Schützen-Zuordnung & Auszahlung/Verrechnung von Gruppengewinnen
  * Konto: 1301 Transit Gruppengewinne
- * SportschÃ¼tzen Muhen (Saison 2026+)
+ * Sportschützen Muhen (Saison 2026+)
  * ==============================================================================
  */
 
@@ -22,7 +22,7 @@
     }
 
     /**
-     * Ermittelt das aktive Jahr fÃ¼r Gruppengewinne.
+     * Ermittelt das aktive Jahr für Gruppengewinne.
      */
     function getActiveYear() {
         if (_jmActiveCompYear) return _jmActiveCompYear;
@@ -34,14 +34,14 @@
     }
 
     /**
-     * LÃ¤dt alle Gruppengewinne und zugehÃ¶rige SchÃ¼tzen fÃ¼r ein Jahr aus Supabase.
+     * Lädt alle Gruppengewinne und zugehörige Schützen für ein Jahr aus Supabase.
      */
     async function jmLoadGroupCompetitions(year) {
         const yr = year || getActiveYear();
         _jmActiveCompYear = yr;
         const supa = getSupa();
         if (!supa) {
-            console.warn("[Gruppengewinne] Kein Supabase-Client verfÃ¼gbar.");
+            console.warn("[Gruppengewinne] Kein Supabase-Client verfügbar.");
             return [];
         }
 
@@ -72,7 +72,7 @@
     }
 
     /**
-     * Ã–ffnet das zentrale Ãœbersichts-Modal fÃ¼r Gruppengewinne.
+     * Öffnet das zentrale Übersichts-Modal für Gruppengewinne.
      */
     async function jmOpenGruppengewinneModal(year) {
         const yr = year || getActiveYear();
@@ -91,7 +91,7 @@
     }
 
     /**
-     * Erstellt das DOM fÃ¼r das Hauptmodal.
+     * Erstellt das DOM für das Hauptmodal.
      */
     function createGruppengewinneModalDOM() {
         const div = document.createElement('div');
@@ -106,8 +106,8 @@
                         <div class="d-flex align-items-center gap-2">
                             <span class="badge bg-warning text-dark fs-6"><i class="fas fa-trophy"></i></span>
                             <div>
-                                <h5 class="modal-title fw-bold mb-0">Gruppengewinne AuswÃ¤rtige Schiessen (Konto 1301)</h5>
-                                <div class="small text-white-50">Erfassung, SchÃ¼tzen-Zuordnung & Auszahlung/Verrechnung von Gewinnen</div>
+                                <h5 class="modal-title fw-bold mb-0">Gruppengewinne Auswärtige Schiessen (Konto 1301)</h5>
+                                <div class="small text-white-50">Erfassung, Schützen-Zuordnung & Auszahlung/Verrechnung von Gewinnen</div>
                             </div>
                         </div>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
@@ -117,10 +117,10 @@
                         <div class="alert alert-info py-2 px-3 small d-flex align-items-start gap-2 mb-3 shadow-sm border-0">
                             <i class="fas fa-info-circle fa-lg mt-1 text-primary"></i>
                             <div>
-                                <strong>Vereinsregel fÃ¼r auswÃ¤rtige Schiessen:</strong>
-                                Der Verein Ã¼bernimmt das Gruppendoppel (standardmÃ¤ssig <strong>CHF 30.00</strong>, frei Ã¼bersteuerbar).
-                                Gruppengewinne darÃ¼ber hinaus stehen vollumfÃ¤nglich den beteiligten SchÃ¼tzen zu und werden zu gleichen Teilen aufgeteilt.
-                                Die Verrechnung erfolgt primÃ¤r Ã¼ber einen Abzug bei der <strong>Jahresbeitragsrechnung</strong> oder per <strong>BankÃ¼berweisung (pain.001)</strong> Ã¼ber das Transitkonto <strong>1301</strong>.
+                                <strong>Vereinsregel für auswärtige Schiessen:</strong>
+                                Der Verein übernimmt das Gruppendoppel (standardmässig <strong>CHF 30.00</strong>, frei übersteuerbar).
+                                Gruppengewinne darüber hinaus stehen vollumfänglich den beteiligten Schützen zu und werden zu gleichen Teilen aufgeteilt.
+                                Die Verrechnung erfolgt primär über einen Abzug bei der <strong>Jahresbeitragsrechnung</strong> oder per <strong>Banküberweisung (pain.001)</strong> über das Transitkonto <strong>1301</strong>.
                             </div>
                         </div>
 
@@ -133,7 +133,7 @@
                                     <option value="2025">2025</option>
                                     <option value="2024">2024</option>
                                 </select>
-                                <input type="text" id="jm-gg-search" class="form-select form-select-sm" style="width: 220px;" placeholder="ðŸ” Anlass / Gruppe suchen..." oninput="window.jmFilterGruppengewinneTable()">
+                                <input type="text" id="jm-gg-search" class="form-select form-select-sm" style="width: 220px;" placeholder="🔍 Anlass / Gruppe suchen..." oninput="window.jmFilterGruppengewinneTable()">
                             </div>
                             <div class="d-flex align-items-center gap-2">
                                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.jmReloadGruppengewinneList()" title="Liste neu laden">
@@ -145,7 +145,7 @@
                             </div>
                         </div>
 
-                        <!-- Tabelle der GruppenwettkÃ¤mpfe -->
+                        <!-- Tabelle der Gruppenwettkämpfe -->
                         <div class="card shadow-sm border-0">
                             <div class="card-body p-0">
                                 <div class="table-responsive" style="max-height: 520px;">
@@ -157,8 +157,8 @@
                                                 <th class="text-center" style="width: 7%;">Rang</th>
                                                 <th class="text-end" style="width: 10%;">Doppel</th>
                                                 <th class="text-end" style="width: 11%;">Gewinn</th>
-                                                <th class="text-end" style="width: 12%;">Ãœberschuss</th>
-                                                <th class="text-center" style="width: 10%;">SchÃ¼tzen</th>
+                                                <th class="text-end" style="width: 12%;">Überschuss</th>
+                                                <th class="text-center" style="width: 10%;">Schützen</th>
                                                 <th class="text-center" style="width: 14%;">Aktionen</th>
                                             </tr>
                                         </thead>
@@ -176,7 +176,7 @@
                     </div>
                     <div class="modal-footer py-2 px-3 bg-light d-flex justify-content-between">
                         <div class="small text-muted" id="jm-gg-summary-text">
-                            Gesamt-Ãœberschuss SchÃ¼tzen (Konto 1301): <span class="fw-bold text-dark">CHF 0.00</span>
+                            Gesamt-Überschuss Schützen (Konto 1301): <span class="fw-bold text-dark">CHF 0.00</span>
                         </div>
                         <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Schliessen</button>
                     </div>
@@ -206,8 +206,8 @@
                 <tr>
                     <td colspan="8" class="text-center py-5 text-muted">
                         <i class="fas fa-trophy fa-2x mb-2 text-black-50 opacity-50 d-block"></i>
-                        Noch keine Gruppengewinne fÃ¼r die Saison ${yr} erfasst.<br>
-                        <span class="small">Klicke oben auf <strong>Â«Neuer Gruppengewinn erfassenÂ»</strong> oder importiere eine Rangliste im AuswÃ¤rts-Import.</span>
+                        Noch keine Gruppengewinne für die Saison ${yr} erfasst.<br>
+                        <span class="small">Klicke oben auf <strong>«Neuer Gruppengewinn erfassen»</strong> oder importiere eine Rangliste im Auswärts-Import.</span>
                     </td>
                 </tr>
             `;
@@ -231,7 +231,7 @@
 
             const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${v.toFixed(2)}`);
 
-            // Auszahlungsstatus der SchÃ¼tzen
+            // Auszahlungsstatus der Schützen
             const allVerrechnet = members.length > 0 && members.every(m => m.status === 'verrechnet' || m.status === 'ausgefuehrt');
             const hasPendent = members.some(m => m.status === 'offen' || m.status === 'in_zahlung');
             let statusBadge = `<span class="badge bg-secondary">Offen</span>`;
@@ -240,7 +240,7 @@
             } else if (hasPendent && members.some(m => m.status === 'verrechnet' || m.status === 'ausgefuehrt')) {
                 statusBadge = `<span class="badge bg-info text-dark">Teilweise verrechnet</span>`;
             } else if (ueberschuss === 0) {
-                statusBadge = `<span class="badge bg-light text-muted border">Kein Ãœberschuss</span>`;
+                statusBadge = `<span class="badge bg-light text-muted border">Kein Überschuss</span>`;
             }
 
             return `
@@ -269,19 +269,19 @@
                     </td>
                     <td class="text-center">
                         <span class="badge bg-secondary-subtle text-dark border" title="${members.map(m => m.schuetze_name).join(', ')}">
-                            <i class="fas fa-users me-1 text-muted"></i>${count} SchÃ¼tzen
+                            <i class="fas fa-users me-1 text-muted"></i>${count} Schützen
                         </span>
                         <div class="text-muted" style="font-size: 10px;">je ${fmtCurr(perShooter)}</div>
                     </td>
                     <td class="text-center pe-3">
                         <div class="btn-group btn-group-sm">
-                            <button type="button" class="btn btn-outline-primary" onclick="window.jmOpenGroupCompetitionEditor('${comp.id}')" title="Gruppe & SchÃ¼tzen bearbeiten">
+                            <button type="button" class="btn btn-outline-primary" onclick="window.jmOpenGroupCompetitionEditor('${comp.id}')" title="Gruppe & Schützen bearbeiten">
                                 <i class="fas fa-pen"></i>
                             </button>
                             <button type="button" class="btn btn-outline-secondary" onclick="window.jmGenerateGruppengewinnPdf('${comp.id}')" title="Abrechnungs- & Quittungs-PDF drucken">
                                 <i class="fas fa-file-pdf text-danger"></i>
                             </button>
-                            <button type="button" class="btn btn-outline-danger" onclick="window.jmDeleteGroupCompetition('${comp.id}')" title="Gruppe lÃ¶schen">
+                            <button type="button" class="btn btn-outline-danger" onclick="window.jmDeleteGroupCompetition('${comp.id}')" title="Gruppe löschen">
                                 <i class="fas fa-trash-alt"></i>
                             </button>
                         </div>
@@ -299,7 +299,7 @@
         const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${v.toFixed(2)}`);
         sumEl.innerHTML = `
             Erfasster Gruppengewinn: <strong class="text-success">${fmtCurr(totalGewinn)}</strong> | 
-            Netto-Ãœberschuss fÃ¼r SchÃ¼tzen (Konto 1301): <strong class="text-primary">${fmtCurr(totalUeberschuss)}</strong>
+            Netto-Überschuss für Schützen (Konto 1301): <strong class="text-primary">${fmtCurr(totalUeberschuss)}</strong>
         `;
     }
 
@@ -333,7 +333,7 @@
     }
 
     /**
-     * LÃ¶scht einen Gruppengewinn nach RÃ¼ckbestÃ¤tigung.
+     * Löscht einen Gruppengewinn nach Rückbestätigung.
      */
     async function jmDeleteGroupCompetition(id) {
         const comp = window._jmGroupCompetitions.find(c => String(c.id) === String(id));
@@ -440,12 +440,12 @@
     }
 
     // ==========================================================================
-    // DETAIL-EDITOR & SCHÃœTZEN-ZUORDNUNG
+    // DETAIL-EDITOR & SCHÜTZEN-ZUORDNUNG
     // ==========================================================================
 
     /**
-     * Ã–ffnet den Detail-Editor fÃ¼r eine Gruppe (oder neu).
-     * @param {string|object|null} compOrId ID, bestehendes Objekt oder null fÃ¼r Neuerfassung
+     * Öffnet den Detail-Editor für eine Gruppe (oder neu).
+     * @param {string|object|null} compOrId ID, bestehendes Objekt oder null für Neuerfassung
      */
     async function jmOpenGroupCompetitionEditor(compOrId) {
         let comp = null;
@@ -474,7 +474,7 @@
 
         _jmCurrentEditingComp = JSON.parse(JSON.stringify(comp));
 
-        // Mitglieder-Stamm fÃ¼r Dropdowns und IBAN-VervollstÃ¤ndigung sicherstellen
+        // Mitglieder-Stamm für Dropdowns und IBAN-Vervollständigung sicherstellen
         await ensureMembersLoaded();
 
         let modalEl = document.getElementById('jmGruppengewinnEditModal');
@@ -483,6 +483,8 @@
             modalEl = document.getElementById('jmGruppengewinnEditModal');
         }
 
+        populateMembersDatalist();
+        await populateCompetitionOptions(_jmCurrentEditingComp.anlass_name);
         populateEditorFields(_jmCurrentEditingComp);
 
         const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
@@ -490,7 +492,7 @@
     }
 
     /**
-     * LÃ¤dt aktive Mitglieder zur Auswahl & IBAN-Ermittlung
+     * Lädt aktive Mitglieder zur Auswahl & IBAN-Ermittlung
      */
     let _allMembersCache = null;
     async function ensureMembersLoaded() {
@@ -512,8 +514,406 @@
     }
 
     /**
-     * Erstellt das DOM fÃ¼r das Bearbeitungs-Modal.
+     * Erstellt das DOM für das Bearbeitungs-Modal.
      */
+    
+    /**
+     * Ermittelt verfügbare Schiessen für die Auswahl im Editor:
+     * 1. Aus der aktuellen Jahresmeisterschaft (Spalten in jmRawGrid)
+     * 2. Aus dem Schützenfeste-Katalog (public.jm_competitions_catalog)
+     */
+    async function getAvailableCompetitionsForSelection() {
+        const list = {
+            jmCols: [],
+            catalog: []
+        };
+
+        // 1. Aus Jahresmeisterschaft (jmRawGrid)
+        const grid = window.jmRawGrid;
+        if (grid && Array.isArray(grid) && grid.length > 5 && grid[2]) {
+            let hasStatusCol = false;
+            if (grid[4]) {
+                hasStatusCol = grid[4].some(cell => String(cell || '').trim().toLowerCase() === 'status');
+            }
+            const limitIndex = hasStatusCol ? 42 : 41;
+            for (let c = limitIndex; c < grid[2].length; c++) {
+                const title = String(grid[2][c] || '').trim();
+                if (title && !title.toLowerCase().startsWith('spalte')) {
+                    const maxPts = parseFloat(grid[3]?.[c]) || 100;
+                    let shooterCount = 0;
+                    for (let r = 5; r < grid.length; r++) {
+                        if (r === 13 || r === 14) continue;
+                        const val = parseFloat(String(grid[r]?.[c] || '').replace(',', '.'));
+                        if (!isNaN(val) && val > 0) shooterCount++;
+                    }
+                    list.jmCols.push({
+                        colIndex: c,
+                        title: title,
+                        maxPts: maxPts,
+                        shooterCount: shooterCount
+                    });
+                }
+            }
+        }
+
+        // 2. Aus Schützenfeste-Katalog
+        if (typeof window.loadJMSchuetzenfesteCatalog === 'function') {
+            try {
+                const cat = await window.loadJMSchuetzenfesteCatalog();
+                list.catalog = (cat || []).filter(c => c.is_active !== false).map(c => ({
+                    id: c.id,
+                    title: c.anlass,
+                    ort: c.ort,
+                    maxPts: c.max_punkte
+                }));
+            } catch (e) {
+                console.warn('[Gruppengewinne] Schützenfeste-Katalog konnte nicht geladen werden:', e);
+            }
+        }
+
+        return list;
+    }
+
+    /**
+     * Befüllt das Dropdown und die Datalist für den Anlass.
+     */
+    async function populateCompetitionOptions(selectedAnlass = '') {
+        const select = document.getElementById('jme-anlass-select');
+        const datalist = document.getElementById('jme-anlass-datalist');
+        if (!select || !datalist) return;
+
+        const available = await getAvailableCompetitionsForSelection();
+        const curYear = getActiveYear();
+
+        let optionsHtml = '<option value="">-- Schiessen aus Dropdown wählen oder frei eingeben --</option>';
+
+        // 1. Aus aktueller Jahresmeisterschaft
+        if (available.jmCols && available.jmCols.length > 0) {
+            optionsHtml += `<optgroup label="🏆 Aus aktueller Jahresmeisterschaft (${curYear})">`;
+            available.jmCols.forEach(col => {
+                const countStr = col.shooterCount > 0 ? ` (${col.shooterCount} Resultate vorhanden)` : ' (Noch keine Resultate)';
+                optionsHtml += `<option value="${escapeHtml(col.title)}" data-source="jm" data-col="${col.colIndex}" data-count="${col.shooterCount}">${escapeHtml(col.title)}${countStr}</option>`;
+            });
+            optionsHtml += '</optgroup>';
+        }
+
+        // 2. Aus Schützenfeste-Katalog
+        if (available.catalog && available.catalog.length > 0) {
+            optionsHtml += '<optgroup label="📋 Aus Schützenfeste-Katalog">';
+            available.catalog.forEach(cat => {
+                const ortStr = cat.ort ? ` (${cat.ort})` : '';
+                optionsHtml += `<option value="${escapeHtml(cat.title)}" data-source="catalog">${escapeHtml(cat.title)}${ortStr} · Max. ${cat.maxPts}</option>`;
+            });
+            optionsHtml += '</optgroup>';
+        }
+
+        optionsHtml += '<option value="__custom__">✏️ Anderer / Neuer Anlass (manuell eintippen)...</option>';
+        select.innerHTML = optionsHtml;
+
+        // Datalist befüllen
+        let dlHtml = '';
+        const allTitles = new Set();
+        if (available.jmCols) available.jmCols.forEach(c => allTitles.add(c.title));
+        if (available.catalog) available.catalog.forEach(c => allTitles.add(c.title));
+        allTitles.forEach(t => {
+            dlHtml += `<option value="${escapeHtml(t)}">`;
+        });
+        datalist.innerHTML = dlHtml;
+
+        // Vorselektion
+        if (selectedAnlass) {
+            const found = Array.from(select.options).find(opt => opt.value.toLowerCase() === selectedAnlass.toLowerCase());
+            if (found) {
+                select.value = found.value;
+            } else {
+                select.value = '__custom__';
+            }
+        } else {
+            select.value = '';
+        }
+
+        checkAnlassJMSyncBanner(selectedAnlass);
+    }
+
+    /**
+     * Befüllt die Datalist der aktiven Mitglieder.
+     */
+    function populateMembersDatalist() {
+        const dl = document.getElementById('jme-members-datalist');
+        if (!dl || !_allMembersCache || _allMembersCache.length === 0) return;
+
+        dl.innerHTML = _allMembersCache.map(m => {
+            const fullName = `${m.first_name} ${m.last_name}`;
+            const ibanNote = m.iban ? 'IBAN vorhanden' : 'Keine IBAN';
+            return `<option value="${fullName}">PN: ${m.person_number} · ${ibanNote}</option>`;
+        }).join('');
+    }
+
+    /**
+     * Prüft, ob für den gewählten Anlass Resultate in der Jahresmeisterschaft existieren
+     * und steuert die Sichtbarkeit des 1-Klick Übernahme-Banners.
+     */
+    function checkAnlassJMSyncBanner(anlassTitle) {
+        const banner = document.getElementById('jme-jm-sync-banner');
+        const quickBtn = document.getElementById('jme-quick-import-jm-btn');
+        if (!banner) return;
+
+        const title = (anlassTitle || document.getElementById('jme-anlass')?.value || '').trim();
+        if (!title) {
+            banner.classList.add('d-none');
+            banner.classList.remove('d-flex');
+            if (quickBtn) quickBtn.style.display = 'none';
+            return;
+        }
+
+        const grid = window.jmRawGrid;
+        if (!grid || !Array.isArray(grid) || grid.length < 6 || !grid[2]) {
+            banner.classList.add('d-none');
+            banner.classList.remove('d-flex');
+            if (quickBtn) quickBtn.style.display = 'none';
+            return;
+        }
+
+        let hasStatusCol = false;
+        if (grid[4]) {
+            hasStatusCol = grid[4].some(cell => String(cell || '').trim().toLowerCase() === 'status');
+        }
+        const limitIndex = hasStatusCol ? 42 : 41;
+
+        const norm = str => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const cleanTarget = norm(title);
+
+        let matchCol = -1;
+        let matchTitle = '';
+        for (let c = limitIndex; c < grid[2].length; c++) {
+            const t = String(grid[2][c] || '').trim();
+            if (!t || t.toLowerCase().startsWith('spalte')) continue;
+            const cleanT = norm(t);
+            if (cleanT === cleanTarget || cleanT.includes(cleanTarget) || cleanTarget.includes(cleanT)) {
+                matchCol = c;
+                matchTitle = t;
+                break;
+            }
+        }
+
+        if (matchCol === -1) {
+            banner.classList.add('d-none');
+            banner.classList.remove('d-flex');
+            if (quickBtn) quickBtn.style.display = 'none';
+            return;
+        }
+
+        let count = 0;
+        for (let r = 5; r < grid.length; r++) {
+            if (r === 13 || r === 14) continue;
+            const val = parseFloat(String(grid[r]?.[matchCol] || '').replace(',', '.'));
+            if (!isNaN(val) && val > 0) count++;
+        }
+
+        const colNameEl = document.getElementById('jme-jm-sync-colname');
+        const countEl = document.getElementById('jme-jm-sync-count');
+        if (colNameEl) colNameEl.innerText = `«${matchTitle}»`;
+        if (countEl) countEl.innerText = count;
+
+        if (count > 0) {
+            banner.classList.remove('d-none');
+            banner.classList.add('d-flex');
+            if (quickBtn) quickBtn.style.display = '';
+        } else {
+            banner.classList.add('d-none');
+            banner.classList.remove('d-flex');
+            if (quickBtn) quickBtn.style.display = 'none';
+        }
+    }
+
+    /**
+     * Event-Handler: Auswahl im Anlass-Dropdown geändert.
+     */
+    function jmOnAnlassSelectChange(val) {
+        const input = document.getElementById('jme-anlass');
+        if (!input) return;
+
+        if (val === '__custom__') {
+            input.value = '';
+            input.focus();
+        } else if (val) {
+            input.value = val;
+            if (_jmCurrentEditingComp) {
+                _jmCurrentEditingComp.anlass_name = val;
+            }
+        }
+        checkAnlassJMSyncBanner(input.value);
+    }
+
+    /**
+     * Event-Handler: Manuelle Eingabe im Anlass-Textfeld.
+     */
+    function jmOnAnlassInputChange(val) {
+        if (_jmCurrentEditingComp) {
+            _jmCurrentEditingComp.anlass_name = val.trim();
+        }
+        const select = document.getElementById('jme-anlass-select');
+        if (select) {
+            const found = Array.from(select.options).find(opt => opt.value.toLowerCase() === val.trim().toLowerCase());
+            if (found) {
+                select.value = found.value;
+            } else if (val.trim()) {
+                select.value = '__custom__';
+            } else {
+                select.value = '';
+            }
+        }
+        checkAnlassJMSyncBanner(val);
+    }
+
+    /**
+     * Leert das Anlass-Eingabefeld.
+     */
+    function jmClearAnlassInput() {
+        const input = document.getElementById('jme-anlass');
+        const select = document.getElementById('jme-anlass-select');
+        if (input) input.value = '';
+        if (select) select.value = '';
+        if (_jmCurrentEditingComp) _jmCurrentEditingComp.anlass_name = '';
+        checkAnlassJMSyncBanner('');
+        if (input) input.focus();
+    }
+
+    /**
+     * 1-Klick-Übernahme: Liest die Schützen und Punkte dieses Schiessens direkt aus der Jahresmeisterschaft!
+     */
+    function jmPopulateShootersFromJMRawGrid(forceAnlassName) {
+        const anlassName = (forceAnlassName || document.getElementById('jme-anlass')?.value || _jmCurrentEditingComp?.anlass_name || '').trim();
+        if (!anlassName) {
+            if (window.UIConfirmKit) {
+                UIConfirmKit.alert({ title: 'Kein Anlass gewählt', message: 'Bitte wähle zuerst ein Schiessen aus der Jahresmeisterschaft.', type: 'warning' });
+            } else {
+                alert('Bitte zuerst ein Schiessen auswählen.');
+            }
+            return;
+        }
+
+        const grid = window.jmRawGrid;
+        if (!grid || !Array.isArray(grid) || grid.length < 6 || !grid[2]) {
+            if (window.UIConfirmKit) {
+                UIConfirmKit.alert({ title: 'Keine Daten geladen', message: 'In der aktuellen Jahresmeisterschaft sind keine Tabellendaten geladen.', type: 'warning' });
+            }
+            return;
+        }
+
+        let hasStatusCol = false;
+        if (grid[4]) {
+            hasStatusCol = grid[4].some(cell => String(cell || '').trim().toLowerCase() === 'status');
+        }
+        const limitIndex = hasStatusCol ? 42 : 41;
+
+        const norm = str => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const cleanTarget = norm(anlassName);
+
+        let foundCol = -1;
+        for (let c = limitIndex; c < grid[2].length; c++) {
+            const title = String(grid[2][c] || '').trim();
+            if (!title || title.toLowerCase().startsWith('spalte')) continue;
+            const cleanTitle = norm(title);
+            if (cleanTitle === cleanTarget || cleanTitle.includes(cleanTarget) || cleanTarget.includes(cleanTitle)) {
+                foundCol = c;
+                break;
+            }
+        }
+
+        if (foundCol === -1) {
+            if (window.UIConfirmKit) {
+                UIConfirmKit.alert({
+                    title: 'Schiessen nicht im Grid',
+                    message: `Für «${anlassName}» wurde keine Auswärtsschiessen-Spalte in der aktuellen Jahresmeisterschaft gefunden. Du kannst die Schützen manuell erfassen.`,
+                    type: 'info'
+                });
+            }
+            return;
+        }
+
+        const headerRow = grid[4] || [];
+        const colNachname = headerRow.findIndex(t => String(t || '').trim().toLowerCase() === 'nachname');
+        const colVorname = headerRow.findIndex(t => String(t || '').trim().toLowerCase() === 'vorname');
+        const colLizenz = headerRow.findIndex(t => String(t || '').trim().toLowerCase().includes('lizenz'));
+        const colJahrgang = headerRow.findIndex(t => String(t || '').trim().toLowerCase().includes('jahrgang'));
+
+        const detected = [];
+        for (let r = 5; r < grid.length; r++) {
+            if (r === 13 || r === 14) continue;
+            const rawScore = grid[r]?.[foundCol];
+            const pts = parseFloat(String(rawScore === undefined || rawScore === null ? '' : rawScore).replace(',', '.'));
+            if (!isNaN(pts) && pts > 0) {
+                const nachname = colNachname !== -1 ? String(grid[r][colNachname] || '').trim() : '';
+                const vorname = colVorname !== -1 ? String(grid[r][colVorname] || '').trim() : '';
+                const fullName = `${vorname} ${nachname}`.trim();
+                const liz = colLizenz !== -1 ? String(grid[r][colLizenz] || '').trim() : '';
+                const jg = colJahrgang !== -1 ? parseInt(grid[r][colJahrgang], 10) : null;
+                if (fullName) {
+                    detected.push({
+                        name: fullName,
+                        punkte: pts,
+                        lizenz: liz,
+                        jahrgang: isNaN(jg) ? null : jg
+                    });
+                }
+            }
+        }
+
+        if (detected.length === 0) {
+            if (window.UIConfirmKit) {
+                UIConfirmKit.alert({
+                    title: 'Keine Resultate vorhanden',
+                    message: `In der Spalte «${grid[2][foundCol]}» sind noch keine Schützenresultate eingetragen.`,
+                    type: 'info'
+                });
+            }
+            return;
+        }
+
+        // Nach Punkten absteigend sortieren
+        detected.sort((a, b) => b.punkte - a.punkte);
+
+        // Die 5 besten Schützen auswählen
+        const topShooters = detected.slice(0, 5);
+
+        _jmCurrentEditingComp.members = topShooters.map(s => {
+            let pn = null;
+            let iban = '';
+            const mObj = findMemberByName(s.name) || findMemberByPn(s.lizenz);
+            if (mObj) {
+                pn = mObj.person_number;
+                iban = mObj.iban || '';
+            } else if (s.lizenz && !isNaN(parseInt(s.lizenz, 10))) {
+                pn = parseInt(s.lizenz, 10);
+            }
+
+            return {
+                person_number: pn,
+                schuetze_name: s.name,
+                jahrgang: s.jahrgang,
+                punkte: s.punkte,
+                betrag: 0,
+                payout_method: 'jahresbeitrag',
+                iban: iban,
+                status: 'offen'
+            };
+        });
+
+        // Punkte Total der Gruppe berechnen
+        const sumPts = _jmCurrentEditingComp.members.reduce((a, b) => a + (b.punkte || 0), 0);
+        _jmCurrentEditingComp.punkte_total = Math.round(sumPts * 10) / 10;
+        const punkteInput = document.getElementById('jme-punkte');
+        if (punkteInput) punkteInput.value = _jmCurrentEditingComp.punkte_total;
+
+        renderShooterRows(_jmCurrentEditingComp.members);
+        jmRecalculateCurrentComp();
+
+        if (typeof showSuccess === 'function') {
+            showSuccess(`🎉 5 Schützen für «${grid[2][foundCol]}» aus der Jahresmeisterschaft übernommen (Total: ${_jmCurrentEditingComp.punkte_total} Pkt.)!`);
+        }
+    }
+
     function createGruppengewinnEditModalDOM() {
         const div = document.createElement('div');
         div.id = 'jmGruppengewinnEditModal';
@@ -528,7 +928,7 @@
                             <span class="badge bg-warning text-dark"><i class="fas fa-edit"></i></span>
                             <div>
                                 <h5 class="modal-title fw-bold mb-0" id="jm-edit-modal-title">Gruppengewinn erfassen & aufteilen</h5>
-                                <div class="small text-white-50">Konto 1301 Â· Doppel abziehen & Gewinnanteil je SchÃ¼tze festlegen</div>
+                                <div class="small text-white-50">Konto 1301 · Doppel abziehen & Gewinnanteil je Schütze festlegen</div>
                             </div>
                         </div>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
@@ -542,8 +942,20 @@
                             <div class="card-body p-3">
                                 <div class="row g-2">
                                     <div class="col-md-5">
-                                        <label class="form-label small fw-bold mb-1">Anlass / Schiessen *</label>
-                                        <input type="text" class="form-control form-control-sm" id="jme-anlass" placeholder="z. B. 14. BÃ¤renmoosschiessen 2026" required>
+                                        <div class="d-flex justify-content-between align-items-center mb-1">
+                                            <label class="form-label small fw-bold mb-0">Anlass / Schiessen *</label>
+                                            <span class="badge bg-secondary-subtle text-muted border" style="font-size: 10px;">Auswahl oder Freitext</span>
+                                        </div>
+                                        <select class="form-select form-select-sm mb-1 fw-semibold text-primary" id="jme-anlass-select" onchange="window.jmOnAnlassSelectChange(this.value)">
+                                            <option value="">-- Schiessen auswählen oder unten frei eintippen --</option>
+                                        </select>
+                                        <div class="input-group input-group-sm">
+                                            <input type="text" class="form-control form-control-sm" id="jme-anlass" list="jme-anlass-datalist" placeholder="z. B. 14. Bärenmoosschiessen 2026" required oninput="window.jmOnAnlassInputChange(this.value)">
+                                            <button type="button" class="btn btn-outline-secondary" onclick="window.jmClearAnlassInput()" title="Feld leeren">
+                                                <i class="fas fa-times"></i>
+                                            </button>
+                                        </div>
+                                        <datalist id="jme-anlass-datalist"></datalist>
                                     </div>
                                     <div class="col-md-3">
                                         <label class="form-label small fw-bold mb-1">Gruppenname *</label>
@@ -576,11 +988,11 @@
                                                 </div>
                                             </div>
                                             <div class="d-flex align-items-center gap-2">
-                                                <label class="small fw-bold text-primary mb-0">Netto-Ãœberschuss SchÃ¼tzen:</label>
+                                                <label class="small fw-bold text-primary mb-0">Netto-Überschuss Schützen:</label>
                                                 <span class="badge bg-primary fs-6 px-3 py-1.5" id="jme-ueberschuss-badge">CHF 0.00</span>
                                             </div>
                                             <div class="d-flex align-items-center gap-2">
-                                                <label class="small fw-bold text-dark mb-0">Betrag je SchÃ¼tze:</label>
+                                                <label class="small fw-bold text-dark mb-0">Betrag je Schütze:</label>
                                                 <span class="badge bg-warning text-dark fs-6 px-3 py-1.5" id="jme-pershooter-badge">CHF 0.00</span>
                                             </div>
                                         </div>
@@ -589,33 +1001,50 @@
                             </div>
                         </div>
 
-                        <!-- 2. Beteiligte SchÃ¼tzen & Gewinnaufteilung -->
+                        <!-- Smart Sync Banner für Jahresmeisterschaft -->
+                        <div id="jme-jm-sync-banner" class="alert alert-primary py-2 px-3 small d-none align-items-center justify-content-between mb-3 shadow-xs border">
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="fas fa-medal text-primary fa-lg"></i>
+                                <div>
+                                    In der Jahresmeisterschaft <strong id="jme-jm-sync-colname"></strong> gefunden (<span id="jme-jm-sync-count" class="fw-bold">0</span> Schützen mit Resultat).
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-xs btn-primary fw-semibold shadow-xs" onclick="window.jmPopulateShootersFromJMRawGrid()">
+                                <i class="fas fa-users me-1"></i> 5 Schützen & Punkte übernehmen
+                            </button>
+                        </div>
+
+                        <!-- 2. Beteiligte Schützen & Gewinnaufteilung -->
                         <div class="card shadow-sm border-0">
                             <div class="card-header bg-white py-2 d-flex align-items-center justify-content-between border-bottom small">
                                 <span class="fw-bold text-dark">
-                                    <i class="fas fa-users me-1 text-primary"></i> 2. Beteiligte SchÃ¼tzen & Zuweisung (<span id="jme-shooter-count">0</span>)
+                                    <i class="fas fa-users me-1 text-primary"></i> 2. Beteiligte Schützen & Zuweisung (<span id="jme-shooter-count">0</span>)
                                 </span>
                                 <div class="d-flex align-items-center gap-2">
+                                    <button type="button" class="btn btn-xs btn-outline-secondary" id="jme-quick-import-jm-btn" onclick="window.jmPopulateShootersFromJMRawGrid()" style="display:none;" title="Übernimmt die 5 besten Muhen-Schützen dieses Schiessens aus der Jahresmeisterschaft">
+                                        <i class="fas fa-file-import me-1 text-primary"></i> Aus Jahresmeisterschaft laden
+                                    </button>
                                     <button type="button" class="btn btn-xs btn-outline-primary fw-semibold" onclick="window.jmAddShooterRowToEditor()">
-                                        <i class="fas fa-user-plus me-1"></i> SchÃ¼tze hinzufÃ¼gen
+                                        <i class="fas fa-user-plus me-1"></i> Schütze hinzufügen
                                     </button>
                                 </div>
                             </div>
                             <div class="card-body p-0">
+                                <datalist id="jme-members-datalist"></datalist>
                                 <div class="table-responsive" style="max-height: 380px;">
                                     <table class="table table-sm table-hover align-middle mb-0" id="jme-shooters-table">
                                         <thead class="table-light small text-muted border-bottom">
                                             <tr>
-                                                <th class="ps-3" style="width: 25%;">SchÃ¼tze (Name / Mitglied)</th>
+                                                <th class="ps-3" style="width: 25%;">Schütze (Name / Mitglied)</th>
                                                 <th class="text-center" style="width: 10%;">Punkte</th>
                                                 <th class="text-end" style="width: 14%;">Gewinnanteil</th>
                                                 <th style="width: 20%;">Auszahlungsweg</th>
-                                                <th style="width: 24%;">IBAN (fÃ¼r Ãœberweisung)</th>
+                                                <th style="width: 24%;">IBAN (für Überweisung)</th>
                                                 <th class="text-center" style="width: 7%;"></th>
                                             </tr>
                                         </thead>
                                         <tbody id="jme-shooters-body" class="small">
-                                            <!-- Dynamische SchÃ¼tzenzeilen -->
+                                            <!-- Dynamische Schützenzeilen -->
                                         </tbody>
                                     </table>
                                 </div>
@@ -628,10 +1057,10 @@
                                 <i class="fas fa-file-pdf me-1 text-danger"></i> Beleg drucken (PDF)
                             </button>
                             <button type="button" class="btn btn-sm btn-outline-info text-dark" id="jme-transfer-jb-btn" onclick="window.jmTransferCurrentCompToJahresbeitrag()">
-                                <i class="fas fa-file-invoice-dollar me-1 text-primary"></i> In Jahresbeitrag Ã¼bertragen
+                                <i class="fas fa-file-invoice-dollar me-1 text-primary"></i> In Jahresbeitrag übertragen
                             </button>
                             <button type="button" class="btn btn-sm btn-outline-primary" id="jme-transfer-po-btn" onclick="window.jmTransferCurrentCompToPaymentOrder()">
-                                <i class="fas fa-file-export me-1"></i> Bank-Ãœberweisung (pain.001)
+                                <i class="fas fa-file-export me-1"></i> Bank-Überweisung (pain.001)
                             </button>
                         </div>
                         <div class="d-flex gap-2">
@@ -648,7 +1077,7 @@
     }
 
     /**
-     * BefÃ¼llt die Felder des Detail-Editors
+     * Befüllt die Felder des Detail-Editors
      */
     function populateEditorFields(comp) {
         document.getElementById('jme-anlass').value = comp.anlass_name || '';
@@ -665,17 +1094,18 @@
 
         renderShooterRows(comp.members || []);
         jmRecalculateCurrentComp();
+        checkAnlassJMSyncBanner(comp.anlass_name);
     }
 
     /**
-     * Rendert die SchÃ¼tzen-Zeilen im Detail-Editor
+     * Rendert die Schützen-Zeilen im Detail-Editor
      */
     function renderShooterRows(members) {
         const tbody = document.getElementById('jme-shooters-body');
         if (!tbody) return;
 
         if (!members || members.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-muted">Noch keine SchÃ¼tzen zugewiesen. Klicke oben auf Â«SchÃ¼tze hinzufÃ¼genÂ».</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-muted">Noch keine Schützen zugewiesen. Klicke oben auf «Schütze hinzufügen».</td></tr>`;
             document.getElementById('jme-shooter-count').innerText = '0';
             return;
         }
@@ -695,10 +1125,10 @@
             return `
                 <tr data-idx="${idx}">
                     <td class="ps-3">
-                        <input type="text" class="form-control form-control-sm fw-semibold jme-shooter-name" value="${escapeHtml(m.schuetze_name || '')}" placeholder="Vorname Nachname" onchange="window.jmOnShooterNameChange(${idx}, this.value)">
+                        <input type="text" class="form-control form-control-sm fw-semibold jme-shooter-name" list="jme-members-datalist" value="${escapeHtml(m.schuetze_name || '')}" placeholder="Vorname Nachname (tippen zum Suchen)" onchange="window.jmOnShooterNameChange(${idx}, this.value)">
                         <input type="hidden" class="jme-shooter-pn" value="${m.person_number || memberObj?.person_number || ''}">
                         <div class="text-muted" style="font-size: 10px;">
-                            ${m.person_number || memberObj?.person_number ? `PN: ${m.person_number || memberObj.person_number}` : '<span class="text-warning">Nicht im Mitgliederstamm verknÃ¼pft</span>'}
+                            ${m.person_number || memberObj?.person_number ? `PN: ${m.person_number || memberObj.person_number}` : '<span class="text-warning">Nicht im Mitgliederstamm verknüpft</span>'}
                         </div>
                     </td>
                     <td class="text-center">
@@ -713,7 +1143,7 @@
                     <td>
                         <select class="form-select form-select-sm jme-shooter-method" onchange="window.jmOnShooterMethodChange(${idx}, this.value)">
                             <option value="jahresbeitrag" ${payoutMethod === 'jahresbeitrag' ? 'selected' : ''}>Verrechnung Jahresbeitrag</option>
-                            <option value="bank" ${payoutMethod === 'bank' ? 'selected' : ''}>BankÃ¼berweisung (pain.001)</option>
+                            <option value="bank" ${payoutMethod === 'bank' ? 'selected' : ''}>Banküberweisung (pain.001)</option>
                             <option value="kasse" ${payoutMethod === 'kasse' ? 'selected' : ''}>Barauszahlung (Kasse 1000)</option>
                             <option value="pendent" ${payoutMethod === 'pendent' ? 'selected' : ''}>Pendent / Unklar</option>
                         </select>
@@ -731,7 +1161,7 @@
                         ` : ''}
                     </td>
                     <td class="text-center pe-3">
-                        <button type="button" class="btn btn-xs btn-outline-danger" onclick="window.jmRemoveShooterRow(${idx})" title="SchÃ¼tze entfernen">
+                        <button type="button" class="btn btn-xs btn-outline-danger" onclick="window.jmRemoveShooterRow(${idx})" title="Schütze entfernen">
                             <i class="fas fa-times"></i>
                         </button>
                     </td>
@@ -756,7 +1186,7 @@
     }
 
     /**
-     * FÃ¼gt eine neue SchÃ¼tzenzeile hinzu.
+     * Fügt eine neue Schützenzeile hinzu.
      */
     function jmAddShooterRowToEditor() {
         if (!_jmCurrentEditingComp) return;
@@ -776,7 +1206,7 @@
     }
 
     /**
-     * Entfernt eine SchÃ¼tzenzeile.
+     * Entfernt eine Schützenzeile.
      */
     function jmRemoveShooterRow(idx) {
         if (!_jmCurrentEditingComp || !_jmCurrentEditingComp.members) return;
@@ -786,7 +1216,7 @@
     }
 
     /**
-     * Berechnet den Ãœberschuss und den Betrag je SchÃ¼tze live neu.
+     * Berechnet den Überschuss und den Betrag je Schütze live neu.
      */
     function jmRecalculateCurrentComp() {
         const doppel = parseFloat(document.getElementById('jme-doppel')?.value || 30) || 0;
@@ -808,12 +1238,12 @@
 
         if (badgePerShooter) badgePerShooter.innerText = fmtCurr(perShooter);
 
-        // Zeilen-BetrÃ¤ge aktualisieren, sofern nicht manuell abweichend editiert
+        // Zeilen-Beträge aktualisieren, sofern nicht manuell abweichend editiert
         const rows = document.querySelectorAll('#jme-shooters-body tr');
         rows.forEach((r, idx) => {
             const betragInput = r.querySelector('.jme-shooter-betrag');
             if (betragInput && _jmCurrentEditingComp?.members?.[idx]) {
-                // Wenn noch 0 oder Standardwert, automatisch nachfÃ¼hren
+                // Wenn noch 0 oder Standardwert, automatisch nachführen
                 if (_jmCurrentEditingComp.members[idx].betrag === 0 || !_jmCurrentEditingComp.members[idx]._manualAmount) {
                     betragInput.value = perShooter.toFixed(2);
                     _jmCurrentEditingComp.members[idx].betrag = perShooter;
@@ -859,7 +1289,7 @@
     }
 
     /**
-     * Speichert den aktuellen Gruppengewinn und alle SchÃ¼tzen in Supabase.
+     * Speichert den aktuellen Gruppengewinn und alle Schützen in Supabase.
      */
     async function jmSaveCurrentComp() {
         const btn = document.getElementById('jme-save-btn');
@@ -902,6 +1332,32 @@
             }
         }
 
+        // Duplikats-Prüfung: Prüfen, ob für dasselbe Schiessen und dieselbe Gruppe bereits ein Eintrag existiert
+        const compIdCheck = _jmCurrentEditingComp?.id;
+        const compYrCheck = _jmCurrentEditingComp?.jahr || getActiveYear();
+        const existingDup = (window._jmGroupCompetitions || []).find(c => 
+            String(c.id) !== String(compIdCheck) &&
+            Number(c.jahr) === Number(compYrCheck) &&
+            String(c.anlass_name || '').trim().toLowerCase() === anlass.toLowerCase() &&
+            String(c.gruppe_name || '').trim().toLowerCase() === gruppe.toLowerCase()
+        );
+
+        if (existingDup) {
+            let proceed = false;
+            if (window.UIConfirmKit) {
+                proceed = await UIConfirmKit.confirm({
+                    title: 'Mögliches Duplikat erkannt',
+                    message: `Für «${anlass}» (Saison ${compYrCheck}) existiert bereits ein Gruppengewinn für die Gruppe «${gruppe}».<br><br>Möchtest du diese zusätzliche Gruppe wirklich speichern?`,
+                    type: 'warning',
+                    confirmText: 'Ja, trotzdem speichern',
+                    cancelText: 'Abbrechen'
+                });
+            } else {
+                proceed = confirm(`Für «${anlass}» existiert bereits ein Eintrag für «${gruppe}». Trotzdem speichern?`);
+            }
+            if (!proceed) return;
+        }
+
         const payloadComp = {
             jahr: _jmCurrentEditingComp?.jahr || getActiveYear(),
             anlass_name: anlass,
@@ -929,8 +1385,8 @@
                 _jmCurrentEditingComp.id = compId;
             }
 
-            // SchÃ¼tzen speichern / synchronisieren
-            // 1. Bestehende lÃ¶schen und neu einfÃ¼gen
+            // Schützen speichern / synchronisieren
+            // 1. Bestehende löschen und neu einfügen
             await supa.from('group_competition_members').delete().eq('competition_id', compId);
 
             if (members.length > 0) {
@@ -951,14 +1407,14 @@
                 const { error: memErr } = await supa.from('group_competition_members').insert(memberInserts);
                 if (memErr) throw memErr;
 
-                // AllfÃ¤llige neue IBANs im Mitgliederstamm speichern
+                // Allfällige neue IBANs im Mitgliederstamm speichern
                 const rows = document.querySelectorAll('#jme-shooters-body tr');
                 for (let i = 0; i < rows.length; i++) {
                     const saveCheck = rows[i].querySelector('.jme-save-iban-check');
                     if (saveCheck && saveCheck.checked && members[i] && members[i].person_number && members[i].iban) {
                         try {
                             await supa.from('members').update({ iban: members[i].iban }).eq('person_number', parseInt(members[i].person_number, 10));
-                            console.log(`[Gruppengewinne] IBAN fÃ¼r Mitglied ${members[i].person_number} im Profil gespeichert.`);
+                            console.log(`[Gruppengewinne] IBAN für Mitglied ${members[i].person_number} im Profil gespeichert.`);
                         } catch (ibErr) {
                             console.warn("Konnte IBAN nicht im Mitgliederstamm sichern:", ibErr);
                         }
@@ -976,7 +1432,7 @@
             await jmRenderGruppengewinneList(getActiveYear());
 
             if (typeof showSuccess === 'function') {
-                showSuccess(`Gruppengewinn fÃ¼r ${gruppe} (${anlass}) erfolgreich gespeichert!`);
+                showSuccess(`Gruppengewinn für ${gruppe} (${anlass}) erfolgreich gespeichert!`);
             }
         } catch (err) {
             console.error("[Gruppengewinne] Speicherfehler:", err);
@@ -993,7 +1449,7 @@
     // ==========================================================================
 
     /**
-     * ÃœbertrÃ¤gt die offenen BetrÃ¤ge der aktuellen Gruppe als Gutschrift in den Jahresbeitrag.
+     * Überträgt die offenen Beträge der aktuellen Gruppe als Gutschrift in den Jahresbeitrag.
      */
     async function jmTransferCurrentCompToJahresbeitrag() {
         if (!_jmCurrentEditingComp || !_jmCurrentEditingComp.id) {
@@ -1153,16 +1609,16 @@
     }
 
     // ==========================================================================
-    // SCHNITTSTELLE 2: BANK-ÃœBERWEISUNG (ISO 20022 pain.001 via Konto 1301)
+    // SCHNITTSTELLE 2: BANK-ÜBERWEISUNG (ISO 20022 pain.001 via Konto 1301)
     // ==========================================================================
 
     /**
-     * Erstellt ZahlungsauftrÃ¤ge fÃ¼r SchÃ¼tzen mit BankÃ¼berweisung.
+     * Erstellt Zahlungsaufträge für Schützen mit Banküberweisung.
      */
     async function jmTransferCurrentCompToPaymentOrder() {
         if (!_jmCurrentEditingComp || !_jmCurrentEditingComp.id) {
             if (window.UIConfirmKit) {
-                await UIConfirmKit.alert({ title: 'Zuerst speichern', message: 'Bitte speichere den Gruppengewinn zuerst, bevor du ZahlungsauftrÃ¤ge erstellst.', type: 'warning' });
+                await UIConfirmKit.alert({ title: 'Zuerst speichern', message: 'Bitte speichere den Gruppengewinn zuerst, bevor du Zahlungsaufträge erstellst.', type: 'warning' });
             }
             return;
         }
@@ -1170,23 +1626,23 @@
         const members = (_jmCurrentEditingComp.members || []).filter(m => m.payout_method === 'bank' && m.betrag > 0 && m.status !== 'in_zahlung' && m.status !== 'ausgefuehrt');
         if (members.length === 0) {
             if (window.UIConfirmKit) {
-                await UIConfirmKit.alert({ title: 'Keine Positionen fÃ¼r BankÃ¼berweisung', message: 'Es gibt keine SchÃ¼tzen mit Methode Â«BankÃ¼berweisungÂ» und offenem Betrag.', type: 'info' });
+                await UIConfirmKit.alert({ title: 'Keine Positionen für Banküberweisung', message: 'Es gibt keine Schützen mit Methode «Banküberweisung» und offenem Betrag.', type: 'info' });
             }
             return;
         }
 
-        // PrÃ¼fen, ob alle eine gÃ¼ltige IBAN haben
+        // Prüfen, ob alle eine gültige IBAN haben
         const missingIban = members.filter(m => !m.iban || m.iban.trim().length < 15);
         if (missingIban.length > 0) {
             const names = missingIban.map(m => m.schuetze_name).join(', ');
             if (window.UIConfirmKit) {
                 await UIConfirmKit.alert({
                     title: 'IBAN fehlt',
-                    message: `Folgende SchÃ¼tzen haben keine gÃ¼ltige IBAN hinterlegt: ${names}. Bitte trage die IBAN ein oder stelle auf Â«Verrechnung JahresbeitragÂ» um.`,
+                    message: `Folgende Schützen haben keine gültige IBAN hinterlegt: ${names}. Bitte trage die IBAN ein oder stelle auf «Verrechnung Jahresbeitrag» um.`,
                     type: 'warning'
                 });
             } else {
-                alert(`IBAN fehlt fÃ¼r: ${names}`);
+                alert(`IBAN fehlt für: ${names}`);
             }
             return;
         }
@@ -1194,14 +1650,14 @@
         let confirmed = false;
         if (window.UIConfirmKit) {
             confirmed = await UIConfirmKit.confirm({
-                title: 'ZahlungsauftrÃ¤ge erstellen?',
-                message: `MÃ¶chtest du fÃ¼r ${members.length} SchÃ¼tze(n) ZahlungsauftrÃ¤ge (Konto 1301 an Bank 1020) im Gesamtbetrag von CHF ${members.reduce((a, b) => a + Number(b.betrag), 0).toFixed(2)} erstellen? Diese kÃ¶nnen anschliessend im MenÃ¼ Finanzbuchhaltung als ISO 20022 pain.001 XML heruntergeladen werden.`,
+                title: 'Zahlungsaufträge erstellen?',
+                message: `Möchtest du für ${members.length} Schütze(n) Zahlungsaufträge (Konto 1301 an Bank 1020) im Gesamtbetrag von CHF ${members.reduce((a, b) => a + Number(b.betrag), 0).toFixed(2)} erstellen? Diese können anschliessend im Menü Finanzbuchhaltung als ISO 20022 pain.001 XML heruntergeladen werden.`,
                 type: 'primary',
-                confirmText: 'Ja, ZahlungsauftrÃ¤ge anlegen',
+                confirmText: 'Ja, Zahlungsaufträge anlegen',
                 cancelText: 'Abbrechen'
             });
         } else {
-            confirmed = confirm(`ZahlungsauftrÃ¤ge fÃ¼r ${members.length} SchÃ¼tzen anlegen?`);
+            confirmed = confirm(`Zahlungsaufträge für ${members.length} Schützen anlegen?`);
         }
 
         if (!confirmed) return;
@@ -1215,7 +1671,7 @@
 
         for (const m of members) {
             try {
-                // NÃ¤chste Auftrags-Nr ZA-YYYY-xxx ermitteln
+                // Nächste Auftrags-Nr ZA-YYYY-xxx ermitteln
                 let nextNr = `ZA-${yr}-001`;
                 const { data: poRows } = await supa.from('accounting_payment_orders').select('order_nr').ilike('order_nr', `ZA-${yr}-%`).order('created_at', { ascending: false }).limit(1);
                 if (poRows && poRows.length > 0) {
@@ -1260,13 +1716,13 @@
                 m.payment_order_id = insPo.id;
                 createdCount++;
             } catch (err) {
-                console.error(`Fehler beim Erstellen des Zahlungsauftrags fÃ¼r ${m.schuetze_name}:`, err);
+                console.error(`Fehler beim Erstellen des Zahlungsauftrags für ${m.schuetze_name}:`, err);
             }
         }
 
         renderShooterRows(_jmCurrentEditingComp.members);
         if (typeof showSuccess === 'function') {
-            showSuccess(`ðŸŽ‰ ${createdCount} Zahlungsauftrag/-auftrÃ¤ge fÃ¼r BankÃ¼berweisung angelegt!`);
+            showSuccess(`🎉 ${createdCount} Zahlungsauftrag/-aufträge für Banküberweisung angelegt!`);
         }
     }
 
@@ -1341,23 +1797,23 @@
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(16);
         doc.setTextColor(30, 64, 120);
-        doc.text('SPORTSCHÃœTZEN MUHEN', 15, 18);
+        doc.text('SPORTSCHÜTZEN MUHEN', 15, 18);
 
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(9);
         doc.setTextColor(100, 100, 100);
-        doc.text('GegrÃ¼ndet 1928 Â· 5037 Muhen Â· www.sportschuetzen-muhen.ch', 15, 23);
+        doc.text('Gegründet 1928 · 5037 Muhen · www.sportschuetzen-muhen.ch', 15, 23);
 
         // Beleg-Titel
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(14);
         doc.setTextColor(20, 20, 20);
-        doc.text('Abrechnungsbeleg: Gruppengewinn AuswÃ¤rtiges Schiessen', 15, 34);
+        doc.text('Abrechnungsbeleg: Gruppengewinn Auswärtiges Schiessen', 15, 34);
 
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(9);
         doc.setTextColor(80, 80, 80);
-        doc.text(`Abrechnungsdatum: ${todayStr} Â· Buchungskonto: 1301 Transit Gruppengewinne`, 15, 39);
+        doc.text(`Abrechnungsdatum: ${todayStr} · Buchungskonto: 1301 Transit Gruppengewinne`, 15, 39);
 
         // Stammdaten-Box
         doc.setDrawColor(210, 215, 225);
@@ -1390,9 +1846,9 @@
         const finHead = [['Finanzielle Aufstellung', 'Betrag (CHF)', 'Buchungsziel']];
         const finBody = [
             ['Gruppengewinn Ausrichter (Brutto)', fmtCurr(gewinn), 'Geldeingang Bank 1020'],
-            ['Abzug Gruppendoppel (Verein)', `- ${fmtCurr(doppel)}`, 'RÃ¼ckerstattung Aufwand 4200'],
-            ['Netto-Ãœberschuss fÃ¼r SchÃ¼tzen', fmtCurr(ueberschuss), 'Transitkonto 1301'],
-            ['Anteil je SchÃ¼tze (bei ' + count + ' SchÃ¼tzen)', fmtCurr(perShooter), 'Auszahlung / Verrechnung']
+            ['Abzug Gruppendoppel (Verein)', `- ${fmtCurr(doppel)}`, 'Rückerstattung Aufwand 4200'],
+            ['Netto-Überschuss für Schützen', fmtCurr(ueberschuss), 'Transitkonto 1301'],
+            ['Anteil je Schütze (bei ' + count + ' Schützen)', fmtCurr(perShooter), 'Auszahlung / Verrechnung']
         ];
 
         doc.autoTable({
@@ -1416,8 +1872,8 @@
             }
         });
 
-        // SchÃ¼tzen-Verteiler-Tabelle
-        const shooterHead = [['Rang', 'Name des SchÃ¼tzen', 'Pkt.', 'Anteil', 'Auszahlungsweg / Details', 'Visum / Quittung']];
+        // Schützen-Verteiler-Tabelle
+        const shooterHead = [['Rang', 'Name des Schützen', 'Pkt.', 'Anteil', 'Auszahlungsweg / Details', 'Visum / Quittung']];
         const shooterBody = members.map((m, idx) => {
             const methodLabel = m.payout_method === 'jahresbeitrag'
                 ? 'Verrechnung Jahresbeitrag'
@@ -1456,11 +1912,11 @@
         doc.setFontSize(8);
         doc.setFont('helvetica', 'italic');
         doc.setTextColor(120, 120, 120);
-        doc.text('Revisionssicherer Buchungsvermerk gemÃ¤ss Vereinsreglement SportschÃ¼tzen Muhen (OR 957ff).', 15, finalY);
-        doc.text('Der Ãœberschuss wird ordnungsgemÃ¤ss Ã¼ber das Bilanz-Transitkonto 1301 gefÃ¼hrt und bei Jahresabschluss auf Null saldiert.', 15, finalY + 4);
+        doc.text('Revisionssicherer Buchungsvermerk gemäss Vereinsreglement Sportschützen Muhen (OR 957ff).', 15, finalY);
+        doc.text('Der Überschuss wird ordnungsgemäss über das Bilanz-Transitkonto 1301 geführt und bei Jahresabschluss auf Null saldiert.', 15, finalY + 4);
 
         doc.setFont('helvetica', 'normal');
-        doc.text('FÃ¼r die Richtigkeit (SchÃ¼tzenmeister / Kassier): __________________________________', 15, finalY + 15);
+        doc.text('Für die Richtigkeit (Schützenmeister / Kassier): __________________________________', 15, finalY + 15);
 
         // Download / Anzeige
         const safeName = (comp.gruppe_name || 'Gruppe').replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -1472,7 +1928,7 @@
     // ==========================================================================
 
     /**
-     * Analysiert Textzeilen auf Gruppen und allfÃ¤llige Gruppenauszahlungen.
+     * Analysiert Textzeilen auf Gruppen und allfällige Gruppenauszahlungen.
      * Wird von jahresmeisterschaft-import.js aufgerufen.
      */
     function jmDetectGroupCompetitionFromImportLines(lines, fullText, fileName) {
@@ -1482,14 +1938,14 @@
         const isGroupDoc = /(?:gruppenstich|gruppenrangliste|gruppe|gruppen|mannschaft)/i.test(fullText);
         
         // =====================================================================
-        // FORMAT 1: WinFire Standard-Gruppenrangliste (z. B. BÃ¤renmoosschiessen)
+        // FORMAT 1: WinFire Standard-Gruppenrangliste (z. B. Bärenmoosschiessen)
         // =====================================================================
         let groupMatch = null;
         let groupLineIdx = -1;
 
         for (let i = 0; i < lines.length; i++) {
             const t = (lines[i].text || lines[i] || '').trim();
-            const m = t.match(/(?:^|\b)(\d+)\s+(\d+)\s+([A-Za-z0-9Ã¤Ã¶Ã¼Ã„Ã–ÃœÃŸ\-\s]+?)\s+Muhen/i);
+            const m = t.match(/(?:^|\b)(\d+)\s+(\d+)\s+([A-Za-z0-9äöüÄÖÜß\-\s]+?)\s+Muhen/i);
             if (m) {
                 groupMatch = {
                     rang: parseInt(m[1], 10),
@@ -1511,13 +1967,13 @@
         }
 
         if (groupMatch) {
-            // SchÃ¼tzen unterhalb der Gruppe aufsammeln (nÃ¤chste 3â€“6 Zeilen)
+            // Schützen unterhalb der Gruppe aufsammeln (nächste 3–6 Zeilen)
             const detectedShooters = [];
             if (groupLineIdx >= 0) {
                 for (let i = groupLineIdx + 1; i < Math.min(lines.length, groupLineIdx + 10); i++) {
                     const lineText = lines[i].text || lines[i];
-                    // SchÃ¼tzenzeile: Punkte Name Vorname Jahrgang
-                    const sMatch = lineText.match(/(?:^|\s)(\d{2,3})\s+([A-ZÃ„Ã–Ãœ][a-zA-ZÃ¤Ã¶Ã¼Ã„Ã–ÃœÃŸ\-]+)\s+([A-ZÃ„Ã–Ãœ][a-zA-ZÃ¤Ã¶Ã¼Ã„Ã–ÃœÃŸ\-]+)\s+(\d{4}|\d{2})\b/);
+                    // Schützenzeile: Punkte Name Vorname Jahrgang
+                    const sMatch = lineText.match(/(?:^|\s)(\d{2,3})\s+([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]+)\s+([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]+)\s+(\d{4}|\d{2})\b/);
                     if (sMatch) {
                         detectedShooters.push({
                             punkte: parseFloat(sMatch[1]),
@@ -1552,22 +2008,22 @@
 
         // =====================================================================
         // FORMAT 2: SIUS / Meyton / BLM Gruppenrangliste (z. B. Balsthaler Liegendmatch)
-        // Zeilenstruktur: Platz \n Muhen - Muhen 1 \n SNr \n Serien \n Total \n SchÃ¼tzen
+        // Zeilenstruktur: Platz \n Muhen - Muhen 1 \n SNr \n Serien \n Total \n Schützen
         // =====================================================================
-        const blmMatch = fullText.match(/(?:^|\n)(\d+)\.\s*\n\s*Muhen\s*[-â€“\t ]+\s*([A-Za-z0-9Ã¤Ã¶Ã¼Ã„Ã–ÃœÃŸ\-\t ]+)/i);
+        const blmMatch = fullText.match(/(?:^|\n)(\d+)\.\s*\n\s*Muhen\s*[-–\t ]+\s*([A-Za-z0-9äöüÄÖÜß\-\t ]+)/i);
         if (blmMatch) {
             const blmRang = parseInt(blmMatch[1], 10);
             const rawGrpName = blmMatch[2].replace(/\t+/g, ' ').trim();
             const grpName = rawGrpName.replace(/^Muhen\s*/i, 'Muhen ') || 'Muhen 1';
 
-            // SchÃ¼tzen nach der Gruppe extrahieren (Name, Vorname, Total)
+            // Schützen nach der Gruppe extrahieren (Name, Vorname, Total)
             const blmShooters = [];
             // Suche nach "Muhen - ..." im Volltext
             const startIdx = fullText.indexOf(blmMatch[0]);
             if (startIdx >= 0) {
                 const afterGroup = fullText.substring(startIdx);
-                // Regex fÃ¼r SchÃ¼tzenzeilen: SNr \n NACHNAME, \t VORNAME \n PassNr ... Total
-                const shooterRegex = /\n\d+\s*\n\s*([A-ZÃ„Ã–Ãœ][a-zA-ZÃ¤Ã¶Ã¼Ã„Ã–ÃœÃŸ\-]+),\s*([A-ZÃ„Ã–Ãœ][a-zA-ZÃ¤Ã¶Ã¼Ã„Ã–ÃœÃŸ\-]+)[\s\S]*?\n\s*(\d{3}(?:\.\d)?)\s*(?=\n\d+|\n\d+\.|$)/g;
+                // Regex für Schützenzeilen: SNr \n NACHNAME, \t VORNAME \n PassNr ... Total
+                const shooterRegex = /\n\d+\s*\n\s*([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]+),\s*([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]+)[\s\S]*?\n\s*(\d{3}(?:\.\d)?)\s*(?=\n\d+|\n\d+\.|$)/g;
                 let sMatch;
                 while ((sMatch = shooterRegex.exec(afterGroup)) !== null) {
                     blmShooters.push({
@@ -1589,9 +2045,9 @@
                 rang: blmRang,
                 punkte_total: blmTotal,
                 gruppendoppel: 30.00,
-                gruppengewinn: 0.00, // Wird in SIUS/Meyton nicht abgedruckt -> per Bank Ã¼berwiesen
+                gruppengewinn: 0.00, // Wird in SIUS/Meyton nicht abgedruckt -> per Bank überwiesen
                 shooters: blmShooters,
-                notice: 'Gruppenpreisgeld nicht auf der Rangliste abgedruckt (wird per Bank Ã¼berwiesen). Bitte Betrag eintragen.'
+                notice: 'Gruppenpreisgeld nicht auf der Rangliste abgedruckt (wird per Bank überwiesen). Bitte Betrag eintragen.'
             };
         }
 
@@ -1605,7 +2061,7 @@
 
             lines.forEach(l => {
                 const t = (l.text || l || '').trim();
-                const m = t.match(/Strohaus\s*([12])\s*(\d{2})([A-ZÃ„Ã–Ãœ][a-zA-ZÃ¤Ã¶Ã¼Ã„Ã–ÃœÃŸ\-]+)\s+([A-ZÃ„Ã–Ãœ][a-zA-ZÃ¤Ã¶Ã¼Ã„Ã–ÃœÃŸ\-]+)\s+(\d{2,3})/);
+                const m = t.match(/Strohaus\s*([12])\s*(\d{2})([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]+)\s+([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]+)\s+(\d{2,3})/);
                 if (m) {
                     const grpNum = m[1];
                     const jg = parseInt(m[2], 10) > 30 ? (1900 + parseInt(m[2], 10)) : (2000 + parseInt(m[2], 10));
@@ -1632,9 +2088,9 @@
         }
 
         // =====================================================================
-        // FORMAT 4: Reine Einzelrangliste fÃ¼r Muhen (z. B. Deisigrabenschiessen)
+        // FORMAT 4: Reine Einzelrangliste für Muhen (z. B. Deisigrabenschiessen)
         // =====================================================================
-        if (/Einzelrangliste\s+f[Ã¼u]r\s+Muhen/i.test(fullText) || (fullText.includes('Muhen') && !isGroupDoc)) {
+        if (/Einzelrangliste\s+f[üu]r\s+Muhen/i.test(fullText) || (fullText.includes('Muhen') && !isGroupDoc)) {
             return {
                 gruppe_name: 'Strohaus',
                 rang: null,
@@ -1643,7 +2099,7 @@
                 gruppengewinn: 0.00,
                 shooters: [],
                 isSingleRankingOnly: true,
-                notice: 'Reine Einzelrangliste (keine Gruppenrangliste im Dokument). Gruppenpreise kÃ¶nnen manuell fÃ¼r die Top-5 SchÃ¼tzen erfasst werden.'
+                notice: 'Reine Einzelrangliste (keine Gruppenrangliste im Dokument). Gruppenpreise können manuell für die Top-5 Schützen erfasst werden.'
             };
         }
 
@@ -1662,6 +2118,10 @@
     }
 
     // Globale Exports am window-Objekt
+    window.jmOnAnlassSelectChange = jmOnAnlassSelectChange;
+    window.jmOnAnlassInputChange = jmOnAnlassInputChange;
+    window.jmClearAnlassInput = jmClearAnlassInput;
+    window.jmPopulateShootersFromJMRawGrid = jmPopulateShootersFromJMRawGrid;
     window.jmOpenGruppengewinneModal = jmOpenGruppengewinneModal;
     window.jmRenderGruppengewinneList = jmRenderGruppengewinneList;
     window.jmReloadGruppengewinneList = jmReloadGruppengewinneList;

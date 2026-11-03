@@ -489,14 +489,38 @@ async function runDeleteArchivedYearAction(jahr) {
 window.runDeleteArchivedYearAction = runDeleteArchivedYearAction;
 
 async function addNewAuswaertigesSchiessen() {
+    let catalog = [];
+    if (typeof window.loadJMSchuetzenfesteCatalog === 'function') {
+        try {
+            catalog = await window.loadJMSchuetzenfesteCatalog();
+        } catch (_) {}
+    }
+    const catDatalist = (catalog || []).filter(c => c.is_active !== false).map(c => ({
+        value: c.anlass,
+        label: `${c.ort ? `${c.ort} · ` : ''}Max. ${c.max_punkte} Pkt.`
+    }));
+
     const res = await UIConfirmKit.prompt({
         title: 'Neues Auswärtsschiessen anlegen',
-        message: 'Erfasse die Angaben für das neue Schiessen:',
+        message: 'Wähle ein Schützenfest aus dem Katalog oder erfasse einen neuen Namen:',
         confirmText: 'Schiessen anlegen',
         cancelText: 'Abbrechen',
         fields: [
-            { name: 'name', label: 'Name des Schiessens', placeholder: 'z. B. Freischiessen Zofingen', required: true },
-            { name: 'maxPunkte', label: 'Max. Punkte', type: 'number', defaultValue: '100', placeholder: '100', required: true }
+            { 
+                name: 'name', 
+                label: 'Name des Schiessens (Katalog-Auswahl oder Freitext)', 
+                placeholder: 'z. B. Bärenmoos-Schiessen oder Freischiessen Zofingen', 
+                datalist: catDatalist,
+                required: true 
+            },
+            { 
+                name: 'maxPunkte', 
+                label: 'Max. Punkte', 
+                type: 'number', 
+                defaultValue: '100', 
+                placeholder: '100', 
+                required: true 
+            }
         ],
         validate: (values) => {
             if (!values.name || values.name.trim() === '') {
