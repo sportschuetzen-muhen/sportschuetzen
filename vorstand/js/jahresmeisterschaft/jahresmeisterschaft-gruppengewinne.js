@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ==============================================================================
  * jahresmeisterschaft-gruppengewinne.js
  * Modul: Verwaltung, Schützen-Zuordnung & Auszahlung/Verrechnung von Gruppengewinnen
@@ -522,6 +522,53 @@
      * 1. Bereits in Jahresmeisterschaft vorhanden (Spalten in jmRawGrid)
      * 2. Noch nicht in Jahresmeisterschaft erfasst (aus public.jm_competitions_catalog)
      */
+    /**
+     * Ermittelt das aktuelle Jahresmeisterschafts-Grid (jmRawGrid).
+     * 1. RAM / window.jmRawGrid / window.getJMRawGrid()
+     * 2. Fallback: Direkt atomar aus Supabase public.jm_seasons laden!
+     */
+    async function getJMGrid() {
+        if (window.jmRawGrid && Array.isArray(window.jmRawGrid) && window.jmRawGrid.length > 5) {
+            return window.jmRawGrid;
+        }
+        if (typeof window.getJMRawGrid === 'function') {
+            const g = window.getJMRawGrid();
+            if (g && Array.isArray(g) && g.length > 5) {
+                window.jmRawGrid = g;
+                return g;
+            }
+        }
+        if (typeof jmRawGrid !== 'undefined' && Array.isArray(jmRawGrid) && jmRawGrid.length > 5) {
+            window.jmRawGrid = jmRawGrid;
+            return jmRawGrid;
+        }
+
+        // Fallback: Direkt aus Supabase public.jm_seasons laden
+        const supa = getSupa();
+        if (supa) {
+            try {
+                const yr = getActiveYear();
+                const yearStr = String(yr);
+                const { data, error } = await supa
+                    .from('jm_seasons')
+                    .select('raw_grid')
+                    .in('jahr', ['current', yearStr, String(new Date().getFullYear())])
+                    .order('is_archived', { ascending: true })
+                    .limit(1)
+                    .maybeSingle();
+
+                if (!error && data && Array.isArray(data.raw_grid) && data.raw_grid.length > 5) {
+                    window.jmRawGrid = data.raw_grid;
+                    console.log('[Gruppengewinne] jmRawGrid erfolgreich aus Supabase jm_seasons bezogen.');
+                    return data.raw_grid;
+                }
+            } catch (err) {
+                console.warn('[Gruppengewinne] Fehler beim Laden von jm_seasons:', err);
+            }
+        }
+        return null;
+    }
+
     async function getAvailableCompetitionsForSelection() {
         const list = {
             jmCols: [],
@@ -540,7 +587,7 @@
         };
 
         // 1. Aus Jahresmeisterschaft (jmRawGrid) ab Spalte 41
-        const grid = window.jmRawGrid;
+        const grid = await getJMGrid();
         const existingNorms = new Set();
 
         if (grid && Array.isArray(grid) && grid.length > 5 && grid[2]) {
@@ -612,8 +659,8 @@
     /**
      * Findet die zugehörige Spalte in jmRawGrid anhand des Anlassnamens.
      */
-    function findJMColumnForAnlass(anlassName) {
-        const grid = window.jmRawGrid;
+    function findJMColumnForAnlass(anlassName, gridInstance = null) {
+        const grid = gridInstance || window.jmRawGrid;
         if (!grid || !Array.isArray(grid) || grid.length < 6 || !grid[2]) return null;
 
         let hasStatusCol = false;
@@ -744,7 +791,8 @@
 
         // Vorselektion
         if (selectedAnlass) {
-            const matched = findJMColumnForAnlass(selectedAnlass);
+            const grid = await getJMGrid();
+            const matched = findJMColumnForAnlass(selectedAnlass, grid);
             const selectValue = matched ? matched.title : selectedAnlass;
 
             const found = Array.from(select.options).find(opt => opt.value.toLowerCase() === selectValue.toLowerCase());
@@ -777,7 +825,7 @@
     /**
      * Prüft, ob für den gewählten Anlass Resultate in der Jahresmeisterschaft existieren.
      */
-    function checkAnlassJMSyncBanner(anlassTitle) {
+    async function checkAnlassJMSyncBanner(anlassTitle) {
         const banner = document.getElementById('jme-jm-sync-banner');
         const quickBtn = document.getElementById('jme-quick-import-jm-btn');
         if (!banner) return;
@@ -790,7 +838,8 @@
             return;
         }
 
-        const matched = findJMColumnForAnlass(title);
+        const grid = await getJMGrid();
+        const matched = findJMColumnForAnlass(title, grid);
         if (!matched) {
             banner.classList.add('d-none');
             banner.classList.remove('d-flex');
@@ -798,7 +847,6 @@
             return;
         }
 
-        const grid = window.jmRawGrid;
         let count = 0;
         for (let r = 5; r < grid.length; r++) {
             if (r === 13 || r === 14) continue;
@@ -846,11 +894,12 @@
             }
 
             // Automatische Übernahme der Schützen & Punkte aus der Jahresmeisterschaft!
-            const matched = findJMColumnForAnlass(val);
+            const grid = await getJMGrid();
+            const matched = findJMColumnForAnlass(val, grid);
             if (matched) {
-                jmPopulateShootersFromJMRawGrid(matched.title, true);
+                await jmPopulateShootersFromJMRawGrid(matched.title, true);
             } else {
-                checkAnlassJMSyncBanner(val);
+                await checkAnlassJMSyncBanner(val);
             }
         }
     }
@@ -858,7 +907,7 @@
     /**
      * Event-Handler: Manuelle Eingabe im Anlass-Textfeld.
      */
-    function jmOnAnlassInputChange(val) {
+    async function jmOnAnlassInputChange(val) {
         if (_jmCurrentEditingComp) {
             _jmCurrentEditingComp.anlass_name = val.trim();
         }
@@ -875,11 +924,12 @@
         }
 
         // Wenn noch keine Schützen erfasst sind und ein JM-Schiessen getippt wird:
-        const matched = findJMColumnForAnlass(val.trim());
+        const grid = await getJMGrid();
+        const matched = findJMColumnForAnlass(val.trim(), grid);
         if (matched && (!_jmCurrentEditingComp?.members || _jmCurrentEditingComp.members.length === 0)) {
-            jmPopulateShootersFromJMRawGrid(matched.title, true);
+            await jmPopulateShootersFromJMRawGrid(matched.title, true);
         } else {
-            checkAnlassJMSyncBanner(val);
+            await checkAnlassJMSyncBanner(val);
         }
     }
 
@@ -901,11 +951,12 @@
      * @param {string} [forceAnlassName] - Optionaler Anlass-Name
      * @param {boolean} [isAuto=false] - Ob der Aufruf automatisch beim Auswählen im Dropdown erfolgte
      */
-    function jmPopulateShootersFromJMRawGrid(forceAnlassName, isAuto = false) {
+    async function jmPopulateShootersFromJMRawGrid(forceAnlassName, isAuto = false) {
         const anlassName = (forceAnlassName || document.getElementById('jme-anlass')?.value || _jmCurrentEditingComp?.anlass_name || '').trim();
         if (!anlassName) return false;
 
-        const matched = findJMColumnForAnlass(anlassName);
+        const grid = await getJMGrid();
+        const matched = findJMColumnForAnlass(anlassName, grid);
         if (!matched) {
             if (!isAuto && window.UIConfirmKit) {
                 UIConfirmKit.alert({
@@ -917,7 +968,6 @@
             return false;
         }
 
-        const grid = window.jmRawGrid;
         const foundCol = matched.colIndex;
         const matchedTitle = matched.title;
 

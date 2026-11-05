@@ -2,6 +2,10 @@
 // Native Supabase PostgreSQL Architecture (Single Source of Truth)
 
 let jmRawGrid = [];
+window.jmRawGrid = jmRawGrid;
+window.getJMRawGrid = function() {
+    return jmRawGrid;
+};
 let jmCurrentJahr = "current";
 let jmPendingUpdates = [];
 let jmPendingMoves = [];
@@ -67,6 +71,7 @@ async function loadJahresmeisterschaftData(force = false, silent = false) {
 
                 if (!errSeason && seasonData && Array.isArray(seasonData.raw_grid) && seasonData.raw_grid.length > 5) {
                     jmRawGrid = seasonData.raw_grid;
+                    window.jmRawGrid = jmRawGrid;
                     jmPendingUpdates = [];
                     jmPendingMoves = [];
                     jmJuniorExclusions = {};
