@@ -120,6 +120,66 @@ let mrIsRotating = false; // Flag für automatischen Segmentwechsel
 let mrSegmentCounter = 0; // Zähler für hochgeladene Segmente
 let mrLogs = []; // Lokale Historie für Aktivitätslogs
 
+// FIXE VORSTANDS- & SPRECHER-STRUKTUR
+const DEFAULT_SPEAKERS = [
+    { id: 'db', name: 'Daniel Berchtold', role: 'Präsident', department: 'Sitzungsleitung, Verträge, Behörden, ENIWA', present: true },
+    { id: 'ar', name: 'Andrea Rossi', role: 'Kassier', department: 'Finanzen, Abrechnungen, AGSV-Vereinbarungen', present: true },
+    { id: 'sh', name: 'Simon Hediger', role: 'Vorstand', department: 'Material, Vereinsbekleidung, Schützenstube', present: true },
+    { id: 'ba', name: 'Beat Augsburger', role: 'Aktuar', department: 'Protokollführung, administrative Beschlüsse', present: true },
+    { id: 'dh', name: 'Daniel Hunziker', role: 'Vorstand', department: 'IT & Digitales, Gebäudeversicherung AGV', present: true },
+    { id: 'sb', name: 'Stefanie Berchtold', role: 'Vorstand', department: 'Vereinsanlässe, Schützenstube', present: true }
+];
+
+function loadSpeakers() {
+    const saved = localStorage.getItem('mr_speakers');
+    if (saved) {
+        try {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        } catch (e) {
+            console.error("Fehler beim Laden von mr_speakers:", e);
+        }
+    }
+    return JSON.parse(JSON.stringify(DEFAULT_SPEAKERS));
+}
+
+function saveSpeakers(speakers) {
+    localStorage.setItem('mr_speakers', JSON.stringify(speakers));
+}
+
+// Session-Metadaten Verwaltung
+function getSessionMeta() {
+    const saved = localStorage.getItem('mr_session_meta');
+    if (saved) {
+        try {
+            return JSON.parse(saved);
+        } catch (e) {}
+    }
+    return {
+        startedAt: null,
+        lastRecordedAt: null,
+        totalElapsedSeconds: 0,
+        segmentCount: 0
+    };
+}
+
+function saveSessionMeta(meta) {
+    localStorage.setItem('mr_session_meta', JSON.stringify(meta));
+}
+
+function clearSessionMeta() {
+    localStorage.removeItem('mr_session_meta');
+}
+
+// Tab-Verlustschutz während aktiver Aufnahme
+function handleBeforeUnload(e) {
+    if (mrIsRecordingActive) {
+        e.preventDefault();
+        e.returnValue = 'Eine Sprachaufnahme läuft aktuell. Wenn du die Seite verlässt, bricht die Aufnahme ab.';
+        return e.returnValue;
+    }
+}
+
 // Premium CSS Styles dynamisch laden
 function injectMeetingRecorderStyles() {
     if (document.getElementById('meeting-recorder-styles')) return;
@@ -200,6 +260,22 @@ function injectMeetingRecorderStyles() {
         #mr-log-console::-webkit-scrollbar-thumb:hover {
             background: rgba(255, 255, 255, 0.3);
         }
+
+        /* Speaker Items */
+        .mr-speaker-item {
+            transition: all 0.15s ease;
+            background: rgba(248, 249, 250, 0.85);
+            border: 1px solid rgba(0, 0, 0, 0.06);
+            border-radius: 10px;
+        }
+        .mr-speaker-item:hover {
+            background: #ffffff;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+        }
+        .mr-speaker-item.absent {
+            opacity: 0.55;
+            background: rgba(240, 242, 245, 0.5);
+        }
     `;
     document.head.appendChild(style);
 }
@@ -228,6 +304,12 @@ function initMeetingRecorder() {
         }
     } else {
         mrTranscripts = [];
+    }
+
+    // Bisherige Sitzungszeit wiederherstellen falls vorhanden
+    const sessionMeta = getSessionMeta();
+    if (sessionMeta && sessionMeta.totalElapsedSeconds && mrTranscripts.length > 0) {
+        mrElapsedTime = sessionMeta.totalElapsedSeconds;
     }
 
     // Default oder geladene URL
@@ -284,6 +366,29 @@ function initMeetingRecorder() {
                             <button id="mr-reset-btn" class="btn btn-outline-danger btn-sm px-3 py-2 fw-semibold rounded-pill w-100">
                                 <i class="fas fa-trash-alt me-1"></i>Sitzung & Transkript zurücksetzen
                             </button>
+                        </div>
+                    </div>
+
+                    <!-- TEILNEHMER & SPRECHER CARD -->
+                    <div class="card border-0 shadow-lg p-4 mr-panel-card mb-4" id="mr-speakers-card">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="fw-bold text-primary mb-0">
+                                <i class="fas fa-users me-2"></i>Teilnehmer & Sprecher
+                            </h5>
+                            <div class="d-flex gap-1">
+                                <button id="mr-add-guest-btn" class="btn btn-outline-primary btn-sm fw-bold py-1 px-2" style="font-size: 0.75rem;" title="Gast oder Referent hinzufügen">
+                                    <i class="fas fa-user-plus me-1"></i>Gast
+                                </button>
+                                <button id="mr-reset-speakers-btn" class="btn btn-outline-secondary btn-sm fw-bold py-1 px-2" style="font-size: 0.75rem;" title="Auf Standard-Vorstand zurücksetzen">
+                                    <i class="fas fa-undo"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="text-muted small mb-3" style="font-size: 0.78rem;">
+                            Aktiviere anwesende Vorstandsmitglieder. Diese Personen werden im Gemini-Prompt fix für die automatische Sprecher- und Aufgabenzuordnung hinterlegt.
+                        </p>
+                        <div id="mr-speakers-list" class="d-flex flex-column gap-2" style="max-height: 250px; overflow-y: auto;">
+                            <!-- Dynamisch durch renderSpeakersList() befüllt -->
                         </div>
                     </div>
 
@@ -438,6 +543,60 @@ function initMeetingRecorder() {
         mrLogs = [];
     });
 
+    // Teilnehmer-Events registrieren
+    document.getElementById('mr-add-guest-btn')?.addEventListener('click', async () => {
+        if (typeof UIConfirmKit !== 'undefined' && typeof UIConfirmKit.prompt === 'function') {
+            const res = await UIConfirmKit.prompt({
+                title: 'Gast oder Referent hinzufügen',
+                message: 'Trage den Namen und die Funktion des Gasts ein:',
+                fields: [
+                    { name: 'name', label: 'Name des Gasts', placeholder: 'z.B. Herr Ly', required: true },
+                    { name: 'role', label: 'Funktion / Organisation', placeholder: 'z.B. Aarg. Gebäudeversicherung AGV', required: false }
+                ],
+                confirmText: 'Hinzufügen',
+                cancelText: 'Abbrechen'
+            });
+
+            if (res && res.name && res.name.trim()) {
+                const speakers = loadSpeakers();
+                speakers.push({
+                    id: 'guest_' + Date.now(),
+                    name: res.name.trim(),
+                    role: (res.role && res.role.trim()) || 'Gast',
+                    department: 'Gastreferent / Anhörung',
+                    present: true,
+                    isGuest: true
+                });
+                saveSpeakers(speakers);
+                renderSpeakersList();
+                updateTranscriptDisplay();
+                showToast(`Gast "${res.name.trim()}" hinzugefügt.`, "success");
+            }
+        }
+    });
+
+    document.getElementById('mr-reset-speakers-btn')?.addEventListener('click', async () => {
+        let ok = true;
+        if (typeof UIConfirmKit !== 'undefined') {
+            ok = await UIConfirmKit.confirm({
+                title: 'Teilnehmer zurücksetzen',
+                message: 'Möchtest du die Teilnehmerliste auf die Standard-Vorstandsmitglieder zurücksetzen?',
+                type: 'warning',
+                confirmText: 'Zurücksetzen',
+                cancelText: 'Abbrechen'
+            });
+        }
+        if (ok) {
+            saveSpeakers(DEFAULT_SPEAKERS);
+            renderSpeakersList();
+            updateTranscriptDisplay();
+            showToast("Teilnehmerliste zurückgesetzt.", "info");
+        }
+    });
+
+    // Teilnehmerliste initial rendern
+    renderSpeakersList();
+
     // Tab Event Listener zum Anpassen der Farben/Klassen
     const triggerTabList = [].slice.call(document.querySelectorAll('#mr-tabs button'));
     triggerTabList.forEach(triggerEl => {
@@ -453,12 +612,83 @@ function initMeetingRecorder() {
         });
     });
 
-    // Gespeicherte Transkripte initial in den Textfeldern anzeigen
+    // Gespeicherte Transkripte und Timer initial in den Textfeldern anzeigen
+    if (mrElapsedTime > 0) {
+        updateTimerDisplay();
+    }
     updateTranscriptDisplay();
 }
 
-// Generiert den Prompt für Gemini Advanced
+// Rendert die Teilnehmer- und Sprecherliste
+function renderSpeakersList() {
+    const container = document.getElementById('mr-speakers-list');
+    if (!container) return;
+
+    const speakers = loadSpeakers();
+    container.innerHTML = speakers.map(s => `
+        <div class="mr-speaker-item p-2 d-flex align-items-center justify-content-between ${s.present ? '' : 'absent'}">
+            <div class="form-check d-flex align-items-center gap-2 mb-0 flex-grow-1" style="min-width: 0;">
+                <input class="form-check-input mr-speaker-check" type="checkbox" id="speaker-${s.id}" data-id="${s.id}" ${s.present ? 'checked' : ''} style="cursor: pointer;">
+                <label class="form-check-label d-flex flex-column" for="speaker-${s.id}" style="cursor: pointer; line-height: 1.25; min-width: 0;">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="fw-bold ${s.present ? 'text-dark' : 'text-muted text-decoration-line-through'} small">${escapeHtml(s.name)}</span>
+                        <span class="badge ${s.isGuest ? 'bg-info text-dark' : 'bg-primary-subtle text-primary border'} py-0 px-1" style="font-size: 0.68rem;">${escapeHtml(s.role)}</span>
+                    </div>
+                    <span class="text-muted text-truncate" style="font-size: 0.72rem;">${escapeHtml(s.department || '')}</span>
+                </label>
+            </div>
+            ${s.isGuest ? `
+                <button class="btn btn-outline-danger btn-sm py-0 px-1 border-0 mr-remove-guest-btn ms-2" data-id="${s.id}" title="Gast entfernen">
+                    <i class="fas fa-times"></i>
+                </button>
+            ` : ''}
+        </div>
+    `).join('');
+
+    // Checkbox Events
+    container.querySelectorAll('.mr-speaker-check').forEach(chk => {
+        chk.addEventListener('change', (e) => {
+            const id = e.target.getAttribute('data-id');
+            const speakersList = loadSpeakers();
+            const sp = speakersList.find(item => item.id === id);
+            if (sp) {
+                sp.present = e.target.checked;
+                saveSpeakers(speakersList);
+                renderSpeakersList();
+                updateTranscriptDisplay();
+            }
+        });
+    });
+
+    // Remove Guest Events
+    container.querySelectorAll('.mr-remove-guest-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const id = btn.getAttribute('data-id');
+            let speakersList = loadSpeakers();
+            speakersList = speakersList.filter(item => item.id !== id);
+            saveSpeakers(speakersList);
+            renderSpeakersList();
+            updateTranscriptDisplay();
+            showToast("Gast entfernt.", "info");
+        });
+    });
+}
+
+// Generiert den Prompt für Gemini Advanced mit fixer Sprecher- & Teilnehmer-Matrix
 function generatePromptText(transcript) {
+    const speakers = loadSpeakers();
+    const presentSpeakers = speakers.filter(s => s.present);
+    const absentSpeakers = speakers.filter(s => !s.present);
+
+    const speakerMatrix = presentSpeakers.length > 0
+        ? presentSpeakers.map(s => `- **${s.name}** (${s.role}): ${s.department || 'Allgemeine Vorstandsthemen'}`).join('\n')
+        : '- Keine Teilnehmer explizit markiert';
+
+    const absentList = absentSpeakers.length > 0 
+        ? absentSpeakers.map(s => `${s.name} (${s.role})`).join(', ') 
+        : 'Keine (vollzählig)';
+
     return `Hier ist das gesammelte Transkript unseres Meetings (automatisch aus dem Schweizerdeutschen übersetzt). Bitte generiere daraus ein präzises, professionelles Ergebnisprotokoll im Schweizer Hochdeutsch (ohne 'ß'). Stelle sicher, dass Namen korrekt geschrieben sind.
 
 WICHTIG: Verwende exakt das folgende Muster-Protokoll der Sportschützen Muhen als Stil-, Format- und Layoutvorlage für das fertige Protokoll:
@@ -467,12 +697,23 @@ WICHTIG: Verwende exakt das folgende Muster-Protokoll der Sportschützen Muhen a
 ${PROTOKOLL_MUSTER}
 --- MUSTER-PROTOKOLL ENDE ---
 
+ANWESENDE TEILNEHMER (FIXE ROLLEN- & SPRECHERZUWEISUNG):
+${speakerMatrix}
+
+Abwesend / Entschuldigt: ${absentList}
+
+VERBINDLICHE REGELN FÜR DIE SPRECHER- & AUFGABEN-ZUORDNUNG:
+1. Ordne Wortmeldungen, Beschlüsse und Aufträge im Protokoll gezielt den oben definierten anwesenden Vorstandsmitgliedern zu.
+2. Berücksichtige die jeweiligen Ressorts (z.B. Finanzen/Kasse -> Andrea Rossi, Material/Bekleidung -> Simon Hediger, Verträge/Präsidiales -> Daniel Berchtold, IT/AGV -> Daniel Hunziker, Protokoll -> Beat Augsburger).
+3. Achte auf typische Schweizerdeutsche Namensanreden im Transkript ("Dani", "Andrea", "Beat", "Simon", "Steffi") und leite daraus die sprechende bzw. beauftragte Person ab.
+4. Aufgabenliste am Ende ("Aufgaben:"): Jede Aufgabe muss zwingend einer konkreten Person aus der obigen Teilnehmerliste zugewiesen werden im Format: "[Aufgabe] - [Verantwortliche Person]".
+
 Richte dich bei der Formatierung und Gliederung streng nach diesem Muster:
-1. Header: Nummer der Vorstandsitzung, Ort, Datum, Uhrzeit und Teilnehmer (in gleicher Tabulator- oder Listenoptik).
+1. Header: Nummer der Vorstandsitzung, Ort, Datum, Uhrzeit und Teilnehmer (übernimm die oben genannten anwesenden Personen).
 2. Traktandenliste: Nummerierte Liste der behandelten Themen.
 3. Detailinhalt pro Traktandum: Textabsätze mit Beschlüssen, Diskussionspunkten und den jeweils vereinbarten Aufgaben.
 4. Aufgabenliste am Ende: Eine saubere, übersichtliche Liste ("Aufgaben:") mit allen Aufgaben und den jeweils verantwortlichen Personen.
-5. Signatur am Ende ("Sportschützen Muhen / Der Aktuar: [Name]").
+5. Signatur am Ende ("Sportschützen Muhen / Der Aktuar: Beat Augsburger").
 
 Hier ist das neue Transkript, das du verarbeiten sollst:
 ${transcript || '[Noch kein Transkript vorhanden. Starte die Aufnahme...]'}`;
@@ -543,12 +784,56 @@ async function startRecording() {
         return;
     }
 
-    // Konsolen-Reset bei Neustart
-    const consoleElem = document.getElementById('mr-log-console');
-    if (consoleElem) {
-        consoleElem.innerHTML = '';
+    // Prüfen, ob noch ein ungelöstes altes Transkript vorhanden ist
+    if (mrTranscripts.length > 0) {
+        const meta = getSessionMeta();
+        const lastRecorded = meta.lastRecordedAt ? new Date(meta.lastRecordedAt) : null;
+        const now = new Date();
+        const isOld = lastRecorded && (
+            (now - lastRecorded) > (3 * 3600 * 1000) || // älter als 3 Stunden
+            now.toDateString() !== lastRecorded.toDateString() // anderer Kalendertag
+        );
+
+        if (isOld) {
+            const dateStr = lastRecorded.toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            const timeStr = lastRecorded.toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
+            
+            let startFresh = false;
+            if (typeof UIConfirmKit !== 'undefined' && typeof UIConfirmKit.confirm === 'function') {
+                startFresh = await UIConfirmKit.confirm({
+                    title: 'Bestehendes Transkript vorhanden',
+                    message: `Es ist noch ein Transkript vom <b>${dateStr} um ${timeStr} Uhr</b> (${mrTranscripts.length} Segmente) vorhanden.<br><br>Möchtest du eine <b>neue Sitzung starten</b> (altes Transkript verwerfen) oder die <b>vorherige Sitzung fortsetzen</b>?`,
+                    type: 'warning',
+                    confirmText: 'Neue Sitzung starten',
+                    cancelText: 'Sitzung fortsetzen',
+                    focusCancel: false
+                });
+            } else {
+                startFresh = confirm(`Es ist noch ein altes Transkript vom ${dateStr} vorhanden. Neue Sitzung starten?`);
+            }
+
+            if (startFresh) {
+                resetSessionState(true);
+            } else {
+                mrElapsedTime = meta.totalElapsedSeconds || mrElapsedTime || 0;
+            }
+        } else {
+            // Sitzung ist frisch (z.B. kurze Pause vor wenigen Minuten)
+            const meta = getSessionMeta();
+            if (meta.totalElapsedSeconds) {
+                mrElapsedTime = meta.totalElapsedSeconds;
+            }
+        }
     }
-    mrLogs = [];
+
+    // Konsolen-Reset bei Neustart (nur wenn wir frisch beginnen)
+    if (mrTranscripts.length === 0) {
+        const consoleElem = document.getElementById('mr-log-console');
+        if (consoleElem) {
+            consoleElem.innerHTML = '';
+        }
+        mrLogs = [];
+    }
 
     logToConsole("Starte Initialisierung der Sprachaufnahme...", "info");
     logToConsole(`Worker-Schnittstelle: ${workerUrl}`, "info");
@@ -640,6 +925,9 @@ async function startRecording() {
             }
         };
 
+        // Beforeunload Verlustschutz aktivieren
+        window.addEventListener('beforeunload', handleBeforeUnload);
+
         // Aufnahmestart
         mrMediaRecorder.start();
         logToConsole(`Aufnahme für Segment ${mrSegmentCounter} erfolgreich gestartet.`, "success");
@@ -665,9 +953,9 @@ async function startRecording() {
         statusField.classList.add('recording-active');
         document.getElementById('mr-status-graphic').classList.add('recording');
 
-        // Timer starten
-        mrStartTime = Date.now();
-        mrElapsedTime = 0;
+        // Timer starten (berücksichtigt bisherige Gesamtzeit bei Fortsetzung)
+        mrStartTime = Date.now() - (mrElapsedTime * 1000);
+        if (mrRecordingTimer) clearInterval(mrRecordingTimer);
         mrRecordingTimer = setInterval(() => {
             mrElapsedTime = Math.floor((Date.now() - mrStartTime) / 1000);
             updateTimerDisplay();
@@ -679,7 +967,15 @@ async function startRecording() {
         logToConsole(`Fehler beim Zugriff auf Audio-Hardware: ${err.message}`, "error");
         showToast("Fehler beim Starten der Aufnahme.", "danger");
         console.error(err);
-        alert('Mikrofon-Zugriff verweigert oder nicht unterstützt: ' + err.message);
+        if (typeof UIConfirmKit !== 'undefined' && typeof UIConfirmKit.alert === 'function') {
+            await UIConfirmKit.alert({
+                title: 'Mikrofon-Zugriff fehlgeschlagen',
+                message: 'Mikrofon-Zugriff verweigert oder nicht unterstützt:<br><b>' + escapeHtml(err.message) + '</b>',
+                type: 'danger'
+            });
+        } else {
+            alert('Mikrofon-Zugriff verweigert oder nicht unterstützt: ' + err.message);
+        }
     }
 }
 
@@ -688,6 +984,9 @@ function stopRecording() {
     logToConsole("Stoppe Aufnahme manuell...", "info");
     
     mrIsRecordingActive = false; // Signalisiert, dass nach onstop nicht neu gestartet werden soll
+
+    // Beforeunload Schutz entfernen
+    window.removeEventListener('beforeunload', handleBeforeUnload);
 
     // Interval-Timer für Rotation stoppen
     if (mrIntervalTimer) {
@@ -713,6 +1012,13 @@ function stopRecording() {
         clearInterval(mrRecordingTimer);
         mrRecordingTimer = null;
     }
+
+    // Session-Meta sichern
+    const meta = getSessionMeta();
+    meta.lastRecordedAt = new Date().toISOString();
+    meta.totalElapsedSeconds = mrElapsedTime;
+    meta.segmentCount = mrTranscripts.length;
+    saveSessionMeta(meta);
 
     // UI Updates
     document.getElementById('mr-start-btn').disabled = false;
@@ -799,8 +1105,21 @@ async function sendAudioChunkToCloudflare(blob, segmentNumber) {
 
     if (success) {
         if (resultText) {
-            mrTranscripts.push(resultText);
+            const timeStr = new Date().toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
+            const segmentHeader = `--- Segment ${segmentNumber} (${timeStr} Uhr) ---`;
+            const formattedSegment = `${segmentHeader}\n${resultText}`;
+
+            mrTranscripts.push(formattedSegment);
             localStorage.setItem('mr_active_transcripts', JSON.stringify(mrTranscripts));
+
+            // Session-Meta sichern
+            const meta = getSessionMeta();
+            meta.lastRecordedAt = new Date().toISOString();
+            meta.totalElapsedSeconds = mrElapsedTime;
+            meta.segmentCount = mrTranscripts.length;
+            if (!meta.startedAt) meta.startedAt = new Date().toISOString();
+            saveSessionMeta(meta);
+
             updateTranscriptDisplay();
             showToast(`Segment ${segmentNumber} erfolgreich transkribiert.`, "success");
         }
@@ -832,7 +1151,10 @@ function updateTimerDisplay() {
     const hrs = Math.floor(mrElapsedTime / 3600).toString().padStart(2, '0');
     const mins = Math.floor((mrElapsedTime % 3600) / 60).toString().padStart(2, '0');
     const secs = (mrElapsedTime % 60).toString().padStart(2, '0');
-    document.getElementById('mr-timer').textContent = `${hrs}:${mins}:${secs}`;
+    const timerElem = document.getElementById('mr-timer');
+    if (timerElem) {
+        timerElem.textContent = `${hrs}:${mins}:${secs}`;
+    }
 }
 
 // Transkript- und Prompt-Anzeige aktualisieren
@@ -853,6 +1175,7 @@ function updateTranscriptDisplay() {
 // Kopier-Funktionen
 function copyPrompt() {
     const promptField = document.getElementById('mr-prompt-field');
+    if (!promptField) return;
     promptField.select();
     navigator.clipboard.writeText(promptField.value);
     showToast("Gemini Prompt in die Zwischenablage kopiert!", "success");
@@ -860,6 +1183,7 @@ function copyPrompt() {
 
 function copyTranscript() {
     const transcriptField = document.getElementById('mr-transcript-field');
+    if (!transcriptField) return;
     transcriptField.select();
     navigator.clipboard.writeText(transcriptField.value);
     showToast("Transkript in die Zwischenablage kopiert!", "success");
@@ -923,30 +1247,51 @@ function showToast(message, type = "success", position = "top-end", duration = 3
 // === NEUE UX ASSISTENTEN-FUNKTIONEN ===
 
 // Sitzung und Speicher zurücksetzen
-function resetSession() {
-    if (confirm("Möchtest du das gesamte Transkript und das generierte Protokoll löschen und eine neue Sitzung starten?")) {
-        mrTranscripts = [];
-        mrAudioChunks = [];
-        mrSegmentCounter = 0;
-        mrElapsedTime = 0;
-        updateTimerDisplay();
-        localStorage.removeItem('mr_active_transcripts');
-        
-        // Log-Verlauf leeren
-        const consoleElem = document.getElementById('mr-log-console');
-        if (consoleElem) {
-            consoleElem.innerHTML = '<div class="text-muted">[Sitzung zurückgesetzt. Bereit für Sprachaufnahme]</div>';
-        }
-        mrLogs = [];
-        
-        // UI leeren
-        updateTranscriptDisplay();
-        
-        const protocolField = document.getElementById('mr-protocol-field');
-        if (protocolField) {
-            protocolField.value = "";
-        }
-        
+async function resetSession() {
+    let proceed = false;
+    if (typeof UIConfirmKit !== 'undefined' && typeof UIConfirmKit.confirm === 'function') {
+        proceed = await UIConfirmKit.confirm({
+            title: 'Sitzung zurücksetzen',
+            message: 'Möchtest du das gesamte Transkript und das generierte Protokoll unwiderruflich löschen und eine frische Sitzung beginnen?',
+            type: 'danger',
+            confirmText: 'Löschen',
+            cancelText: 'Abbrechen'
+        });
+    } else {
+        proceed = confirm("Möchtest du das gesamte Transkript und das generierte Protokoll löschen und eine neue Sitzung starten?");
+    }
+
+    if (!proceed) return;
+
+    resetSessionState(false);
+}
+
+// Setzt den Zustand der Sitzung sauber zurück
+function resetSessionState(silent = false) {
+    mrTranscripts = [];
+    mrAudioChunks = [];
+    mrSegmentCounter = 0;
+    mrElapsedTime = 0;
+    updateTimerDisplay();
+    localStorage.removeItem('mr_active_transcripts');
+    clearSessionMeta();
+    
+    // Log-Verlauf leeren
+    const consoleElem = document.getElementById('mr-log-console');
+    if (consoleElem) {
+        consoleElem.innerHTML = '<div class="text-muted">[Sitzung zurückgesetzt. Bereit für Sprachaufnahme]</div>';
+    }
+    mrLogs = [];
+    
+    // UI leeren
+    updateTranscriptDisplay();
+    
+    const protocolField = document.getElementById('mr-protocol-field');
+    if (protocolField) {
+        protocolField.value = "";
+    }
+    
+    if (!silent) {
         logToConsole("Sitzung zurückgesetzt.", "info");
         showToast("Sitzung zurückgesetzt.", "success");
     }
@@ -960,57 +1305,65 @@ async function generateProtocolAutomatically() {
         return;
     }
 
-    const generateBtn = document.getElementById('mr-generate-protocol-btn');
-    const spinner = document.getElementById('mr-protocol-spinner');
-    const protocolField = document.getElementById('mr-protocol-field');
+    const executeGeneration = async () => {
+        const protocolField = document.getElementById('mr-protocol-field');
+        logToConsole("Sende Transkript an Gemini zur Protokoll-Erstellung...", "info");
 
-    if (generateBtn) generateBtn.disabled = true;
-    if (spinner) spinner.classList.remove('d-none');
-    
-    logToConsole("Sende Transkript an Gemini zur Protokoll-Erstellung...", "info");
-
-    try {
-        const promptText = generatePromptText(fullText);
-        
-        const response = await apiFetch('news', 'action=generate_protocol', {
-            method: 'POST',
-            body: JSON.stringify({ prompt: promptText })
-        });
-
-        if (!response.ok) {
-            let errorText = `Fehler bei der Verbindung zur Gemini-API (HTTP ${response.status})`;
-            try {
-                const resJson = await response.json();
-                if (resJson && resJson.error) {
-                    errorText = `Gemini-API Fehler: ${resJson.error}`;
-                }
-            } catch(e) {}
-            throw new Error(errorText);
-        }
-
-        const data = await response.json();
-        
-        if (data.success && data.text) {
-            if (protocolField) {
-                protocolField.value = data.text.trim();
-            }
-            logToConsole("Ergebnisprotokoll erfolgreich generiert!", "success");
-            showToast("Protokoll erfolgreich generiert!", "success");
+        try {
+            const promptText = generatePromptText(fullText);
             
-            // Zu Tab wechseln
-            const protocolTab = document.getElementById('mr-protocol-tab');
-            if (protocolTab) {
-                protocolTab.click();
+            const response = await apiFetch('news', 'action=generate_protocol', {
+                method: 'POST',
+                body: JSON.stringify({ prompt: promptText })
+            });
+
+            if (!response.ok) {
+                let errorText = `Fehler bei der Verbindung zur Gemini-API (HTTP ${response.status})`;
+                try {
+                    const resJson = await response.json();
+                    if (resJson && resJson.error) {
+                        errorText = `Gemini-API Fehler: ${resJson.error}`;
+                    }
+                } catch(e) {}
+                throw new Error(errorText);
             }
-        } else {
-            throw new Error("Ungültiges Antwortformat von der Gemini-API erhalten.");
+
+            const data = await response.json();
+            
+            if (data.success && data.text) {
+                if (protocolField) {
+                    protocolField.value = data.text.trim();
+                }
+                logToConsole("Ergebnisprotokoll erfolgreich generiert!", "success");
+                showToast("Protokoll erfolgreich generiert!", "success");
+                
+                // Zu Tab wechseln
+                const protocolTab = document.getElementById('mr-protocol-tab');
+                if (protocolTab) {
+                    protocolTab.click();
+                }
+            } else {
+                throw new Error("Ungültiges Antwortformat von der Gemini-API erhalten.");
+            }
+        } catch (error) {
+            logToConsole(`Fehler bei der Protokoll-Generierung: ${error.message}`, "error");
+            showToast(error.message, "danger");
         }
-    } catch (error) {
-        logToConsole(`Fehler bei der Protokoll-Generierung: ${error.message}`, "error");
-        showToast(error.message, "danger");
-    } finally {
-        if (generateBtn) generateBtn.disabled = false;
-        if (spinner) spinner.classList.add('d-none');
+    };
+
+    if (typeof UIButtonKit !== 'undefined' && typeof UIButtonKit.withLoading === 'function') {
+        await UIButtonKit.withLoading('#mr-generate-protocol-btn', executeGeneration);
+    } else {
+        const generateBtn = document.getElementById('mr-generate-protocol-btn');
+        const spinner = document.getElementById('mr-protocol-spinner');
+        if (generateBtn) generateBtn.disabled = true;
+        if (spinner) spinner.classList.remove('d-none');
+        try {
+            await executeGeneration();
+        } finally {
+            if (generateBtn) generateBtn.disabled = false;
+            if (spinner) spinner.classList.add('d-none');
+        }
     }
 }
 
