@@ -866,52 +866,10 @@
                 <div class="nav-link active" onclick="navTo('dashboard', this)">
                     <i class="fas fa-home"></i> <span class="nav-text">Übersicht</span>
                 </div>
-                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,jungschuetzenleiter,materialwart,aktuar,kassier,vermieter"
-                     onclick="navTo('inventar', this)">
-                    <i class="fas fa-boxes"></i> <span class="nav-text">Inventar</span>
-                </div>
-                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter"
-                     onclick="navTo('termine', this)">
-                    <i class="fas fa-calendar-alt"></i> <span class="nav-text">Jahresprogramm</span>
-                </div>
 
-                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
-                     onclick="navTo('system-mails', this)">
-                    <i class="fas fa-envelope-open-text"></i> <span class="nav-text">System-Mails</span>
-                </div>
-                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter,jungschuetzenleiter"
-                     onclick="navTo('push', this)">
-                    <i class="fas fa-paper-plane"></i> <span class="nav-text">Push-Mitteilungen</span>
-                </div>
-                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter"
-                     onclick="navTo('anlaesse', this)">
-                    <i class="fas fa-calendar-star"></i> <span class="nav-text">Anlässe & Controlling</span>
-                </div>
-                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter"
-                     onclick="navTo('schichtplaner', this)">
-                    <i class="fas fa-users-gear"></i> <span class="nav-text">Schichtplaner</span>
-                </div>
-                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter"
-                     onclick="navTo('festkasse', this)">
-                    <i class="fas fa-cash-register"></i> <span class="nav-text">Festkasse (POS)</span>
-                </div>
-                <div class="nav-link role-protected d-flex align-items-center" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
-                     onclick="navTo('umfragen', this)">
-                    <i class="fas fa-calendar-check me-2"></i> <span class="nav-text flex-grow-1">Anlässe & Umfragen</span>
-                    <span id="umfragen-nav-badge" class="badge rounded-pill bg-danger d-none">0</span>
-                </div>
-                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister"
-                     onclick="navTo('manager', this)">
-                    <i class="fas fa-shield-alt"></i> <span class="nav-text">Team Manager</span>
-                </div>
-                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister"
-                     onclick="navTo('resultate', this)">
-                    <i class="fas fa-trophy"></i> <span class="nav-text">Resultate Mannschaft & G & G</span>
-                </div>
-                <div class="nav-link role-protected d-flex align-items-center" data-roles="admin,vorstand,vermieter,kassier"
-                     onclick="navTo('vermietung', this)">
-                    <i class="fas fa-home me-2"></i> <span class="nav-text flex-grow-1">Vermietung</span>
-                    <span id="vermietung-nav-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                <!-- 1. SCHIESSSPORT & WETTKAMPF -->
+                <div class="sidebar-section-divider">
+                    <span>Schiesssport &amp; Wettkampf</span>
                 </div>
                 <div class="nav-link role-protected d-flex align-items-center" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('jahresmeisterschaft', this)">
@@ -922,11 +880,51 @@
                      onclick="navTo('endschiessen', this)">
                     <i class="fas fa-bullseye me-2"></i> <span class="nav-text flex-grow-1">Endschiessen</span>
                 </div>
-                <div class="nav-link role-protected d-flex align-items-center" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
-                     onclick="navTo('mail', this)">
-                    <i class="fas fa-envelope me-2"></i> <span class="nav-text flex-grow-1">Mail</span>
-                    <span id="mail-nav-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister"
+                     onclick="navTo('resultate', this)">
+                    <i class="fas fa-trophy"></i> <span class="nav-text">Resultate Mannschaft &amp; G &amp; G</span>
                 </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister"
+                     onclick="navTo('manager', this)">
+                    <i class="fas fa-shield-alt"></i> <span class="nav-text">Team Manager</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,jungschuetzenleiter,materialwart,aktuar,kassier,vermieter"
+                     onclick="navTo('inventar', this)">
+                    <i class="fas fa-boxes"></i> <span class="nav-text">Inventar</span>
+                </div>
+
+                <!-- 2. EVENTS, SCHÜTZENHAUS & FESTBETRIEB -->
+                <div class="sidebar-section-divider">
+                    <span>Events &amp; Schützenhaus</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter"
+                     onclick="navTo('termine', this)">
+                    <i class="fas fa-calendar-alt"></i> <span class="nav-text">Jahresprogramm</span>
+                </div>
+                <div class="nav-link role-protected d-flex align-items-center" data-roles="admin,vorstand,vermieter,kassier"
+                     onclick="navTo('vermietung', this)">
+                    <i class="fas fa-home me-2"></i> <span class="nav-text flex-grow-1">Vermietung</span>
+                    <span id="vermietung-nav-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter"
+                     onclick="navTo('festkasse', this)">
+                    <i class="fas fa-cash-register"></i> <span class="nav-text">Festkasse (POS)</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter"
+                     onclick="navTo('schichtplaner', this)">
+                    <i class="fas fa-users-gear"></i> <span class="nav-text">Schichtplaner</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter"
+                     onclick="navTo('anlaesse', this)">
+                    <i class="fas fa-calendar-star"></i> <span class="nav-text">Anlässe &amp; Controlling</span>
+                </div>
+                <div class="nav-link role-protected d-flex align-items-center" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('umfragen', this)">
+                    <i class="fas fa-calendar-check me-2"></i> <span class="nav-text flex-grow-1">Anlässe &amp; Umfragen</span>
+                    <span id="umfragen-nav-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                </div>
+
+                <!-- 3. FINANZEN & VEREINSFÜHRUNG -->
                 <div class="sidebar-section-divider">
                     <span>Finanzen &amp; Vereinsführung</span>
                 </div>
@@ -939,38 +937,61 @@
                     <i class="fas fa-file-invoice me-2"></i> <span class="nav-text flex-grow-1">Rechnungen</span>
                     <span id="rechnungen-nav-badge" class="badge rounded-pill bg-danger d-none">0</span>
                 </div>
-                <div class="nav-link role-protected" data-roles="admin,vorstand,kassier,aktuar,vermieter"
-                     onclick="navTo('dokument-vorlagen', this)">
-                    <i class="fas fa-file-lines"></i> <span class="nav-text">Dokumenten-Vorlagen</span>
+                <div class="nav-link role-protected" data-roles="admin,kassier"
+                     onclick="navTo('buchhaltung', this)">
+                    <i class="fas fa-book"></i> <span class="nav-text">Buchhaltung</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,aktuar"
                      onclick="navTo('gv-dossier', this)">
                     <i class="fas fa-landmark"></i> <span class="nav-text">Generalversammlung</span>
                 </div>
-                <div class="nav-link role-protected" data-roles="admin,kassier"
-                     onclick="navTo('buchhaltung', this)">
-                    <i class="fas fa-book"></i> <span class="nav-text">Buchhaltung</span>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,kassier,aktuar,vermieter"
+                     onclick="navTo('dokument-vorlagen', this)">
+                    <i class="fas fa-file-lines"></i> <span class="nav-text">Dokumenten-Vorlagen</span>
+                </div>
+
+                <!-- 4. MITGLIEDER & KOMMUNIKATION -->
+                <div class="sidebar-section-divider">
+                    <span>Mitglieder &amp; Kommunikation</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar"
                      onclick="navTo('mitglieder', this)">
                     <i class="fas fa-users"></i> <span class="nav-text">Mitglieder</span>
                 </div>
-                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
-                     onclick="navTo('archiv', this)">
-                    <i class="fas fa-box-archive"></i> <span class="nav-text">Vereins-Archiv & KI</span>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter,jungschuetzenleiter"
+                     onclick="navTo('push', this)">
+                    <i class="fas fa-paper-plane"></i> <span class="nav-text">Push-Mitteilungen</span>
+                </div>
+                <div class="nav-link role-protected d-flex align-items-center" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('mail', this)">
+                    <i class="fas fa-envelope me-2"></i> <span class="nav-text flex-grow-1">Mail</span>
+                    <span id="mail-nav-badge" class="badge rounded-pill bg-danger d-none">0</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
-                     onclick="navTo('meeting-recorder', this)">
-                    <i class="fas fa-microphone"></i> <span class="nav-text">Meeting-Recorder</span>
+                     onclick="navTo('system-mails', this)">
+                    <i class="fas fa-envelope-open-text"></i> <span class="nav-text">System-Mails</span>
                 </div>
-                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
-                     onclick="navTo('news', this)">
-                    <i class="fas fa-newspaper"></i> <span class="nav-text">News KI</span>
+
+                <!-- 5. MEDIEN, ARCHIV & SYSTEM -->
+                <div class="sidebar-section-divider">
+                    <span>Medien, Archiv &amp; System</span>
                 </div>
                 <div class="nav-link role-protected d-flex align-items-center" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('galerie', this)">
                     <i class="fas fa-images me-2"></i> <span class="nav-text flex-grow-1">Galerie Manager</span>
                     <span id="galerie-nav-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('news', this)">
+                    <i class="fas fa-newspaper"></i> <span class="nav-text">News KI</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('archiv', this)">
+                    <i class="fas fa-box-archive"></i> <span class="nav-text">Vereins-Archiv &amp; KI</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('meeting-recorder', this)">
+                    <i class="fas fa-microphone"></i> <span class="nav-text">Meeting-Recorder</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin"
                      onclick="navTo('logins', this)">
@@ -1053,118 +1074,127 @@
                 </div>
 
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-                    <p class="text-muted mb-0 fw-medium">Wähle einen Bereich im Menü aus:</p>
+                    <p class="text-muted mb-0 fw-medium">Wähle einen Bereich im Menü oder navigiere direkt über die Fachbereiche:</p>
                 </div>
-                <div class="row g-3 mt-1">
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,jungschuetzenleiter,materialwart,aktuar,kassier,vermieter">
-                        <div class="card p-3 shadow-sm border-0 h-100"
-                             onclick="navTo('inventar')" style="cursor:pointer">
-                            <h5 class="mb-1">🔫 Inventar</h5>
-                            <p class="small text-muted mb-0">Ausgabe, Rücknahme & Waffenkontrolle</p>
-                        </div>
-                    </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter">
-                        <div class="card p-3 shadow-sm border-0 h-100"
-                             onclick="navTo('termine')" style="cursor:pointer">
-                            <h5 class="mb-1">📅 Jahresprogramm</h5>
-                            <p class="small text-muted mb-0">Termine, Anlässe & Orte</p>
-                        </div>
-                    </div>
 
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100"
-                             onclick="navTo('system-mails')" style="cursor:pointer">
-                            <h5 class="mb-1">✉️ System-Mails</h5>
-                            <p class="small text-muted mb-0">Abo-Verteiler & App Info</p>
-                        </div>
-                    </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter,jungschuetzenleiter">
-                        <div class="card p-3 shadow-sm border-0 h-100"
-                             onclick="navTo('push')" style="cursor:pointer">
-                            <h5 class="mb-1">📲 Push-Mitteilungen</h5>
-                            <p class="small text-muted mb-0">Sofort-Push, Zielgruppen (Aktiv/Passiv) &amp; Abonnenten</p>
-                        </div>
-                    </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter">
-                        <div class="card p-3 shadow-sm border-0 h-100"
-                             onclick="navTo('anlaesse')" style="cursor:pointer">
-                            <h5 class="mb-1">⭐ Anlässe & Controlling</h5>
-                            <p class="small text-muted mb-0">Mengenrechner, Helfer, Bestellungen & Marge</p>
-                        </div>
-                    </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter">
-                        <div class="card p-3 shadow-sm border-0 h-100"
-                             onclick="navTo('schichtplaner')" style="cursor:pointer">
-                            <h5 class="mb-1">👥 Schichtplaner</h5>
-                            <p class="small text-muted mb-0">Aplano Helfer-Einteilung, Stände &amp; Schichtplan</p>
-                        </div>
-                    </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter">
-                        <div class="card p-3 shadow-sm border-0 h-100"
-                             onclick="navTo('festkasse')" style="cursor:pointer">
-                            <h5 class="mb-1">🛒 Festkasse (POS)</h5>
-                            <p class="small text-muted mb-0">Offline-Touchkasse, Z-Kassensturz &amp; Kellner-Modus</p>
-                        </div>
-                    </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100 position-relative"
-                             onclick="navTo('umfragen')" style="cursor:pointer">
-                            <div class="d-flex justify-content-between align-items-start mb-1">
-                                <h5 class="mb-0">🗓️ Anlässe & Umfragen</h5>
-                                <span id="umfragen-tile-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                <!-- CLUSTER 1: SCHIESSSPORT & WETTKAMPF -->
+                <div id="cluster-schiesssport" class="portal-cluster-section mt-3 pt-1">
+                    <div class="portal-cluster-header d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="fs-4">🎯</span>
+                            <div>
+                                <h5 class="mb-0 fw-bold text-dark cluster-title">Schiesssport &amp; Wettkampf</h5>
+                                <span class="small text-muted">Meisterschaften, Endschiessen, Resultate, Teams &amp; Waffen</span>
                             </div>
-                            <p class="small text-muted mb-0">Umfragen, RSVPs & Mails</p>
                         </div>
+                        <span class="badge rounded-pill bg-success-subtle text-success border border-success-subtle px-3 py-1 fw-semibold" style="font-size: 0.75rem;">
+                            <i class="fas fa-layer-group me-1"></i> 5 Module
+                        </span>
                     </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister">
-                        <div class="card p-3 shadow-sm border-0 h-100"
-                             onclick="navTo('manager')" style="cursor:pointer">
-                            <h5 class="mb-1">🛡️ Team Manager</h5>
-                            <p class="small text-muted mb-0">Teams & Schützen-Zuteilung</p>
-                        </div>
-                    </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister">
-                        <div class="card p-3 shadow-sm border-0 h-100"
-                             onclick="navTo('resultate')" style="cursor:pointer">
-                            <h5 class="mb-1">🏆 Resultate Mannschaft & G & G</h5>
-                            <p class="small text-muted mb-0">Mannschaft, Gruppe & Grenzland Cup</p>
-                        </div>
-                    </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,vermieter,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100 position-relative"
-                             onclick="navTo('vermietung')" style="cursor:pointer">
-                            <div class="d-flex justify-content-between align-items-start mb-1">
-                                <h5 class="mb-0">🏠 Vermietung</h5>
-                                <span id="vermietung-tile-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                    <div class="row g-3">
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100 position-relative"
+                                 onclick="navTo('jahresmeisterschaft')" style="cursor:pointer">
+                                <div class="d-flex justify-content-between align-items-start mb-1">
+                                    <h5 class="mb-0">🏅 Jahresmeisterschaft KK</h5>
+                                    <span id="jm-tile-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                                </div>
+                                <p class="small text-muted mb-0">Kleinkaliber Meisterschaft verwalten</p>
                             </div>
-                            <p class="small text-muted mb-0">Schützenhaus Vermietung verwalten</p>
                         </div>
-                    </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100 position-relative"
-                             onclick="navTo('jahresmeisterschaft')" style="cursor:pointer">
-                            <div class="d-flex justify-content-between align-items-start mb-1">
-                                <h5 class="mb-0">🏅 Jahresmeisterschaft KK</h5>
-                                <span id="jm-tile-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
+                                 onclick="navTo('endschiessen')" style="cursor:pointer">
+                                <h5 class="mb-1">🎯 Endschiessen</h5>
+                                <p class="small text-muted mb-0">Endstich 20 Schuss, Final Top 8, Gaben &amp; Differenzler</p>
                             </div>
-                            <p class="small text-muted mb-0">Kleinkaliber Meisterschaft verwalten</p>
                         </div>
-                    </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100"
-                             onclick="navTo('endschiessen')" style="cursor:pointer">
-                            <h5 class="mb-1">🎯 Endschiessen</h5>
-                            <p class="small text-muted mb-0">Endstich 20 Schuss, Final Top 8, Gaben &amp; Differenzler</p>
-                        </div>
-                    </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100 position-relative"
-                             onclick="navTo('mail')" style="cursor:pointer">
-                            <div class="d-flex justify-content-between align-items-start mb-1">
-                                <h5 class="mb-0">📧 Mail</h5>
-                                <span id="mail-tile-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
+                                 onclick="navTo('resultate')" style="cursor:pointer">
+                                <h5 class="mb-1">🏆 Resultate Mannschaft &amp; G &amp; G</h5>
+                                <p class="small text-muted mb-0">Mannschaft, Gruppe &amp; Grenzland Cup</p>
                             </div>
-                            <p class="small text-muted mb-0">Verteiler & Versandprotokoll</p>
+                        </div>
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
+                                 onclick="navTo('manager')" style="cursor:pointer">
+                                <h5 class="mb-1">🛡️ Team Manager</h5>
+                                <p class="small text-muted mb-0">Teams &amp; Schützen-Zuteilung</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,jungschuetzenleiter,materialwart,aktuar,kassier,vermieter">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
+                                 onclick="navTo('inventar')" style="cursor:pointer">
+                                <h5 class="mb-1">🔫 Inventar</h5>
+                                <p class="small text-muted mb-0">Ausgabe, Rücknahme &amp; Waffenkontrolle</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CLUSTER 2: EVENTS, SCHÜTZENHAUS & FESTBETRIEB -->
+                <div id="cluster-events" class="portal-cluster-section mt-4 pt-1">
+                    <div class="portal-cluster-header d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="fs-4">📅</span>
+                            <div>
+                                <h5 class="mb-0 fw-bold text-dark cluster-title">Events, Schützenhaus &amp; Festbetrieb</h5>
+                                <span class="small text-muted">Termine, Vermietung, Touchkasse POS, Schichtplan &amp; Helfer</span>
+                            </div>
+                        </div>
+                        <span class="badge rounded-pill bg-warning-subtle text-warning border border-warning-subtle px-3 py-1 fw-semibold" style="font-size: 0.75rem;">
+                            <i class="fas fa-layer-group me-1"></i> 6 Module
+                        </span>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
+                                 onclick="navTo('termine')" style="cursor:pointer">
+                                <h5 class="mb-1">📅 Jahresprogramm</h5>
+                                <p class="small text-muted mb-0">Termine, Anlässe &amp; Orte</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,vermieter,kassier">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100 position-relative"
+                                 onclick="navTo('vermietung')" style="cursor:pointer">
+                                <div class="d-flex justify-content-between align-items-start mb-1">
+                                    <h5 class="mb-0">🏠 Vermietung</h5>
+                                    <span id="vermietung-tile-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                                </div>
+                                <p class="small text-muted mb-0">Schützenhaus Vermietung verwalten</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
+                                 onclick="navTo('festkasse')" style="cursor:pointer">
+                                <h5 class="mb-1">🛒 Festkasse (POS)</h5>
+                                <p class="small text-muted mb-0">Offline-Touchkasse, Z-Kassensturz &amp; Kellner-Modus</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
+                                 onclick="navTo('schichtplaner')" style="cursor:pointer">
+                                <h5 class="mb-1">👥 Schichtplaner</h5>
+                                <p class="small text-muted mb-0">Aplano Helfer-Einteilung, Stände &amp; Schichtplan</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
+                                 onclick="navTo('anlaesse')" style="cursor:pointer">
+                                <h5 class="mb-1">⭐ Anlässe &amp; Controlling</h5>
+                                <p class="small text-muted mb-0">Mengenrechner, Helfer, Bestellungen &amp; Marge</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100 position-relative"
+                                 onclick="navTo('umfragen')" style="cursor:pointer">
+                                <div class="d-flex justify-content-between align-items-start mb-1">
+                                    <h5 class="mb-0">🗓️ Anlässe &amp; Umfragen</h5>
+                                    <span id="umfragen-tile-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                                </div>
+                                <p class="small text-muted mb-0">Umfragen, RSVPs &amp; Mails</p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1188,7 +1218,7 @@
                             <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
                                  onclick="navTo('jahresbeitrag')" style="cursor:pointer">
                                 <h5 class="mb-1">💰 Jahresbeitrag</h5>
-                                <p class="small text-muted mb-0">Beitragsverwaltung, Schnellerfassung & Gebühren</p>
+                                <p class="small text-muted mb-0">Beitragsverwaltung, Schnellerfassung &amp; Gebühren</p>
                             </div>
                         </div>
                         <div class="col-md-4 role-protected" data-roles="admin,vorstand,kassier">
@@ -1198,14 +1228,14 @@
                                     <h5 class="mb-0">🧾 Rechnungen</h5>
                                     <span id="rechnungen-tile-badge" class="badge rounded-pill bg-danger d-none">0</span>
                                 </div>
-                                <p class="small text-muted mb-0">Zentrales Rechnungs-Management & QR-PDF</p>
+                                <p class="small text-muted mb-0">Zentrales Rechnungs-Management &amp; QR-PDF</p>
                             </div>
                         </div>
                         <div class="col-md-4 role-protected" data-roles="admin,kassier">
                             <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
                                  onclick="navTo('buchhaltung')" style="cursor:pointer">
                                 <h5 class="mb-1">📊 Buchhaltung</h5>
-                                <p class="small text-muted mb-0">Doppelte Buchhaltung & KMU-Berichte</p>
+                                <p class="small text-muted mb-0">Doppelte Buchhaltung &amp; KMU-Berichte</p>
                             </div>
                         </div>
                         <div class="col-md-4 role-protected" data-roles="admin,vorstand,aktuar">
@@ -1219,57 +1249,113 @@
                             <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
                                  onclick="navTo('dokument-vorlagen')" style="cursor:pointer">
                                 <h5 class="mb-1">📄 Dokumenten-Vorlagen</h5>
-                                <p class="small text-muted mb-0">Zentraler Vorlagen-Pool & Klauseln</p>
+                                <p class="small text-muted mb-0">Zentraler Vorlagen-Pool &amp; Klauseln</p>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- WEITERE MODULE -->
-                <div class="row g-3 mt-3">
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar">
-                        <div class="card p-3 shadow-sm border-0 h-100"
-                             onclick="navTo('mitglieder')" style="cursor:pointer">
-                            <h5 class="mb-1">👥 Mitglieder</h5>
-                            <p class="small text-muted mb-0">Mitgliederliste, SSV-Import & Stammdaten</p>
-                        </div>
-                    </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100"
-                             onclick="navTo('archiv')" style="cursor:pointer">
-                            <h5>📁 Vereins-Archiv & KI</h5>
-                            <p class="small text-muted">Google Drive Archiv & KI-Suche</p>
-                        </div>
-                    </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100"
-                             onclick="navTo('meeting-recorder')" style="cursor:pointer">
-                            <h5>🎙️ Meeting-Recorder</h5>
-                            <p class="small text-muted">Sprachaufnahme & Protokoll-Erstellung</p>
-                        </div>
-                    </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100"
-                             onclick="navTo('news')" style="cursor:pointer">
-                            <h5>🗞️ News KI</h5>
-                            <p class="small text-muted">KI-Berichte für Homepage erstellen</p>
-                        </div>
-                    </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100 position-relative"
-                             onclick="navTo('galerie')" style="cursor:pointer">
-                            <div class="d-flex justify-content-between align-items-start mb-1">
-                                <h5 class="mb-0">🖼️ Galerie Manager</h5>
-                                <span id="galerie-tile-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                <!-- CLUSTER 4: MITGLIEDER & KOMMUNIKATION -->
+                <div id="cluster-mitglieder" class="portal-cluster-section mt-4 pt-1">
+                    <div class="portal-cluster-header d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="fs-4">👥</span>
+                            <div>
+                                <h5 class="mb-0 fw-bold text-dark cluster-title">Mitglieder &amp; Kommunikation</h5>
+                                <span class="small text-muted">Mitgliederstamm, Push-Mitteilungen, Mail-Verteiler &amp; System-Mails</span>
                             </div>
-                            <p class="small text-muted mb-0">Gesichter erkennen, Tagging & Website-Sync</p>
+                        </div>
+                        <span class="badge rounded-pill bg-info-subtle text-info-emphasis border border-info-subtle px-3 py-1 fw-semibold" style="font-size: 0.75rem;">
+                            <i class="fas fa-layer-group me-1"></i> 4 Module
+                        </span>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
+                                 onclick="navTo('mitglieder')" style="cursor:pointer">
+                                <h5 class="mb-1">👥 Mitglieder</h5>
+                                <p class="small text-muted mb-0">Mitgliederliste, SSV-Import &amp; Stammdaten</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter,jungschuetzenleiter">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
+                                 onclick="navTo('push')" style="cursor:pointer">
+                                <h5 class="mb-1">📲 Push-Mitteilungen</h5>
+                                <p class="small text-muted mb-0">Sofort-Push, Zielgruppen (Aktiv/Passiv) &amp; Abonnenten</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100 position-relative"
+                                 onclick="navTo('mail')" style="cursor:pointer">
+                                <div class="d-flex justify-content-between align-items-start mb-1">
+                                    <h5 class="mb-0">📧 Mail</h5>
+                                    <span id="mail-tile-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                                </div>
+                                <p class="small text-muted mb-0">Verteiler &amp; Versandprotokoll</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
+                                 onclick="navTo('system-mails')" style="cursor:pointer">
+                                <h5 class="mb-1">✉️ System-Mails</h5>
+                                <p class="small text-muted mb-0">Abo-Verteiler &amp; App Info</p>
+                            </div>
                         </div>
                     </div>
-                    <div class="col-md-4 role-protected" data-roles="admin">
-                        <div class="card p-3 shadow-sm border-0 h-100"
-                             onclick="navTo('logins')" style="cursor:pointer">
-                            <h5>🔐 Logins</h5>
-                            <p class="small text-muted">Benutzerzugriffe verwalten</p>
+                </div>
+
+                <!-- CLUSTER 5: MEDIEN, ARCHIV & SYSTEM -->
+                <div id="cluster-medien" class="portal-cluster-section mt-4 pt-1">
+                    <div class="portal-cluster-header d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="fs-4">🤖</span>
+                            <div>
+                                <h5 class="mb-0 fw-bold text-dark cluster-title">Medien, Archiv &amp; System</h5>
+                                <span class="small text-muted">Galerie Manager, News KI, Vereins-Archiv, Meeting-Recorder &amp; Logins</span>
+                            </div>
+                        </div>
+                        <span class="badge rounded-pill bg-secondary-subtle text-secondary border border-secondary-subtle px-3 py-1 fw-semibold" style="font-size: 0.75rem;">
+                            <i class="fas fa-layer-group me-1"></i> 5 Module
+                        </span>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100 position-relative"
+                                 onclick="navTo('galerie')" style="cursor:pointer">
+                                <div class="d-flex justify-content-between align-items-start mb-1">
+                                    <h5 class="mb-0">🖼️ Galerie Manager</h5>
+                                    <span id="galerie-tile-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                                </div>
+                                <p class="small text-muted mb-0">Gesichter erkennen, Tagging &amp; Website-Sync</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
+                                 onclick="navTo('news')" style="cursor:pointer">
+                                <h5 class="mb-1">🗞️ News KI</h5>
+                                <p class="small text-muted mb-0">KI-Berichte für Homepage erstellen</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
+                                 onclick="navTo('archiv')" style="cursor:pointer">
+                                <h5>📁 Vereins-Archiv &amp; KI</h5>
+                                <p class="small text-muted">Google Drive Archiv &amp; KI-Suche</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
+                                 onclick="navTo('meeting-recorder')" style="cursor:pointer">
+                                <h5>🎙️ Meeting-Recorder</h5>
+                                <p class="small text-muted">Sprachaufnahme &amp; Protokoll-Erstellung</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 role-protected" data-roles="admin">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
+                                 onclick="navTo('logins')" style="cursor:pointer">
+                                <h5>🔐 Logins</h5>
+                                <p class="small text-muted">Benutzerzugriffe verwalten</p>
+                            </div>
                         </div>
                     </div>
                 </div>
