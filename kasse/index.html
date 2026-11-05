@@ -202,15 +202,18 @@
 
   <!-- Z-BERICHT QUITTUNGS-MODAL -->
   <div id="z-report-receipt-modal" class="modal-overlay">
-    <div class="modal-dialog" style="max-width: 400px;">
+    <div class="modal-dialog" style="max-width: 420px;">
       <div class="modal-header">
         <div class="modal-title">Z-Kassenabschluss</div>
         <button class="modal-close-btn" onclick="document.getElementById('z-report-receipt-modal').classList.remove('active')">✕</button>
       </div>
       <div id="z-report-receipt-body"></div>
-      <div class="modal-footer" style="justify-content: space-between;">
+      <div class="modal-footer" style="justify-content: space-between; gap: 8px; flex-wrap: wrap;">
         <button class="btn-secondary" onclick="document.getElementById('z-report-receipt-modal').classList.remove('active')">Schließen</button>
-        <button class="btn-primary" onclick="KassenAbschluss.printZReport()">🖨️ Z-Bericht drucken</button>
+        <div style="display: flex; gap: 6px;">
+          <button class="btn-secondary" style="font-size: 12px; padding: 6px 10px;" onclick="KassenAbschluss.printZReportBrowser()" title="Über das iOS-Druckermenü drucken">Menü</button>
+          <button class="btn-primary" onclick="KassenAbschluss.printZReportEpson()">🖨️ Z-Bericht an Epson senden</button>
+        </div>
       </div>
     </div>
   </div>

@@ -76,3 +76,8 @@ Die **Festkasse** ist eine eigenständige Progressive Web App (PWA) für das Sch
   - *Automatischer Sofortdruck:* Druckt Gast- und Küchenbon ohne jeden Dialog direkt nach der Zahlung.
   - *Browser-Druckdialog:* Fallback via AirPrint.
 * **Testdruck & Diagnose:** Direkte Testdruck-Buttons für Gastbeleg und Küchenbon mit Live-Status im Konfigurationsdialog.
+
+### 5.4 Abendauswertung & Z-Kassenabschluss
+* **Artikel- & Verkaufsstatistik («Renner & Penner»):** Im Reiter «Kassensturz & Z-Bericht» wird eine aufklappbare Tabelle aller verkauften Artikel automatisch nach Absatzmenge und CHF-Umsatz sortiert dargestellt.
+* **1-Klick-Z-Bericht auf Epson LAN:** Der offizielle Z-Tagesabschluss (SOLL/IST-Vergleich, Münzzählung, TWINT/Bar-Split, Differenz) kann per Knopfdruck `[🖨️ Z-Bericht an Epson]` direkt auf dem 80mm-Thermodrucker ausgegeben werden.
+* **Strikte Entkopplung von der Finanzbuchhaltung (Keine automatischen Fibu-Buchungen):** Die Festkasse führt keine automatischen Schreibzugriffe in die Supabase-Finanzbuchhaltung durch. Der Z-Bericht dient als physischer/digitaler Belegnachweis für das Kassenkuvert; die eigentliche Verbuchung auf Konto 1000/3200 erfolgt bei Bedarf manuell durch den Kassier im Vorstandsportal.

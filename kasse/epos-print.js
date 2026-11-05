@@ -201,6 +201,58 @@ ${bodyXml}
     return wrapEnvelope(xml);
   }
 
+  // 4. Z-BERICHT / TAGESABSCHLUSS BON
+  function buildZReportXml(report) {
+    const width = 42;
+    const dateStr = new Date(report.timestamp).toLocaleString('de-CH');
+    let xml = '';
+
+    xml += `      <text align="center" smooth="true"/>\n`;
+    xml += `      <text font="font_a" em="true" width="1" height="2">SPORTSCHÜTZEN MUHEN&#10;</text>\n`;
+    xml += `      <text font="font_a" em="true">*** Z-KASSENABSCHLUSS ***&#10;</text>\n`;
+    xml += `      <text font="font_a" em="false">${escapeXml(report.eventTitle || 'Festwirtschaft')}&#10;</text>\n`;
+    xml += `      <text font="font_a" em="false">Beleg-Nr: ${escapeXml(report.reportNumber)}&#10;</text>\n`;
+    xml += `      <text font="font_a" em="false">Datum: ${escapeXml(dateStr)}&#10;</text>\n`;
+    xml += `      <text font="font_a" em="false">Bediener: ${escapeXml(report.cashierName || 'Kasse')}&#10;&#10;</text>\n`;
+
+    xml += `      <text align="left"/>\n`;
+    xml += `      <text font="font_a" em="true">--- UMSATZ-ÜBERSICHT ---&#10;</text>\n`;
+    xml += `      <text font="font_a">${escapeXml(padLine('Anzahl Bons:', String(report.orderCount), width))}&#10;</text>\n`;
+    xml += `      <text font="font_a">${escapeXml(padLine('Umsatz BAR:', formatCHF(report.totalCash), width))}&#10;</text>\n`;
+    xml += `      <text font="font_a">${escapeXml(padLine('Umsatz TWINT:', formatCHF(report.totalTwint), width))}&#10;</text>\n`;
+    xml += `      <text font="font_a">${'-'.repeat(width)}&#10;</text>\n`;
+    xml += `      <text font="font_a" em="true">${escapeXml(padLine('TOTAL UMSATZ:', formatCHF(report.totalTurnover), width))}&#10;</text>\n`;
+    xml += `      <text font="font_a">${'='.repeat(width)}&#10;&#10;</text>\n`;
+
+    xml += `      <text font="font_a" em="true">--- KASSENSTURZ (SOLL / IST) ---&#10;</text>\n`;
+    xml += `      <text font="font_a">${escapeXml(padLine('Wechselgeld Anfang:', formatCHF(report.openingCash), width))}&#10;</text>\n`;
+    xml += `      <text font="font_a">${escapeXml(padLine('+ Bar-Umsatz:', '+' + formatCHF(report.totalCash), width))}&#10;</text>\n`;
+    xml += `      <text font="font_a">${escapeXml(padLine('− Barauslagen:', '−' + formatCHF(report.totalExpenses), width))}&#10;</text>\n`;
+    xml += `      <text font="font_a">${'-'.repeat(width)}&#10;</text>\n`;
+    xml += `      <text font="font_a" em="true">${escapeXml(padLine('SOLL-Kassenstand:', formatCHF(report.expectedCash), width))}&#10;</text>\n`;
+    xml += `      <text font="font_a" em="true">${escapeXml(padLine('IST-Gezählt:', formatCHF(report.actualCash), width))}&#10;</text>\n`;
+    const diffSign = report.difference > 0 ? '+' : '';
+    xml += `      <text font="font_a" em="true">${escapeXml(padLine('DIFFERENZ:', diffSign + formatCHF(report.difference), width))}&#10;</text>\n`;
+    xml += `      <text font="font_a">${'='.repeat(width)}&#10;&#10;</text>\n`;
+
+    if (report.totalDepotIn || report.totalDepotOut) {
+      xml += `      <text font="font_a" em="true">--- DEPOT-ABRECHNUNG ---&#10;</text>\n`;
+      xml += `      <text font="font_a">${escapeXml(padLine('Depot eingenommen (+):', formatCHF(report.totalDepotIn), width))}&#10;</text>\n`;
+      xml += `      <text font="font_a">${escapeXml(padLine('Depot retourniert (−):', formatCHF(report.totalDepotOut), width))}&#10;</text>\n`;
+      xml += `      <text font="font_a">${'-'.repeat(width)}&#10;</text>\n`;
+      xml += `      <text font="font_a" em="true">${escapeXml(padLine('Netto Depot-Saldo:', formatCHF((report.totalDepotIn || 0) - (report.totalDepotOut || 0)), width))}&#10;</text>\n`;
+      xml += `      <text font="font_a">${'='.repeat(width)}&#10;&#10;</text>\n`;
+    }
+
+    xml += `      <text align="center"/>\n`;
+    xml += `      <text font="font_a" em="false">Abrechnung abgeschlossen&#10;</text>\n`;
+    xml += `      <text font="font_a" em="false">Sportschützen Muhen&#10;</text>\n`;
+    xml += `      <feed line="4"/>\n`;
+    xml += `      <cut type="feed"/>\n`;
+
+    return wrapEnvelope(xml);
+  }
+
   // TESTBON XML
   function buildTestReceiptXml(type = 'guest') {
     const mockOrder = {
@@ -358,9 +410,11 @@ ${bodyXml}
     buildGuestReceiptXml,
     buildKitchenReceiptXml,
     buildDrinksReceiptXml,
+    buildZReportXml,
     buildTestReceiptXml,
     sendToEpson,
     printOrder,
     testPrint
   };
 })();
+

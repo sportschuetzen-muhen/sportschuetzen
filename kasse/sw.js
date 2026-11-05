@@ -3,7 +3,7 @@
  * Garantiert 100% Offline-Verfügbarkeit auf iPads & iPhones im Festzelt
  */
 
-const CACHE_NAME = 'festkasse-v3';
+const CACHE_NAME = 'festkasse-v4';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',

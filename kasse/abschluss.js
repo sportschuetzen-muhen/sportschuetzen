@@ -24,6 +24,8 @@ const KassenAbschluss = (function () {
 
   let counts = {};
   let openingCash = 300.00;
+  let productSales = [];
+  let activeZReport = null;
   let stats = {
     totalCash: 0,
     totalTwint: 0,
@@ -43,11 +45,21 @@ const KassenAbschluss = (function () {
       openingCash = parseFloat(savedOpening.value) || 300.00;
     }
 
+    // Letzten Z-Bericht des Tages einlesen (falls vorhanden)
+    try {
+      const zReports = await FestkasseDB.getAll('zReports');
+      if (zReports && zReports.length > 0) {
+        activeZReport = zReports[zReports.length - 1];
+      }
+    } catch (e) {
+      console.warn('[Abschluss] Fehler beim Laden alter Z-Berichte:', e);
+    }
+
     await calculateStats();
     renderUI();
   }
 
-  // Berechnet aggregierte Summen aller bisherigen Bons des aktuellen Tages
+  // Berechnet aggregierte Summen aller bisherigen Bons des aktuellen Tages & Verkaufsstatistik
   async function calculateStats() {
     const orders = await FestkasseDB.getAll('orders');
     const movements = await FestkasseDB.getAll('cashMovements');
@@ -61,6 +73,8 @@ const KassenAbschluss = (function () {
       orderCount: orders.length
     };
 
+    const salesMap = new Map();
+
     orders.forEach(ord => {
       if (ord.paymentMethod === 'bar') {
         stats.totalCash += ord.totalAmount || 0;
@@ -68,7 +82,7 @@ const KassenAbschluss = (function () {
         stats.totalTwint += ord.totalAmount || 0;
       }
 
-      // Depot-Positionen analysieren
+      // Positionen analysieren (Depot & Speisen/Getränke)
       if (ord.items) {
         ord.items.forEach(it => {
           if (it.isDepot) {
@@ -77,10 +91,28 @@ const KassenAbschluss = (function () {
             } else if (it.depotType === 'minus') {
               stats.totalDepotOut += Math.abs(it.price * it.qty);
             }
+          } else {
+            // Reguläre Artikel für Renner/Penner Verkaufsstatistik aggregieren
+            const key = it.id || it.name;
+            const existing = salesMap.get(key) || {
+              id: it.id,
+              name: it.name,
+              unit: it.unit || '',
+              categoryId: it.categoryId || '',
+              price: it.price || 0,
+              qty: 0,
+              revenue: 0
+            };
+            existing.qty += (it.qty || 0);
+            existing.revenue += ((it.price || 0) * (it.qty || 0));
+            salesMap.set(key, existing);
           }
         });
       }
     });
+
+    // Nach meistverkaufter Menge absteigend sortieren
+    productSales = Array.from(salesMap.values()).sort((a, b) => b.qty - a.qty);
 
     // Barausgaben / Entnahmen berücksichtigen
     movements.forEach(m => {
@@ -148,6 +180,61 @@ const KassenAbschluss = (function () {
               <span style="font-weight: 900; font-size: 24px; color: #34d399; font-family: monospace;">${formatCHF(actualCash)}</span>
             </div>
           </div>
+
+          <!-- VERKAUFTE ARTIKEL (MENGE & UMSATZ) -->
+          <div class="abschluss-card mt-3">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div class="abschluss-card-title mb-0">
+                <span>📊 Verkaufte Artikel (Menge &amp; Umsatz)</span>
+              </div>
+              <span style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; font-size: 12px; font-weight: 700; padding: 4px 8px; border-radius: 6px;">
+                ${productSales.length} Artikel
+              </span>
+            </div>
+
+            ${productSales.length === 0 ? `
+              <div class="text-muted" style="text-align: center; padding: 24px 12px; font-size: 13px;">
+                Noch keine Artikelverkäufe am heutigen Tag erfasst.
+              </div>
+            ` : `
+              <div style="max-height: 360px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                  <thead>
+                    <tr style="background: rgba(15, 23, 42, 0.7); color: var(--text-muted); text-align: left; border-bottom: 1px solid var(--border-color); position: sticky; top: 0;">
+                      <th style="padding: 8px 10px;">#</th>
+                      <th style="padding: 8px 10px;">Artikel</th>
+                      <th style="padding: 8px 10px; text-align: right;">Menge</th>
+                      <th style="padding: 8px 10px; text-align: right;">Umsatz</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${productSales.map((p, idx) => `
+                      <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.05);">
+                        <td style="padding: 8px 10px; color: var(--text-muted); font-size: 11px;">${idx + 1}</td>
+                        <td style="padding: 8px 10px; font-weight: 600;">
+                          ${escapeHtml(p.name)}
+                          ${p.unit ? `<span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">(${escapeHtml(p.unit)})</span>` : ''}
+                        </td>
+                        <td style="padding: 8px 10px; text-align: right; font-weight: 700; color: #38bdf8;">
+                          ${p.qty}×
+                        </td>
+                        <td style="padding: 8px 10px; text-align: right; font-family: monospace; font-weight: 700;">
+                          ${formatCHF(p.revenue)}
+                        </td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                  <tfoot>
+                    <tr style="background: rgba(15, 23, 42, 0.85); font-weight: 800; border-top: 1px solid var(--border-color); position: sticky; bottom: 0;">
+                      <td style="padding: 10px;" colspan="2">TOTAL:</td>
+                      <td style="padding: 10px; text-align: right; color: #38bdf8;">${productSales.reduce((sum, p) => sum + p.qty, 0)}×</td>
+                      <td style="padding: 10px; text-align: right; font-family: monospace; color: #34d399;">${formatCHF(productSales.reduce((sum, p) => sum + p.revenue, 0))}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            `}
+          </div>
         </div>
 
         <!-- RECHTE SPALTE: SOLL/IST ABGLEICH & Z-BERICHT -->
@@ -206,6 +293,17 @@ const KassenAbschluss = (function () {
             <button class="btn-primary" style="width: 100%; height: 50px; font-size: 16px; font-weight: 800;" onclick="KassenAbschluss.performZReport(${actualCash}, ${expectedCash}, ${diff})">
               <span>🧾 Kassenabschluss (Z-Bericht) festschreiben</span>
             </button>
+
+            ${activeZReport ? `
+              <div class="mt-3 pt-3 border-top" style="border-color: var(--border-color); display: flex; gap: 8px;">
+                <button class="btn-secondary" style="flex: 1; font-size: 12px; padding: 8px 10px;" onclick="KassenAbschluss.openExistingZReportModal()">
+                  👁️ Z-Bericht anzeigen
+                </button>
+                <button class="btn-primary" style="flex: 1; font-size: 12px; padding: 8px 10px; background: #0284c7; border-color: #0284c7;" onclick="KassenAbschluss.printZReportEpson()">
+                  🖨️ Z-Bericht an Epson
+                </button>
+              </div>
+            ` : ''}
           </div>
 
           <!-- TWINT & DEPOT ZUSAMMENFASSUNG -->
@@ -315,13 +413,22 @@ const KassenAbschluss = (function () {
       orderCount: stats.orderCount
     };
 
+    activeZReport = zReport;
     await FestkasseDB.put('zReports', zReport);
+    renderUI();
 
     // Beleg anzeigen
     showZReportModal(zReport);
   }
 
+  function openExistingZReportModal() {
+    if (activeZReport) {
+      showZReportModal(activeZReport);
+    }
+  }
+
   function showZReportModal(report) {
+    activeZReport = report;
     const modal = document.getElementById('z-report-receipt-modal');
     const body = document.getElementById('z-report-receipt-body');
     if (!modal || !body) return;
@@ -377,8 +484,48 @@ const KassenAbschluss = (function () {
     modal.classList.add('active');
   }
 
-  function printZReport() {
+  // Z-Bericht direkt an Epson LAN-Drucker senden (ohne Druckermenü)
+  async function printZReportEpson() {
+    if (!activeZReport) {
+      if (typeof KasseModule !== 'undefined' && KasseModule.showToast) {
+        KasseModule.showToast('Kein aktiver Z-Bericht vorhanden. Bitte zuerst Kassenabschluss festschreiben.');
+      } else {
+        alert('Kein aktiver Z-Bericht vorhanden.');
+      }
+      return;
+    }
+
+    const ipSetting = await FestkasseDB.get('settings', 'printerIp');
+    const printerIp = (ipSetting && ipSetting.value) ? ipSetting.value : '';
+    if (!printerIp) {
+      alert('Bitte zuerst die Drucker-IP im Menü (⚙️) hinterlegen.');
+      return;
+    }
+
+    if (typeof KasseModule !== 'undefined' && KasseModule.showToast) {
+      KasseModule.showToast(`🖨️ Sende Z-Bericht an Epson (${printerIp})...`);
+    }
+
+    try {
+      const xml = EposPrint.buildZReportXml(activeZReport);
+      const res = await EposPrint.sendToEpson(printerIp, xml, 6000);
+      if (res.success) {
+        if (typeof KasseModule !== 'undefined' && KasseModule.showToast) {
+          KasseModule.showToast('✓ Z-Bericht erfolgreich auf Epson-Drucker ausgegeben');
+        }
+        closeModal('z-report-receipt-modal');
+      }
+    } catch (e) {
+      alert('Fehler beim Drucken des Z-Berichts: ' + (e.message || e));
+    }
+  }
+
+  function printZReportBrowser() {
     window.print();
+  }
+
+  function printZReport() {
+    printZReportEpson();
   }
 
   function closeModal(modalId) {
@@ -403,7 +550,10 @@ const KassenAbschluss = (function () {
     openMovementModal,
     saveCashMovement,
     performZReport,
+    openExistingZReportModal,
     printZReport,
+    printZReportEpson,
+    printZReportBrowser,
     closeModal
   };
 })();
