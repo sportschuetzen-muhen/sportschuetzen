@@ -120,15 +120,40 @@ let mrIsRotating = false; // Flag für automatischen Segmentwechsel
 let mrSegmentCounter = 0; // Zähler für hochgeladene Segmente
 let mrLogs = []; // Lokale Historie für Aktivitätslogs
 
-// FIXE VORSTANDS- & SPRECHER-STRUKTUR
+// FIXE VORSTANDS- & SPRECHER-STRUKTUR (Initiales Fallback & Datenbank-Abgleich aus public.members)
 const DEFAULT_SPEAKERS = [
-    { id: 'db', name: 'Daniel Berchtold', role: 'Präsident', department: 'Sitzungsleitung, Verträge, Behörden, ENIWA', present: true },
-    { id: 'ar', name: 'Andrea Rossi', role: 'Kassier', department: 'Finanzen, Abrechnungen, AGSV-Vereinbarungen', present: true },
-    { id: 'sh', name: 'Simon Hediger', role: 'Vorstand', department: 'Material, Vereinsbekleidung, Schützenstube', present: true },
-    { id: 'ba', name: 'Beat Augsburger', role: 'Aktuar', department: 'Protokollführung, administrative Beschlüsse', present: true },
-    { id: 'dh', name: 'Daniel Hunziker', role: 'Vorstand', department: 'IT & Digitales, Gebäudeversicherung AGV', present: true },
-    { id: 'sb', name: 'Stefanie Berchtold', role: 'Vorstand', department: 'Vereinsanlässe, Schützenstube', present: true }
+    { id: 'm_1247351', person_number: 1247351, name: 'Simon Hediger', role: 'Präsident', department: 'Vereinsleitung, Sitzungsführung, Behörden, Schützenstube', present: true, isGuest: false },
+    { id: 'm_1073722', person_number: 1073722, name: 'Daniel Hunziker', role: 'Vizepräsident & Kassier', department: 'Finanzen, Buchhaltung, IT & Digitales, AGV-Versicherung', present: true, isGuest: false },
+    { id: 'm_1225081', person_number: 1225081, name: 'Andrea Rossi', role: 'Juniorenleiter Gewehr 50 m', department: 'Nachwuchsförderung, Schulsport, AGSV-Vereinbarungen', present: true, isGuest: false },
+    { id: 'm_1080345', person_number: 1080345, name: 'Marco Fischer', role: 'Schützenmeister Gewehr 50m', department: 'Schiessbetrieb 50m, Wettkämpfe, Stand', present: true, isGuest: false },
+    { id: 'm_1274419', person_number: 1274419, name: 'Olivia Rossi', role: 'Schützenmeister Gewehr 50m', department: 'Schiessbetrieb 50m, Wettkämpfe, Gruppen', present: true, isGuest: false },
+    { id: 'm_1070293', person_number: 1070293, name: 'Beat Augsburger', role: 'Mitgliederverwalter', department: 'Mitgliederadministration, Protokoll, SSV-Meldungen', present: true, isGuest: false },
+    { id: 'm_1128417', person_number: 1128417, name: 'Nicole Zurbriggen', role: 'Vorstandsmitglied', department: 'Allgemeine Vorstandsthemen, Vereinsanlässe', present: true, isGuest: false }
 ];
+
+// Vorschlag für typische Fachressorts anhand der offiziellen Rolle
+function getDefaultDepartmentForRole(roleTitle, firstName, lastName) {
+    const title = (roleTitle || '').toLowerCase();
+    if (title.includes('präsident') && !title.includes('vize')) {
+        return 'Vereinsleitung, Sitzungsführung, Behörden, Schützenstube';
+    }
+    if (title.includes('kassier') || title.includes('finanz')) {
+        return 'Finanzen, Buchhaltung, Kasse, Rechnungen, AGV-Versicherung';
+    }
+    if (title.includes('junioren') || title.includes('nachwuchs')) {
+        return 'Nachwuchsförderung, Schulsport, AGSV-Vereinbarungen';
+    }
+    if (title.includes('schützenmeister') || title.includes('schuetzenmeister')) {
+        return 'Schiessbetrieb 50m, Wettkämpfe, Gruppenmeisterschaft, Stand';
+    }
+    if (title.includes('mitgliederverwalter') || title.includes('aktuar')) {
+        return 'Mitgliederadministration, Protokoll, SSV-Meldungen';
+    }
+    if (title.includes('vize')) {
+        return 'Stellvertretung Präsidium, IT & Digitales, Buchhaltung';
+    }
+    return 'Allgemeine Vorstandsthemen, Vereinsanlässe';
+}
 
 function loadSpeakers() {
     const saved = localStorage.getItem('mr_speakers');
@@ -145,6 +170,77 @@ function loadSpeakers() {
 
 function saveSpeakers(speakers) {
     localStorage.setItem('mr_speakers', JSON.stringify(speakers));
+}
+
+// Aktive Vorstandsmitglieder direkt aus der Supabase-Datenbank (public.members & public.v_board_members_public) synchronisieren
+async function syncBoardMembersFromDb(forceNotify = false) {
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    if (!supa) {
+        if (forceNotify) showToast("Supabase-Client nicht verfügbar.", "warning");
+        return;
+    }
+
+    try {
+        const { data, error } = await supa
+            .from('v_board_members_public')
+            .select('person_number, first_name, last_name, role_title, avatar_url, sort_order')
+            .order('sort_order', { ascending: true })
+            .order('last_name', { ascending: true });
+
+        if (error) {
+            console.warn("⚠️ Fehler beim Laden von v_board_members_public:", error);
+            if (forceNotify) showToast("Fehler beim Laden der Vorstandsmitglieder aus der Datenbank.", "danger");
+            return;
+        }
+
+        if (!data || data.length === 0) {
+            console.warn("⚠️ Keine aktiven Vorstandsmitglieder in v_board_members_public gefunden.");
+            return;
+        }
+
+        const currentSpeakers = loadSpeakers();
+        const existingMap = new Map();
+        const guests = [];
+
+        currentSpeakers.forEach(s => {
+            if (s.isGuest) {
+                guests.push(s);
+            } else {
+                const key = s.person_number ? String(s.person_number) : s.name.toLowerCase().trim();
+                existingMap.set(key, s);
+            }
+        });
+
+        const updatedBoardMembers = data.map(row => {
+            const pnKey = String(row.person_number);
+            const nameKey = `${row.first_name} ${row.last_name}`.toLowerCase().trim();
+            const existing = existingMap.get(pnKey) || existingMap.get(nameKey);
+
+            return {
+                id: 'm_' + row.person_number,
+                person_number: row.person_number,
+                name: `${row.first_name} ${row.last_name}`,
+                role: row.role_title || 'Vorstandsmitglied',
+                department: existing ? existing.department : getDefaultDepartmentForRole(row.role_title, row.first_name, row.last_name),
+                present: existing ? existing.present : true,
+                avatar_url: row.avatar_url || null,
+                isGuest: false,
+                fromDb: true
+            };
+        });
+
+        const mergedList = [...updatedBoardMembers, ...guests];
+        saveSpeakers(mergedList);
+        renderSpeakersList();
+        updateTranscriptDisplay();
+
+        if (forceNotify) {
+            showToast(`${updatedBoardMembers.length} aktive Vorstandsmitglieder aus Datenbank synchronisiert.`, "success");
+        }
+    } catch (err) {
+        console.error("Fehler bei syncBoardMembersFromDb:", err);
+        if (forceNotify) showToast("Verbindungsfehler beim Laden der Vorstandsmitglieder.", "danger");
+    }
 }
 
 // Session-Metadaten Verwaltung
@@ -376,18 +472,21 @@ function initMeetingRecorder() {
                                 <i class="fas fa-users me-2"></i>Teilnehmer & Sprecher
                             </h5>
                             <div class="d-flex gap-1">
+                                <button id="mr-sync-speakers-btn" class="btn btn-outline-success btn-sm fw-bold py-1 px-2" style="font-size: 0.75rem;" title="Aktive Vorstandsmitglieder aus Datenbank synchronisieren">
+                                    <i class="fas fa-sync-alt me-1"></i>DB-Sync
+                                </button>
                                 <button id="mr-add-guest-btn" class="btn btn-outline-primary btn-sm fw-bold py-1 px-2" style="font-size: 0.75rem;" title="Gast oder Referent hinzufügen">
                                     <i class="fas fa-user-plus me-1"></i>Gast
                                 </button>
-                                <button id="mr-reset-speakers-btn" class="btn btn-outline-secondary btn-sm fw-bold py-1 px-2" style="font-size: 0.75rem;" title="Auf Standard-Vorstand zurücksetzen">
+                                <button id="mr-reset-speakers-btn" class="btn btn-outline-secondary btn-sm fw-bold py-1 px-2" style="font-size: 0.75rem;" title="Auf Standard zurücksetzen">
                                     <i class="fas fa-undo"></i>
                                 </button>
                             </div>
                         </div>
                         <p class="text-muted small mb-3" style="font-size: 0.78rem;">
-                            Aktiviere anwesende Vorstandsmitglieder. Diese Personen werden im Gemini-Prompt fix für die automatische Sprecher- und Aufgabenzuordnung hinterlegt.
+                            Aktive Vorstandsmitglieder (aus <code class="text-primary">members</code>) für die automatische Sprecher- und Aufgabenzuordnung im Gemini-Prompt.
                         </p>
-                        <div id="mr-speakers-list" class="d-flex flex-column gap-2" style="max-height: 250px; overflow-y: auto;">
+                        <div id="mr-speakers-list" class="d-flex flex-column gap-2" style="max-height: 260px; overflow-y: auto;">
                             <!-- Dynamisch durch renderSpeakersList() befüllt -->
                         </div>
                     </div>
@@ -544,6 +643,14 @@ function initMeetingRecorder() {
     });
 
     // Teilnehmer-Events registrieren
+    document.getElementById('mr-sync-speakers-btn')?.addEventListener('click', async () => {
+        if (typeof UIButtonKit !== 'undefined' && typeof UIButtonKit.withLoading === 'function') {
+            await UIButtonKit.withLoading('#mr-sync-speakers-btn', () => syncBoardMembersFromDb(true));
+        } else {
+            await syncBoardMembersFromDb(true);
+        }
+    });
+
     document.getElementById('mr-add-guest-btn')?.addEventListener('click', async () => {
         if (typeof UIConfirmKit !== 'undefined' && typeof UIConfirmKit.prompt === 'function') {
             const res = await UIConfirmKit.prompt({
@@ -617,6 +724,9 @@ function initMeetingRecorder() {
         updateTimerDisplay();
     }
     updateTranscriptDisplay();
+
+    // Aktive Vorstandsmitglieder asynchron im Hintergrund aus Supabase aktualisieren
+    syncBoardMembersFromDb(false);
 }
 
 // Rendert die Teilnehmer- und Sprecherliste
@@ -629,6 +739,13 @@ function renderSpeakersList() {
         <div class="mr-speaker-item p-2 d-flex align-items-center justify-content-between ${s.present ? '' : 'absent'}">
             <div class="form-check d-flex align-items-center gap-2 mb-0 flex-grow-1" style="min-width: 0;">
                 <input class="form-check-input mr-speaker-check" type="checkbox" id="speaker-${s.id}" data-id="${s.id}" ${s.present ? 'checked' : ''} style="cursor: pointer;">
+                ${s.avatar_url ? `
+                    <img src="${escapeHtml(s.avatar_url)}" alt="${escapeHtml(s.name)}" class="rounded-circle border flex-shrink-0" style="width: 28px; height: 28px; object-fit: cover;">
+                ` : `
+                    <div class="rounded-circle ${s.isGuest ? 'bg-info-subtle text-info-emphasis' : 'bg-primary-subtle text-primary'} d-flex align-items-center justify-content-center flex-shrink-0" style="width: 28px; height: 28px; font-size: 0.72rem;">
+                        <i class="fas ${s.isGuest ? 'fa-user-tag' : 'fa-user-tie'}"></i>
+                    </div>
+                `}
                 <label class="form-check-label d-flex flex-column" for="speaker-${s.id}" style="cursor: pointer; line-height: 1.25; min-width: 0;">
                     <div class="d-flex align-items-center gap-2 flex-wrap">
                         <span class="fw-bold ${s.present ? 'text-dark' : 'text-muted text-decoration-line-through'} small">${escapeHtml(s.name)}</span>

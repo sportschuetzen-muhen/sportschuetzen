@@ -25,15 +25,17 @@ Es verbindet:
 
 ---
 
-## 3. Feste Teilnehmer- & Sprecher-Matrix (Speaker Attribution)
+## 3. Dynamische Teilnehmer- & Sprecher-Matrix (Speaker Attribution)
 
 Da serverlose Spracherkennungsmodelle (Cloudflare Whisper) auf Mono-Tischmikrofonen keine native Sprecherdiarisierung bieten, erfolgt die Zuordnung von Voten, Beschlüssen und Aufgaben über eine **kontextuelle Prompt-Matrix**:
 
-1. **Dauerhafte Personen-Stammdaten (`mr_speakers`):**
-   * Vorstandsmitglieder sind mit Namen, Rolle und Ressorts fix hinterlegt (z. B. Daniel Berchtold / Präsident, Andrea Rossi / Kassier, Simon Hediger / Material, Beat Augsburger / Aktuar, Daniel Hunziker, Stefanie Berchtold).
+1. **Dynamischer Abgleich mit Mitgliederstamm (`public.members` & `public.v_board_members_public`):**
+   * Die aktiven Vorstandsmitglieder werden beim Modulaufruf automatisch und direkt aus der Supabase-Datenbank geladen (Filter: `is_active = true`, nicht ausgetreten, offizielle Vorstandsfunktion).
+   * Typische Fachressorts werden anhand der offiziellen Rolle (`role_title`) automatisch zugeordnet (z. B. Simon Hediger / Präsident, Daniel Hunziker / Vizepräsident & Kassier, Andrea Rossi / Juniorenleiter, Marco Fischer & Olivia Rossi / Schützenmeister, Beat Augsburger / Mitgliederverwalter, Nicole Zurbriggen / Vorstand).
+   * Ein manueller Sync-Button (**«DB-Sync»**) in der UI erlaubt es dem Aktuar, bei personellen Mutationen die Vorstandsliste jederzeit per 1-Klick neu aus Supabase zu synchronisieren.
    * Externe Sitzungsteilnehmer oder Referenten können über den Button «+ Gast» (via `UIConfirmKit.prompt`) dynamisch erfasst werden.
 2. **Anwesenheitssteuerung:**
-   * Vor oder während der Sitzung können Teilnehmer per Checkbox als anwesend/abwesend markiert werden.
+   * Vor oder während der Sitzung können Teilnehmer per Checkbox als anwesend/abwesend markiert werden. Die Anwesenheitsauswahl bleibt im `localStorage` gesichert.
 3. **Gemini Advanced Prompt-Injizierung:**
    * Der generierte Prompt enthält die Liste aller anwesenden Personen mit ihren Aufgabenbereichen sowie die Liste der Abwesenden.
    * Gemini wird instruiert, Voten anhand von Fachressorts und Schweizerdeutschen Anreden («Dani», «Andrea», «Simon», «Beat») zuzuordnen und in der abschliessenden Aufgabenliste jede Pflicht einer konkreten Person zuzuweisen.
@@ -45,3 +47,4 @@ Da serverlose Spracherkennungsmodelle (Cloudflare Whisper) auf Mono-Tischmikrofo
 * **Dialoge (`UIConfirmKit`):** Alle Bestätigungen (Sitzungs-Reset, Fortsetzungsabfrage, Gast-Erfassung, Mikrofon-Fehlermeldungen) erfolgen asynchron über `UIConfirmKit.confirm`, `UIConfirmKit.alert` und `UIConfirmKit.prompt`.
 * **Ladezustände (`UIButtonKit`):** Die KI-Protokollgenerierung ist mit `UIButtonKit.withLoading('#mr-generate-protocol-btn', ...)` gegen Mehrfachklicks geschützt.
 * **Tonalität:** Konsequente Du-Kultur in allen Eingabehinweisen, Tooltips und Dialogen.
+
