@@ -81,3 +81,8 @@ Die **Festkasse** ist eine eigenständige Progressive Web App (PWA) für das Sch
 * **Artikel- & Verkaufsstatistik («Renner & Penner»):** Im Reiter «Kassensturz & Z-Bericht» wird eine aufklappbare Tabelle aller verkauften Artikel automatisch nach Absatzmenge und CHF-Umsatz sortiert dargestellt.
 * **1-Klick-Z-Bericht auf Epson LAN:** Der offizielle Z-Tagesabschluss (SOLL/IST-Vergleich, Münzzählung, TWINT/Bar-Split, Differenz) kann per Knopfdruck `[🖨️ Z-Bericht an Epson]` direkt auf dem 80mm-Thermodrucker ausgegeben werden.
 * **Strikte Entkopplung von der Finanzbuchhaltung (Keine automatischen Fibu-Buchungen):** Die Festkasse führt keine automatischen Schreibzugriffe in die Supabase-Finanzbuchhaltung durch. Der Z-Bericht dient als physischer/digitaler Belegnachweis für das Kassenkuvert; die eigentliche Verbuchung auf Konto 1000/3200 erfolgt bei Bedarf manuell durch den Kassier im Vorstandsportal.
+
+### 5.5 Bedarfsgesteuerte Freigabe im Mitgliederbereich (`intern.html`)
+* **Single Source of Truth (`system_app_configs`):** Über den Schlüssel `member_festkasse_enabled` steuert der Vorstand, ob die Festkasse im Mitgliederbereich (`intern.html`) als Tab/Kachel sichtbar ist.
+* **Vorstands-Schalter:** Im Vorstandsportal (`vorstand/js/festkasse.js`) kann die Kasse mit 1 Klick aktiviert oder deaktiviert werden.
+* **Vorstandsvorschau:** Für angemeldete Vorstandsmitglieder ist die Kasse in `intern.html` zu Testzwecken immer sichtbar (gekennzeichnet mit «(Vorstand-Vorschau)»).

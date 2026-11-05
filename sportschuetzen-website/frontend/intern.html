@@ -145,10 +145,10 @@
                 <!-- Haupt-Tabs Navigation (Standard: Dokumente aktiv!) -->
                 <div class="gallery-filters" style="margin-bottom: 2rem; justify-content: flex-start; overflow-x: auto; padding-bottom: 0.5rem; gap: 0.75rem;">
                     <button class="gallery-filter-btn active" data-tab="dokumente">📄 Vereinsdokumente &amp; Archiv</button>
-                    <button class="gallery-filter-btn" data-tab="schichten">📅 Helfer- &amp; Schichtplan</button>
+                    <button class="gallery-filter-btn" id="tab-btn-schichten" data-tab="schichten" style="display: none;">📅 Helfer- &amp; Schichtplan</button>
                     <button class="gallery-filter-btn" data-tab="fotos">📷 Vereinsfotos (Immich)</button>
                     <button class="gallery-filter-btn" id="tab-btn-vorstand" data-tab="vorstand" style="display: none; border-color: var(--accent-color); color: var(--accent-color); font-weight: 700;">📂 Vorstandsdokumente</button>
-                    <a href="/kasse/" target="_blank" rel="noopener noreferrer" class="gallery-filter-btn" style="text-decoration: none; border-color: #10b981; color: #047857; font-weight: 700; display: inline-flex; align-items: center; gap: 0.35rem;" onclick="this.href = (window.location.protocol === 'file:' ? '../../kasse/index.html' : '/kasse/');" title="Festkasse für Helfer im Festzelt & Schützenhaus öffnen">
+                    <a id="link-btn-kasse" href="/kasse/" target="_blank" rel="noopener noreferrer" class="gallery-filter-btn" style="display: none; text-decoration: none; border-color: #10b981; color: #047857; font-weight: 700; align-items: center; gap: 0.35rem;" onclick="this.href = (window.location.protocol === 'file:' ? '../../kasse/index.html' : '/kasse/');" title="Festkasse für Helfer im Festzelt & Schützenhaus öffnen">
                         🛒 Festkasse (POS) ↗
                     </a>
                 </div>
@@ -524,11 +524,78 @@
                         if (tabVorstandBtn) {
                             tabVorstandBtn.style.display = isVorstand ? 'inline-block' : 'none';
                         }
+
+                        // Freigaben für Schichtplan & Festkasse prüfen
+                        checkMemberModuleToggles();
                     } else {
                         if (loggedOutView) loggedOutView.style.display = 'block';
                         if (loggedInView) loggedInView.style.display = 'none';
                     }
                 });
+            }
+
+            // ============================================================
+            // Freigabesteuerung Schichtplan & Festkasse (über Vorstandsportal)
+            // ============================================================
+            async function checkMemberModuleToggles() {
+                try {
+                    const supa = (typeof getSupabase === 'function') ? getSupabase() : (window.supabaseClient || null);
+                    if (!supa) return;
+
+                    const { data, error } = await supa
+                        .from('system_app_configs')
+                        .select('key, value')
+                        .in('key', ['member_schichtplan_enabled', 'member_festkasse_enabled']);
+
+                    if (error || !data) return;
+
+                    const isSchichtEnabled = data.some(d => d.key === 'member_schichtplan_enabled' && d.value === 'true');
+                    const isKasseEnabled = data.some(d => d.key === 'member_festkasse_enabled' && d.value === 'true');
+                    const isVorstand = window.AuthSession && window.AuthSession.isVorstand();
+
+                    // Global merken (z.B. für Schnellstart-Banner in member-shifts.js)
+                    window.__member_festkasse_enabled = isKasseEnabled;
+
+                    const tabSchichten = document.getElementById('tab-btn-schichten');
+                    const linkKasse = document.getElementById('link-btn-kasse');
+
+                    if (tabSchichten) {
+                        if (isSchichtEnabled || isVorstand) {
+                            tabSchichten.style.display = 'inline-block';
+                            if (!isSchichtEnabled && isVorstand) {
+                                tabSchichten.title = 'Vorstandsvorschau: Für normale Mitglieder derzeit ausgeblendet';
+                                tabSchichten.innerHTML = '📅 Helfer- &amp; Schichtplan <span style="font-size: 0.72rem; opacity: 0.75; font-weight: normal;">(Vorschau)</span>';
+                            } else {
+                                tabSchichten.title = 'Helfer- & Schichtplan für Vereinsanlässe';
+                                tabSchichten.innerHTML = '📅 Helfer- &amp; Schichtplan';
+                            }
+                        } else {
+                            tabSchichten.style.display = 'none';
+                            // Falls Schichten-Tab gerade aktiv war, auf Dokumente zurückspringen
+                            if (tabSchichten.classList.contains('active')) {
+                                const docBtn = document.querySelector('[data-tab="dokumente"]');
+                                if (docBtn) docBtn.click();
+                            }
+                        }
+                    }
+
+                    if (linkKasse) {
+                        if (isKasseEnabled || isVorstand) {
+                            linkKasse.style.display = 'inline-flex';
+                            if (!isKasseEnabled && isVorstand) {
+                                linkKasse.title = 'Vorstandsvorschau: Für normale Mitglieder derzeit ausgeblendet';
+                                linkKasse.innerHTML = '🛒 Festkasse (POS) ↗ <span style="font-size: 0.72rem; opacity: 0.75; font-weight: normal;">(Vorschau)</span>';
+                            } else {
+                                linkKasse.title = 'Festkasse für Helfer im Festzelt & Schützenhaus öffnen';
+                                linkKasse.innerHTML = '🛒 Festkasse (POS) ↗';
+                            }
+                        } else {
+                            linkKasse.style.display = 'none';
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Fehler beim Prüfen der Modulfreigaben:', e);
+                }
             }
 
             // ============================================================

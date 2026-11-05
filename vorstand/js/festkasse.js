@@ -1,7 +1,7 @@
 /**
  * festkasse.js - Festkasse Cockpit im Vorstandsportal
  * Sportschützen Muhen
- * Bietet Schnellstart, PWA-Status, Z-Abschluss-Dokumentation & Anbindung
+ * Bietet Schnellstart, PWA-Status, Z-Abschluss-Dokumentation & Freigabesteuerung für die Website
  */
 
 function getFestkasseUrl() {
@@ -9,6 +9,67 @@ function getFestkasseUrl() {
         return '../kasse/index.html';
     }
     return '/kasse/';
+}
+
+async function loadFestkasseVisibility() {
+    const supa = window.sbClient || (typeof getClient === 'function' ? getClient() : null);
+    if (!supa) return;
+    try {
+        const { data } = await supa
+            .from('system_app_configs')
+            .select('value')
+            .eq('key', 'member_festkasse_enabled')
+            .maybeSingle();
+        const isEnabled = data ? data.value === 'true' : false;
+        updateFestkasseToggleUI(isEnabled);
+    } catch (e) {
+        console.warn('Fehler beim Laden der Festkassen-Sichtbarkeit:', e);
+    }
+}
+
+function updateFestkasseToggleUI(enabled) {
+    const toggle = document.getElementById('toggle-festkasse-visibility');
+    const badge = document.getElementById('badge-festkasse-visibility');
+    const desc = document.getElementById('festkasse-visibility-desc');
+    if (toggle) toggle.checked = enabled;
+    if (badge) {
+        badge.className = `badge rounded-pill px-3 py-2 fw-bold ${enabled ? 'bg-success text-white' : 'bg-light text-secondary border'}`;
+        badge.textContent = enabled ? '🟢 Für Mitglieder freigegeben' : '⚪ Für Mitglieder ausgeblendet';
+    }
+    if (desc) {
+        desc.textContent = enabled 
+            ? 'Aktiv: Der Button «🛒 Festkasse (POS)» ist im Mitgliederbereich (intern.html) für alle sichtbar.'
+            : 'Inaktiv: Die Festkasse ist im Mitgliederbereich für normale Mitglieder ausgeblendet.';
+    }
+}
+
+async function toggleFestkasseMemberVisibility(enabled) {
+    const supa = window.sbClient || (typeof getClient === 'function' ? getClient() : null);
+    if (!supa) {
+        alert('Keine Verbindung zu Supabase verfügbar.');
+        return;
+    }
+    try {
+        const { error } = await supa
+            .from('system_app_configs')
+            .upsert({ 
+                key: 'member_festkasse_enabled', 
+                value: enabled ? 'true' : 'false', 
+                description: 'Sichtbarkeit des Festkassen-Links (POS) im Mitgliederbereich (intern.html)',
+                category: 'website' 
+            }, { onConflict: 'key' });
+        if (error) throw error;
+        updateFestkasseToggleUI(enabled);
+        if (typeof showToast === 'function') {
+            showToast(enabled ? 'Festkasse für Mitglieder freigegeben!' : 'Festkasse für Mitglieder ausgeblendet.', 'success');
+        }
+    } catch (err) {
+        console.error('Fehler:', err);
+        updateFestkasseToggleUI(!enabled);
+        if (typeof showToast === 'function') {
+            showToast('Fehler beim Speichern: ' + err.message, 'danger');
+        }
+    }
 }
 
 function renderFestkasseView() {
@@ -37,6 +98,31 @@ function renderFestkasseView() {
                    style="background: linear-gradient(135deg, #10b981, #059669); border: none;">
                     <i class="fas fa-external-link-alt"></i> Festkasse jetzt starten ↗
                 </a>
+            </div>
+        </div>
+
+        <!-- FREIGABE IM MITGLIEDERBEREICH BANNER -->
+        <div class="card p-3 shadow-sm border-0 rounded-4 mb-4" style="background: white;">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="rounded-circle d-flex align-items-center justify-content-center" style="width: 44px; height: 44px; font-size: 1.3rem; background: rgba(16, 185, 129, 0.1); color: #10b981;">
+                        🌐
+                    </div>
+                    <div>
+                        <div class="fw-bold text-dark">Freigabe im Mitgliederbereich (Website intern.html)</div>
+                        <div class="small text-muted" id="festkasse-visibility-desc">
+                            Steuere, ob der Button «🛒 Festkasse (POS)» für Mitglieder auf der Website sichtbar ist.
+                        </div>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <div class="form-check form-switch fs-5 mb-0">
+                        <input class="form-check-input" type="checkbox" role="switch" id="toggle-festkasse-visibility" onchange="toggleFestkasseMemberVisibility(this.checked)">
+                    </div>
+                    <span class="badge rounded-pill px-3 py-2 fw-bold bg-light text-secondary border" id="badge-festkasse-visibility" style="font-size: 0.85rem;">
+                        Wird geladen...
+                    </span>
+                </div>
             </div>
         </div>
 
@@ -126,6 +212,10 @@ function renderFestkasseView() {
             </div>
         </div>
     `;
+
+    setTimeout(loadFestkasseVisibility, 50);
 }
 
 window.renderFestkasseView = renderFestkasseView;
+window.toggleFestkasseMemberVisibility = toggleFestkasseMemberVisibility;
+window.loadFestkasseVisibility = loadFestkasseVisibility;

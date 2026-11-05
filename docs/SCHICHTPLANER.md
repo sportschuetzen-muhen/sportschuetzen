@@ -90,5 +90,5 @@ Der **Aplano Schicht- & Helferplaner** organisiert die Einsatzplanung für Schü
 
 ## 5. Portal- & Website-Integration
 
-* **Vorstandsportal (`vorstand/`):** Prominentes Kachel-Icon und Sidebar-Link «👥 Schichtplaner» führt via `navTo('schichtplaner')` direkt in die Aplano-Helfer-Matrix (`AnlaesseModule.switchTab('shifts')`). Berechtigungskontrakt über `anlaesse.view` / `anlaesse.manage`.
-* **Mitgliederbereich (`intern.html`):** Eigener Hauptreiter «📅 Helfer- & Schichtplan» (`MemberShifts.load()`) mit 1-Klick-Selbsteintrag, Besetzungsampel und integriertem Festkassen-Schnellstart für Thekenhelfer.
+* **Vorstandsportal (`vorstand/`):** Prominentes Kachel-Icon und Sidebar-Link «👥 Schichtplaner» führt via `navTo('schichtplaner')` direkt in die Aplano-Helfer-Matrix (`AnlaesseModule.switchTab('shifts')`). Berechtigungskontrakt über `anlaesse.view` / `anlaesse.manage`. Enthält einen Schalter zur bedarfsgesteuerten Freigabe des Schichtplans im Mitgliederbereich.
+* **Mitgliederbereich (`intern.html`):** Eigener Hauptreiter «📅 Helfer- & Schichtplan» (`MemberShifts.load()`) mit 1-Klick-Selbsteintrag, Besetzungsampel und integriertem Festkassen-Schnellstart für Thekenhelfer. Gesteuert über den Systemschlüssel `member_schichtplan_enabled` in `system_app_configs` (nur sichtbar bei Freigabe oder für Vorstandsmitglieder im Vorschaumodus).

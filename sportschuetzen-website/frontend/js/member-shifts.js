@@ -85,6 +85,10 @@ window.MemberShifts = (function () {
         return '/kasse/';
     }
 
+    function isFestkasseEnabled() {
+        return window.__member_festkasse_enabled === true || (window.AuthSession && typeof window.AuthSession.isVorstand === 'function' && window.AuthSession.isVorstand());
+    }
+
     async function load() {
         const container = document.getElementById('tab-content-schichten');
         if (!container) return;
@@ -184,6 +188,7 @@ window.MemberShifts = (function () {
                 </p>
             </div>
 
+            ${isFestkasseEnabled() ? `
             <!-- FESTKASSE SCHNELLSTART BANNER FÜR HELFER -->
             <div class="glass-card mb-4" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(2, 132, 199, 0.04)); border: 1.5px solid rgba(16, 185, 129, 0.35); padding: 1.25rem 1.75rem; border-radius: 16px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
@@ -206,6 +211,7 @@ window.MemberShifts = (function () {
                     </div>
                 </div>
             </div>
+            ` : ''}
         `;
     }
 
@@ -314,6 +320,7 @@ window.MemberShifts = (function () {
                 </div>
             ` : ''}
 
+            ${isFestkasseEnabled() ? `
             <!-- FESTKASSE SCHNELLSTART BANNER FÜR HELFER -->
             <div class="glass-card mb-4" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(2, 132, 199, 0.04)); border: 1.5px solid rgba(16, 185, 129, 0.35); padding: 1.25rem 1.75rem; border-radius: 16px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
@@ -336,6 +343,7 @@ window.MemberShifts = (function () {
                     </div>
                 </div>
             </div>
+            ` : ''}
 
             <!-- APLANO SCHICHT-MATRIX / KARTEN -->
             <div style="margin-top: 1rem;">

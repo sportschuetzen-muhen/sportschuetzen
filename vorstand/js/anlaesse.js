@@ -1006,6 +1006,31 @@ window.AnlaesseModule = (function () {
                     </div>
                 </div>
 
+                <!-- FREIGABE IM MITGLIEDERBEREICH BANNER -->
+                <div class="card p-3 shadow-sm border-0 rounded-4 mb-4" style="background: rgba(14, 165, 233, 0.05); border: 1px solid rgba(14, 165, 233, 0.2) !important;">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center" style="width: 40px; height: 40px; font-size: 1.2rem; background: rgba(14, 165, 233, 0.15); color: #0ea5e9;">
+                                👥
+                            </div>
+                            <div>
+                                <div class="fw-bold text-dark">Freigabe im Mitgliederbereich (Website intern.html)</div>
+                                <div class="small text-muted" id="schichtplan-visibility-desc">
+                                    Steuere, ob der Tab «📅 Helfer- &amp; Schichtplan» für Vereinsmitglieder auf der Website sichtbar ist.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="form-check form-switch fs-5 mb-0">
+                                <input class="form-check-input" type="checkbox" role="switch" id="toggle-schichtplan-visibility" onchange="AnlaesseModule.toggleSchichtplanVisibility(this.checked)">
+                            </div>
+                            <span class="badge rounded-pill px-3 py-2 fw-bold bg-light text-secondary border" id="badge-schichtplan-visibility" style="font-size: 0.85rem;">
+                                Wird geladen...
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
                 ${state.shifts.length === 0 ? `
                     <div class="text-center py-5 text-muted">
                         <i class="fas fa-person-circle-question fa-3x mb-3 text-secondary opacity-50"></i>
@@ -1509,6 +1534,9 @@ window.AnlaesseModule = (function () {
         if (activeBtn) {
             activeBtn.classList.add('active', 'bg-primary', 'text-white');
             activeBtn.classList.remove('text-secondary');
+        }
+        if (tabKey === 'shifts') {
+            setTimeout(loadSchichtplanVisibility, 50);
         }
     }
 
@@ -2530,6 +2558,70 @@ window.AnlaesseModule = (function () {
     }
 
     // ─────────────────────────────────────────────────────────────
+    // FREIGABE-STEUERUNG FÜR DIE WEBSITE (INTERN.HTML)
+    // ─────────────────────────────────────────────────────────────
+    async function loadSchichtplanVisibility() {
+        const supa = getClient();
+        if (!supa) return;
+        try {
+            const { data } = await supa
+                .from('system_app_configs')
+                .select('value')
+                .eq('key', 'member_schichtplan_enabled')
+                .maybeSingle();
+            const isEnabled = data ? data.value === 'true' : false;
+            updateSchichtplanToggleUI(isEnabled);
+        } catch (e) {
+            console.warn('Fehler beim Laden der Schichtplan-Sichtbarkeit:', e);
+        }
+    }
+
+    function updateSchichtplanToggleUI(enabled) {
+        const toggle = document.getElementById('toggle-schichtplan-visibility');
+        const badge = document.getElementById('badge-schichtplan-visibility');
+        const desc = document.getElementById('schichtplan-visibility-desc');
+        if (toggle) toggle.checked = enabled;
+        if (badge) {
+            badge.className = `badge rounded-pill px-3 py-2 fw-bold ${enabled ? 'bg-success text-white' : 'bg-light text-secondary border'}`;
+            badge.textContent = enabled ? '🟢 Für Mitglieder freigegeben' : '⚪ Für Mitglieder ausgeblendet';
+        }
+        if (desc) {
+            desc.textContent = enabled 
+                ? 'Aktiv: Der Tab «📅 Helfer- & Schichtplan» ist im Mitgliederbereich (intern.html) für alle sichtbar.'
+                : 'Inaktiv: Der Schichtplan ist im Mitgliederbereich für normale Mitglieder ausgeblendet.';
+        }
+    }
+
+    async function toggleSchichtplanVisibility(enabled) {
+        const supa = getClient();
+        if (!supa) {
+            alert('Keine Verbindung zu Supabase verfügbar.');
+            return;
+        }
+        try {
+            const { error } = await supa
+                .from('system_app_configs')
+                .upsert({ 
+                    key: 'member_schichtplan_enabled', 
+                    value: enabled ? 'true' : 'false', 
+                    description: 'Sichtbarkeit des Helfer- & Schichtplans im Mitgliederbereich (intern.html)',
+                    category: 'website' 
+                }, { onConflict: 'key' });
+            if (error) throw error;
+            updateSchichtplanToggleUI(enabled);
+            if (typeof showToast === 'function') {
+                showToast(enabled ? 'Helfer- & Schichtplan für Mitglieder freigegeben!' : 'Schichtplan für Mitglieder ausgeblendet.', 'success');
+            }
+        } catch (err) {
+            console.error('Fehler:', err);
+            updateSchichtplanToggleUI(!enabled);
+            if (typeof showToast === 'function') {
+                showToast('Fehler beim Speichern: ' + err.message, 'danger');
+            }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
     // PUBLIC API DES MODULS
     // ─────────────────────────────────────────────────────────────
     return {
@@ -2569,7 +2661,9 @@ window.AnlaesseModule = (function () {
         printShiftSchedule: printShiftSchedule,
         openAssignHelperModal: openAssignHelperModal,
         submitAssignHelper: submitAssignHelper,
-        removeHelperAssignment: removeHelperAssignment
+        removeHelperAssignment: removeHelperAssignment,
+        loadSchichtplanVisibility: loadSchichtplanVisibility,
+        toggleSchichtplanVisibility: toggleSchichtplanVisibility
     };
 })();
 
