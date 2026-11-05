@@ -346,6 +346,13 @@ const FestkasseDB = (function () {
     await put('settings', { key: 'stationName', value: 'Kasse 1' });
     await put('settings', { key: 'openingCash', value: 300.00 });
     await put('settings', { key: 'activeDate', value: todayStr });
+    await put('settings', { key: 'printerIp', value: '192.168.1.200' });
+    await put('settings', { key: 'printMode', value: 'manual' }); // 'manual' | 'auto' | 'browser'
+    await put('settings', { key: 'printGuestReceipt', value: true });
+    await put('settings', { key: 'printKitchenReceipt', value: true });
+    await put('settings', { key: 'printDrinksReceipt', value: false });
+    await put('settings', { key: 'openDrawer', value: true });
+    await put('settings', { key: 'orderSequence', value: 1 });
 
     console.log('[FestkasseDB] Erfolgreich initialisiert!');
   }

@@ -1290,24 +1290,36 @@ html, body {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   PRINT-STYLES (80mm Bon-Druck)
+   PRINT-STYLES (80mm Bon-Druck & Z-Bericht)
    ───────────────────────────────────────────────────────────── */
+@page {
+  size: 80mm auto;
+  margin: 0;
+}
+
 @media print {
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
   body * {
     visibility: hidden;
   }
-  #print-receipt-area, #print-receipt-area * {
+  #print-receipt-area, #print-receipt-area *,
+  #z-report-receipt-body, #z-report-receipt-body * {
     visibility: visible;
   }
-  #print-receipt-area {
+  #print-receipt-area, #z-report-receipt-body {
     position: absolute;
     left: 0;
     top: 0;
     width: 80mm;
-    padding: 5mm;
+    padding: 3mm;
     color: #000;
     background: #fff;
     font-family: monospace;
     font-size: 12px;
+    box-sizing: border-box;
   }
 }

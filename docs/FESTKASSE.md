@@ -1,10 +1,10 @@
 # Fachdokumentation: Festkasse (WaiterOne POS)
 
 > **Status:** PRODUKTIV (Lokal-autarke PWA / Standalone)  
-> **Stand:** Oktober 2026  
+> **Stand:** November 2026  
 > **URL:** `https://sps-b55.pages.dev/kasse/`  
-> **Komponenten:** `kasse/index.html`, `kasse/kasse.js`, `kasse/abschluss.js`, `kasse/kellner.js`, `kasse/db.js`, `kasse/sw.js`  
-> **Architektur:** 100% Offline-First via IndexedDB (`FestkasseDB`) & Service Worker. Keine dauerhafte Abhängigkeit zu Cloud, GAS oder Internet.
+> **Komponenten:** `kasse/index.html`, `kasse/kasse.js`, `kasse/epos-print.js`, `kasse/abschluss.js`, `kasse/kellner.js`, `kasse/db.js`, `kasse/sw.js`  
+> **Architektur:** 100% Offline-First via IndexedDB (`FestkasseDB`) & Service Worker (`festkasse-v3`). Direktansteuerung von Epson LAN-Bondruckern via ePOS-Print (XML/HTTP). Keine dauerhafte Abhängigkeit zu Cloud, GAS oder Internet.
 
 ---
 
@@ -54,3 +54,25 @@ Die **Festkasse** ist eine eigenständige Progressive Web App (PWA) für das Sch
 * **Portal- & Website-Integration:** 
   - **Vorstandsportal (`vorstand/`):** Prominentes Kachel-Icon und Sidebar-Link «🛒 Festkasse (POS)» mit dediziertem Cockpit (`vorstand/js/festkasse.js`), Live-Vorschau und Vollbild-Start. Berechtigungskontrakt über `anlaesse.view` / `anlaesse.manage`.
   - **Mitgliederbereich (`intern.html`):** Schnellstart-Pill in den Haupt-Tabs und Schnellstart-Banner innerhalb des Helfer- & Schichtplans (`member-shifts.js`) für Kassen- und Thekendienste.
+
+---
+
+## 5. Bondruck & 2-Bon-System für Festbetrieb (Epson LAN ePOS-Print)
+
+### 5.1 Autarke Festzelt-Architektur (iPad & Epson am Router)
+* **Kein Druckermenü mehr:** Standardmässig erzeugt `window.print()` auf iPads ein blockierendes AirPrint-Dialogfenster. Die Direktansteuerung über das Modul `kasse/epos-print.js` sendet Belege als standardisiertes **ePOS-Print XML** direkt via HTTP-POST an den Epson LAN-Drucker (z.B. TM-T20, TM-T88, TM-m30) am selben Zelt-Router.
+* **100% Offline im Festzelt:** Das iPad und der Drucker kommunizieren rein über das lokale Netzwerk (WLAN / LAN des Routers). Weder Cloud noch Internetverbindung sind erforderlich.
+
+### 5.2 2-Bon-Splittung (Kunde & Küche/Grill)
+* **Fortlaufende Bestellnummer:** Vergabe einer grossen, gut lesbaren Abhol-Nummer (`#01` bis `#999`), die bei Schichtbeginn im Einstellungsmenü jederzeit auf `#01` zurückgesetzt werden kann.
+* **Bon 1 (Gastquittung):** Enthält Vereins-Header, Zeitstempel, Bediener/Kasse, grosse Bestellnummer, Einzelpositionen mit Preisen, Zahlart (Bar mit Rückgeld / Twint) sowie automatischen Papierschnitt (`cut`) und optionalen Impuls für die Kassenschublade (`pulse`).
+* **Bon 2 (Küchen- / Grill-Bon):** Enthält eine riesige Bestellnummer (3-fache Vergrösserung), Zeitstempel, Kasse und ausschliesslich Zubereitungsartikel (Kategorie `cat_grill`) in grosser Schrift ohne Preise. Enthält ein Bon keine Küchenartikel, wird automatisch kein leerer Küchenbon gedruckt.
+* **Optional Bon 3 (Getränkebon):** Für räumlich getrennte Ausschank-/Barstationen konfigurierbar.
+
+### 5.3 Kassen-Ergonomie & Konfiguration
+* **Blitz-Checkout:** Nach dem Kassieren wird der Verkauf verbucht, das Rückgeld prominent für 6 Sekunden eingeblendet und die Kasse ist in 0.1s wieder frei für die nächste Bestellung.
+* **Druckmodi im Einstellungsmenü (⚙️):**
+  - *Manuell (Empfohlen):* Kasse bleibt sofort frei; Bon wird nur auf Wunsch über den Schnellzugriff `[🧾 Letzter Bon]` gedruckt.
+  - *Automatischer Sofortdruck:* Druckt Gast- und Küchenbon ohne jeden Dialog direkt nach der Zahlung.
+  - *Browser-Druckdialog:* Fallback via AirPrint.
+* **Testdruck & Diagnose:** Direkte Testdruck-Buttons für Gastbeleg und Küchenbon mit Live-Status im Konfigurationsdialog.

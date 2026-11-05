@@ -17,6 +17,20 @@ const KasseModule = (function () {
   let activeStationName = 'Kasse 1';
   let broadcastChannel = null;
 
+  // Drucker & Festbetrieb-Einstellungen
+  let printerSettings = {
+    printerIp: '192.168.1.200',
+    printMode: 'manual', // 'manual' | 'auto' | 'browser'
+    printGuestReceipt: true,
+    printKitchenReceipt: true,
+    printDrinksReceipt: false,
+    openDrawer: true,
+    orderSequence: 1
+  };
+  let lastCompletedOrder = null;
+  let activeReceiptOrder = null;
+  let changeDismissTimer = null;
+
   async function init() {
     // 1. Service Worker registrieren
     if ('serviceWorker' in navigator) {
@@ -38,6 +52,9 @@ const KasseModule = (function () {
     const stationSetting = await FestkasseDB.get('settings', 'stationName');
     if (stationSetting && stationSetting.value) activeStationName = stationSetting.value;
 
+    // Drucker-Einstellungen einlesen
+    await loadPrinterSettings();
+
     // 4. UI Header aktualisieren
     const nameEl = document.getElementById('active-cashier-name');
     const stationEl = document.getElementById('active-cashier-station');
@@ -58,6 +75,33 @@ const KasseModule = (function () {
     // 7. Sub-Module initialisieren
     KassenAbschluss.init();
     KellnerHandheld.init();
+  }
+
+  async function loadPrinterSettings() {
+    try {
+      const ip = await FestkasseDB.get('settings', 'printerIp');
+      if (ip && ip.value) printerSettings.printerIp = ip.value;
+
+      const mode = await FestkasseDB.get('settings', 'printMode');
+      if (mode && mode.value) printerSettings.printMode = mode.value;
+
+      const guest = await FestkasseDB.get('settings', 'printGuestReceipt');
+      if (guest !== undefined && guest.value !== undefined) printerSettings.printGuestReceipt = !!guest.value;
+
+      const kitchen = await FestkasseDB.get('settings', 'printKitchenReceipt');
+      if (kitchen !== undefined && kitchen.value !== undefined) printerSettings.printKitchenReceipt = !!kitchen.value;
+
+      const drinks = await FestkasseDB.get('settings', 'printDrinksReceipt');
+      if (drinks !== undefined && drinks.value !== undefined) printerSettings.printDrinksReceipt = !!drinks.value;
+
+      const drawer = await FestkasseDB.get('settings', 'openDrawer');
+      if (drawer !== undefined && drawer.value !== undefined) printerSettings.openDrawer = !!drawer.value;
+
+      const seq = await FestkasseDB.get('settings', 'orderSequence');
+      if (seq && typeof seq.value === 'number') printerSettings.orderSequence = seq.value;
+    } catch (e) {
+      console.warn('[KasseModule] Konnte Drucker-Einstellungen nicht laden:', e);
+    }
   }
 
   // Multi-Device Empfänger für Tisch-Bestellungen
@@ -211,6 +255,14 @@ const KasseModule = (function () {
     const prod = products.find(p => p.id === productId);
     if (!prod) return;
 
+    // Rückgeldanzeige eines vorherigen Bons sofort ausblenden
+    if (changeDismissTimer) {
+      clearTimeout(changeDismissTimer);
+      changeDismissTimer = null;
+      const changeBox = document.getElementById('change-display-box');
+      if (changeBox) changeBox.style.display = 'none';
+    }
+
     const existing = cart.find(i => i.id === productId);
     if (existing) {
       existing.qty++;
@@ -220,6 +272,7 @@ const KasseModule = (function () {
         name: prod.name,
         price: prod.price,
         unit: prod.unit,
+        categoryId: prod.categoryId || null,
         qty: 1,
         isDepot: prod.isDepot || false,
         depotType: prod.depotType || null
@@ -239,6 +292,7 @@ const KasseModule = (function () {
             id: depotProd.id,
             name: depotProd.name,
             price: depotProd.price,
+            categoryId: 'cat_depot',
             qty: 1,
             isDepot: true,
             depotType: 'plus'
@@ -348,7 +402,33 @@ const KasseModule = (function () {
     renderCart();
   }
 
-  // Zahlung abschliessen (BAR oder TWINT)
+  // Rückgeld dezent anzeigen (Festbetrieb-Ergonomie)
+  function showTemporaryChange(amount) {
+    const changeBox = document.getElementById('change-display-box');
+    const changeEl = document.getElementById('ticket-change-amount');
+    if (!changeBox || !changeEl) return;
+
+    if (changeDismissTimer) clearTimeout(changeDismissTimer);
+    changeEl.textContent = formatCHF(amount);
+    changeBox.style.display = 'flex';
+
+    changeDismissTimer = setTimeout(() => {
+      changeBox.style.display = 'none';
+      changeDismissTimer = null;
+    }, 6000);
+  }
+
+  // Aktualisiert die Anzeige des letzten getätigten Verkaufs
+  function updateLastOrderBar(order) {
+    const lastBar = document.getElementById('last-order-bar');
+    const lastSummary = document.getElementById('last-order-summary');
+    if (!lastBar || !lastSummary) return;
+
+    lastSummary.textContent = `${order.displayOrderNumber || order.orderNumber} (${formatCHF(order.totalAmount)})`;
+    lastBar.style.display = 'flex';
+  }
+
+  // Zahlung abschliessen (BAR oder TWINT) - 100% Festbetrieb-tauglich
   async function completePayment(method) {
     const total = cart.reduce((sum, it) => sum + (it.price * it.qty), 0);
     if (total <= 0) {
@@ -356,10 +436,16 @@ const KasseModule = (function () {
       return;
     }
 
-    const orderNumber = 'B-' + Math.floor(1000 + Math.random() * 9000);
+    // Fortlaufende, grosse Bestellnummer für den Festbetrieb (#01, #02, ...)
+    const seq = printerSettings.orderSequence || 1;
+    const displayOrderNumber = '#' + String(seq).padStart(2, '0');
+    printerSettings.orderSequence = (seq >= 999) ? 1 : (seq + 1);
+    await FestkasseDB.put('settings', { key: 'orderSequence', value: printerSettings.orderSequence });
+
     const orderData = {
       id: 'ord_' + Date.now(),
-      orderNumber,
+      orderNumber: displayOrderNumber,
+      displayOrderNumber,
       timestamp: new Date().toISOString(),
       cashierName: activeCashierName,
       stationName: activeStationName,
@@ -373,32 +459,87 @@ const KasseModule = (function () {
 
     // 1. In IndexedDB speichern
     await FestkasseDB.put('orders', orderData);
+    lastCompletedOrder = orderData;
+    activeReceiptOrder = orderData;
 
-    // 2. Broadcast senden
+    // 2. Schnellzugriff «Letzter Bon» aktualisieren
+    updateLastOrderBar(orderData);
+
+    // 3. Broadcast senden
     if (broadcastChannel) {
       broadcastChannel.postMessage({ type: 'ORDER_COMPLETED', orderId: orderData.id });
     }
 
-    // 3. Audio & Haptik
+    // 4. Audio & Haptik
     if (navigator.vibrate) navigator.vibrate([40, 30, 80]);
     playSuccessSound();
 
-    // 4. Kassensturz-Daten live aktualisieren
+    // 5. Kassensturz-Daten live aktualisieren
     KassenAbschluss.init();
 
-    // 5. Quittungs-Modal vorbereiten
-    showReceiptModal(orderData);
+    // 6. Rückgeld für 6 Sekunden einblenden
+    if (method === 'bar' && orderData.changeGiven > 0) {
+      showTemporaryChange(orderData.changeGiven);
+    }
 
-    // 6. Bon leeren
+    // 7. Bon leeren & Kasse SOFORT freigeben für nächsten Kunden
     cart = [];
     cashGiven = 0;
     renderCart();
 
-    showToast(`Bon ${orderNumber} erfolgreich bezahlt (${method.toUpperCase()})`);
+    // 8. DRUCK-LOGIK (Je nach Konfiguration)
+    if (printerSettings.printMode === 'auto') {
+      showToast(`Bon ${displayOrderNumber} bezahlt (${method.toUpperCase()}) – Drucke Belege...`);
+      EposPrint.printOrder(orderData, printerSettings).then(res => {
+        if (res.success) {
+          showToast(`✓ ${displayOrderNumber} an Drucker übermittelt (${res.printedCount} Bons)`);
+        } else if (res.errors && res.errors.length) {
+          showToast(`⚠️ Druckfehler: ${res.errors[0]}`);
+        }
+      }).catch(err => {
+        showToast(`⚠️ Druckerfehler: ${err.message || err}`);
+      });
+    } else if (printerSettings.printMode === 'browser') {
+      // Fallback: Quittungs-Modal anzeigen für AirPrint
+      showReceiptModal(orderData);
+    } else {
+      // 'manual' (Empfohlen für Festbetrieb): Kasse sofort frei, kein Modal!
+      showToast(`Bestellung ${displayOrderNumber} bezahlt (${formatCHF(total)}) – Kasse bereit`);
+    }
   }
 
-  // Quittung / Beleg Modal
+  // 1-Klick-Ausdruck des letzten getätigten Bons
+  async function printLastOrder() {
+    if (!lastCompletedOrder) {
+      showToast('Noch kein vorheriger Bon vorhanden.');
+      return;
+    }
+
+    activeReceiptOrder = lastCompletedOrder;
+
+    if (printerSettings.printMode === 'browser') {
+      showReceiptModal(lastCompletedOrder);
+      return;
+    }
+
+    showToast(`🖨️ Sende ${lastCompletedOrder.displayOrderNumber} an Epson-Drucker...`);
+    try {
+      const res = await EposPrint.printOrder(lastCompletedOrder, printerSettings);
+      if (res.success) {
+        showToast(`✓ Bon ${lastCompletedOrder.displayOrderNumber} erfolgreich gedruckt`);
+      } else {
+        showToast(`⚠️ Drucker nicht erreichbar. Öffne Vorschau...`);
+        showReceiptModal(lastCompletedOrder);
+      }
+    } catch (e) {
+      showToast(`⚠️ Druckfehler: ${e.message || e}`);
+      showReceiptModal(lastCompletedOrder);
+    }
+  }
+
+  // Quittung / Beleg Modal (Vorschau & manueller Druck)
   function showReceiptModal(order) {
+    activeReceiptOrder = order;
     const modal = document.getElementById('receipt-modal');
     const printArea = document.getElementById('print-receipt-area');
     if (!modal || !printArea) return;
@@ -409,14 +550,14 @@ const KasseModule = (function () {
       </div>
       <div style="text-align: center; font-size: 11px; margin-bottom: 10px;">
         Festwirtschaft & Kasse<br>
-        Bon-Nr: <strong>${order.orderNumber}</strong><br>
+        <span style="font-size: 16px; font-weight: 800; color: #0284c7;">BESTELLUNG ${order.displayOrderNumber || order.orderNumber}</span><br>
         ${new Date(order.timestamp).toLocaleString('de-CH')}
       </div>
-      <div style="border-bottom: 1px dashed #000; padding-bottom: 4px; margin-bottom: 6px;">
+      <div style="border-bottom: 1px dashed #000; padding-bottom: 4px; margin-bottom: 6px; font-size: 12px;">
         Bediener: ${escapeHtml(order.cashierName)} (${escapeHtml(order.stationName)})
       </div>
 
-      <table style="width: 100%; border-collapse: collapse; margin-bottom: 8px;">
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 8px; font-size: 12px;">
         ${order.items.map(it => `
           <tr>
             <td style="padding: 2px 0;">${it.qty}× ${escapeHtml(it.name)}</td>
@@ -425,7 +566,7 @@ const KasseModule = (function () {
         `).join('')}
       </table>
 
-      <div style="border-top: 1px solid #000; padding-top: 4px; margin-bottom: 6px;">
+      <div style="border-top: 1px solid #000; padding-top: 4px; margin-bottom: 6px; font-size: 13px;">
         <table style="width: 100%;">
           <tr style="font-weight: bold; font-size: 14px;">
             <td>TOTAL:</td>
@@ -457,8 +598,144 @@ const KasseModule = (function () {
     modal.classList.add('active');
   }
 
-  function printReceipt() {
+  // Direktdruck des aktiven Quittungsmodals via Epson ePOS
+  async function printActiveReceipt() {
+    if (!activeReceiptOrder) {
+      showToast('Keine Quittung geladen');
+      return;
+    }
+    showToast(`🖨️ Sende Beleg an Epson-Drucker (${printerSettings.printerIp})...`);
+    try {
+      const res = await EposPrint.printOrder(activeReceiptOrder, printerSettings);
+      if (res.success) {
+        showToast('✓ Belege erfolgreich gedruckt');
+        const modal = document.getElementById('receipt-modal');
+        if (modal) modal.classList.remove('active');
+      } else {
+        showToast('⚠️ Druck fehlgeschlagen: ' + (res.errors ? res.errors.join(', ') : 'Unbekannter Fehler'));
+      }
+    } catch (e) {
+      showToast('⚠️ Verbindungsfehler: ' + (e.message || e));
+    }
+  }
+
+  // Fallback: Über natives iOS/Browser Druckermenü
+  function printBrowserReceipt() {
     window.print();
+  }
+
+  function printReceipt() {
+    printActiveReceipt();
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // EINSTELLUNGEN & DRUCKER DIALOG
+  // ─────────────────────────────────────────────────────────────
+  function openSettingsModal() {
+    const modal = document.getElementById('settings-modal');
+    if (!modal) return;
+
+    // Felder vorbefüllen
+    const ipInput = document.getElementById('setting-printer-ip');
+    if (ipInput) ipInput.value = printerSettings.printerIp || '192.168.1.200';
+
+    // Druckmodus Radio
+    const mode = printerSettings.printMode || 'manual';
+    const radio = document.querySelector(`input[name="setting-print-mode"][value="${mode}"]`);
+    if (radio) radio.checked = true;
+
+    // Checkboxen
+    const guestCheck = document.getElementById('setting-print-guest');
+    if (guestCheck) guestCheck.checked = printerSettings.printGuestReceipt !== false;
+
+    const kitchenCheck = document.getElementById('setting-print-kitchen');
+    if (kitchenCheck) kitchenCheck.checked = printerSettings.printKitchenReceipt !== false;
+
+    const drinksCheck = document.getElementById('setting-print-drinks');
+    if (drinksCheck) drinksCheck.checked = !!printerSettings.printDrinksReceipt;
+
+    const drawerCheck = document.getElementById('setting-open-drawer');
+    if (drawerCheck) drawerCheck.checked = printerSettings.openDrawer !== false;
+
+    // Bestellnummer-Label
+    const seqLabel = document.getElementById('setting-current-seq-label');
+    if (seqLabel) {
+      seqLabel.textContent = '#' + String(printerSettings.orderSequence || 1).padStart(2, '0');
+    }
+
+    const statusEl = document.getElementById('printer-test-status');
+    if (statusEl) statusEl.innerHTML = '';
+
+    modal.classList.add('active');
+  }
+
+  async function saveSettings() {
+    const ipInput = document.getElementById('setting-printer-ip');
+    const newIp = ipInput ? ipInput.value.trim() : '';
+
+    const selectedMode = document.querySelector('input[name="setting-print-mode"]:checked');
+    const newMode = selectedMode ? selectedMode.value : 'manual';
+
+    const guestCheck = document.getElementById('setting-print-guest');
+    const kitchenCheck = document.getElementById('setting-print-kitchen');
+    const drinksCheck = document.getElementById('setting-print-drinks');
+    const drawerCheck = document.getElementById('setting-open-drawer');
+
+    printerSettings.printerIp = newIp;
+    printerSettings.printMode = newMode;
+    printerSettings.printGuestReceipt = guestCheck ? guestCheck.checked : true;
+    printerSettings.printKitchenReceipt = kitchenCheck ? kitchenCheck.checked : true;
+    printerSettings.printDrinksReceipt = drinksCheck ? drinksCheck.checked : false;
+    printerSettings.openDrawer = drawerCheck ? drawerCheck.checked : true;
+
+    // In IndexedDB sichern
+    await FestkasseDB.put('settings', { key: 'printerIp', value: printerSettings.printerIp });
+    await FestkasseDB.put('settings', { key: 'printMode', value: printerSettings.printMode });
+    await FestkasseDB.put('settings', { key: 'printGuestReceipt', value: printerSettings.printGuestReceipt });
+    await FestkasseDB.put('settings', { key: 'printKitchenReceipt', value: printerSettings.printKitchenReceipt });
+    await FestkasseDB.put('settings', { key: 'printDrinksReceipt', value: printerSettings.printDrinksReceipt });
+    await FestkasseDB.put('settings', { key: 'openDrawer', value: printerSettings.openDrawer });
+
+    const modal = document.getElementById('settings-modal');
+    if (modal) modal.classList.remove('active');
+
+    showToast(`✓ Einstellungen & Drucker (${printerSettings.printerIp || 'Keine IP'}) gespeichert`);
+  }
+
+  async function resetOrderSequence() {
+    printerSettings.orderSequence = 1;
+    await FestkasseDB.put('settings', { key: 'orderSequence', value: 1 });
+    const seqLabel = document.getElementById('setting-current-seq-label');
+    if (seqLabel) seqLabel.textContent = '#01';
+    showToast('Bestellnummer auf #01 zurückgesetzt');
+  }
+
+  async function runPrinterTest(type = 'guest') {
+    const statusEl = document.getElementById('printer-test-status');
+    const ipInput = document.getElementById('setting-printer-ip');
+    const ip = ipInput ? ipInput.value.trim() : printerSettings.printerIp;
+
+    if (!ip) {
+      if (statusEl) statusEl.innerHTML = '<span style="color: #ef4444;">⚠️ Bitte zuerst eine Drucker-IP eingeben.</span>';
+      return;
+    }
+
+    if (statusEl) {
+      statusEl.innerHTML = `<span style="color: #38bdf8;">⏳ Sende ${type === 'kitchen' ? 'Küchenbon' : 'Gastbeleg'} an ${ip}...</span>`;
+    }
+
+    try {
+      await EposPrint.testPrint(ip, type);
+      if (statusEl) {
+        statusEl.innerHTML = `<span style="color: #10b981; font-weight: bold;">🟢 Erfolgreich! Testbon an ${ip} gesendet.</span>`;
+      }
+      showToast(`✓ Testdruck (${type}) an ${ip} übermittelt`);
+    } catch (err) {
+      if (statusEl) {
+        statusEl.innerHTML = `<span style="color: #ef4444; font-weight: bold;">🔴 Fehler: ${err.message || err}</span>`;
+      }
+      showToast(`⚠️ Testdruck fehlgeschlagen: ${err.message || err}`);
+    }
   }
 
   // View Navigation
@@ -591,6 +868,13 @@ const KasseModule = (function () {
     setCashGiven,
     completePayment,
     printReceipt,
+    printActiveReceipt,
+    printBrowserReceipt,
+    printLastOrder,
+    openSettingsModal,
+    saveSettings,
+    resetOrderSequence,
+    runPrinterTest,
     switchView,
     openCashierModal,
     saveCashier,
