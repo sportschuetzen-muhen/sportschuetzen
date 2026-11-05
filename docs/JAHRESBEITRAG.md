@@ -162,7 +162,7 @@ Die Beitragsberechnung erfolgt nach einer deterministischen Kaskade aus Mitglied
     - Erwachsene: `LI001` (CHF 18.00).
 - **Fremdlizenz (Anderer Verein rechnet SSV ab):**
   - Genau einmal pro Schütze abgerechnet: `LI003` (CHF 0.00, informative Position mit Vereinsname).
-  - **Deduplizierung (Migration 41):** Hat ein Mitglied bei einem Fremdverein mehrere aktive Lizenzen (z. B. G50m und G10m), wird `LI003` in `calculate_member_contributions` strikt dedupliziert und nur exakt einmal in `contributions_positions` und auf der Rechnung ausgewiesen (analog zur Schnellerfassung).
+  - **Deduplizierung (Migration 41 & 114):** Hat ein Mitglied bei einem Fremdverein mehrere aktive Lizenzen (z. B. G50m und G10m), wird `LI003` in `calculate_member_contributions` strikt dedupliziert und nur exakt einmal in `contributions_positions` und auf der Rechnung ausgewiesen (analog zur Schnellerfassung). Eigene Muhen-Lizenzen haben Vorrang vor Fremdlizenzen.
 
 ### 5.4 Gebäudebeitrag / Schützenhaus (GE001)
 - **Ansatz:** Vollständig dynamisch aus `public.gebuehren_config` (`GE001`, Ertragskonto `3413`).
@@ -184,10 +184,10 @@ Die Beitragsberechnung erfolgt nach einer deterministischen Kaskade aus Mitglied
 - Das System verwendet keine hardcodierten Betrags- oder Konten-Fallbacks mehr.
 - Fehlt ein Pflicht-Tarif oder ein Haben-Konto in `gebuehren_config`, wird im Frontend ein auffälliges Warn-Banner mit konkreter Handlungsanweisung angezeigt und die Rechnungsgenerierung blockiert.
 
-### 5.8 Jugendförderung (Kostenübernahme Verein / Option A)
+### 5.8 Jugendförderung (Kostenübernahme Verein / Option A, Migration 72 & 114)
 - **Vollautomatische Kostenübernahme:** Bei Junioren (`is_junior = true` bzw. Alter $\le$ 20 Jahre oder Tarif `JB006`/`JB007`) werden sämtliche Wettkampfteilnahmen (Kategorien `Kleinkaliber`, `Luftgewehr`, `Wettkampf` bzw. Schlüssel `KK%`, `LG%`) vollautomatisch saldiert.
-- **Buchhalterischer Gegenbeleg:** Das System generiert automatisch eine Gegenposition **`KOSTENUEBERNAHME_JUGEND`** (*«Kostenübernahme Verein (Nachwuchsförderung)»*) in Höhe der summierten Wettkampfgebühren (Konto `3420` bzw. Aufwandskonto).
-- **Transparenz:** Auf der Beitragsrechnung des Nachwuchsschützen sowie in der Beitragsmatrix sind alle geschossenen Stiche einzeln als Soll aufgeführt und durch die Vereinssubvention auf Saldo CHF 0.00 ausgeglichen. In der Buchhaltung (`RechnungsCore`) ist die Kostenübernahme durch den Verein lückenlos ausgewiesen.
+- **Buchhalterischer Gegenbeleg:** Das System generiert automatisch eine Gegenposition **`KOSTENUEBERNAHME_JUGEND`** (*«Kostenübernahme Verein (Nachwuchsförderung)»*) in Höhe der summierten Wettkampfgebühren (Konto `3420` bzw. variables Wettkampf-Gegenkonto).
+- **Transparenz:** Auf der Beitragsrechnung des Nachwuchsschützen sowie in der Beitragsmatrix sind alle geschossenen Stiche einzeln als Soll aufgeführt und durch die Vereinssubvention auf Saldo CHF 0.00 ausgeglichen (effektiver Rechnungsbetrag entspricht dem reinen Grundbeitrag von CHF 10.00). In der Buchhaltung (`RechnungsCore`) ist die Kostenübernahme durch den Verein lückenlos ausgewiesen.
 
 ### 5.9 Floor-Regel
 - Rechnungsbetrag wird auf mindestens CHF 0.00 begrenzt, ausser bei Hausmeister-Gutschriften (`RA002`), wo negative Auszahlungsbeträge für Unterhaltsentschädigungen zulässig sind.
