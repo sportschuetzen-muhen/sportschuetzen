@@ -109,6 +109,43 @@
             box-shadow: var(--shadow-lg);
         }
 
+        /* Portal Module Clustering (Pilot Cluster 3) */
+        .portal-cluster-section {
+            transition: all 0.25s ease-in-out;
+        }
+        .portal-cluster-section:not(:has(.role-protected:not(.d-none))) {
+            display: none !important;
+        }
+        .portal-cluster-header .cluster-title {
+            font-size: 1.05rem;
+            letter-spacing: -0.2px;
+        }
+        .portal-cluster-card {
+            border-top: 3.5px solid var(--primary) !important;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .portal-cluster-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 22px -4px rgba(15, 58, 93, 0.16) !important;
+        }
+        .sidebar-section-divider {
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #94a3b8;
+            padding: 16px 1.5rem 6px 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .sidebar-section-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: #e2e8f0;
+        }
+
         #login-screen {
             position: fixed;
             inset: 0;
@@ -890,6 +927,9 @@
                     <i class="fas fa-envelope me-2"></i> <span class="nav-text flex-grow-1">Mail</span>
                     <span id="mail-nav-badge" class="badge rounded-pill bg-danger d-none">0</span>
                 </div>
+                <div class="sidebar-section-divider">
+                    <span>Finanzen &amp; Vereinsführung</span>
+                </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,kassier"
                      onclick="navTo('jahresbeitrag', this)">
                     <i class="fas fa-coins"></i> <span class="nav-text">Jahresbeitrag</span>
@@ -1127,44 +1167,66 @@
                             <p class="small text-muted mb-0">Verteiler & Versandprotokoll</p>
                         </div>
                     </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100"
-                             onclick="navTo('jahresbeitrag')" style="cursor:pointer">
-                            <h5 class="mb-1">💰 Jahresbeitrag</h5>
-                            <p class="small text-muted mb-0">Beitragsverwaltung, Schnellerfassung & Gebühren</p>
-                        </div>
-                    </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100 position-relative"
-                             onclick="navTo('rechnungen')" style="cursor:pointer">
-                            <div class="d-flex justify-content-between align-items-start mb-1">
-                                <h5 class="mb-0">🧾 Rechnungen</h5>
-                                <span id="rechnungen-tile-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                </div>
+
+                <!-- CLUSTER 3: FINANZEN & VEREINSFÜHRUNG -->
+                <div id="cluster-finanzen" class="portal-cluster-section mt-4 pt-1">
+                    <div class="portal-cluster-header d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="fs-4">💰</span>
+                            <div>
+                                <h5 class="mb-0 fw-bold text-dark cluster-title">Finanzen &amp; Vereinsführung</h5>
+                                <span class="small text-muted">Rechnungen, Jahresbeiträge, Buchhaltung &amp; GV-Cockpit</span>
                             </div>
-                            <p class="small text-muted mb-0">Zentrales Rechnungs-Management & QR-PDF</p>
+                        </div>
+                        <span class="badge rounded-pill bg-primary-subtle text-primary border border-primary-subtle px-3 py-1 fw-semibold" style="font-size: 0.75rem;">
+                            <i class="fas fa-layer-group me-1"></i> 5 Module
+                        </span>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,kassier">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
+                                 onclick="navTo('jahresbeitrag')" style="cursor:pointer">
+                                <h5 class="mb-1">💰 Jahresbeitrag</h5>
+                                <p class="small text-muted mb-0">Beitragsverwaltung, Schnellerfassung & Gebühren</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,kassier">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100 position-relative"
+                                 onclick="navTo('rechnungen')" style="cursor:pointer">
+                                <div class="d-flex justify-content-between align-items-start mb-1">
+                                    <h5 class="mb-0">🧾 Rechnungen</h5>
+                                    <span id="rechnungen-tile-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                                </div>
+                                <p class="small text-muted mb-0">Zentrales Rechnungs-Management & QR-PDF</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 role-protected" data-roles="admin,kassier">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
+                                 onclick="navTo('buchhaltung')" style="cursor:pointer">
+                                <h5 class="mb-1">📊 Buchhaltung</h5>
+                                <p class="small text-muted mb-0">Doppelte Buchhaltung & KMU-Berichte</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,aktuar">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
+                                 onclick="navTo('gv-dossier')" style="cursor:pointer">
+                                <h5 class="mb-1">🏛️ Generalversammlung</h5>
+                                <p class="small text-muted mb-0">GV-Cockpit, Traktanden, Dossier &amp; Versand</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 role-protected" data-roles="admin,vorstand,kassier,vermieter">
+                            <div class="card portal-cluster-card p-3 shadow-sm border-0 h-100"
+                                 onclick="navTo('dokument-vorlagen')" style="cursor:pointer">
+                                <h5 class="mb-1">📄 Dokumenten-Vorlagen</h5>
+                                <p class="small text-muted mb-0">Zentraler Vorlagen-Pool & Klauseln</p>
+                            </div>
                         </div>
                     </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,kassier,vermieter">
-                        <div class="card p-3 shadow-sm border-0 h-100"
-                             onclick="navTo('dokument-vorlagen')" style="cursor:pointer">
-                            <h5 class="mb-1">📄 Dokumenten-Vorlagen</h5>
-                            <p class="small text-muted mb-0">Zentraler Vorlagen-Pool & Klauseln</p>
-                        </div>
-                    </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,aktuar">
-                        <div class="card p-3 shadow-sm border-0 h-100"
-                             onclick="navTo('gv-dossier')" style="cursor:pointer">
-                            <h5 class="mb-1">🏛️ Generalversammlung</h5>
-                            <p class="small text-muted mb-0">GV-Cockpit, Traktanden, Dossier &amp; Versand</p>
-                        </div>
-                    </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100"
-                             onclick="navTo('buchhaltung')" style="cursor:pointer">
-                            <h5 class="mb-1">📊 Buchhaltung</h5>
-                            <p class="small text-muted mb-0">Doppelte Buchhaltung & KMU-Berichte</p>
-                        </div>
-                    </div>
+                </div>
+
+                <!-- WEITERE MODULE -->
+                <div class="row g-3 mt-3">
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar">
                         <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('mitglieder')" style="cursor:pointer">
