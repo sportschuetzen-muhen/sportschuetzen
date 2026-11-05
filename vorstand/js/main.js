@@ -1078,6 +1078,8 @@ const MODULE_MANAGE_PERMS = {
     'system-mails':           'system-mails.manage',
     'push':                   'push.manage',
     'anlaesse':               'anlaesse.manage',
+    'schichtplaner':          'anlaesse.manage',
+    'festkasse':              'anlaesse.manage',
     'umfragen':               'umfragen.manage',
     'manager':                'manager.manage',
     'resultate':              'resultate.manage',
@@ -1177,16 +1179,17 @@ function navTo(viewId, el) {
     // 3. View wechseln
     document.querySelectorAll('.module-view').forEach(v => v.classList.remove('active'));
 
-    const targetView = document.getElementById('view-' + viewId);
+    const effectiveViewId = viewId === 'schichtplaner' ? 'anlaesse' : viewId;
+    const targetView = document.getElementById('view-' + effectiveViewId);
     if (targetView) {
         targetView.classList.add('active');
         
         // Globale Schreibrecht-Prüfung für das geladene Modul anwenden (Initial)
-        const canWrite = hasWriteAccess(viewId);
+        const canWrite = hasWriteAccess(effectiveViewId);
         applyModuleWriteProtection(targetView, canWrite);
         
     } else {
-        console.error("View nicht gefunden: view-" + viewId);
+        console.error("View nicht gefunden: view-" + effectiveViewId);
     }
 
     closeSidebarMobile();
@@ -1203,6 +1206,19 @@ function navTo(viewId, el) {
         else if (viewId === 'push' && typeof window.PushUI?.init === 'function') loadPromise = window.PushUI.init();
         else if (viewId === 'umfragen' && typeof loadUmfragenData === 'function') loadPromise = loadUmfragenData();
         else if (viewId === 'anlaesse' && typeof loadAnlaesseData === 'function') loadPromise = loadAnlaesseData();
+        else if (viewId === 'schichtplaner') {
+            loadPromise = (async () => {
+                if (typeof loadAnlaesseData === 'function') {
+                    await loadAnlaesseData();
+                }
+                if (window.AnlaesseModule && typeof window.AnlaesseModule.switchTab === 'function') {
+                    window.AnlaesseModule.switchTab('shifts');
+                }
+            })();
+        }
+        else if (viewId === 'festkasse' && typeof window.renderFestkasseView === 'function') {
+            loadPromise = window.renderFestkasseView();
+        }
         else if (viewId === 'logins' && typeof loadLoginsData === 'function') loadPromise = loadLoginsData();
         else if (viewId === 'jahresmeisterschaft' && typeof loadJahresmeisterschaftData === 'function') loadPromise = loadJahresmeisterschaftData();
         else if (viewId === 'jahresmeisterschaft-kk' && typeof loadJahresmeisterschaftKKData === 'function') loadPromise = loadJahresmeisterschaftKKData();

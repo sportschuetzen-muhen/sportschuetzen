@@ -51,3 +51,6 @@ Die **Festkasse** ist eine eigenständige Progressive Web App (PWA) für das Sch
 ## 4. Querverweise & Architektur-Integration
 * **Schicht- & Helferplanung:** Siehe [SCHICHTPLANER.md](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/docs/SCHICHTPLANER.md).
 * **Finanzbuchhaltung:** Kassen-Sammelbelege und Kassenbuchungen für das Vereinskonto 1000 (Kasse) werden im Vorstandsportal unter [FINANZBUCHHALTUNG_UND_BANK.md](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/docs/FINANZBUCHHALTUNG_UND_BANK.md) gebucht.
+* **Portal- & Website-Integration:** 
+  - **Vorstandsportal (`vorstand/`):** Prominentes Kachel-Icon und Sidebar-Link «🛒 Festkasse (POS)» mit dediziertem Cockpit (`vorstand/js/festkasse.js`), Live-Vorschau und Vollbild-Start. Berechtigungskontrakt über `anlaesse.view` / `anlaesse.manage`.
+  - **Mitgliederbereich (`intern.html`):** Schnellstart-Pill in den Haupt-Tabs und Schnellstart-Banner innerhalb des Helfer- & Schichtplans (`member-shifts.js`) für Kassen- und Thekendienste.

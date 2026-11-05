@@ -85,3 +85,10 @@ Der **Aplano Schicht- & Helferplaner** organisiert die Einsatzplanung für Schü
 * **Strikter RLS-Schutz:** Anonymous (`anon`) besitzt **keine** direkten Schreibrechte auf `event_shifts` oder `event_shift_assignments`. Manipulationen von aussen ohne Vereins-Login sind verunmöglicht.
 * **Datenschutz:** Telefonnummern und E-Mail-Adressen von Helfern sind durch RLS geschützt und werden nur an autorisierte Vereinsmitglieder und Vorstände ausgeliefert.
 * **Race-Condition-Schutz:** Durch die serverseitige Zählung innerhalb der Postgres-Transaktion in `register_member_for_shift` können sich nicht versehentlich zwei Personen gleichzeitig den letzten freien Helferplatz sichern.
+
+---
+
+## 5. Portal- & Website-Integration
+
+* **Vorstandsportal (`vorstand/`):** Prominentes Kachel-Icon und Sidebar-Link «👥 Schichtplaner» führt via `navTo('schichtplaner')` direkt in die Aplano-Helfer-Matrix (`AnlaesseModule.switchTab('shifts')`). Berechtigungskontrakt über `anlaesse.view` / `anlaesse.manage`.
+* **Mitgliederbereich (`intern.html`):** Eigener Hauptreiter «📅 Helfer- & Schichtplan» (`MemberShifts.load()`) mit 1-Klick-Selbsteintrag, Besetzungsampel und integriertem Festkassen-Schnellstart für Thekenhelfer.

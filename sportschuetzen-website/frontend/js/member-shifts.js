@@ -78,6 +78,13 @@ window.MemberShifts = (function () {
         return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
     }
 
+    function getKasseUrl() {
+        if (window.location.protocol === 'file:') {
+            return '../../kasse/index.html';
+        }
+        return '/kasse/';
+    }
+
     async function load() {
         const container = document.getElementById('tab-content-schichten');
         if (!container) return;
@@ -169,12 +176,35 @@ window.MemberShifts = (function () {
 
     function renderEmpty(container) {
         container.innerHTML = `
-            <div class="glass-card" style="padding: 3rem 2rem; text-align: center;">
+            <div class="glass-card mb-4" style="padding: 3rem 2rem; text-align: center;">
                 <div style="font-size: 3rem; margin-bottom: 1rem;">📅</div>
                 <h3 style="color: var(--primary-color); margin-bottom: 0.5rem;">Aktuell keine Helfereinsätze ausgeschrieben</h3>
                 <p class="text-muted" style="max-width: 500px; margin: 0 auto;">
                     Sobald das nächste Schützenfest oder ein Vereinsanlass ansteht, kannst du dich hier bequem für Schichten eintragen.
                 </p>
+            </div>
+
+            <!-- FESTKASSE SCHNELLSTART BANNER FÜR HELFER -->
+            <div class="glass-card mb-4" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(2, 132, 199, 0.04)); border: 1.5px solid rgba(16, 185, 129, 0.35); padding: 1.25rem 1.75rem; border-radius: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                    <div style="display: flex; align-items: center; gap: 1rem; max-width: 650px;">
+                        <span style="font-size: 2.2rem; line-height: 1;">🛒</span>
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.2rem;">
+                                <h4 style="margin: 0; font-size: 1.05rem; color: #065f46; font-weight: 700;">Festkasse &amp; Bon-Erfassung (WaiterOne POS)</h4>
+                                <span class="badge" style="background: #10b981; color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 700;">100% Offline-Ready</span>
+                            </div>
+                            <p style="margin: 0; font-size: 0.88rem; color: var(--text-muted); line-height: 1.4;">
+                                Für Kassenbediener und Festwirtschafts-Helfer: Touch-Kasse für iPad, Tablet und iPhone. Läuft zuverlässig auch bei Netzausfall im Festzelt!
+                            </p>
+                        </div>
+                    </div>
+                    <div>
+                        <a href="${getKasseUrl()}" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="background: #10b981; border: none; font-weight: 700; border-radius: 20px; padding: 0.6rem 1.25rem; text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25); white-space: nowrap;">
+                            <span>Festkasse starten ↗</span>
+                        </a>
+                    </div>
+                </div>
             </div>
         `;
     }
@@ -283,6 +313,29 @@ window.MemberShifts = (function () {
                     </div>
                 </div>
             ` : ''}
+
+            <!-- FESTKASSE SCHNELLSTART BANNER FÜR HELFER -->
+            <div class="glass-card mb-4" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(2, 132, 199, 0.04)); border: 1.5px solid rgba(16, 185, 129, 0.35); padding: 1.25rem 1.75rem; border-radius: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                    <div style="display: flex; align-items: center; gap: 1rem; max-width: 650px;">
+                        <span style="font-size: 2.2rem; line-height: 1;">🛒</span>
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.2rem;">
+                                <h4 style="margin: 0; font-size: 1.05rem; color: #065f46; font-weight: 700;">Festkasse &amp; Bon-Erfassung (WaiterOne POS)</h4>
+                                <span class="badge" style="background: #10b981; color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 700;">100% Offline-Ready</span>
+                            </div>
+                            <p style="margin: 0; font-size: 0.88rem; color: var(--text-muted); line-height: 1.4;">
+                                Eingeteilt für Kasse, Küche, Grill oder Bar? Starte hier die touch-optimierte Kassen-App für dein Tablet oder Smartphone. Läuft auch bei Netzausfall zuverlässig im Festzelt!
+                            </p>
+                        </div>
+                    </div>
+                    <div>
+                        <a href="${getKasseUrl()}" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="background: #10b981; border: none; font-weight: 700; border-radius: 20px; padding: 0.6rem 1.25rem; text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25); white-space: nowrap;">
+                            <span>Festkasse starten ↗</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
 
             <!-- APLANO SCHICHT-MATRIX / KARTEN -->
             <div style="margin-top: 1rem;">

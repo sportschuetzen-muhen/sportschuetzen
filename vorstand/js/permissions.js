@@ -21,6 +21,8 @@
     'system-mails':           ['system-mails.view', 'system-mails.manage'],
     'push':                   ['push.view', 'push.manage'],
     'anlaesse':               ['anlaesse.view', 'anlaesse.manage'],
+    'schichtplaner':          ['anlaesse.view', 'anlaesse.manage'],
+    'festkasse':              ['anlaesse.view', 'anlaesse.manage'],
     'umfragen':               ['umfragen.view', 'umfragen.manage'],
     'manager':                ['manager.view', 'manager.manage'],
     'resultate':              ['resultate.view', 'resultate.manage'],

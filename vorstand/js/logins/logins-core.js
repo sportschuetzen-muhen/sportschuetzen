@@ -60,8 +60,8 @@ const RBAC_MODULES = [
     module: 'Anlässe & Controlling',
     icon: 'fa-calendar-check',
     permissions: [
-      { key: 'anlaesse.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Anlässe & Margen einsehen' },
-      { key: 'anlaesse.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Anlässe planen, Helfer, Bestellungen & Controlling verwalten' }
+      { key: 'anlaesse.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Anlässe, Schichtplaner & Festkasse einsehen' },
+      { key: 'anlaesse.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Anlässe planen, Schichtplaner, Helfer, Bestellungen & Festkasse verwalten' }
     ]
   },
   {
