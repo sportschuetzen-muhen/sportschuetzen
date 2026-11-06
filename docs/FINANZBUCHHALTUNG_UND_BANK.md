@@ -141,6 +141,10 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
 * **Ergonomie & Prüfbarkeit:** Sämtliche im Portal angezeigten Kontonummern (in den KMU-Berichten, im Kontenrahmen, im Kassabuch-Journal sowie in der Soll/Ist-Controlling-Tabelle und den Revisorenberichten) fungieren als interaktive Badges (`.bh-konto-badge.clickable`).
 * **Sofort-Drilldown (`bhOpenKontoauszugModal`):** Ein Klick auf das Konten-Badge oder die Zeile öffnet unmittelbar das vollständige Kontoblatt des entsprechenden Kontos für das aktive Jahr mit allen Buchungen, Gegenkonten, Saldenverlauf, Belegnummern, Vollbildmodus, Excel-CSV- und PDF-Export. Innerhalb des Kontoblatts ermöglicht ein Klick auf das Gegenkonto einen direkten Quersprung in dessen Kontenverlauf.
 
+### 2.16 Verknüpfung mit Inventar-Kontierung (`bhJumpToInventarKonten`)
+* **Nahtlose Abstimmung zwischen FiBu und Inventar:** Im Tab «KMU-Kontenrahmen & Budget» visualisiert eine Kontierungs-Infozeile die aktuell konfigurierten Gegenkonten für den Materialverkauf (Ertrag, z.B. `8121`) und Pfanddepots (Passiven `2030`).
+* **Direktabsprung:** Der Button `[Inventar-Konten]` bzw. der Link in der Infobox öffnet direkt das Inventarmodul im Tab «Finanzen» und fokussiert die Konfigurationskarte für berechtigte Kassiere.
+
 ---
 
 ## 3. Datenmodell (Kern-Tabellen)

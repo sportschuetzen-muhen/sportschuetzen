@@ -166,21 +166,17 @@ function renderInventarUI(container) {
                                     </select>
                                 </div>
                                 <div class="col-12 d-none mt-2" id="container-verkauf-konto">
-                                    <label class="form-label fw-bold small text-primary mb-1" id="label-verkauf-konto">
-                                      <i class="fas fa-book me-1"></i>Haben-Konto (Ertrag Materialverkauf)
-                                    </label>
-                                    <div class="input-group input-group-sm">
-                                        <input type="text" id="verkauf-konto" class="form-control font-monospace" list="inv-konten-datalist"
-                                               value="${localStorage.getItem('inventar_preferred_haben_konto_verkauf') || '8501'}" readonly style="background-color: #e9ecef;"
-                                               placeholder="Konto suchen oder wählen..."
-                                               onchange="onVerkaufKontoChange(this.value)">
-                                        <button class="btn btn-outline-secondary" type="button" id="btn-verkauf-konto-lock" 
-                                                onclick="toggleVerkaufKontoLock()" title="Konto-Sperre aufheben / sperren">
-                                            <i class="fas fa-lock" id="icon-verkauf-konto-lock"></i>
-                                        </button>
-                                    </div>
-                                    <div class="form-text small" style="font-size: 10px;" id="help-verkauf-konto">
-                                        Standard: <code>8501</code> (Ertrag Materialverkauf) oder <code>2030</code> (Kautionen / Depots). Variabel aus Kontenrahmen wählbar.
+                                    <div class="d-flex align-items-center justify-content-between p-2 rounded-2 border bg-light-subtle">
+                                        <div class="small text-muted d-flex align-items-center gap-1.5" id="label-verkauf-konto-wrap">
+                                            <i class="fas fa-book text-secondary"></i>
+                                            <span id="label-verkauf-konto-title">Buchungskonto:</span>
+                                            <span class="badge bg-white text-dark border font-monospace" id="badge-verkauf-konto">8121</span>
+                                        </div>
+                                        <span id="link-fibu-adjust-konto" class="small d-none">
+                                            <a href="#" onclick="event.preventDefault(); showInventarSection('finanzen'); setTimeout(() => document.getElementById('inv-fibu-settings-card')?.scrollIntoView({ behavior: 'smooth' }), 100);" class="text-decoration-none text-primary" style="font-size: 11px;">
+                                                <i class="fas fa-cog me-1"></i>Konti verwalten
+                                            </a>
+                                        </span>
                                     </div>
                                 </div>
                                 <div class="col-12 d-none mt-2" id="container-verkauf-info-banner">
@@ -376,6 +372,52 @@ function renderInventarUI(container) {
 
         <!-- SECTION: FINANZEN -->
         <div id="inv-section-finanzen" class="inv-section d-none">
+            <!-- FIBU KONTEN KONFIGURATION (Nur für Kassier & Admin) -->
+            <div id="inv-fibu-settings-card" class="card border-0 shadow-sm p-4 mb-4 d-none">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold mb-0 text-slate-800 d-inline-flex align-items-center">
+                        <i class="fas fa-cog me-2 text-primary"></i> Standard-Habenkonten für Buchhaltung & Rechnungen
+                    </h5>
+                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2.5 py-1">
+                        <i class="fas fa-lock me-1"></i>Nur Kassier & Admin
+                    </span>
+                </div>
+                <p class="text-muted small mb-3">
+                    Hier legst du fest, auf welche Konten des Schweizer KMU-Kontenrahmens Materialverkäufe (Ertrag) und Kautionen (Passiven) automatisch im Kassabuch und auf QR-Rechnungen verbucht werden.
+                </p>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold small text-success mb-1">
+                            <i class="fas fa-tag me-1"></i>Materialverkauf (Erfolgsrechnung / Ertrag)
+                        </label>
+                        <div class="input-group input-group-sm">
+                            <input type="text" id="cfg-inventar-konto-verkauf" class="form-control font-monospace" list="inv-konten-datalist-verkauf" placeholder="z. B. 8121 | Kleiderverkauf">
+                        </div>
+                        <datalist id="inv-konten-datalist-verkauf"></datalist>
+                        <div class="form-text small" style="font-size: 11px;">
+                            Empfohlen: <code>8121</code> (Kleiderverkauf) oder <code>3655</code> (Verkauf Vereinsinventar).
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold small text-primary mb-1">
+                            <i class="fas fa-shield-alt me-1"></i>Kautionen & Depots bei Ausgabe (Bilanz / Passiven)
+                        </label>
+                        <div class="input-group input-group-sm">
+                            <input type="text" id="cfg-inventar-konto-depot" class="form-control font-monospace" list="inv-konten-datalist-depot" placeholder="z. B. 2030 | Kautionen und Depots">
+                        </div>
+                        <datalist id="inv-konten-datalist-depot"></datalist>
+                        <div class="form-text small" style="font-size: 11px;">
+                            Standard: <code>2030</code> (Kautionen und Depots - Fremdkapital/Passiven).
+                        </div>
+                    </div>
+                    <div class="col-12 text-end pt-2">
+                        <button type="button" class="btn btn-sm btn-primary px-3 shadow-xs" id="btn-save-inv-fibu-konten" onclick="saveInventarFibuKonten()">
+                            <i class="fas fa-save me-1"></i> Konten-Einstellung speichern
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <div class="row g-3 mb-4" id="finanz-stats"></div>
             <div class="card border-0 shadow-sm p-4">
                 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -626,34 +668,29 @@ function toggleBookingFields() {
     document.getElementById('container-pfand-retour').classList.toggle('d-none', action !== 'checkin');
     document.getElementById('container-verkauf-methode').classList.toggle('d-none', !isVerkauf);
     
-    // Konto-Container bei Verkauf UND bei Ausgabe (Depot) anzeigen
+    // Konto-Badge bei Verkauf UND bei Ausgabe (Depot) dezent anzeigen
     const kontoContainer = document.getElementById('container-verkauf-konto');
-    const labelKonto = document.getElementById('label-verkauf-konto');
-    const inputKonto = document.getElementById('verkauf-konto');
-    const helpKonto = document.getElementById('help-verkauf-konto');
+    const labelTitle = document.getElementById('label-verkauf-konto-title');
+    const badgeKonto = document.getElementById('badge-verkauf-konto');
+    const linkAdjust = document.getElementById('link-fibu-adjust-konto');
+    
+    const canManageFibu = (typeof userHasRole === 'function' && (userHasRole('kassier') || userHasRole('admin'))) || (window.Perms && (window.Perms.has('buchhaltung.manage') || window.Perms.has('*')));
+    if (linkAdjust) linkAdjust.classList.toggle('d-none', !canManageFibu);
     
     if (kontoContainer) {
         kontoContainer.classList.toggle('d-none', !isVerkauf && !isCheckout);
         if (isVerkauf) {
             const savedVerkaufKonto = getInventarDefaultHabenKonto('verkauf');
-            if (labelKonto) labelKonto.innerHTML = '<i class="fas fa-book me-1"></i>Haben-Konto (Ertrag Materialverkauf)';
-            if (inputKonto && (inputKonto.value === '2030' || inputKonto.value.startsWith('2030 ') || !inputKonto.value)) {
-                inputKonto.value = savedVerkaufKonto;
-            } else if (inputKonto && inputKonto.value === '8501' && savedVerkaufKonto !== '8501') {
-                inputKonto.value = savedVerkaufKonto;
-            }
-            if (helpKonto) helpKonto.innerHTML = 'Standard: <code>8501</code> (Ertrag Materialverkauf). Ansonsten variabel aus Kontenrahmen wählbar.';
-            onVerkaufKontoChange(inputKonto ? inputKonto.value : savedVerkaufKonto);
+            if (labelTitle) labelTitle.textContent = 'Ertragskonto (Verkauf):';
+            const kDesc = getKontoBezeichnung(savedVerkaufKonto);
+            if (badgeKonto) badgeKonto.textContent = `${savedVerkaufKonto}${kDesc ? ' (' + kDesc + ')' : ''}`;
+            const lblVerw = document.getElementById('label-verwendungs-konto');
+            if (lblVerw) lblVerw.innerText = savedVerkaufKonto;
         } else if (isCheckout) {
             const savedDepotKonto = getInventarDefaultHabenKonto('depot');
-            if (labelKonto) labelKonto.innerHTML = '<i class="fas fa-shield-alt me-1"></i>Haben-Konto (Kautionen / Depots)';
-            if (inputKonto && (inputKonto.value === '8501' || inputKonto.value.startsWith('8501 ') || inputKonto.value === '3200' || !inputKonto.value)) {
-                inputKonto.value = savedDepotKonto;
-            } else if (inputKonto && inputKonto.value === '2030' && savedDepotKonto !== '2030') {
-                inputKonto.value = savedDepotKonto;
-            }
-            if (helpKonto) helpKonto.innerHTML = 'Standard: <code>2030</code> (Kautionen / Depots - Passivkonto). Ansonsten variabel aus Kontenrahmen wählbar.';
-            onVerkaufKontoChange(inputKonto ? inputKonto.value : savedDepotKonto);
+            if (labelTitle) labelTitle.textContent = 'Kautionskonto (Passiven):';
+            const kDesc = getKontoBezeichnung(savedDepotKonto);
+            if (badgeKonto) badgeKonto.textContent = `${savedDepotKonto}${kDesc ? ' (' + kDesc + ')' : ''}`;
         }
     }
     
@@ -670,10 +707,34 @@ function toggleBookingFields() {
     updateSubOptions();
 }
 
+function getKontoBezeichnung(kontoNum) {
+    if (!kontoNum) return '';
+    const clean = String(kontoNum).split('|')[0].trim();
+    let list = window._bhKontenrahmen;
+    if (!list || list.length === 0) {
+        try {
+            const cached = localStorage.getItem('bh_kontenrahmen');
+            if (cached) list = JSON.parse(cached);
+        } catch (e) {}
+    }
+    if (list && list.length > 0) {
+        const found = list.find(k => String(k.konto).trim() === clean);
+        if (found && found.bezeichnung) return found.bezeichnung;
+    }
+    const defaults = {
+        '8121': 'Kleiderverkauf',
+        '3655': 'Verkauf Vereinsinventar',
+        '2030': 'Kautionen und Depots',
+        '8501': 'Kleidereinkauf'
+    };
+    return defaults[clean] || '';
+}
+window.getKontoBezeichnung = getKontoBezeichnung;
+
 function getInventarDefaultHabenKonto(type) {
-    const cfgKey = type === 'depot' ? 'inventar_haben_konto_depot' : 'inventar_haben_konto_verkauf';
-    const storageKey = type === 'depot' ? 'inventar_preferred_haben_konto_depot' : 'inventar_preferred_haben_konto_verkauf';
-    const fallback = type === 'depot' ? '2030' : '8501';
+    const isDepot = (type === 'depot');
+    const cfgKey = isDepot ? 'inventar_haben_konto_depot' : 'inventar_haben_konto_verkauf';
+    const fallback = isDepot ? '2030' : '8121';
 
     // 1. Aus Supabase inventory_config (in inventarState.rawConfig)
     if (inventarState?.rawConfig) {
@@ -681,63 +742,143 @@ function getInventarDefaultHabenKonto(type) {
         if (found && found.value) return found.value;
     }
     // 2. Aus localStorage
+    const storageKey = isDepot ? 'inventar_preferred_haben_konto_depot' : 'inventar_preferred_haben_konto_verkauf';
     const local = localStorage.getItem(storageKey);
-    if (local) return local;
+    if (local) {
+        // Sanity Check: Depot darf kein Ertragskonto 8121/8501 sein
+        if (isDepot && (local === '8121' || local === '8501')) {
+            localStorage.setItem(storageKey, '2030');
+            return '2030';
+        }
+        return local;
+    }
 
     return fallback;
 }
 window.getInventarDefaultHabenKonto = getInventarDefaultHabenKonto;
 
-window.onVerkaufKontoChange = async function(val) {
-    const cleanKonto = (val || '').split('|')[0].trim();
-    const lbl = document.getElementById('label-verwendungs-konto');
-    if (lbl) lbl.innerText = cleanKonto || '8501';
+async function fillInventarFibuKontenForm() {
+    const vInput = document.getElementById('cfg-inventar-konto-verkauf');
+    const dInput = document.getElementById('cfg-inventar-konto-depot');
+    if (!vInput || !dInput) return;
 
-    const action = document.getElementById('select-action')?.value;
-    if (cleanKonto) {
-        const isDepot = action === 'checkout';
-        const storageKey = isDepot ? 'inventar_preferred_haben_konto_depot' : 'inventar_preferred_haben_konto_verkauf';
-        const configKey = isDepot ? 'inventar_haben_konto_depot' : 'inventar_haben_konto_verkauf';
+    const vkKonto = getInventarDefaultHabenKonto('verkauf');
+    const dpKonto = getInventarDefaultHabenKonto('depot');
 
-        localStorage.setItem(storageKey, cleanKonto);
+    const vkDesc = getKontoBezeichnung(vkKonto);
+    const dpDesc = getKontoBezeichnung(dpKonto);
 
-        // Dauerhaft in Supabase inventory_config persistieren
+    vInput.value = vkDesc ? `${vkKonto} | ${vkDesc}` : vkKonto;
+    dInput.value = dpDesc ? `${dpKonto} | ${dpDesc}` : dpKonto;
+
+    // Kontenliste laden falls noch nicht vorhanden
+    let list = window._bhKontenrahmen;
+    if (!list || list.length === 0) {
         const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
         if (supa) {
             try {
-                await supa.from('inventory_config').delete().eq('config_key', configKey);
-                await supa.from('inventory_config').insert([{
-                    config_key: configKey,
-                    value: cleanKonto,
-                    sort_order: isDepot ? 2 : 1
-                }]);
-                if (inventarState?.rawConfig) {
-                    const existing = inventarState.rawConfig.find(c => c.config_key === configKey);
-                    if (existing) existing.value = cleanKonto;
-                    else inventarState.rawConfig.push({ config_key: configKey, value: cleanKonto, sort_order: isDepot ? 2 : 1 });
+                const { data } = await supa.from('accounting_accounts').select('konto, bezeichnung, klasse').order('konto');
+                if (data && data.length > 0) {
+                    list = data;
+                    window._bhKontenrahmen = data;
+                    try { localStorage.setItem('bh_kontenrahmen', JSON.stringify(data)); } catch (_) {}
                 }
-            } catch (err) {
-                console.warn("⚠️ Habenkonto konnte nicht in inventory_config gespeichert werden:", err);
+            } catch (e) {
+                console.warn("Konnte Kontenrahmen nicht laden:", e);
             }
         }
     }
-};
 
-window.toggleVerkaufKontoLock = function() {
-    const input = document.getElementById('verkauf-konto');
-    const icon = document.getElementById('icon-verkauf-konto-lock');
-    if (!input || !icon) return;
-
-    if (input.hasAttribute('readonly')) {
-        input.removeAttribute('readonly');
-        input.style.backgroundColor = '#ffffff';
-        icon.className = 'fas fa-lock-open text-warning';
-    } else {
-        input.setAttribute('readonly', 'readonly');
-        input.style.backgroundColor = '#e9ecef';
-        icon.className = 'fas fa-lock';
+    if (list && list.length > 0) {
+        const dlVk = document.getElementById('inv-konten-datalist-verkauf');
+        const dlDp = document.getElementById('inv-konten-datalist-depot');
+        if (dlVk) {
+            dlVk.innerHTML = list
+                .filter(k => k.klasse === 'Ertrag' || k.konto.startsWith('3') || k.konto.startsWith('8'))
+                .map(k => `<option value="${escapeHtml(k.konto)} | ${escapeHtml(k.bezeichnung)}">`)
+                .join('');
+        }
+        if (dlDp) {
+            dlDp.innerHTML = list
+                .filter(k => k.klasse === 'Passiven' || k.konto.startsWith('2'))
+                .map(k => `<option value="${escapeHtml(k.konto)} | ${escapeHtml(k.bezeichnung)}">`)
+                .join('');
+        }
     }
-};
+}
+window.fillInventarFibuKontenForm = fillInventarFibuKontenForm;
+
+async function saveInventarFibuKonten() {
+    const vInput = document.getElementById('cfg-inventar-konto-verkauf');
+    const dInput = document.getElementById('cfg-inventar-konto-depot');
+    if (!vInput || !dInput) return;
+
+    const rawVk = (vInput.value || '').split('|')[0].trim();
+    const rawDp = (dInput.value || '').split('|')[0].trim();
+
+    if (!rawVk) {
+        if (window.UIConfirmKit) {
+            await UIConfirmKit.alert({ title: 'Eingabe unvollständig', message: 'Bitte gib ein gültiges Ertragskonto für den Materialverkauf an (z. B. 8121 oder 3655).', type: 'warning' });
+        } else {
+            alert('Bitte gib ein gültiges Ertragskonto für den Materialverkauf an.');
+        }
+        return;
+    }
+    if (!rawDp) {
+        if (window.UIConfirmKit) {
+            await UIConfirmKit.alert({ title: 'Eingabe unvollständig', message: 'Bitte gib ein gültiges Kautionskonto für Depots an (Standard: 2030).', type: 'warning' });
+        } else {
+            alert('Bitte gib ein gültiges Kautionskonto für Depots an.');
+        }
+        return;
+    }
+
+    const saveAction = async () => {
+        const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
+        if (!supa) throw new Error("Supabase-Verbindung nicht verfügbar.");
+
+        // In Supabase bereinigen und neu setzen
+        await supa.from('inventory_config').delete().in('config_key', ['inventar_haben_konto_verkauf', 'inventar_haben_konto_depot']);
+        const { error } = await supa.from('inventory_config').insert([
+            { config_key: 'inventar_haben_konto_verkauf', value: rawVk, sort_order: 1 },
+            { config_key: 'inventar_haben_konto_depot', value: rawDp, sort_order: 2 }
+        ]);
+
+        if (error) throw error;
+
+        // Lokaler Cache & State
+        localStorage.setItem('inventar_preferred_haben_konto_verkauf', rawVk);
+        localStorage.setItem('inventar_preferred_haben_konto_depot', rawDp);
+
+        if (inventarState?.rawConfig) {
+            inventarState.rawConfig = inventarState.rawConfig.filter(c => c.config_key !== 'inventar_haben_konto_verkauf' && c.config_key !== 'inventar_haben_konto_depot');
+            inventarState.rawConfig.push({ config_key: 'inventar_haben_konto_verkauf', value: rawVk, sort_order: 1 });
+            inventarState.rawConfig.push({ config_key: 'inventar_haben_konto_depot', value: rawDp, sort_order: 2 });
+        }
+
+        // Buchungsmasken-Badges aktualisieren
+        if (typeof toggleBookingFields === 'function') {
+            toggleBookingFields();
+        }
+
+        if (window.UIConfirmKit) {
+            await UIConfirmKit.alert({
+                title: 'Konten gespeichert',
+                message: `Die Standardkonten wurden erfolgreich gespeichert:\n\n• Materialverkauf (Ertrag): ${rawVk} (${getKontoBezeichnung(rawVk)})\n• Kautionen & Depots (Passiven): ${rawDp} (${getKontoBezeichnung(rawDp)})`,
+                type: 'info'
+            });
+        } else {
+            alert('Die Standardkonten wurden erfolgreich gespeichert.');
+        }
+    };
+
+    if (window.UIButtonKit && typeof window.UIButtonKit.withLoading === 'function') {
+        await window.UIButtonKit.withLoading('#btn-save-inv-fibu-konten', saveAction);
+    } else {
+        await saveAction();
+    }
+}
+window.saveInventarFibuKonten = saveInventarFibuKonten;
 
 function updateSubOptions() {
     if (!inventarState) return;

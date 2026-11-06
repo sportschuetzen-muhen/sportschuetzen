@@ -617,6 +617,16 @@ window.storniereInventarBuchung = async function(safeGroup) {
 function renderFinanzen() {
     if (!inventarState?.pfand) return;
 
+    // FiBu-Standardkonten Konfigurationskarte (Nur für Kassier & Admin)
+    const canManageFibu = (typeof userHasRole === 'function' && (userHasRole('kassier') || userHasRole('admin'))) || (window.Perms && (window.Perms.has('buchhaltung.manage') || window.Perms.has('*')));
+    const card = document.getElementById('inv-fibu-settings-card');
+    if (card) {
+        card.classList.toggle('d-none', !canManageFibu);
+        if (canManageFibu && typeof window.fillInventarFibuKontenForm === 'function') {
+            window.fillInventarFibuKontenForm();
+        }
+    }
+
     // Aktuelle Rechnungsstati dynamisch mit window._invoices abgleichen (falls im Portal frisch bezahlt)
     if (window._invoices && Array.isArray(window._invoices)) {
         inventarState.pfand.forEach(p => {

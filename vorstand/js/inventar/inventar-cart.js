@@ -177,17 +177,19 @@ async function handleInventarSubmit(e) {
     const action     = document.getElementById('select-action').value;
     const mitgliedId = document.getElementById('select-mitglied').value;
 
-    const rawKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
-    const cleanKonto = rawKonto.split('|')[0].trim();
+    const cleanKonto = (action === 'verkauf')
+        ? ((typeof window.getInventarDefaultHabenKonto === 'function') ? window.getInventarDefaultHabenKonto('verkauf') : '8121')
+        : ((typeof window.getInventarDefaultHabenKonto === 'function') ? window.getInventarDefaultHabenKonto('depot') : '2030');
+
     if (action === 'verkauf' && !cleanKonto) {
-        alert("❌ Bitte wähle für den Verkauf ein gültiges Haben-Konto aus dem Kontenrahmen aus.");
+        alert("❌ Es ist kein gültiges Ertragskonto für den Materialverkauf konfiguriert.");
         window._isInventarSubmitting = false;
         setInventarBusy(false);
         return;
     }
     const hasPfandCheckout = action === 'checkout' && warenkorb.some(w => parseFloat(w.pfandBetrag) > 0);
     if (hasPfandCheckout && !cleanKonto) {
-        alert("❌ Bitte wähle für das Depot ein gültiges Kautionskonto aus dem Kontenrahmen aus (Standard: 2030).");
+        alert("❌ Es ist kein gültiges Kautionskonto für das Depot konfiguriert (Standard: 2030).");
         window._isInventarSubmitting = false;
         setInventarBusy(false);
         return;
@@ -448,11 +450,9 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId, txId
             const memberOrt = m.Ort || mglMaster.City || mglMaster.city || '';
             const recipientName = `${m.Nachname || mglMaster.LastName || ''} ${m.Vorname || mglMaster.FirstName || ''}`.trim() || 'Mitglied';
 
-            const rawKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
-            const defaultHaben = (typeof window.getInventarDefaultHabenKonto === 'function')
+            const customKontoHaben = (typeof window.getInventarDefaultHabenKonto === 'function')
                 ? window.getInventarDefaultHabenKonto('verkauf')
-                : (localStorage.getItem('inventar_preferred_haben_konto_verkauf') || '8501');
-            const customKontoHaben = (rawKonto ? rawKonto.split('|')[0].trim() : '') || defaultHaben;
+                : (localStorage.getItem('inventar_preferred_haben_konto_verkauf') || '8121');
 
             const primaryTxId = (txIds && txIds[0]) ? String(txIds[0]) : null;
 
@@ -598,8 +598,9 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId, txId
         // 2. NUR BAR IN BUCHHALTUNG VERBUCHEN
         // (Twint wird NICHT sofort gebucht, da Twint erst Tage später als Netto-Sammelüberweisung auf der Bank eingeht)
         if (barItems.length > 0) {
-            const rawKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
-            const customKontoHaben = rawKonto.split('|')[0].trim() || '3200';
+            const customKontoHaben = (typeof window.getInventarDefaultHabenKonto === 'function')
+                ? window.getInventarDefaultHabenKonto('verkauf')
+                : (localStorage.getItem('inventar_preferred_haben_konto_verkauf') || '8121');
 
             let seqCounter = 1;
             for (let w of barItems) {
@@ -650,8 +651,9 @@ async function verarbeitePfandBuchhaltung(cart, action) {
     try {
         const sb = (typeof window.getBuchhaltungSupabaseClient === 'function') ? window.getBuchhaltungSupabaseClient() : (typeof window.getInventarSupabaseClient === 'function' ? window.getInventarSupabaseClient() : null);
         if (action === 'checkout') {
-            const rawKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
-            const kautionsKonto = rawKonto.split('|')[0].trim() || '2030';
+            const kautionsKonto = (typeof window.getInventarDefaultHabenKonto === 'function')
+                ? window.getInventarDefaultHabenKonto('depot')
+                : (localStorage.getItem('inventar_preferred_haben_konto_depot') || '2030');
             // Bar-Pfand erhalten: Soll 1000 (Kasse) an Haben 2030 (Kautionen / Depots)
             const barPfand = cart.filter(w => (w.pfandMethode === 'Bar' || w.pfandEinnahme === 'Ja') && w.pfandMethode !== 'Twint' && w.pfandMethode !== 'Einzahlungsschein' && (parseFloat(w.pfandBetrag) || 0) > 0);
             let seqCounter = 1;
@@ -751,8 +753,9 @@ async function verarbeitePfandRechnungen(cart, mitgliedId, depositIds = [], txId
         const memberOrt = m.Ort || mglMaster.City || mglMaster.city || '';
         const recipientName = `${m.Nachname || mglMaster.LastName || ''} ${m.Vorname || mglMaster.FirstName || ''}`.trim() || 'Mitglied';
 
-        const rawKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
-        const kautionsKonto = rawKonto.split('|')[0].trim() || '2030';
+        const kautionsKonto = (typeof window.getInventarDefaultHabenKonto === 'function')
+            ? window.getInventarDefaultHabenKonto('depot')
+            : (localStorage.getItem('inventar_preferred_haben_konto_depot') || '2030');
 
         const primaryTxId = (txIds && txIds[0]) ? String(txIds[0]) : null;
 

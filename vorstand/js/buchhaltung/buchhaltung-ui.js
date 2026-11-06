@@ -1432,12 +1432,18 @@ window.renderTabKontenrahmen = function (container) {
     `;
   }).join('');
 
+  const invVkKonto = localStorage.getItem('inventar_preferred_haben_konto_verkauf') || '8121';
+  const invDpKonto = localStorage.getItem('inventar_preferred_haben_konto_depot') || '2030';
+
   container.innerHTML = `
     <div class="bh-report-section border border-light shadow-sm">
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap" style="gap:10px;">
         <h4 class="fw-bold text-primary mb-0"><i class="fas fa-university me-2"></i>KMU-Kontenrahmen & Budget (${window._bhYear})</h4>
         <div class="d-flex align-items-center flex-wrap" style="gap: 10px;">
           ${canWrite ? `
+          <button class="btn btn-sm btn-outline-secondary fw-semibold shadow-sm me-1" onclick="bhJumpToInventarKonten()" title="Standardkonten für Inventar-Verkauf & Depots verwalten">
+            <i class="fas fa-boxes me-1 text-primary"></i> Inventar-Konten
+          </button>
           <button class="btn btn-sm btn-outline-success fw-bold shadow-sm me-1" onclick="bhOpenBudgetMatrixModal()">
             <i class="fas fa-calculator me-1"></i> Budget-Matrix Editor
           </button>
@@ -1448,6 +1454,18 @@ window.renderTabKontenrahmen = function (container) {
           <div id="bh-konten-column-toggle" class="d-inline-block"></div>
           <span class="badge bg-primary px-3 py-2 rounded-2">${window._bhKontenrahmen.length} Konten</span>
         </div>
+      </div>
+
+      <div class="alert alert-light border d-flex justify-content-between align-items-center py-2 px-3 mb-3 rounded-2 shadow-xs" style="background-color: #f8fafc;">
+        <div class="small text-muted d-flex align-items-center flex-wrap gap-2">
+          <span><i class="fas fa-boxes text-primary me-1"></i><strong>Inventar-Kontierung:</strong></span>
+          <span>Verkauf (Ertrag): <span class="badge bg-white text-dark border font-monospace">${escapeHtml(invVkKonto)}</span></span>
+          <span>•</span>
+          <span>Kautionen (Passiven): <span class="badge bg-white text-dark border font-monospace">${escapeHtml(invDpKonto)}</span></span>
+        </div>
+        <button class="btn btn-sm btn-outline-primary py-0 px-2 fw-semibold" style="font-size: 11px;" onclick="bhJumpToInventarKonten()" title="Zu den Inventar-Kontoeinstellungen wechseln">
+          <i class="fas fa-external-link-alt me-1"></i>In Inventar anpassen
+        </button>
       </div>
       
       <div class="table-responsive">
@@ -1491,4 +1509,24 @@ window.renderTabKontenrahmen = function (container) {
       columnToggle: '#bh-konten-column-toggle'
     });
   }
+};
+
+window.bhJumpToInventarKonten = function () {
+  if (typeof showView === 'function') {
+    showView('inventar');
+  }
+  setTimeout(() => {
+    if (typeof showInventarSection === 'function') {
+      localStorage.setItem('inventar-activeTab', 'finanzen');
+      showInventarSection('finanzen');
+      setTimeout(() => {
+        const el = document.getElementById('inv-fibu-settings-card');
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.classList.add('border-primary', 'shadow');
+          setTimeout(() => el.classList.remove('border-primary', 'shadow'), 2200);
+        }
+      }, 250);
+    }
+  }, 100);
 };

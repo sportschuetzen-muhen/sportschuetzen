@@ -269,6 +269,14 @@ vorstand/js/inventar/
 - **Journal-Tabellen auf TableKit hochgestuft:** Die Tabellen «Offene Ausleihen», «Material-Bewegungen» und «Admin-Protokoll» wurden vollständig auf den globalen TableKit-Standard gehoben: Spalten ein-/ausblenden (`setupColumnToggle`), freie Spaltenbreiten (`makeResizable`), verschiebbare Spaltenköpfe (`makeColumnReorderable`), interaktive Live-Suche und Aufhebung der starren Zeilenbeschränkungen.
 - **Wiederherstellung K-27:** Der versehentlich gelöschte Vereinsbekleidungsartikel `K-27` (Erima Team Jacke m. abnehmb. Ärmeln, 2XL) wurde per Migration 74 mit allen Sponsoring- und Preisattributen verlustfrei restauriert.
 
+### 5.15 Getrennte Kontenverwaltung im Tab «Finanzen» & FiBu-Absprung (Migration 112)
+- **Klare Funktionstrennung (Materialwart vs. Kassier):** Die Verwaltung der FiBu-Standardkonten wurde vollständig aus der operativen Buchungsmaske herausgelöst. Dadurch wird verhindert, dass operative Ausleihen oder Verkäufe versehentlich die globale Konfiguration überschreiben.
+- **Konfigurationskarte im Tab «Finanzen»:** Nur für Benutzer mit Kassier- oder Admin-Rechten (`buchhaltung.manage`) sichtbar. Erlaubt die getrennte Definition von:
+  - `Materialverkauf (Erfolgsrechnung / Ertrag)`: z. B. `8121` (*Kleiderverkauf*) oder `3655` (*Verkauf Vereinsinventar*).
+  - `Kautionen & Depots (Bilanz / Passiven)`: standardmässig fest auf `2030` (*Kautionen und Depots*).
+- **Dezenter Hinweis in der Buchungsmaske:** Anstelle eines editierbaren Eingabefeldes zeigt die Ausleih-/Verkaufsmaske einen dezenten Read-Only Badge mit dem aktiven Gegenkonto sowie für berechtigte Kassiere einen Direktlink in die Einstellungen.
+- **FiBu-Schnellabsprung:** Im KMU-Kontenrahmen der Finanzbuchhaltung führt ein Button `[📦 Inventar-Konten]` sowie ein Info-Banner direkt in den Finanzen-Tab des Inventars.
+
 
 
 
