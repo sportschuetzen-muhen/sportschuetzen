@@ -21,6 +21,7 @@
                     }
                 });
                 window.supabaseClient = client;
+                window.sbClient = client;
                 console.log('✅ Supabase Client erfolgreich initialisiert (Host: ' + SUPABASE_URL + ')');
             } catch (err) {
                 console.error('❌ Fehler bei Supabase Client Initialisierung:', err);
@@ -45,6 +46,7 @@
         }
         return client;
     };
+    window.getClient = window.getSupabaseClient;
 
     window.checkSupabaseConnection = async function () {
         const supa = window.getSupabaseClient();

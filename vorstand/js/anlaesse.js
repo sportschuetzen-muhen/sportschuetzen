@@ -2595,7 +2595,16 @@ window.AnlaesseModule = (function () {
     async function toggleSchichtplanVisibility(enabled) {
         const supa = getClient();
         if (!supa) {
-            alert('Keine Verbindung zu Supabase verfügbar.');
+            if (window.UIConfirmKit && typeof window.UIConfirmKit.alert === 'function') {
+                await UIConfirmKit.alert({
+                    title: 'Verbindungsfehler',
+                    message: 'Keine Verbindung zu Supabase verfügbar. Bitte lade die Seite neu.',
+                    type: 'danger'
+                });
+            } else {
+                alert('Keine Verbindung zu Supabase verfügbar. Bitte lade die Seite neu.');
+            }
+            updateSchichtplanToggleUI(!enabled);
             return;
         }
         try {
@@ -2616,7 +2625,7 @@ window.AnlaesseModule = (function () {
             console.error('Fehler:', err);
             updateSchichtplanToggleUI(!enabled);
             if (typeof showToast === 'function') {
-                showToast('Fehler beim Speichern: ' + err.message, 'danger');
+                showToast('Fehler beim Speichern: ' + (err.message || err), 'danger');
             }
         }
     }

@@ -11,8 +11,15 @@ function getFestkasseUrl() {
     return '/kasse/';
 }
 
+function getFestkasseClient() {
+    return (typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null)
+        || window.supabaseClient
+        || window.sbClient
+        || (typeof getClient === 'function' ? getClient() : null);
+}
+
 async function loadFestkasseVisibility() {
-    const supa = window.sbClient || (typeof getClient === 'function' ? getClient() : null);
+    const supa = getFestkasseClient();
     if (!supa) return;
     try {
         const { data } = await supa
@@ -44,9 +51,18 @@ function updateFestkasseToggleUI(enabled) {
 }
 
 async function toggleFestkasseMemberVisibility(enabled) {
-    const supa = window.sbClient || (typeof getClient === 'function' ? getClient() : null);
+    const supa = getFestkasseClient();
     if (!supa) {
-        alert('Keine Verbindung zu Supabase verfügbar.');
+        if (window.UIConfirmKit && typeof window.UIConfirmKit.alert === 'function') {
+            await UIConfirmKit.alert({
+                title: 'Verbindungsfehler',
+                message: 'Keine Verbindung zu Supabase verfügbar. Bitte lade die Seite neu.',
+                type: 'danger'
+            });
+        } else {
+            alert('Keine Verbindung zu Supabase verfügbar. Bitte lade die Seite neu.');
+        }
+        updateFestkasseToggleUI(!enabled);
         return;
     }
     try {
@@ -67,7 +83,7 @@ async function toggleFestkasseMemberVisibility(enabled) {
         console.error('Fehler:', err);
         updateFestkasseToggleUI(!enabled);
         if (typeof showToast === 'function') {
-            showToast('Fehler beim Speichern: ' + err.message, 'danger');
+            showToast('Fehler beim Speichern: ' + (err.message || err), 'danger');
         }
     }
 }

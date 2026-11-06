@@ -537,9 +537,28 @@
             // ============================================================
             // Freigabesteuerung Schichtplan & Festkasse (über Vorstandsportal)
             // ============================================================
+            function getSupabase() {
+                if (window.AuthSession && typeof window.AuthSession.getSupabase === 'function') {
+                    const client = window.AuthSession.getSupabase();
+                    if (client) return client;
+                }
+                if (window.AuthSession && window.AuthSession._supabase) {
+                    return window.AuthSession._supabase;
+                }
+                if (window.supabaseClient) {
+                    return window.supabaseClient;
+                }
+                if (window.supabase && typeof window.supabase.createClient === 'function') {
+                    const SUPABASE_URL = 'https://supabase-muhen.danfamily.uk';
+                    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
+                    return window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                }
+                return null;
+            }
+
             async function checkMemberModuleToggles() {
                 try {
-                    const supa = (typeof getSupabase === 'function') ? getSupabase() : (window.supabaseClient || null);
+                    const supa = getSupabase();
                     if (!supa) return;
 
                     const { data, error } = await supa
@@ -597,6 +616,9 @@
                     console.warn('Fehler beim Prüfen der Modulfreigaben:', e);
                 }
             }
+
+            // Initiale Prüfung der Modulfreigaben
+            checkMemberModuleToggles();
 
             // ============================================================
             // Mitglieder Foto-Uploader (Immich Integration)

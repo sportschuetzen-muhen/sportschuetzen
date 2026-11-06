@@ -50,6 +50,7 @@
             try {
                 if (window.supabase && typeof window.supabase.createClient === 'function') {
                     this._supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                    window.supabaseClient = this._supabase;
                     this._supabase.auth.onAuthStateChange(async (event, session) => {
                         if (event === 'SIGNED_IN' && session) {
                             await this._syncFromSupabaseUser(session.user);
@@ -287,6 +288,13 @@
             this._session = null;
             this._notify();
             console.log('Mitglied abgemeldet.');
+        }
+
+        /**
+         * Gibt den initialisierten Supabase Client zurück (inkl. Authentifizierung)
+         */
+        getSupabase() {
+            return this._supabase;
         }
 
         /**
