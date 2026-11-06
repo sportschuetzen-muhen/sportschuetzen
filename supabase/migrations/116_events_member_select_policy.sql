@@ -13,3 +13,4 @@ CREATE POLICY events_member_select ON public.events
         -- Oder aktiver/geplanter Vereinsanlass (keine Vorlagen)
         (is_template = false AND status IN ('planned', 'in_progress', 'completed'))
     );
+

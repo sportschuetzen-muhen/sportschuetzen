@@ -85,4 +85,4 @@ Die **Festkasse** ist eine eigenständige Progressive Web App (PWA) für das Sch
 ### 5.5 Bedarfsgesteuerte Freigabe im Mitgliederbereich (`intern.html`)
 * **Single Source of Truth (`system_app_configs`):** Über den Schlüssel `member_festkasse_enabled` steuert der Vorstand, ob die Festkasse im Mitgliederbereich (`intern.html`) als Tab/Kachel sichtbar ist.
 * **Vorstands-Schalter:** Im Vorstandsportal (`vorstand/js/festkasse.js`) kann die Kasse mit 1 Klick aktiviert oder deaktiviert werden. Die Anbindung nutzt die globale Client-Auflösung `getFestkasseClient()` und sichert Benutzerhinweise über `UIConfirmKit.alert()` ab.
-* **Vorstandsvorschau:** Für angemeldete Vorstandsmitglieder ist die Kasse in `intern.html` zu Testzwecken immer sichtbar (gekennzeichnet mit «(Vorstand-Vorschau)»).
+* **Strikte Sichtbarkeitssteuerung:** Bei Status `inaktiv` wird die Festkasse in `intern.html` sowie im Schichtplan für alle Benutzer ausnahmslos ausgeblendet.

@@ -579,15 +579,10 @@
                     const linkKasse = document.getElementById('link-btn-kasse');
 
                     if (tabSchichten) {
-                        if (isSchichtEnabled || isVorstand) {
+                        if (isSchichtEnabled) {
                             tabSchichten.style.display = 'inline-block';
-                            if (!isSchichtEnabled && isVorstand) {
-                                tabSchichten.title = 'Vorstandsvorschau: Für normale Mitglieder derzeit ausgeblendet';
-                                tabSchichten.innerHTML = '📅 Helfer- &amp; Schichtplan <span style="font-size: 0.72rem; opacity: 0.75; font-weight: normal;">(Vorschau)</span>';
-                            } else {
-                                tabSchichten.title = 'Helfer- & Schichtplan für Vereinsanlässe';
-                                tabSchichten.innerHTML = '📅 Helfer- &amp; Schichtplan';
-                            }
+                            tabSchichten.title = 'Helfer- & Schichtplan für Vereinsanlässe';
+                            tabSchichten.innerHTML = '📅 Helfer- &amp; Schichtplan';
                         } else {
                             tabSchichten.style.display = 'none';
                             // Falls Schichten-Tab gerade aktiv war, auf Dokumente zurückspringen
@@ -599,15 +594,10 @@
                     }
 
                     if (linkKasse) {
-                        if (isKasseEnabled || isVorstand) {
+                        if (isKasseEnabled) {
                             linkKasse.style.display = 'inline-flex';
-                            if (!isKasseEnabled && isVorstand) {
-                                linkKasse.title = 'Vorstandsvorschau: Für normale Mitglieder derzeit ausgeblendet';
-                                linkKasse.innerHTML = '🛒 Festkasse (POS) ↗ <span style="font-size: 0.72rem; opacity: 0.75; font-weight: normal;">(Vorschau)</span>';
-                            } else {
-                                linkKasse.title = 'Festkasse für Helfer im Festzelt & Schützenhaus öffnen';
-                                linkKasse.innerHTML = '🛒 Festkasse (POS) ↗';
-                            }
+                            linkKasse.title = 'Festkasse für Helfer im Festzelt & Schützenhaus öffnen';
+                            linkKasse.innerHTML = '🛒 Festkasse (POS) ↗';
                         } else {
                             linkKasse.style.display = 'none';
                         }

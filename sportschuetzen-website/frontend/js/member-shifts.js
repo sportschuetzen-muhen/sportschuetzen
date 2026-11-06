@@ -86,7 +86,7 @@ window.MemberShifts = (function () {
     }
 
     function isFestkasseEnabled() {
-        return window.__member_festkasse_enabled === true || (window.AuthSession && typeof window.AuthSession.isVorstand === 'function' && window.AuthSession.isVorstand());
+        return window.__member_festkasse_enabled === true;
     }
 
     async function load() {
