@@ -231,21 +231,56 @@
   }
 
   function extractAllLicenses(rows) {
-    return dedupeBy(
-      rows
-        .filter(r => r.MembershipCategory && !r.OfficialFunctionCategory && isLicenseCategory(r.MembershipCategory))
-        .map(r => ({
-          MembershipCategory: String(r.MembershipCategory).trim(),
-          EntryDate: normalizeDateValue(r.EntryDate),
-          ExitDate: normalizeDateValue(r.ExitDate),
-          LicenseCategory: r.LicenseCategory || '',
-          LicenseType: r.LicenseType || '',
-          LicenseInvoicingClubNumber: r.LicenseInvoicingClubNumber || '',
-          LicenseInvoicingClubName: r.LicenseInvoicingClubName || '',
-          IsActive: isTruthy(r.IsActive) ? 1 : 0
-        })),
-      x => [x.MembershipCategory, x.EntryDate, x.ExitDate].join('|')
-    ).sort((a, b) => String(a.EntryDate).localeCompare(String(b.EntryDate)));
+    const rawList = rows
+      .filter(r => r.MembershipCategory && !r.OfficialFunctionCategory && isLicenseCategory(r.MembershipCategory))
+      .map(r => ({
+        MembershipCategory: String(r.MembershipCategory).trim(),
+        EntryDate: normalizeDateValue(r.EntryDate),
+        ExitDate: normalizeDateValue(r.ExitDate),
+        LicenseCategory: r.LicenseCategory || '',
+        LicenseType: r.LicenseType || '',
+        LicenseInvoicingClubNumber: r.LicenseInvoicingClubNumber || '',
+        LicenseInvoicingClubName: r.LicenseInvoicingClubName || '',
+        IsActive: isTruthy(r.IsActive) && !r.ExitDate ? 1 : 0
+      }));
+
+    // Nach (MembershipCategory, EntryDate) gruppieren, um Primärschlüsselkonflikte
+    // (z.B. inaktive Fremdvereinszeile mit gleichem Eintrittsdatum) zugunsten aktiver Muhen-Lizenzen aufzulösen
+    const grouped = {};
+    for (const lic of rawList) {
+      const key = `${lic.MembershipCategory}|${lic.EntryDate || ''}`;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(lic);
+    }
+
+    const result = [];
+    for (const group of Object.values(grouped)) {
+      if (group.length === 1) {
+        result.push(group[0]);
+        continue;
+      }
+      // Priorisierung bei identischem (MembershipCategory, EntryDate):
+      // 1. Aktiv vor Inaktiv
+      // 2. Eigener Verein (Muhen) vor Fremdverein
+      // 3. Späteres Austrittsdatum falls beide inaktiv
+      group.sort((a, b) => {
+        const aActive = (a.IsActive === 1 && !a.ExitDate) ? 1 : 0;
+        const bActive = (b.IsActive === 1 && !b.ExitDate) ? 1 : 0;
+        if (aActive !== bActive) return bActive - aActive;
+
+        const aMuhen = (a.LicenseInvoicingClubNumber === MUHEN_CLUB_NUMBER || /muhen/i.test(a.LicenseInvoicingClubName)) ? 1 : 0;
+        const bMuhen = (b.LicenseInvoicingClubNumber === MUHEN_CLUB_NUMBER || /muhen/i.test(b.LicenseInvoicingClubName)) ? 1 : 0;
+        if (aMuhen !== bMuhen) return bMuhen - aMuhen;
+
+        const aExit = a.ExitDate ? new Date(a.ExitDate).getTime() : 0;
+        const bExit = b.ExitDate ? new Date(b.ExitDate).getTime() : 0;
+        return bExit - aExit;
+      });
+
+      result.push(group[0]);
+    }
+
+    return result.sort((a, b) => String(a.EntryDate).localeCompare(String(b.EntryDate)));
   }
 
   function extractAllFunctions(rows) {
@@ -792,6 +827,9 @@
     }
 
     if (onProgress) onProgress('Speichere Datensätze atomar in Supabase PostgreSQL...');
+
+    // Inaktive Lizenzen zuerst, aktive Lizenzen zuletzt sortieren (damit bei allfälligen DB-Konflikten immer der aktive Zustand gewinnt)
+    licensesToSync.sort((a, b) => (a.is_active === b.is_active ? 0 : a.is_active ? 1 : -1));
 
     const payload = {
       import_id: importId,

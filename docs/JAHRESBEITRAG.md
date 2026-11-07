@@ -366,6 +366,12 @@ Wird eine Jahresbeitrags-Rechnung (`JB-26-XXXX`) im Rechnungsmodul gelöscht –
 * **Transparenz & Anzeige:** In der Beitragsübersicht weist ein Badge in der Spalte Gesamt den Gruppengewinn-Abzug direkt aus. Im Rechnungs-Inspektor Modal (`jbShowPositionen`) wird die Position mit Trophy-Icon und Herkunftshinweis (Anlass, Gruppe, Rang) transparent dargestellt.
 * **Reset- & Löschkaskade:** Beim Zurücksetzen des Beitragsjahres via `jbResetYear()` werden alle zugehörigen Schützen in `group_competition_members` atomar von `status = 'verrechnet'` wieder auf `status = 'offen'` zurückgesetzt. Beim Löschen einer Gruppe in der Jahresmeisterschaft (`jmDeleteGroupCompetition`) greift eine Löschsperre, falls die Jahresbeitragsrechnung bereits versendet oder bezahlt wurde; bei unversendeten Entwürfen wird die Gutschriftzeile automatisch aus `contributions_positions` und `invoice_positions` entfernt.
 
+### 8.10 Resilienz bei SSV-Lizenz-Konflikten (Migration 117)
+* **Lizenz-Integrität als Berechnungsgrundlage:** Die Beitragsermittlung in `calculate_member_contributions` hängt direkt von aktiven Lizenzen in `public.member_licenses` ab (`is_active IS TRUE`).
+* **Verhinderung falscher Fallbacks:** Durch Migration 117 und die Härtung der Import-Engine (`extractAllLicenses`) werden aktive Muhen-Lizenzen bei Mitgliedern mit Mehrfachmitgliedschaften (z. B. Rolf Denzler mit beendeter Lizenz in Balsthal-Klus und aktiver Lizenz in Muhen) nicht mehr durch inaktive Fremdvereinszeilen überschrieben.
+* **Ergebnis:** Das System weist Mitgliedern mit Aktiv-B-Lizenzen verlässlich `JB002 Aktiv-B G50m` (CHF 70.00) plus Verbandskosten `LI001` (CHF 18.00) zu, anstatt auf die Standard-A-Fallback-Gebühr `JB001` (CHF 100.00) zurückzufallen.
+
+
 
 
 

@@ -197,6 +197,14 @@ Dies erleichtert dem Vorstand und den Schützenmeistern die sofortige Einordnung
 * **Persistenz & Cache-Busting:** Das optimierte Bild wird direkt in Supabase Storage (`operatives-storage`) hochgeladen und mit Cache-Busting-Timestamp (`?t=${Date.now()}`) in `members.avatar_url` gespeichert.
 * **Storage-Bucket MIME-Whitelist:** Im Bucket `operatives-storage` (sowie `campaign-assets`) ist `image/webp` neben `pdf`, `png` und `jpeg` verbindlich in `allowed_mime_types` freigeschaltet (Migration 71). Zudem existiert ein clientseitiger automatischer JPEG-Retry-Fallback.
 
+### 7.8 Schutz vor Lizenz-Konflikten bei Doppelmitgliedschaften (Migration 117)
+* **Problem:** Besitzt ein Schütze Mitgliedschaften in mehreren Vereinen (z. B. Muhen und Balsthal-Klus oder Pratteln), enthält der SSV-Export mitunter zwei Zeilen für dieselbe Disziplin mit identischem Eintrittsdatum (z. B. Rolf Denzler: aktiv in Muhen, beendet in Balsthal-Klus per 15.02.2024). Da der Primärschlüssel in `member_licenses` auf `(person_number, membership_category, entry_date)` lautet, überschrieb die inaktive Zeile früher den aktiven Muhen-Status.
+* **Lösung & Quellschutz:**
+  1. `extractAllLicenses` in [`mitglieder-import-engine.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/mitglieder/mitglieder-import-engine.js) gruppiert nach `(MembershipCategory, EntryDate)` und priorisiert aktiv (`IsActive = 1` ohne `ExitDate`) vor inaktiv sowie den Stammverein Muhen (`1.19.0.01.029`) vor Fremdvereinen.
+  2. `apply_ssv_import_batch` sperrt in PostgreSQL bei `ON CONFLICT` das Überschreiben einer aktiven Muhen-Lizenz durch eine inaktive Fremdvereinszeile.
+  3. Dadurch ist sichergestellt, dass im Jahresbeitragsmodul (`calculate_member_contributions`) die korrekte Beitragskategorie (z. B. `JB002 Aktiv-B G50m`) greift und kein falscher `JB001`-Fallback ausgelöst wird.
+
+
 
 
 
