@@ -3,7 +3,7 @@
 > **Status:** PRODUKTIV (Supabase Single Source of Truth)  
 > **Stand:** Oktober 2026  
 > **Komponenten:** `public.members`, `member_licenses`, `member_functions`, `member_training`, `member_history`  
-> **Frontend:** [`vorstand/js/mitglieder/`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/mitglieder/) (`mitglieder-core.js`, `mitglieder-import-engine.js`, `mitglieder-edit.js`, `mitglieder-sync-ui.js`)
+> **Frontend:** [`vorstand/js/mitglieder/`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/mitglieder/) (`mitglieder-core.js`, `mitglieder-list.js`, `mitglieder-details.js`, `mitglieder-manager.js`, `mitglieder-import-engine.js`, `mitglieder-import-ui.js`, `mitglieder-export.js`)
 
 ---
 
@@ -14,6 +14,7 @@ Die Mitgliederverwaltung ist das zentrale personelle Stammdaten-Rückgrat des ge
 * **Führendes System:** Supabase PostgreSQL (`public.members`).
 * **Verbandsdaten:** Offizieller Export des Schweizer Schiesssportverbands (SSV) als `.xlsx`.
 * **Entkopplung:** Google Sheets und GAS-Dual-Writes sind vollständig stillgelegt.
+* **Abschaltung historischer Outbound-Sync:** Das frühere Relikt `mitglieder-sync-ui.js` (Replikation von `Members100` in Einzeltabellen) wurde vollständig entfernt, da alle Fachmodule heute nativ und in Echtzeit auf Supabase zugreifen; App-Login-Syncs erfolgen direkt im Logins-Modul.
 
 ---
 

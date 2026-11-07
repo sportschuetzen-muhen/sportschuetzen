@@ -10,7 +10,6 @@
  * - vorstand/js/mitglieder/mitglieder-manager.js (Mutationen, Speichern)
  * - vorstand/js/mitglieder/mitglieder-import-engine.js (Clientseitiger SSV-Excel-Import)
  * - vorstand/js/mitglieder/mitglieder-import-ui.js (Import-Assistent, Diff-Viewer)
- * - vorstand/js/mitglieder/mitglieder-sync-ui.js (System-Synchronisation)
  * - vorstand/js/mitglieder/mitglieder-export.js (CSV/Excel-Export)
  */
 
