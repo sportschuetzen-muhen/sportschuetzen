@@ -205,6 +205,13 @@ Dies erleichtert dem Vorstand und den Schützenmeistern die sofortige Einordnung
   2. `apply_ssv_import_batch` sperrt in PostgreSQL bei `ON CONFLICT` das Überschreiben einer aktiven Muhen-Lizenz durch eine inaktive Fremdvereinszeile.
   3. Dadurch ist sichergestellt, dass im Jahresbeitragsmodul (`calculate_member_contributions`) die korrekte Beitragskategorie (z. B. `JB002 Aktiv-B G50m`) greift und kein falscher `JB001`-Fallback ausgelöst wird.
 
+### 7.9 Historische Datenanreicherung & Vereinsarchiv aus MS Access (Migration 118)
+* **Historischer Befund & Single Source of Truth:** Der Verbandsexport des SSV enthält primär aktive Schützen mit pauschalen oder unvollständigen Verbands-Eintrittsdaten (`first_club_entry_date_ssv`), während das reale Beitrittsdatum zum Verein (`club_entry_date`) und historische GV-Ehrungen (`honorary_member_since`) in der Vereins-Access-Datenbank (`2024 Mitgliederverwaltung Sportschützen Muhen Sicherung.accdb`) vorlagen.
+* **Anreicherung & Quellschutz (Source-Protection):** 68 aktive/bestehende Mitglieder wurden mit ihren exakten Vereinseintritten und realen Ehrungsjahren angereichert. Durch Setzen von `club_entry_date_source = 'manual'` und `is_honorary_source = 'manual'` garantiert die Stored Procedure `apply_ssv_import_batch`, dass künftige SSV-Monatsimporte diese vereinsinternen Daten nicht überschreiben. Neuere Ehrungen der GV 2026 (Daniel & Stefanie Berchtold, Marco Fischer) blieben vollständig erhalten.
+* **Historisches Vereinsarchiv & Verstorbene:** 130 historische Personen (105 reguläre Austritte mit Austrittsdaten, 25 Verstorbene inklusive Ehrenpräsidenten und Kurt Lüscher, Gerhard Künzli, Robert Künzli) wurden mit `is_active = false` im reservierten Nummernkreis `9000000 + Access_ID` in `public.members` eingepflegt. Sie belasten weder den SSV-Import (wird ignoriert, da inaktiv) noch den Jahresbeitrag (`calculate_member_contributions` schliesst Inaktive und Verstorbene aus).
+* **Snapshot & Rollback:** Vor der Einspielung wurde ein atomarer Snapshot `public.members_backup_pre_access_20261107` erstellt. Das Skript `supabase/migrations/rollback_access_import.sql` erlaubt jederzeit eine 1-Klick-Rückabwicklung auf den Ausgangszustand in < 100 ms.
+
+
 
 
 
