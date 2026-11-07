@@ -2787,8 +2787,9 @@
       this._initialized = true;
 
       window.addEventListener('keydown', (e) => {
+        if (!e || !e.key) return;
         const isCtrl = e.ctrlKey || e.metaKey;
-        const key = e.key.toLowerCase();
+        const key = String(e.key).toLowerCase();
         const activeEl = document.activeElement;
         const isInputFocused = activeEl && (
           activeEl.tagName === 'INPUT' ||

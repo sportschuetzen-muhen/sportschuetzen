@@ -199,8 +199,8 @@ window.SaveButtonKit = SaveButtonKit;
 //  SMART STORAGE CACHE MANAGER (Versioniert & TTL-gesteuert)
 // =========================================================
 const AppCache = {
-    VERSION: 1,
-    PREFIX: 'portal_cache_v1_',
+    VERSION: 2,
+    PREFIX: 'portal_cache_v2_',
 
     set(key, data, ttlMinutes = 120) {
         try {

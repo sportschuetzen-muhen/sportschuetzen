@@ -10,6 +10,17 @@ window._mglSubFilterLiz = window._mglSubFilterLiz || 'alle';
 function mglRenderListe(data) {
   const canEdit = typeof hasWriteAccess === 'function' ? hasWriteAccess('members') : (typeof userHasRole === 'function' ? userHasRole('admin') : false);
 
+  const allList = Array.isArray(data) ? data : (Array.isArray(window._mglData) ? window._mglData : []);
+  const cntDeceased = allList.filter(m => m.Deceased == 1 || m.Deceased === true || m.Deceased === '1').length;
+  const cntAustritt = allList.filter(m => !(m.Deceased == 1 || m.Deceased === true || m.Deceased === '1') && !m.IsActive && !m._istPassiv).length;
+  const cntAlle = allList.filter(m => !(m.Deceased == 1 || m.Deceased === true || m.Deceased === '1') && (m.IsActive || m._istPassiv || m._istEhren)).length;
+  const cntMitLiz = allList.filter(m => !(m.Deceased == 1 || m.Deceased === true || m.Deceased === '1') && m.IsActive && Number(m._aktiveLizenzenCount || 0) > 0).length;
+  const cntOhneLiz = allList.filter(m => !(m.Deceased == 1 || m.Deceased === true || m.Deceased === '1') && m.IsActive && Number(m._aktiveLizenzenCount || 0) === 0).length;
+  const cntU21 = allList.filter(m => !(m.Deceased == 1 || m.Deceased === true || m.Deceased === '1') && (typeof mglIsU21 === 'function' ? mglIsU21(m) : !!m._isU21)).length;
+  const cntPassiv = allList.filter(m => !(m.Deceased == 1 || m.Deceased === true || m.Deceased === '1') && m._istPassiv).length;
+  const cntEhren = allList.filter(m => !(m.Deceased == 1 || m.Deceased === true || m.Deceased === '1') && m._istEhren).length;
+  const cntVorstand = allList.filter(m => !(m.Deceased == 1 || m.Deceased === true || m.Deceased === '1') && Number(m._aktiveFunktionenCount || 0) > 0).length;
+
   // Aufbau der progressiv eingeblendeten Unter-Chips für Lizenzen
   const subFiltersHtml = window._mglFilterType === 'mit-lizenz' 
     ? `
@@ -80,6 +91,11 @@ function mglRenderListe(data) {
         <i class="fas fa-file-excel me-1"></i> Excel-Export
       </button>
 
+      <!-- Aktualisieren Button -->
+      <button class="btn btn-sm btn-outline-secondary ms-md-1" id="mglBtnRefresh" onclick="mglReloadFresh()" title="Mitgliederdaten frisch aus Supabase laden">
+        <i class="fas fa-sync-alt"></i>
+      </button>
+
       <!-- Spalten-Ausblender Button (nur bei Tabellenansicht sichtbar) -->
       <div id="mgl-column-toggle" class="ms-md-2 ${window._mglViewMode === 'table' ? '' : 'd-none'}"></div>
 
@@ -94,31 +110,31 @@ function mglRenderListe(data) {
     <div class="d-flex flex-wrap gap-1 align-items-center mb-3">
       <span class="text-muted small me-2" style="font-weight: 600;">Status:</span>
       <div class="mgl-pill-tab ${window._mglFilterType === 'alle' ? 'active' : ''}" onclick="mglSetTypeFilter('alle')">
-        Alle
+        Alle <span class="badge rounded-pill bg-light text-dark ms-1" style="font-size:0.7rem">${cntAlle}</span>
       </div>
       <div class="mgl-pill-tab ${window._mglFilterType === 'mit-lizenz' ? 'active' : ''}" onclick="mglSetTypeFilter('mit-lizenz')">
-        Aktiv mit Lizenz
+        Aktiv mit Lizenz <span class="badge rounded-pill bg-light text-dark ms-1" style="font-size:0.7rem">${cntMitLiz}</span>
       </div>
       <div class="mgl-pill-tab ${window._mglFilterType === 'ohne-lizenz' ? 'active' : ''}" onclick="mglSetTypeFilter('ohne-lizenz')">
-        Aktiv ohne Lizenz
+        Aktiv ohne Lizenz <span class="badge rounded-pill bg-light text-dark ms-1" style="font-size:0.7rem">${cntOhneLiz}</span>
       </div>
       <div class="mgl-pill-tab ${window._mglFilterType === 'u21' ? 'active' : ''}" onclick="mglSetTypeFilter('u21')" title="Nachwuchs & Jugendliche unter 21 Jahren (U21)">
-        <i class="fas fa-child text-info me-1"></i>Jugend (U21)
+        <i class="fas fa-child text-info me-1"></i>Jugend (U21) <span class="badge rounded-pill bg-light text-dark ms-1" style="font-size:0.7rem">${cntU21}</span>
       </div>
       <div class="mgl-pill-tab ${window._mglFilterType === 'passiv' ? 'active' : ''}" onclick="mglSetTypeFilter('passiv')">
-        Passiv
+        Passiv <span class="badge rounded-pill bg-light text-dark ms-1" style="font-size:0.7rem">${cntPassiv}</span>
       </div>
       <div class="mgl-pill-tab ${window._mglFilterType === 'ehren' ? 'active' : ''}" onclick="mglSetTypeFilter('ehren')">
-        Ehrenmitglied
+        Ehrenmitglied <span class="badge rounded-pill bg-light text-dark ms-1" style="font-size:0.7rem">${cntEhren}</span>
       </div>
       <div class="mgl-pill-tab ${window._mglFilterType === 'vorstand' ? 'active' : ''}" onclick="mglSetTypeFilter('vorstand')">
-        Vorstand
+        Vorstand <span class="badge rounded-pill bg-light text-dark ms-1" style="font-size:0.7rem">${cntVorstand}</span>
       </div>
       <div class="mgl-pill-tab ${window._mglFilterType === 'inaktiv' ? 'active' : ''}" onclick="mglSetTypeFilter('inaktiv')">
-        Austritte
+        Austritte <span class="badge rounded-pill bg-light text-danger ms-1" style="font-size:0.7rem">${cntAustritt}</span>
       </div>
       <div class="mgl-pill-tab ${window._mglFilterType === 'verstorben' ? 'active' : ''}" onclick="mglSetTypeFilter('verstorben')">
-        Verstorben
+        Verstorben <span class="badge rounded-pill bg-light text-secondary ms-1" style="font-size:0.7rem">${cntDeceased}</span>
       </div>
     </div>
 
@@ -584,3 +600,23 @@ function mglSortData(data) {
     return 0;
   });
 }
+
+async function mglReloadFresh() {
+  const btn = document.getElementById('mglBtnRefresh');
+  if (btn) btn.disabled = true;
+  try {
+    if (window.AppCache) window.AppCache.invalidate('mitglieder');
+    if (typeof window.ensureMitgliederLoaded === 'function') {
+      await window.ensureMitgliederLoaded(true);
+    }
+    mglRenderListe(window._mglData);
+    mglFilter();
+    if (typeof showSuccess === 'function') showSuccess('Mitgliederdaten frisch aus Supabase geladen.');
+  } catch (err) {
+    console.error('Fehler beim Neuladen:', err);
+    if (typeof showError === 'function') showError('Fehler beim Laden der Mitgliederdaten.');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+window.mglReloadFresh = mglReloadFresh;
