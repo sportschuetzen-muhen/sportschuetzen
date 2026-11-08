@@ -649,7 +649,7 @@ function renderRentalSettingsForm() {
               </div>
               <div class="col-12 mt-2">
                 <label class="form-label small fw-bold text-muted">Zentraler E-Mail-Verteiler Vermietung (CC für alle Mails)</label>
-                <input type="text" class="form-control form-control-sm" id="cfg-cc-emails" value="${escapeHtml(s.rental_cc_emails || clubEmail)}" placeholder="sportschuetzen.muhen@gmail.com, wirtschaft@...">
+                <input type="text" class="form-control form-control-sm" id="cfg-cc-emails" value="${escapeHtml(s.rental_cc_emails !== undefined ? s.rental_cc_emails : clubEmail)}" placeholder="sportschuetzen.muhen@gmail.com, wirtschaft@...">
                 <small class="text-muted"><i class="fas fa-info-circle me-1"></i>An diesen Verteiler geht bei <strong>jeder</strong> Vermietungs-E-Mail (Vertrag, Bestätigung, Mahnung, Schlüssel, Storno, Notfall-Alarm) automatisch eine Kopie. Mehrere Adressen mit Komma trennen.</small>
               </div>
               <div class="col-12 mt-1">

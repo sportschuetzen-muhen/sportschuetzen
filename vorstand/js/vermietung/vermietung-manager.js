@@ -959,14 +959,7 @@ async function saveRentalSettings() {
     return;
   }
 
-  const btn = document.getElementById('cfg-save-btn');
-  const origBtnText = btn ? btn.innerHTML : '';
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> Speichere Einstellungen...`;
-  }
-
-  try {
+  const runSave = async () => {
     const stdPrice = parseFloat(document.getElementById('cfg-price-standard')?.value || 300);
     const mbrPrice = parseFloat(document.getElementById('cfg-price-member')?.value || 150);
     const glassFee = parseFloat(document.getElementById('cfg-glass-fee')?.value || 2);
@@ -981,7 +974,8 @@ async function saveRentalSettings() {
     const sLast = document.getElementById('cfg-sender-lastname')?.value.trim() || '';
     const sPhone = document.getElementById('cfg-sender-phone')?.value.trim() || '';
     const clubEmail = document.getElementById('cfg-club-email')?.value.trim() || '';
-    const ccEmails = document.getElementById('cfg-cc-emails')?.value.trim() || clubEmail;
+    // Leerer CC-Verteiler bleibt leer (kein stiller Zwangsrückfall auf clubEmail)
+    const ccEmails = document.getElementById('cfg-cc-emails')?.value.trim() ?? '';
 
     const wName = document.getElementById('cfg-wirtschaft-name')?.value.trim() || '';
     const wPhone = document.getElementById('cfg-wirtschaft-phone')?.value.trim() || '';
@@ -991,39 +985,40 @@ async function saveRentalSettings() {
     const mapsUrl = document.getElementById('cfg-maps-url')?.value.trim() || '';
     const fbUrl = document.getElementById('cfg-feedback-url')?.value.trim() || '';
 
-    // 1. Settings Upsert in public.rental_settings
+    const nowIso = new Date().toISOString();
+
+    // 1. Settings Batch-Upsert in public.rental_settings (inkl. updated_at)
     const settingsRows = [
-      { setting_key: 'sender_first_name', setting_value: sFirst, description: 'Vorname des Vermieters / Absenders' },
-      { setting_key: 'sender_last_name', setting_value: sLast, description: 'Nachname des Vermieters / Absenders' },
-      { setting_key: 'sender_phone', setting_value: sPhone, description: 'Telefonnummer des Vermieters' },
-      { setting_key: 'club_email', setting_value: clubEmail, description: 'Hauptkontakt / Absender für Vermietungen' },
-      { setting_key: 'rental_cc_emails', setting_value: ccEmails, description: 'Zentraler E-Mail-Verteiler für alle Vermietungs-Mails (Kopien an Verein & Team, kommagetrennt)' },
-      { setting_key: 'wirtschaft_name', setting_value: wName, description: 'Name / Kontakt Schlüsselübergabe' },
-      { setting_key: 'wirtschaft_phone', setting_value: wPhone, description: 'Telefon Schlüsselübergabe' },
-      { setting_key: 'wirtschaft_email', setting_value: wEmail, description: 'E-Mail Schlüsselübergabe' },
-      { setting_key: 'iban', setting_value: iban, description: 'IBAN für Schweizer QR-Rechnung' },
-      { setting_key: 'maps_url', setting_value: mapsUrl, description: 'Google Maps Link Schützenhaus' },
-      { setting_key: 'feedback_base_url', setting_value: fbUrl, description: 'Basis-URL für Storno-Rückmeldung' },
-      { setting_key: 'deposit_amount', setting_value: '0', description: 'Kaution entfällt (nicht mehr verwendet)' },
-      { setting_key: 'glass_fee', setting_value: String(glassFee), description: 'Glasbruch pro Glas in CHF' },
-      { setting_key: 'plate_fee', setting_value: String(plateFee), description: 'Glasbruch / Bruch pro Teller in CHF' },
-      { setting_key: 'storno_fee', setting_value: String(stornoFee), description: 'Stornogebühr in CHF' },
-      { setting_key: 'wood_fee', setting_value: String(woodFee), description: 'Zusatz Cheminéeholz pro Kiste in CHF' },
-      { setting_key: 'cleaning_fee_per_hour', setting_value: String(cleanFee), description: 'Nachreinigung pro Stunde in CHF' },
-      { setting_key: 'garbage_bag_fee', setting_value: String(garbageFee), description: 'Kehrichtsack pro Stk in CHF' },
-      { setting_key: 'payment_due_days', setting_value: String(paymentDueDays), description: 'Zahlungsfrist in Tagen für Mietvertrag und QR-Rechnung' }
+      { setting_key: 'sender_first_name', setting_value: sFirst, description: 'Vorname des Vermieters / Absenders', updated_at: nowIso },
+      { setting_key: 'sender_last_name', setting_value: sLast, description: 'Nachname des Vermieters / Absenders', updated_at: nowIso },
+      { setting_key: 'sender_phone', setting_value: sPhone, description: 'Telefonnummer des Vermieters', updated_at: nowIso },
+      { setting_key: 'club_email', setting_value: clubEmail, description: 'Hauptkontakt / Absender für Vermietungen', updated_at: nowIso },
+      { setting_key: 'rental_cc_emails', setting_value: ccEmails, description: 'Zentraler E-Mail-Verteiler für alle Vermietungs-Mails (Kopien an Verein & Team, kommagetrennt)', updated_at: nowIso },
+      { setting_key: 'wirtschaft_name', setting_value: wName, description: 'Name / Kontakt Schlüsselübergabe', updated_at: nowIso },
+      { setting_key: 'wirtschaft_phone', setting_value: wPhone, description: 'Telefon Schlüsselübergabe', updated_at: nowIso },
+      { setting_key: 'wirtschaft_email', setting_value: wEmail, description: 'E-Mail Schlüsselübergabe', updated_at: nowIso },
+      { setting_key: 'iban', setting_value: iban, description: 'IBAN für Schweizer QR-Rechnung', updated_at: nowIso },
+      { setting_key: 'maps_url', setting_value: mapsUrl, description: 'Google Maps Link Schützenhaus', updated_at: nowIso },
+      { setting_key: 'feedback_base_url', setting_value: fbUrl, description: 'Basis-URL für Storno-Rückmeldung', updated_at: nowIso },
+      { setting_key: 'deposit_amount', setting_value: '0', description: 'Kaution entfällt (nicht mehr verwendet)', updated_at: nowIso },
+      { setting_key: 'glass_fee', setting_value: String(glassFee), description: 'Glasbruch pro Glas in CHF', updated_at: nowIso },
+      { setting_key: 'plate_fee', setting_value: String(plateFee), description: 'Glasbruch / Bruch pro Teller in CHF', updated_at: nowIso },
+      { setting_key: 'storno_fee', setting_value: String(stornoFee), description: 'Stornogebühr in CHF', updated_at: nowIso },
+      { setting_key: 'wood_fee', setting_value: String(woodFee), description: 'Zusatz Cheminéeholz pro Kiste in CHF', updated_at: nowIso },
+      { setting_key: 'cleaning_fee_per_hour', setting_value: String(cleanFee), description: 'Nachreinigung pro Stunde in CHF', updated_at: nowIso },
+      { setting_key: 'garbage_bag_fee', setting_value: String(garbageFee), description: 'Kehrichtsack pro Stk in CHF', updated_at: nowIso },
+      { setting_key: 'payment_due_days', setting_value: String(paymentDueDays), description: 'Zahlungsfrist in Tagen für Mietvertrag und QR-Rechnung', updated_at: nowIso }
     ];
 
-    for (const row of settingsRows) {
-      const { error: setErr } = await supa.from('rental_settings').upsert(row, { onConflict: 'setting_key' });
-      if (setErr) throw setErr;
-    }
+    const { error: setErr } = await supa.from('rental_settings').upsert(settingsRows, { onConflict: 'setting_key' });
+    if (setErr) throw setErr;
 
     // 1b. Synchronisiere Zahlungsfrist auch in document_templates für Mietvertrag
     try {
-      await supa.from('document_templates')
-        .update({ due_days: paymentDueDays, updated_at: new Date().toISOString() })
+      const { error: docErr } = await supa.from('document_templates')
+        .update({ due_days: paymentDueDays, updated_at: nowIso })
         .or('code.eq.mietvertrag,id.eq.mietvertrag_rueteli');
+      if (docErr) console.warn("Warnung beim Sync document_templates.due_days:", docErr);
       if (window._docTemplatesData) {
         const t = window._docTemplatesData.find(x => x.code === 'mietvertrag' || x.id === 'mietvertrag_rueteli');
         if (t) t.due_days = paymentDueDays;
@@ -1033,15 +1028,17 @@ async function saveRentalSettings() {
     }
 
     // 2. Pricing Updates in public.rental_pricing (Kaution immer 0.00)
-    await supa.from('rental_pricing').update({
+    const { error: p1Err } = await supa.from('rental_pricing').update({
       base_price_chf: stdPrice,
       deposit_chf: 0
     }).eq('tariff_code', 'standard_tag');
+    if (p1Err) throw p1Err;
 
-    await supa.from('rental_pricing').update({
+    const { error: p2Err } = await supa.from('rental_pricing').update({
       base_price_chf: mbrPrice,
       deposit_chf: 0
     }).eq('tariff_code', 'mitglied_rabatt');
+    if (p2Err) throw p2Err;
 
     // 3. Lokalen State synchronisieren
     if (!window._rentalSettings) window._rentalSettings = {};
@@ -1057,17 +1054,33 @@ async function saveRentalSettings() {
     }
 
     showToast("✅ Einstellungen und Tarife erfolgreich in Supabase gespeichert!");
+  };
+
+  try {
+    if (window.UIButtonKit && typeof window.UIButtonKit.withLoading === 'function') {
+      await window.UIButtonKit.withLoading('#cfg-save-btn', runSave);
+    } else {
+      const btn = document.getElementById('cfg-save-btn');
+      const origBtnText = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> Speichere Einstellungen...`;
+      }
+      try {
+        await runSave();
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = origBtnText;
+        }
+      }
+    }
   } catch (err) {
     console.error("Fehler beim Speichern der Einstellungen:", err);
     if (window.UIConfirmKit) {
       await UIConfirmKit.alert({ title: "Fehler beim Speichern", message: "❌ Fehler beim Speichern: " + err.message, type: "danger" });
     } else {
       alert("❌ Fehler beim Speichern: " + err.message);
-    }
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = origBtnText;
     }
   }
 }

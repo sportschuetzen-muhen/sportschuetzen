@@ -123,6 +123,7 @@ Das Modul Vermietung steuert den gesamten Lebenszyklus der Vermietung der verein
   * Einstellbar im Vorstands-Cockpit unter *Tarife & Einstellungen* (Register 3).
   * Steuert einheitlich alle E-Mail-Kopien (Vertrag, Anfrage, Bestätigung, Mahnung, Schlüsselübergabe, Storno, Notfall-Alarm) an den Verein (`sportschuetzen.muhen@gmail.com`) und das Wirtschaftsteam.
   * Die Supabase Edge Function `send-email` filtert die Vereinsadresse im CC niemals heraus, solange sie nicht bereits der direkte Hauptempfänger (`to`) ist.
+  * **Atomarer Batch-Speichervorgang & Trigger (Migration 102):** Speichern erfolgt via `UIButtonKit.withLoading` als ein einziger atomarer Batch-Upsert aller Einstellungen inklusive Fehlerprüfung bei `rental_pricing`. Ein DB-Trigger (`trg_rental_settings_updated_at`) aktualisiert `updated_at` bei jedem Schreibvorgang automatisch. Leere Verteiler-Eingaben werden nicht mehr still mit `club_email` überschrieben.
 
 ---
 
