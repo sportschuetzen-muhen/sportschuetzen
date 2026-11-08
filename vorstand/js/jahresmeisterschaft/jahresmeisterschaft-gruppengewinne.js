@@ -133,7 +133,13 @@
                                     <option value="2025">2025</option>
                                     <option value="2024">2024</option>
                                 </select>
-                                <input type="text" id="jm-gg-search" class="form-select form-select-sm" style="width: 220px;" placeholder="🔍 Anlass / Gruppe suchen..." oninput="window.jmFilterGruppengewinneTable()">
+                                <div class="input-group input-group-sm" style="width: 250px;">
+                                    <span class="input-group-text bg-white text-muted border-end-0"><i class="fas fa-search"></i></span>
+                                    <input type="text" id="jm-gg-search" class="form-control form-control-sm border-start-0" placeholder="Anlass / Gruppe suchen..." oninput="window.jmFilterGruppengewinneTable()">
+                                    <button type="button" class="btn btn-outline-secondary d-none" id="jm-gg-search-clear" onclick="document.getElementById('jm-gg-search').value=''; window.jmFilterGruppengewinneTable();" title="Suche leeren">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
                             </div>
                             <div class="d-flex align-items-center gap-2">
                                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.jmReloadGruppengewinneList()" title="Liste neu laden">
@@ -307,7 +313,12 @@
      * Filtert die Tabelle der Gruppengewinne anhand des Suchbegriffs.
      */
     function jmFilterGruppengewinneTable() {
-        const query = (document.getElementById('jm-gg-search')?.value || '').toLowerCase().trim();
+        const searchEl = document.getElementById('jm-gg-search');
+        const clearBtn = document.getElementById('jm-gg-search-clear');
+        const query = (searchEl?.value || '').toLowerCase().trim();
+        if (clearBtn) {
+            clearBtn.classList.toggle('d-none', !query);
+        }
         const rows = document.querySelectorAll('#jm-gg-table-body tr');
         rows.forEach(r => {
             const txt = r.innerText.toLowerCase();
@@ -455,6 +466,15 @@
             comp = compOrId;
         }
 
+        // Sicherstellen, dass bestehende Gruppengewinne des Jahres geladen sind (für Dropdown-Ausweisung)
+        const targetYr = comp?.jahr || getActiveYear();
+        if (!window._jmGroupCompetitions || window._jmGroupCompetitions.length === 0 || Number(_jmActiveCompYear) !== Number(targetYr)) {
+            await jmLoadGroupCompetitions(targetYr);
+            if (typeof compOrId === 'string' && !comp) {
+                comp = window._jmGroupCompetitions.find(c => String(c.id) === String(compOrId));
+            }
+        }
+
         // Falls neu: Standard-Werte belegen
         if (!comp) {
             comp = {
@@ -569,9 +589,67 @@
         return null;
     }
 
+    /**
+     * Findet bestehende Gruppengewinn-Abrechnungen für einen Anlass im aktiven Jahr.
+     */
+    function findExistingGroupCompetitionsForAnlass(anlassTitle, gridInstance = null, excludeCompId = null) {
+        if (!anlassTitle || !Array.isArray(window._jmGroupCompetitions)) return [];
+        const grid = gridInstance || window.jmRawGrid;
+        const norm = str => String(str || '')
+            .toLowerCase()
+            .replace(/ä/g, 'ae')
+            .replace(/ö/g, 'oe')
+            .replace(/ü/g, 'ue')
+            .replace(/ß/g, 'ss')
+            .replace(/[^a-z0-9]/g, '');
+
+        const targetNorm = norm(anlassTitle);
+        const targetClean = targetNorm.replace(/\d+/g, '');
+        const targetCol = findJMColumnForAnlass(anlassTitle, grid);
+
+        return window._jmGroupCompetitions.filter(c => {
+            if (excludeCompId && String(c.id) === String(excludeCompId)) return false;
+            const cName = String(c.anlass_name || '').trim();
+            if (!cName) return false;
+
+            // 1. Gleiche Jahresmeisterschafts-Spalte?
+            if (targetCol && grid) {
+                const cCol = findJMColumnForAnlass(cName, grid);
+                if (cCol && cCol.colIndex === targetCol.colIndex) return true;
+            }
+
+            // 2. Direkter oder normalisierter Teilstring-Match
+            const cNorm = norm(cName);
+            if (cNorm === targetNorm || cNorm.includes(targetNorm) || targetNorm.includes(cNorm)) return true;
+
+            const cClean = cNorm.replace(/\d+/g, '');
+            if (targetClean.length > 5 && cClean.length > 5 && (cClean.includes(targetClean) || targetClean.includes(cClean))) {
+                return true;
+            }
+            return false;
+        });
+    }
+
+    /**
+     * Formatiert eine Kurz-Zusammenfassung bestehender Abrechnungen für das Dropdown.
+     */
+    function formatExistingCompsSummary(comps) {
+        if (!comps || comps.length === 0) return '';
+        const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${Number(v || 0).toFixed(2)}`);
+        return comps.map(c => {
+            const members = Array.isArray(c.members) ? c.members : [];
+            const allDone = members.length > 0 && members.every(m => m.status === 'verrechnet' || m.status === 'ausgefuehrt');
+            const someDone = members.some(m => m.status === 'verrechnet' || m.status === 'ausgefuehrt' || m.status === 'in_zahlung');
+            const statusTxt = allDone ? 'Abgewickelt' : (someDone ? 'Teilw. verrechnet' : 'Offen');
+            return `${c.gruppe_name || 'Gruppe'} · ${fmtCurr(Number(c.gruppengewinn || 0))} · ${statusTxt}`;
+        }).join(' | ');
+    }
+
     async function getAvailableCompetitionsForSelection() {
         const list = {
             jmCols: [],
+            jmColsOpen: [],
+            jmColsSettled: [],
             catalog: []
         };
 
@@ -606,12 +684,20 @@
                         const val = parseFloat(String(grid[r]?.[c] || '').replace(',', '.'));
                         if (!isNaN(val) && val > 0) shooterCount++;
                     }
-                    list.jmCols.push({
+                    const existingComps = findExistingGroupCompetitionsForAnlass(title, grid);
+                    const colEntry = {
                         colIndex: c,
                         title: title,
                         maxPts: maxPts,
-                        shooterCount: shooterCount
-                    });
+                        shooterCount: shooterCount,
+                        existingComps: existingComps
+                    };
+                    list.jmCols.push(colEntry);
+                    if (existingComps.length > 0) {
+                        list.jmColsSettled.push(colEntry);
+                    } else {
+                        list.jmColsOpen.push(colEntry);
+                    }
                     existingNorms.add(norm(title));
                 }
             }
@@ -640,12 +726,23 @@
 
                     // Nur aufnehmen, wenn NOCH NICHT in der Jahresmeisterschaft vorhanden!
                     if (!isAlreadyInJM) {
-                        list.catalog.push({
-                            id: c.id,
-                            title: c.anlass,
-                            ort: c.ort,
-                            maxPts: c.max_punkte
-                        });
+                        const existingComps = findExistingGroupCompetitionsForAnlass(c.anlass, grid);
+                        if (existingComps.length > 0) {
+                            list.jmColsSettled.push({
+                                colIndex: null,
+                                title: c.anlass,
+                                maxPts: c.max_punkte,
+                                shooterCount: 0,
+                                existingComps: existingComps
+                            });
+                        } else {
+                            list.catalog.push({
+                                id: c.id,
+                                title: c.anlass,
+                                ort: c.ort,
+                                maxPts: c.max_punkte
+                            });
+                        }
                     }
                 });
             } catch (e) {
@@ -743,6 +840,8 @@
         return null;
     }
 
+    let _jmLastDetectedGridShooters = [];
+
     /**
      * Befüllt das Dropdown und die Datalist für den Anlass.
      */
@@ -754,29 +853,41 @@
         const available = await getAvailableCompetitionsForSelection();
         const curYear = getActiveYear();
 
-        let optionsHtml = '<option value="">-- Schiessen aus Dropdown wählen oder frei eingeben --</option>';
+        let optionsHtml = '<option value="">-- Schiessen aus Dropdown wählen --</option>';
 
-        // 1. Bereits in Jahresmeisterschaft vorhanden
-        if (available.jmCols && available.jmCols.length > 0) {
-            optionsHtml += `<optgroup label="✅ Bereits in Jahresmeisterschaft vorhanden (${curYear})">`;
-            available.jmCols.forEach(col => {
+        // 1. In Jahresmeisterschaft vorhanden – noch offen (keine Abrechnung vorhanden)
+        if (available.jmColsOpen && available.jmColsOpen.length > 0) {
+            optionsHtml += `<optgroup label="🎯 In Jahresmeisterschaft vorhanden – noch offen (${curYear})">`;
+            available.jmColsOpen.forEach(col => {
                 const countStr = col.shooterCount > 0 ? ` (${col.shooterCount} Resultate)` : ' (Noch keine Resultate)';
-                optionsHtml += `<option value="${escapeHtml(col.title)}" data-source="jm" data-col="${col.colIndex}" data-count="${col.shooterCount}">${escapeHtml(col.title)}${countStr}</option>`;
+                optionsHtml += `<option value="${escapeHtml(col.title)}" data-source="jm" data-settled="false" data-col="${col.colIndex}" data-count="${col.shooterCount}">${escapeHtml(col.title)}${countStr}</option>`;
             });
             optionsHtml += '</optgroup>';
         }
 
-        // 2. Noch nicht in Jahresmeisterschaft erfasst (aus Katalog)
+        // 2. Bereits abgerechnet / Gruppengewinn erfasst (gesondert ausgewiesen)
+        if (available.jmColsSettled && available.jmColsSettled.length > 0) {
+            optionsHtml += `<optgroup label="💰 Bereits abgerechnet / Gruppengewinn erfasst (${curYear})">`;
+            available.jmColsSettled.forEach(col => {
+                const countStr = col.shooterCount > 0 ? ` (${col.shooterCount} Resultate)` : '';
+                const summary = formatExistingCompsSummary(col.existingComps);
+                const infoStr = summary ? ` — [Erfasst: ${summary}]` : ' — [Bereits erfasst]';
+                optionsHtml += `<option value="${escapeHtml(col.title)}" data-source="jm" data-settled="true" data-col="${col.colIndex ?? ''}" data-count="${col.shooterCount || 0}">✓ ${escapeHtml(col.title)}${countStr}${escapeHtml(infoStr)}</option>`;
+            });
+            optionsHtml += '</optgroup>';
+        }
+
+        // 3. Noch nicht in Jahresmeisterschaft erfasst (aus Katalog)
         if (available.catalog && available.catalog.length > 0) {
             optionsHtml += '<optgroup label="📋 Noch nicht in Jahresmeisterschaft erfasst (aus Festkatalog)">';
             available.catalog.forEach(cat => {
                 const ortStr = cat.ort ? ` (${cat.ort})` : '';
-                optionsHtml += `<option value="${escapeHtml(cat.title)}" data-source="catalog">${escapeHtml(cat.title)}${ortStr}</option>`;
+                optionsHtml += `<option value="${escapeHtml(cat.title)}" data-source="catalog" data-settled="false">${escapeHtml(cat.title)}${ortStr}</option>`;
             });
             optionsHtml += '</optgroup>';
         }
 
-        optionsHtml += '<option value="__custom__">✏️ Anderer / Eigener Anlass (manuell eingeben)...</option>';
+        optionsHtml += '<option value="__custom__">✏️ Anderer / Eigener Anlass (Freitext eingeben)...</option>';
         select.innerHTML = optionsHtml;
 
         // Datalist befüllen
@@ -789,7 +900,8 @@
         });
         datalist.innerHTML = dlHtml;
 
-        // Vorselektion
+        // Vorselektion & Custom-Feld Steuerung
+        const customWrap = document.getElementById('jme-anlass-custom-wrap');
         if (selectedAnlass) {
             const grid = await getJMGrid();
             const matched = findJMColumnForAnlass(selectedAnlass, grid);
@@ -798,14 +910,32 @@
             const found = Array.from(select.options).find(opt => opt.value.toLowerCase() === selectValue.toLowerCase());
             if (found) {
                 select.value = found.value;
+                if (customWrap) customWrap.classList.add('d-none');
             } else {
                 select.value = '__custom__';
+                if (customWrap) customWrap.classList.remove('d-none');
             }
         } else {
             select.value = '';
+            if (customWrap) customWrap.classList.add('d-none');
         }
 
-        checkAnlassJMSyncBanner(selectedAnlass);
+        await checkAnlassJMSyncBanner(selectedAnlass);
+    }
+
+    /**
+     * Schaltet das manuelle Freitext-Feld für den Anlassnamen ein/aus.
+     */
+    function jmToggleCustomAnlassInput(forceShow) {
+        const customWrap = document.getElementById('jme-anlass-custom-wrap');
+        const input = document.getElementById('jme-anlass');
+        if (!customWrap) return;
+        const willShow = typeof forceShow === 'boolean' ? forceShow : customWrap.classList.contains('d-none');
+        customWrap.classList.toggle('d-none', !willShow);
+        if (willShow && input) {
+            input.focus();
+            input.select();
+        }
     }
 
     /**
@@ -823,6 +953,175 @@
     }
 
     /**
+     * Prüft bestehende Abrechnungen für den gewählten Anlass und zeigt ein Hinweis-/Schnellwechsel-Banner.
+     */
+    async function renderExistingSettlementNotice(anlassTitle) {
+        const noticeEl = document.getElementById('jme-existing-comp-banner');
+        if (!noticeEl) return;
+
+        const title = (anlassTitle || '').trim();
+        if (!title) {
+            noticeEl.className = 'd-none';
+            noticeEl.innerHTML = '';
+            return;
+        }
+
+        const grid = await getJMGrid();
+        const currentId = _jmCurrentEditingComp?.id || null;
+        const existingOther = findExistingGroupCompetitionsForAnlass(title, grid, currentId);
+
+        if (!existingOther || existingOther.length === 0) {
+            noticeEl.className = 'd-none';
+            noticeEl.innerHTML = '';
+            return;
+        }
+
+        const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${Number(v || 0).toFixed(2)}`);
+        const itemsHtml = existingOther.map(c => {
+            const members = Array.isArray(c.members) ? c.members : [];
+            const allDone = members.length > 0 && members.every(m => m.status === 'verrechnet' || m.status === 'ausgefuehrt');
+            const badgeCls = allDone ? 'bg-success' : 'bg-secondary';
+            const badgeTxt = allDone ? 'Abgewickelt' : 'Offen';
+            return `
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 py-1">
+                    <div>
+                        <i class="fas fa-exclamation-circle text-warning me-1"></i>
+                        Für dieses Schiessen besteht bereits eine Abrechnung:
+                        <strong>Gruppe «${escapeHtml(c.gruppe_name)}»</strong>
+                        (${fmtCurr(Number(c.gruppengewinn || 0))} · <span class="badge ${badgeCls}" style="font-size:10px;">${badgeTxt}</span> · ${members.length} Schützen)
+                    </div>
+                    <button type="button" class="btn btn-xs btn-warning fw-bold shadow-xs" onclick="window.jmOpenGroupCompetitionEditor('${c.id}')">
+                        <i class="fas fa-pen me-1"></i> Bestehende Abrechnung «${escapeHtml(c.gruppe_name)}» öffnen
+                    </button>
+                </div>
+            `;
+        }).join('<hr class="my-1 opacity-25">');
+
+        noticeEl.className = 'alert alert-warning py-2 px-3 small mb-3 shadow-xs border border-warning';
+        noticeEl.innerHTML = `
+            ${itemsHtml}
+            <div class="text-muted mt-1" style="font-size: 11px;">
+                <i class="fas fa-info-circle me-1"></i>Falls ihr mit einer <strong>zweiten Gruppe</strong> (z. B. <em>Strohaus 2</em>) teilgenommen habt, kannst du unten direkt die nächste Gruppe erfassen.
+            </div>
+        `;
+    }
+
+    /**
+     * Rendert im grünen Sync-Banner bei > 5 Schützen eine Schnell-Auswahl (Tauschen/Hinzufügen).
+     */
+    function renderAdditionalShootersPills(matchedTitle) {
+        const banner = document.getElementById('jme-jm-sync-banner');
+        if (!banner || !_jmLastDetectedGridShooters || _jmLastDetectedGridShooters.length === 0) return;
+
+        const currentMembers = _jmCurrentEditingComp?.members || [];
+        const currentNames = new Set(currentMembers.map(m => String(m.schuetze_name || '').trim().toLowerCase()));
+
+        let extraHtml = '';
+        if (_jmLastDetectedGridShooters.length > 5 || _jmLastDetectedGridShooters.some(s => !currentNames.has(s.name.toLowerCase()))) {
+            const pills = _jmLastDetectedGridShooters.map((s, idx) => {
+                const isSelected = currentNames.has(s.name.toLowerCase());
+                const btnCls = isSelected
+                    ? 'btn-success text-white'
+                    : 'btn-outline-secondary bg-white text-dark';
+                const icon = isSelected ? 'fa-check' : 'fa-plus';
+                const titleHint = isSelected
+                    ? 'Ist aktuell in der Gruppe eingeteilt (Klick zum Entfernen)'
+                    : 'Klicken, um diesen Schützen in die Gruppe aufzunehmen';
+                return `
+                    <button type="button" class="btn btn-xs ${btnCls} py-0 px-2" style="font-size: 11px;" onclick="window.jmToggleGridShooterInEditor(${idx})" title="${titleHint}">
+                        <i class="fas ${icon} me-1"></i>${escapeHtml(s.name)} <strong>(${s.punkte})</strong>
+                    </button>
+                `;
+            }).join('');
+
+            extraHtml = `
+                <div class="mt-2 pt-1.5 border-top border-success-subtle d-flex flex-wrap align-items-center gap-1">
+                    <span class="text-muted me-1" style="font-size: 11px;">
+                        <i class="fas fa-exchange-alt me-1"></i>Alle ${_jmLastDetectedGridShooters.length} Schützen dieses Schiessens (Klick zum Ein-/Austeilen):
+                    </span>
+                    ${pills}
+                </div>
+            `;
+        }
+
+        banner.className = 'alert alert-success py-2 px-3 small mb-3 shadow-xs border';
+        banner.innerHTML = `
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="fas fa-check-circle text-success fa-lg"></i>
+                    <div>
+                        <strong>${currentMembers.length} Schützen & Punkte</strong> (Total: ${_jmCurrentEditingComp?.punkte_total || 0} Pkt.) aus der Jahresmeisterschaft «${escapeHtml(matchedTitle)}» geladen.
+                    </div>
+                </div>
+                <button type="button" class="btn btn-xs btn-outline-success fw-semibold" onclick="window.jmPopulateShootersFromJMRawGrid('${escapeHtml(matchedTitle)}', false)">
+                    <i class="fas fa-sync-alt me-1"></i> Top 5 neu laden
+                </button>
+            </div>
+            ${extraHtml}
+        `;
+        banner.classList.remove('d-none');
+    }
+
+    /**
+     * Schaltet einen erkannten Schützen aus dem JM-Grid per 1-Klick in die aktuelle Gruppe ein oder aus.
+     */
+    function jmToggleGridShooterInEditor(detectedIdx) {
+        const s = _jmLastDetectedGridShooters?.[detectedIdx];
+        if (!s || !_jmCurrentEditingComp) return;
+
+        _jmCurrentEditingComp.members = _jmCurrentEditingComp.members || [];
+        const existingIdx = _jmCurrentEditingComp.members.findIndex(
+            m => String(m.schuetze_name || '').trim().toLowerCase() === s.name.toLowerCase()
+        );
+
+        if (existingIdx !== -1) {
+            const targetMember = _jmCurrentEditingComp.members[existingIdx];
+            if (targetMember.status === 'verrechnet' || targetMember.status === 'in_zahlung' || targetMember.status === 'ausgefuehrt') {
+                if (window.UIConfirmKit) {
+                    UIConfirmKit.alert({
+                        title: 'Schütze bereits abgerechnet',
+                        message: `${targetMember.schuetze_name} wurde bereits verrechnet bzw. zur Zahlung angewiesen und kann nicht mehr aus der Gruppe entfernt werden.`,
+                        type: 'warning'
+                    });
+                }
+                return;
+            }
+            _jmCurrentEditingComp.members.splice(existingIdx, 1);
+        } else {
+            let pn = null;
+            let iban = '';
+            const mObj = findMemberByName(s.name) || findMemberByPn(s.lizenz);
+            if (mObj) {
+                pn = mObj.person_number;
+                iban = mObj.iban || '';
+            } else if (s.lizenz && !isNaN(parseInt(s.lizenz, 10))) {
+                pn = parseInt(s.lizenz, 10);
+            }
+            _jmCurrentEditingComp.members.push({
+                person_number: pn,
+                schuetze_name: s.name,
+                jahrgang: s.jahrgang,
+                punkte: s.punkte,
+                betrag: 0,
+                payout_method: 'jahresbeitrag',
+                iban: iban,
+                status: 'offen'
+            });
+        }
+
+        const sumPts = _jmCurrentEditingComp.members.reduce((a, b) => a + (Number(b.punkte) || 0), 0);
+        _jmCurrentEditingComp.punkte_total = Math.round(sumPts * 10) / 10;
+        _jmCurrentEditingComp.anzahl_schuetzen = _jmCurrentEditingComp.members.length;
+
+        const punkteInput = document.getElementById('jme-punkte');
+        if (punkteInput) punkteInput.value = _jmCurrentEditingComp.punkte_total || '';
+
+        renderShooterRows(_jmCurrentEditingComp.members);
+        jmRecalculateCurrentComp();
+        renderAdditionalShootersPills(_jmCurrentEditingComp.anlass_name || '');
+    }
+
+    /**
      * Prüft, ob für den gewählten Anlass Resultate in der Jahresmeisterschaft existieren.
      */
     async function checkAnlassJMSyncBanner(anlassTitle) {
@@ -831,6 +1130,8 @@
         if (!banner) return;
 
         const title = (anlassTitle || document.getElementById('jme-anlass')?.value || '').trim();
+        await renderExistingSettlementNotice(title);
+
         if (!title) {
             banner.classList.add('d-none');
             banner.classList.remove('d-flex');
@@ -847,22 +1148,50 @@
             return;
         }
 
-        let count = 0;
+        const headerRow = grid[4] || [];
+        const colNachname = headerRow.findIndex(t => String(t || '').trim().toLowerCase() === 'nachname');
+        const colVorname = headerRow.findIndex(t => String(t || '').trim().toLowerCase() === 'vorname');
+        const colLizenz = headerRow.findIndex(t => String(t || '').trim().toLowerCase().includes('lizenz'));
+        const colJahrgang = headerRow.findIndex(t => String(t || '').trim().toLowerCase().includes('jahrgang'));
+
+        const detected = [];
         for (let r = 5; r < grid.length; r++) {
             if (r === 13 || r === 14) continue;
             const val = parseFloat(String(grid[r]?.[matched.colIndex] || '').replace(',', '.'));
-            if (!isNaN(val) && val > 0) count++;
+            if (!isNaN(val) && val > 0) {
+                const nachname = colNachname !== -1 ? String(grid[r][colNachname] || '').trim() : '';
+                const vorname = colVorname !== -1 ? String(grid[r][colVorname] || '').trim() : '';
+                const fullName = `${vorname} ${nachname}`.trim();
+                const liz = colLizenz !== -1 ? String(grid[r][colLizenz] || '').trim() : '';
+                const jg = colJahrgang !== -1 ? parseInt(grid[r][colJahrgang], 10) : null;
+                if (fullName) {
+                    detected.push({ name: fullName, punkte: val, lizenz: liz, jahrgang: isNaN(jg) ? null : jg });
+                }
+            }
         }
+        detected.sort((a, b) => b.punkte - a.punkte);
+        _jmLastDetectedGridShooters = detected;
 
-        const colNameEl = document.getElementById('jme-jm-sync-colname');
-        const countEl = document.getElementById('jme-jm-sync-count');
-        if (colNameEl) colNameEl.innerText = `«${matched.title}»`;
-        if (countEl) countEl.innerText = count;
-
+        const count = detected.length;
         if (count > 0) {
-            banner.classList.remove('d-none');
-            banner.classList.add('d-flex');
             if (quickBtn) quickBtn.style.display = '';
+            if (_jmCurrentEditingComp?.members && _jmCurrentEditingComp.members.length > 0) {
+                renderAdditionalShootersPills(matched.title);
+            } else {
+                banner.className = 'alert alert-primary py-2 px-3 small d-flex align-items-center justify-content-between mb-3 shadow-xs border';
+                banner.innerHTML = `
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="fas fa-medal text-primary fa-lg"></i>
+                        <div>
+                            In der Jahresmeisterschaft <strong>«${escapeHtml(matched.title)}»</strong> gefunden (<span class="fw-bold">${count}</span> Schützen mit Resultat).
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-xs btn-primary fw-semibold shadow-xs" onclick="window.jmPopulateShootersFromJMRawGrid()">
+                        <i class="fas fa-users me-1"></i> Schützen & Punkte übernehmen
+                    </button>
+                `;
+                banner.classList.remove('d-none');
+            }
         } else {
             banner.classList.add('d-none');
             banner.classList.remove('d-flex');
@@ -877,15 +1206,19 @@
      */
     async function jmOnAnlassSelectChange(val) {
         const input = document.getElementById('jme-anlass');
+        const customWrap = document.getElementById('jme-anlass-custom-wrap');
         if (!input) return;
 
         if (val === '__custom__') {
+            if (customWrap) customWrap.classList.remove('d-none');
             input.value = '';
             input.focus();
             if (_jmCurrentEditingComp) _jmCurrentEditingComp.anlass_name = '';
-            checkAnlassJMSyncBanner('');
+            await checkAnlassJMSyncBanner('');
             return;
         }
+
+        if (customWrap) customWrap.classList.add('d-none');
 
         if (val) {
             input.value = val;
@@ -893,14 +1226,48 @@
                 _jmCurrentEditingComp.anlass_name = val;
             }
 
-            // Automatische Übernahme der Schützen & Punkte aus der Jahresmeisterschaft!
             const grid = await getJMGrid();
+            const existingOther = findExistingGroupCompetitionsForAnlass(val, grid, _jmCurrentEditingComp?.id);
+
+            // Falls für diesen Anlass bereits eine Gruppe (z. B. Strohaus) existiert und wir im Neu-Modus sind:
+            // Automatisch nächste Gruppenbezeichnung vorschlagen (z. B. Strohaus 2)
+            if (!_jmCurrentEditingComp?.id && existingOther.length > 0) {
+                const grpInput = document.getElementById('jme-gruppe');
+                if (grpInput && (grpInput.value === 'Strohaus' || grpInput.value === 'Strohhaus 1' || !grpInput.value.trim())) {
+                    const nextNum = existingOther.length + 1;
+                    grpInput.value = `Strohaus ${nextNum}`;
+                    _jmCurrentEditingComp.gruppe_name = grpInput.value;
+                }
+            } else if (!_jmCurrentEditingComp?.id) {
+                const grpInput = document.getElementById('jme-gruppe');
+                if (grpInput && /^Strohaus\s+\d+$/i.test(grpInput.value)) {
+                    grpInput.value = 'Strohaus';
+                    _jmCurrentEditingComp.gruppe_name = 'Strohaus';
+                }
+            }
+
+            await renderExistingSettlementNotice(val);
+
+            // Automatische Übernahme der Schützen & Punkte aus der Jahresmeisterschaft!
             const matched = findJMColumnForAnlass(val, grid);
             if (matched) {
                 await jmPopulateShootersFromJMRawGrid(matched.title, true);
             } else {
                 await checkAnlassJMSyncBanner(val);
             }
+
+            // Fokus direkt auf das Feld "Gruppengewinn (Brutto)" legen für flüssige Dateneingabe
+            setTimeout(() => {
+                const gewinnInput = document.getElementById('jme-gewinn');
+                if (gewinnInput) {
+                    gewinnInput.focus();
+                    gewinnInput.select();
+                }
+            }, 80);
+        } else {
+            input.value = '';
+            if (_jmCurrentEditingComp) _jmCurrentEditingComp.anlass_name = '';
+            await checkAnlassJMSyncBanner('');
         }
     }
 
@@ -939,11 +1306,13 @@
     function jmClearAnlassInput() {
         const input = document.getElementById('jme-anlass');
         const select = document.getElementById('jme-anlass-select');
+        const customWrap = document.getElementById('jme-anlass-custom-wrap');
         if (input) input.value = '';
         if (select) select.value = '';
+        if (customWrap) customWrap.classList.add('d-none');
         if (_jmCurrentEditingComp) _jmCurrentEditingComp.anlass_name = '';
         checkAnlassJMSyncBanner('');
-        if (input) input.focus();
+        if (select) select.focus();
     }
 
     /**
@@ -954,6 +1323,21 @@
     async function jmPopulateShootersFromJMRawGrid(forceAnlassName, isAuto = false) {
         const anlassName = (forceAnlassName || document.getElementById('jme-anlass')?.value || _jmCurrentEditingComp?.anlass_name || '').trim();
         if (!anlassName) return false;
+
+        // Schutz: Wenn in der aktuellen Gruppe bereits verrechnete Schützen vorhanden sind, nicht blind überschreiben
+        const lockedMembers = (_jmCurrentEditingComp?.members || []).filter(
+            m => m.status === 'verrechnet' || m.status === 'in_zahlung' || m.status === 'ausgefuehrt'
+        );
+        if (lockedMembers.length > 0 && !isAuto) {
+            if (window.UIConfirmKit) {
+                await UIConfirmKit.alert({
+                    title: 'Schützen bereits abgerechnet',
+                    message: `In dieser Gruppe sind bereits ${lockedMembers.length} Schütze(n) verrechnet oder zur Zahlung angewiesen. Du kannst einzelne offene Schützen über die Auswahl-Buttons oben ein- oder austeilen.`,
+                    type: 'warning'
+                });
+            }
+            return false;
+        }
 
         const grid = await getJMGrid();
         const matched = findJMColumnForAnlass(anlassName, grid);
@@ -1012,10 +1396,23 @@
 
         // Nach Punkten absteigend sortieren
         detected.sort((a, b) => b.punkte - a.punkte);
+        _jmLastDetectedGridShooters = detected;
+
+        // Falls bereits eine 1. Gruppe für dieses Schiessen existiert, zuerst noch nicht eingeteilte Schützen bevorzugen
+        const existingOther = findExistingGroupCompetitionsForAnlass(matchedTitle, grid, _jmCurrentEditingComp?.id);
+        const alreadyAssignedNames = new Set();
+        existingOther.forEach(comp => {
+            (comp.members || []).forEach(m => {
+                if (m.schuetze_name) alreadyAssignedNames.add(String(m.schuetze_name).trim().toLowerCase());
+            });
+        });
+
+        const unassignedShooters = detected.filter(s => !alreadyAssignedNames.has(s.name.toLowerCase()));
+        const candidatePool = (existingOther.length > 0 && unassignedShooters.length > 0) ? unassignedShooters : detected;
 
         // Bis zu 5 Schützen übernehmen (oder alle vorhandenen falls weniger als 5)
-        const countToTake = Math.min(5, detected.length);
-        const topShooters = detected.slice(0, countToTake);
+        const countToTake = Math.min(5, candidatePool.length);
+        const topShooters = candidatePool.slice(0, countToTake);
 
         _jmCurrentEditingComp.members = topShooters.map(s => {
             let pn = null;
@@ -1057,24 +1454,7 @@
 
         renderShooterRows(_jmCurrentEditingComp.members);
         jmRecalculateCurrentComp();
-
-        // Erfolgs-Banner anzeigen
-        const banner = document.getElementById('jme-jm-sync-banner');
-        if (banner) {
-            banner.className = 'alert alert-success py-1.5 px-3 small d-flex align-items-center justify-content-between mb-3 shadow-xs border';
-            banner.innerHTML = `
-                <div class="d-flex align-items-center gap-2">
-                    <i class="fas fa-check-circle text-success fa-lg"></i>
-                    <div>
-                        <strong>${_jmCurrentEditingComp.members.length} Schützen & Punkte</strong> (Total: ${_jmCurrentEditingComp.punkte_total} Pkt.) automatisch aus der Jahresmeisterschaft «${matchedTitle}» übernommen!
-                    </div>
-                </div>
-                <button type="button" class="btn btn-xs btn-outline-success fw-semibold" onclick="window.jmPopulateShootersFromJMRawGrid('${escapeHtml(matchedTitle)}')">
-                    <i class="fas fa-sync-alt me-1"></i> Erneut laden
-                </button>
-            `;
-            banner.classList.remove('d-none');
-        }
+        renderAdditionalShootersPills(matchedTitle);
 
         if (typeof showSuccess === 'function') {
             showSuccess(`🎉 ${_jmCurrentEditingComp.members.length} Schützen für «${matchedTitle}» automatisch aus Jahresmeisterschaft übernommen!`);
@@ -1113,14 +1493,19 @@
                                     <div class="col-md-5">
                                         <div class="d-flex justify-content-between align-items-center mb-1">
                                             <label class="form-label small fw-bold mb-0">Anlass / Schiessen *</label>
-                                            <span class="badge bg-secondary-subtle text-muted border" style="font-size: 10px;">Auswahl oder Freitext</span>
+                                            <span class="badge bg-secondary-subtle text-muted border" style="font-size: 10px;">Offene & abgerechnete Schiessen</span>
                                         </div>
-                                        <select class="form-select form-select-sm mb-1 fw-semibold text-primary" id="jme-anlass-select" onchange="window.jmOnAnlassSelectChange(this.value)">
-                                            <option value="">-- Schiessen auswählen oder unten frei eintippen --</option>
-                                        </select>
                                         <div class="input-group input-group-sm">
-                                            <input type="text" class="form-control form-control-sm" id="jme-anlass" list="jme-anlass-datalist" placeholder="z. B. 14. Bärenmoosschiessen 2026" required oninput="window.jmOnAnlassInputChange(this.value)">
-                                            <button type="button" class="btn btn-outline-secondary" onclick="window.jmClearAnlassInput()" title="Feld leeren">
+                                            <select class="form-select form-select-sm fw-semibold text-primary" id="jme-anlass-select" onchange="window.jmOnAnlassSelectChange(this.value)">
+                                                <option value="">-- Schiessen aus Dropdown wählen --</option>
+                                            </select>
+                                            <button type="button" class="btn btn-outline-secondary" onclick="window.jmToggleCustomAnlassInput()" title="Anlassnamen frei bearbeiten / manuell eingeben">
+                                                <i class="fas fa-pen"></i>
+                                            </button>
+                                        </div>
+                                        <div class="input-group input-group-sm mt-1 d-none" id="jme-anlass-custom-wrap">
+                                            <input type="text" class="form-control form-control-sm" id="jme-anlass" list="jme-anlass-datalist" placeholder="Eigener Anlassname (z. B. 14. Bärenmoosschiessen 2026)" required oninput="window.jmOnAnlassInputChange(this.value)">
+                                            <button type="button" class="btn btn-outline-secondary" onclick="window.jmClearAnlassInput()" title="Freitext zurücksetzen">
                                                 <i class="fas fa-times"></i>
                                             </button>
                                         </div>
@@ -1139,36 +1524,41 @@
                                         <input type="number" step="0.1" class="form-control form-control-sm text-center" id="jme-punkte" placeholder="z. B. 487">
                                     </div>
 
-                                    <!-- Finanz-Berechnung -->
+                                    <!-- Finanz-Berechnung (4-Spalten Grid ohne Umbruch-Probleme) -->
                                     <div class="col-12 mt-2">
-                                        <div class="p-2.5 rounded bg-light border d-flex flex-wrap align-items-center justify-content-between gap-3">
-                                            <div class="d-flex align-items-center gap-2">
-                                                <label class="small fw-bold text-muted mb-0">Gruppendoppel (Verein):</label>
-                                                <div class="input-group input-group-sm" style="width: 140px;">
-                                                    <span class="input-group-text">CHF</span>
-                                                    <input type="number" step="0.5" class="form-control fw-bold text-end" id="jme-doppel" value="30.00" oninput="window.jmRecalculateCurrentComp()">
+                                        <div class="p-2.5 rounded bg-light border">
+                                            <div class="row g-2 align-items-center">
+                                                <div class="col-sm-6 col-md-3">
+                                                    <label class="small fw-bold text-muted d-block mb-1">Gruppendoppel (Verein)</label>
+                                                    <div class="input-group input-group-sm">
+                                                        <span class="input-group-text">CHF</span>
+                                                        <input type="number" step="0.5" class="form-control fw-bold text-end" id="jme-doppel" value="30.00" oninput="window.jmRecalculateCurrentComp()">
+                                                    </div>
                                                 </div>
-                                            </div>
-                                            <div class="d-flex align-items-center gap-2">
-                                                <label class="small fw-bold text-success mb-0">Gruppengewinn (Brutto):</label>
-                                                <div class="input-group input-group-sm" style="width: 150px;">
-                                                    <span class="input-group-text text-success fw-bold">CHF</span>
-                                                    <input type="number" step="0.5" class="form-control fw-bold text-end text-success" id="jme-gewinn" value="0.00" oninput="window.jmRecalculateCurrentComp()">
+                                                <div class="col-sm-6 col-md-3">
+                                                    <label class="small fw-bold text-success d-block mb-1">Gruppengewinn (Brutto) *</label>
+                                                    <div class="input-group input-group-sm">
+                                                        <span class="input-group-text bg-success text-white fw-bold border-success">CHF</span>
+                                                        <input type="number" step="0.5" class="form-control fw-bold text-end text-success border-success bg-white" id="jme-gewinn" value="0.00" oninput="window.jmRecalculateCurrentComp()">
+                                                    </div>
                                                 </div>
-                                            </div>
-                                            <div class="d-flex align-items-center gap-2">
-                                                <label class="small fw-bold text-primary mb-0">Netto-Überschuss Schützen:</label>
-                                                <span class="badge bg-primary fs-6 px-3 py-1.5" id="jme-ueberschuss-badge">CHF 0.00</span>
-                                            </div>
-                                            <div class="d-flex align-items-center gap-2">
-                                                <label class="small fw-bold text-dark mb-0">Betrag je Schütze:</label>
-                                                <span class="badge bg-warning text-dark fs-6 px-3 py-1.5" id="jme-pershooter-badge">CHF 0.00</span>
+                                                <div class="col-sm-6 col-md-3 text-sm-center">
+                                                    <label class="small fw-bold text-primary d-block mb-1">Netto-Überschuss Schützen</label>
+                                                    <span class="badge bg-primary fs-6 px-3 py-1.5 d-inline-block" id="jme-ueberschuss-badge">CHF 0.00</span>
+                                                </div>
+                                                <div class="col-sm-6 col-md-3 text-sm-center">
+                                                    <label class="small fw-bold text-dark d-block mb-1">Anteil je Schütze</label>
+                                                    <span class="badge bg-warning text-dark fs-6 px-3 py-1.5 d-inline-block" id="jme-pershooter-badge">CHF 0.00</span>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Hinweis-Banner bei bereits bestehender Abrechnung für dieses Schiessen -->
+                        <div id="jme-existing-comp-banner" class="d-none"></div>
 
                         <!-- Smart Sync Banner für Jahresmeisterschaft -->
                         <div id="jme-jm-sync-banner" class="alert alert-primary py-2 px-3 small d-none align-items-center justify-content-between mb-3 shadow-xs border">
@@ -1204,8 +1594,8 @@
                                     <table class="table table-sm table-hover align-middle mb-0" id="jme-shooters-table">
                                         <thead class="table-light small text-muted border-bottom">
                                             <tr>
-                                                <th class="ps-3" style="width: 25%;">Schütze (Name / Mitglied)</th>
-                                                <th class="text-center" style="width: 10%;">Punkte</th>
+                                                <th class="ps-3" style="width: 26%;">Schütze (Name / Status)</th>
+                                                <th class="text-center" style="width: 9%;">Punkte</th>
                                                 <th class="text-end" style="width: 14%;">Gewinnanteil</th>
                                                 <th style="width: 20%;">Auszahlungsweg</th>
                                                 <th style="width: 24%;">IBAN (für Überweisung)</th>
@@ -1221,14 +1611,14 @@
                         </div>
                     </div>
                     <div class="modal-footer py-2 px-3 bg-light d-flex justify-content-between">
-                        <div class="d-flex gap-2">
+                        <div class="d-flex flex-wrap gap-2">
                             <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.jmGenerateGruppengewinnPdfFromEditor()">
                                 <i class="fas fa-file-pdf me-1 text-danger"></i> Beleg drucken (PDF)
                             </button>
-                            <button type="button" class="btn btn-sm btn-outline-info text-dark" id="jme-transfer-jb-btn" onclick="window.jmTransferCurrentCompToJahresbeitrag()">
+                            <button type="button" class="btn btn-sm btn-outline-info text-dark fw-semibold" id="jme-transfer-jb-btn" onclick="window.jmTransferCurrentCompToJahresbeitrag()">
                                 <i class="fas fa-file-invoice-dollar me-1 text-primary"></i> In Jahresbeitrag übertragen
                             </button>
-                            <button type="button" class="btn btn-sm btn-outline-primary" id="jme-transfer-po-btn" onclick="window.jmTransferCurrentCompToPaymentOrder()">
+                            <button type="button" class="btn btn-sm btn-outline-primary fw-semibold" id="jme-transfer-po-btn" onclick="window.jmTransferCurrentCompToPaymentOrder()">
                                 <i class="fas fa-file-export me-1"></i> Bank-Überweisung (pain.001)
                             </button>
                         </div>
@@ -1274,8 +1664,9 @@
         if (!tbody) return;
 
         if (!members || members.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-muted">Noch keine Schützen zugewiesen. Klicke oben auf «Schütze hinzufügen».</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-muted">Noch keine Schützen zugewiesen. Wähle oben ein Schiessen aus oder klicke auf «Schütze hinzufügen».</td></tr>`;
             document.getElementById('jme-shooter-count').innerText = '0';
+            updateTransferActionButtons();
             return;
         }
 
@@ -1290,27 +1681,41 @@
             const currentIban = m.iban || memberObj?.iban || '';
             const hasIban = Boolean(currentIban && currentIban.trim().length > 10);
             const payoutMethod = m.payout_method || 'jahresbeitrag';
+            const status = m.status || 'offen';
+            const isLocked = status === 'verrechnet' || status === 'in_zahlung' || status === 'ausgefuehrt';
+
+            let statusBadge = `<span class="badge bg-secondary-subtle text-secondary border" style="font-size: 9.5px;">Offen</span>`;
+            if (status === 'verrechnet') {
+                statusBadge = `<span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size: 9.5px;"><i class="fas fa-check-circle me-1"></i>Verrechnet (JB)</span>`;
+            } else if (status === 'in_zahlung') {
+                statusBadge = `<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle" style="font-size: 9.5px;"><i class="fas fa-university me-1"></i>In Zahlung</span>`;
+            } else if (status === 'ausgefuehrt') {
+                statusBadge = `<span class="badge bg-success" style="font-size: 9.5px;"><i class="fas fa-check-double me-1"></i>Ausbezahlt</span>`;
+            }
 
             return `
-                <tr data-idx="${idx}">
+                <tr data-idx="${idx}" class="${isLocked ? 'table-light' : ''}">
                     <td class="ps-3">
-                        <input type="text" class="form-control form-control-sm fw-semibold jme-shooter-name" list="jme-members-datalist" value="${escapeHtml(m.schuetze_name || '')}" placeholder="Vorname Nachname (tippen zum Suchen)" onchange="window.jmOnShooterNameChange(${idx}, this.value)">
+                        <input type="text" class="form-control form-control-sm fw-semibold jme-shooter-name" list="jme-members-datalist" value="${escapeHtml(m.schuetze_name || '')}" placeholder="Vorname Nachname (tippen zum Suchen)" ${isLocked ? 'disabled' : ''} onchange="window.jmOnShooterNameChange(${idx}, this.value)">
                         <input type="hidden" class="jme-shooter-pn" value="${m.person_number || memberObj?.person_number || ''}">
-                        <div class="text-muted" style="font-size: 10px;">
-                            ${m.person_number || memberObj?.person_number ? `PN: ${m.person_number || memberObj.person_number}` : '<span class="text-warning">Nicht im Mitgliederstamm verknüpft</span>'}
+                        <div class="d-flex align-items-center justify-content-between mt-1" style="font-size: 10px;">
+                            <span class="text-muted">
+                                ${m.person_number || memberObj?.person_number ? `PN: ${m.person_number || memberObj.person_number}` : '<span class="text-warning">Nicht im Mitgliederstamm verknüpft</span>'}
+                            </span>
+                            ${statusBadge}
                         </div>
                     </td>
                     <td class="text-center">
-                        <input type="number" step="0.1" class="form-control form-control-sm text-center jme-shooter-pts" value="${m.punkte || ''}" placeholder="Punkte" onchange="window.jmOnShooterPointsChange(${idx}, this.value)">
+                        <input type="number" step="0.1" class="form-control form-control-sm text-center jme-shooter-pts" value="${m.punkte || ''}" placeholder="Punkte" ${isLocked ? 'disabled' : ''} onchange="window.jmOnShooterPointsChange(${idx}, this.value)">
                     </td>
                     <td class="text-end">
                         <div class="input-group input-group-sm">
                             <span class="input-group-text">CHF</span>
-                            <input type="number" step="0.05" class="form-control form-control-sm fw-bold text-end jme-shooter-betrag" value="${Number(m.betrag || 0).toFixed(2)}" onchange="window.jmOnShooterAmountChange(${idx}, this.value)">
+                            <input type="number" step="0.05" class="form-control form-control-sm fw-bold text-end jme-shooter-betrag" value="${Number(m.betrag || 0).toFixed(2)}" ${isLocked ? 'disabled' : ''} onchange="window.jmOnShooterAmountChange(${idx}, this.value)">
                         </div>
                     </td>
                     <td>
-                        <select class="form-select form-select-sm jme-shooter-method" onchange="window.jmOnShooterMethodChange(${idx}, this.value)">
+                        <select class="form-select form-select-sm jme-shooter-method" ${isLocked ? 'disabled' : ''} onchange="window.jmOnShooterMethodChange(${idx}, this.value)">
                             <option value="jahresbeitrag" ${payoutMethod === 'jahresbeitrag' ? 'selected' : ''}>Verrechnung Jahresbeitrag</option>
                             <option value="bank" ${payoutMethod === 'bank' ? 'selected' : ''}>Banküberweisung (pain.001)</option>
                             <option value="kasse" ${payoutMethod === 'kasse' ? 'selected' : ''}>Barauszahlung (Kasse 1000)</option>
@@ -1319,10 +1724,10 @@
                     </td>
                     <td>
                         <div class="d-flex align-items-center gap-1">
-                            <input type="text" class="form-control form-control-sm jme-shooter-iban ${hasIban ? 'border-success' : 'border-warning'}" value="${escapeHtml(currentIban)}" placeholder="CH..." onchange="window.jmOnShooterIbanChange(${idx}, this.value)">
+                            <input type="text" class="form-control form-control-sm jme-shooter-iban ${hasIban ? 'border-success' : 'border-warning'}" value="${escapeHtml(currentIban)}" placeholder="CH..." ${isLocked ? 'disabled' : ''} onchange="window.jmOnShooterIbanChange(${idx}, this.value)">
                             ${hasIban ? '<i class="fas fa-check-circle text-success" title="IBAN vorhanden"></i>' : '<i class="fas fa-exclamation-triangle text-warning" title="Keine IBAN im System"></i>'}
                         </div>
-                        ${!memberObj?.iban && hasIban ? `
+                        ${!memberObj?.iban && hasIban && !isLocked ? `
                             <div class="form-check mt-1" style="font-size: 10px;">
                                 <input class="form-check-input jme-save-iban-check" type="checkbox" id="save-iban-${idx}" checked>
                                 <label class="form-check-label text-muted" for="save-iban-${idx}">Im Mitgliederstamm sichern</label>
@@ -1330,13 +1735,42 @@
                         ` : ''}
                     </td>
                     <td class="text-center pe-3">
-                        <button type="button" class="btn btn-xs btn-outline-danger" onclick="window.jmRemoveShooterRow(${idx})" title="Schütze entfernen">
+                        <button type="button" class="btn btn-xs btn-outline-danger" ${isLocked ? 'disabled title="Bereits abgerechneter Schütze kann nicht entfernt werden"' : 'title="Schütze entfernen"'} onclick="window.jmRemoveShooterRow(${idx})">
                             <i class="fas fa-times"></i>
                         </button>
                     </td>
                 </tr>
             `;
         }).join('');
+
+        updateTransferActionButtons();
+    }
+
+    /**
+     * Aktualisiert die Zähler und Zustände der Footer-Aktionsbuttons (Jahresbeitrag / pain.001).
+     */
+    function updateTransferActionButtons() {
+        const jbBtn = document.getElementById('jme-transfer-jb-btn');
+        const poBtn = document.getElementById('jme-transfer-po-btn');
+        const members = _jmCurrentEditingComp?.members || [];
+
+        const jbOpen = members.filter(m => (m.payout_method || 'jahresbeitrag') === 'jahresbeitrag' && Number(m.betrag || 0) > 0 && m.status !== 'verrechnet');
+        const poOpen = members.filter(m => m.payout_method === 'bank' && Number(m.betrag || 0) > 0 && m.status !== 'in_zahlung' && m.status !== 'ausgefuehrt');
+
+        if (jbBtn) {
+            jbBtn.innerHTML = `<i class="fas fa-file-invoice-dollar me-1 text-primary"></i> In Jahresbeitrag übertragen${jbOpen.length > 0 ? ` <span class="badge bg-primary ms-1">${jbOpen.length}</span>` : ''}`;
+            jbBtn.disabled = jbOpen.length === 0;
+            jbBtn.title = jbOpen.length > 0
+                ? `${jbOpen.length} Schütze(n) direkt speichern & im Jahresbeitrag gutschreiben`
+                : 'Zuerst einen Gruppengewinn (> Doppel) eintragen oder offene Schützen mit «Verrechnung Jahresbeitrag» zuweisen.';
+        }
+        if (poBtn) {
+            poBtn.innerHTML = `<i class="fas fa-file-export me-1"></i> Bank-Überweisung (pain.001)${poOpen.length > 0 ? ` <span class="badge bg-primary ms-1">${poOpen.length}</span>` : ''}`;
+            poBtn.disabled = poOpen.length === 0;
+            poBtn.title = poOpen.length > 0
+                ? `Für ${poOpen.length} Schütze(n) direkt speichern & Zahlungsauftrag (pain.001) erstellen`
+                : 'Keine offenen Schützen mit Auszahlungsweg «Banküberweisung» und Betrag > CHF 0.00.';
+        }
     }
 
     function findMemberByPn(pn) {
@@ -1379,9 +1813,16 @@
      */
     function jmRemoveShooterRow(idx) {
         if (!_jmCurrentEditingComp || !_jmCurrentEditingComp.members) return;
+        const target = _jmCurrentEditingComp.members[idx];
+        if (target && (target.status === 'verrechnet' || target.status === 'in_zahlung' || target.status === 'ausgefuehrt')) {
+            return;
+        }
         _jmCurrentEditingComp.members.splice(idx, 1);
         renderShooterRows(_jmCurrentEditingComp.members);
         jmRecalculateCurrentComp();
+        if (_jmCurrentEditingComp.anlass_name) {
+            renderAdditionalShootersPills(_jmCurrentEditingComp.anlass_name);
+        }
     }
 
     /**
@@ -1407,18 +1848,21 @@
 
         if (badgePerShooter) badgePerShooter.innerText = fmtCurr(perShooter);
 
-        // Zeilen-Beträge aktualisieren, sofern nicht manuell abweichend editiert
+        // Zeilen-Beträge aktualisieren, sofern nicht bereits abgerechnet oder manuell abweichend editiert
         const rows = document.querySelectorAll('#jme-shooters-body tr');
         rows.forEach((r, idx) => {
             const betragInput = r.querySelector('.jme-shooter-betrag');
-            if (betragInput && _jmCurrentEditingComp?.members?.[idx]) {
-                // Wenn noch 0 oder Standardwert, automatisch nachführen
-                if (_jmCurrentEditingComp.members[idx].betrag === 0 || !_jmCurrentEditingComp.members[idx]._manualAmount) {
+            const m = _jmCurrentEditingComp?.members?.[idx];
+            if (betragInput && m) {
+                const isLocked = m.status === 'verrechnet' || m.status === 'in_zahlung' || m.status === 'ausgefuehrt';
+                if (!isLocked && (m.betrag === 0 || !m._manualAmount)) {
                     betragInput.value = perShooter.toFixed(2);
-                    _jmCurrentEditingComp.members[idx].betrag = perShooter;
+                    m.betrag = perShooter;
                 }
             }
         });
+
+        updateTransferActionButtons();
     }
 
     function jmOnShooterNameChange(idx, val) {
@@ -1439,17 +1883,23 @@
     function jmOnShooterPointsChange(idx, val) {
         if (!_jmCurrentEditingComp?.members?.[idx]) return;
         _jmCurrentEditingComp.members[idx].punkte = val ? parseFloat(val) : null;
+        const sumPts = (_jmCurrentEditingComp.members || []).reduce((a, b) => a + (Number(b.punkte) || 0), 0);
+        _jmCurrentEditingComp.punkte_total = Math.round(sumPts * 10) / 10;
+        const punkteInput = document.getElementById('jme-punkte');
+        if (punkteInput) punkteInput.value = _jmCurrentEditingComp.punkte_total || '';
     }
 
     function jmOnShooterAmountChange(idx, val) {
         if (!_jmCurrentEditingComp?.members?.[idx]) return;
         _jmCurrentEditingComp.members[idx].betrag = parseFloat(val) || 0;
         _jmCurrentEditingComp.members[idx]._manualAmount = true;
+        updateTransferActionButtons();
     }
 
     function jmOnShooterMethodChange(idx, val) {
         if (!_jmCurrentEditingComp?.members?.[idx]) return;
         _jmCurrentEditingComp.members[idx].payout_method = val;
+        updateTransferActionButtons();
     }
 
     function jmOnShooterIbanChange(idx, val) {
@@ -1464,26 +1914,28 @@
         const btn = document.getElementById('jme-save-btn');
         if (window.UIButtonKit && btn) {
             await UIButtonKit.withLoading(btn, async () => {
-                await _jmSaveCurrentCompInternal();
+                await _jmSaveCurrentCompInternal({ closeModal: true, silent: false });
             });
         } else {
-            await _jmSaveCurrentCompInternal();
+            await _jmSaveCurrentCompInternal({ closeModal: true, silent: false });
         }
     }
 
-    async function _jmSaveCurrentCompInternal() {
+    async function _jmSaveCurrentCompInternal(opts = {}) {
+        const closeModal = opts.closeModal !== false;
+        const silent = Boolean(opts.silent);
         const supa = getSupa();
-        if (!supa) return;
+        if (!supa) return false;
 
-        const anlass = (document.getElementById('jme-anlass')?.value || '').trim();
+        const anlass = (document.getElementById('jme-anlass')?.value || document.getElementById('jme-anlass-select')?.value || '').trim();
         const gruppe = (document.getElementById('jme-gruppe')?.value || '').trim();
-        if (!anlass || !gruppe) {
+        if (!anlass || anlass === '__custom__' || !gruppe) {
             if (window.UIConfirmKit) {
-                await UIConfirmKit.alert({ title: 'Pflichtfelder fehlen', message: 'Bitte trage mindestens den Anlass und den Gruppennamen ein.', type: 'warning' });
+                await UIConfirmKit.alert({ title: 'Pflichtfelder fehlen', message: 'Bitte wähle einen Anlass aus und trage den Gruppennamen ein.', type: 'warning' });
             } else {
                 alert('Bitte Anlass und Gruppenname eintragen.');
             }
-            return;
+            return false;
         }
 
         const rang = parseInt(document.getElementById('jme-rang')?.value, 10) || null;
@@ -1524,7 +1976,7 @@
             } else {
                 proceed = confirm(`Für «${anlass}» existiert bereits ein Eintrag für «${gruppe}». Trotzdem speichern?`);
             }
-            if (!proceed) return;
+            if (!proceed) return false;
         }
 
         const payloadComp = {
@@ -1554,8 +2006,14 @@
                 _jmCurrentEditingComp.id = compId;
             }
 
+            _jmCurrentEditingComp.anlass_name = anlass;
+            _jmCurrentEditingComp.gruppe_name = gruppe;
+            _jmCurrentEditingComp.rang = rang;
+            _jmCurrentEditingComp.punkte_total = punkte;
+            _jmCurrentEditingComp.gruppendoppel = doppel;
+            _jmCurrentEditingComp.gruppengewinn = gewinn;
+
             // Schützen speichern / synchronisieren
-            // 1. Bestehende löschen und neu einfügen
             await supa.from('group_competition_members').delete().eq('competition_id', compId);
 
             if (members.length > 0) {
@@ -1573,8 +2031,15 @@
                     contribution_position_id: m.contribution_position_id || null
                 }));
 
-                const { error: memErr } = await supa.from('group_competition_members').insert(memberInserts);
+                const { data: insertedMembers, error: memErr } = await supa
+                    .from('group_competition_members')
+                    .insert(memberInserts)
+                    .select();
                 if (memErr) throw memErr;
+
+                if (Array.isArray(insertedMembers) && insertedMembers.length > 0) {
+                    _jmCurrentEditingComp.members = insertedMembers;
+                }
 
                 // Allfällige neue IBANs im Mitgliederstamm speichern
                 const rows = document.querySelectorAll('#jme-shooters-body tr');
@@ -1591,18 +2056,20 @@
                 }
             }
 
-            // Modal schliessen & Haupttabelle aktualisieren
-            const modalEl = document.getElementById('jmGruppengewinnEditModal');
-            if (modalEl) {
-                const bsModal = bootstrap.Modal.getInstance(modalEl);
-                if (bsModal) bsModal.hide();
+            if (closeModal) {
+                const modalEl = document.getElementById('jmGruppengewinnEditModal');
+                if (modalEl) {
+                    const bsModal = bootstrap.Modal.getInstance(modalEl);
+                    if (bsModal) bsModal.hide();
+                }
             }
 
             await jmRenderGruppengewinneList(getActiveYear());
 
-            if (typeof showSuccess === 'function') {
+            if (!silent && typeof showSuccess === 'function') {
                 showSuccess(`Gruppengewinn für ${gruppe} (${anlass}) erfolgreich gespeichert!`);
             }
+            return true;
         } catch (err) {
             console.error("[Gruppengewinne] Speicherfehler:", err);
             if (window.UIConfirmKit) {
@@ -1610,6 +2077,7 @@
             } else {
                 alert('Fehler beim Speichern: ' + err.message);
             }
+            return false;
         }
     }
 
@@ -1619,161 +2087,173 @@
 
     /**
      * Überträgt die offenen Beträge der aktuellen Gruppe als Gutschrift in den Jahresbeitrag.
+     * Speichert den Gruppengewinn automatisch vorab, falls noch ungespeichert.
      */
     async function jmTransferCurrentCompToJahresbeitrag() {
-        if (!_jmCurrentEditingComp || !_jmCurrentEditingComp.id) {
-            if (window.UIConfirmKit) {
-                await UIConfirmKit.alert({ title: 'Zuerst speichern', message: 'Bitte speichere den Gruppengewinn zuerst, bevor du ihn in den Jahresbeitrag überträgst.', type: 'warning' });
+        const btn = document.getElementById('jme-transfer-jb-btn');
+        const runTransfer = async () => {
+            if (!_jmCurrentEditingComp) return;
+
+            // Automatisch vorab in Supabase sichern, damit IDs & aktuelle Beträge garantiert konsistent sind
+            const saved = await _jmSaveCurrentCompInternal({ closeModal: false, silent: true });
+            if (!saved || !_jmCurrentEditingComp.id) return;
+
+            const members = (_jmCurrentEditingComp.members || []).filter(m => m.payout_method === 'jahresbeitrag' && m.betrag > 0 && m.status !== 'verrechnet');
+            if (members.length === 0) {
+                if (window.UIConfirmKit) {
+                    await UIConfirmKit.alert({ title: 'Keine offenen Positionen', message: 'Es gibt keine Schützen mit Methode «Verrechnung Jahresbeitrag» und offenem Betrag.', type: 'info' });
+                }
+                return;
             }
-            return;
-        }
 
-        const members = (_jmCurrentEditingComp.members || []).filter(m => m.payout_method === 'jahresbeitrag' && m.betrag > 0 && m.status !== 'verrechnet');
-        if (members.length === 0) {
+            let confirmed = false;
             if (window.UIConfirmKit) {
-                await UIConfirmKit.alert({ title: 'Keine offenen Positionen', message: 'Es gibt keine Schützen mit Methode «Verrechnung Jahresbeitrag» und offenem Betrag.', type: 'info' });
+                confirmed = await UIConfirmKit.confirm({
+                    title: 'In Jahresbeitrag verrechnen?',
+                    message: `Möchtest du für ${members.length} Schütze(n) die Gutschrift (total CHF ${members.reduce((a, b) => a + Number(b.betrag), 0).toFixed(2)}) direkt als Abzug im Jahresbeitrag ${getActiveYear()} verbuchen?`,
+                    type: 'primary',
+                    confirmText: 'Ja, übertragen',
+                    cancelText: 'Abbrechen'
+                });
+            } else {
+                confirmed = confirm(`Gutschrift für ${members.length} Schützen in Jahresbeitrag übertragen?`);
             }
-            return;
-        }
 
-        let confirmed = false;
-        if (window.UIConfirmKit) {
-            confirmed = await UIConfirmKit.confirm({
-                title: 'In Jahresbeitrag verrechnen?',
-                message: `Möchtest du für ${members.length} Schütze(n) die Gutschrift (total CHF ${members.reduce((a, b) => a + Number(b.betrag), 0).toFixed(2)}) direkt als Abzug im Jahresbeitrag ${getActiveYear()} verbuchen?`,
-                type: 'primary',
-                confirmText: 'Ja, übertragen',
-                cancelText: 'Abbrechen'
-            });
-        } else {
-            confirmed = confirm(`Gutschrift für ${members.length} Schützen in Jahresbeitrag übertragen?`);
-        }
+            if (!confirmed) return;
 
-        if (!confirmed) return;
+            const supa = getSupa();
+            if (!supa) return;
 
-        const supa = getSupa();
-        if (!supa) return;
+            let successCount = 0;
+            const yr = getActiveYear();
+            const failedShooters = [];
 
-        let successCount = 0;
-        const yr = getActiveYear();
-        const failedShooters = [];
-
-        for (const m of members) {
-            let pn = m.person_number;
-            if (!pn) {
-                const found = findMemberByName(m.schuetze_name);
-                if (found) {
-                    pn = found.person_number;
-                    m.person_number = pn;
-                    if (m.id) {
-                        await supa.from('group_competition_members').update({ person_number: pn }).eq('id', m.id);
+            for (const m of members) {
+                let pn = m.person_number;
+                if (!pn) {
+                    const found = findMemberByName(m.schuetze_name);
+                    if (found) {
+                        pn = found.person_number;
+                        m.person_number = pn;
+                        if (m.id) {
+                            await supa.from('group_competition_members').update({ person_number: pn }).eq('id', m.id);
+                        }
                     }
                 }
-            }
 
-            if (!pn) {
-                console.warn(`[Gruppengewinne] Schütze ${m.schuetze_name} hat keine Personennummer und wird übersprungen.`);
-                failedShooters.push(m.schuetze_name);
-                continue;
-            }
+                if (!pn) {
+                    console.warn(`[Gruppengewinne] Schütze ${m.schuetze_name} hat keine Personennummer und wird übersprungen.`);
+                    failedShooters.push(m.schuetze_name);
+                    continue;
+                }
 
-            const pnStr = String(pn);
-            const headId = `CH-${yr}-${pnStr}`;
+                const pnStr = String(pn);
+                const headId = `CH-${yr}-${pnStr}`;
 
-            try {
-                // Prüfen ob Header existiert
-                let { data: head } = await supa.from('contributions_header').select('*').eq('id', headId).maybeSingle();
-                if (!head) {
-                    // Header anlegen
-                    const { data: newHead, error: nhErr } = await supa.from('contributions_header').insert({
-                        id: headId,
+                try {
+                    // Prüfen ob Header existiert
+                    let { data: head } = await supa.from('contributions_header').select('*').eq('id', headId).maybeSingle();
+                    if (!head) {
+                        // Header anlegen
+                        const { data: newHead, error: nhErr } = await supa.from('contributions_header').insert({
+                            id: headId,
+                            person_number: pnStr,
+                            year: yr,
+                            status: 'offen',
+                            gesamt: 0.00
+                        }).select().single();
+                        if (nhErr) throw nhErr;
+                        head = newHead;
+                    }
+
+                    // Höchste Positions-Nummer ermitteln
+                    const { data: posList } = await supa.from('contributions_positions').select('position_nr').eq('header_id', headId).order('position_nr', { ascending: false }).limit(1);
+                    const nextPosNr = (posList && posList.length > 0) ? (posList[0].position_nr + 1) : 1;
+                    const posId = `${headId}-${nextPosNr}`;
+
+                    const creditAmount = -Math.abs(Number(m.betrag));
+                    const posDesc = `Gutschrift Gruppengewinn: ${_jmCurrentEditingComp.gruppe_name} (${_jmCurrentEditingComp.anlass_name})`;
+
+                    // Gutschrift einfügen
+                    const { error: insPosErr } = await supa.from('contributions_positions').insert({
+                        id: posId,
+                        header_id: headId,
                         person_number: pnStr,
                         year: yr,
-                        status: 'offen',
-                        gesamt: 0.00
-                    }).select().single();
-                    if (nhErr) throw nhErr;
-                    head = newHead;
-                }
+                        position_nr: nextPosNr,
+                        beschreibung: posDesc,
+                        betrag: creditAmount,
+                        typ: 'Credit',
+                        source_field: '1301',
+                        konto: '1301'
+                    });
+                    if (insPosErr) throw insPosErr;
 
-                // Höchste Positions-Nummer ermitteln
-                const { data: posList } = await supa.from('contributions_positions').select('position_nr').eq('header_id', headId).order('position_nr', { ascending: false }).limit(1);
-                const nextPosNr = (posList && posList.length > 0) ? (posList[0].position_nr + 1) : 1;
-                const posId = `${headId}-${nextPosNr}`;
+                    // Header Gesamtbetrag neu berechnen
+                    const { data: allPos } = await supa.from('contributions_positions').select('betrag').eq('header_id', headId);
+                    const newGesamt = (allPos || []).reduce((acc, p) => acc + Number(p.betrag || 0), 0);
+                    await supa.from('contributions_header').update({ gesamt: Math.max(0, newGesamt) }).eq('id', headId);
 
-                const creditAmount = -Math.abs(Number(m.betrag));
-                const posDesc = `Gutschrift Gruppengewinn: ${_jmCurrentEditingComp.gruppe_name} (${_jmCurrentEditingComp.anlass_name})`;
-
-                // Gutschrift einfügen
-                const { error: insPosErr } = await supa.from('contributions_positions').insert({
-                    id: posId,
-                    header_id: headId,
-                    person_number: pnStr,
-                    year: yr,
-                    position_nr: nextPosNr,
-                    beschreibung: posDesc,
-                    betrag: creditAmount,
-                    typ: 'Credit',
-                    source_field: '1301',
-                    konto: '1301'
-                });
-                if (insPosErr) throw insPosErr;
-
-                // Header Gesamtbetrag neu berechnen
-                const { data: allPos } = await supa.from('contributions_positions').select('betrag').eq('header_id', headId);
-                const newGesamt = (allPos || []).reduce((acc, p) => acc + Number(p.betrag || 0), 0);
-                await supa.from('contributions_header').update({ gesamt: Math.max(0, newGesamt) }).eq('id', headId);
-
-                // Falls bereits ein Rechnungsentwurf im RechnungsCore existiert (und noch unversendet/unbezahlt ist):
-                // Diesen direkt mit der neuen Gutschrift synchronisieren!
-                if (head && head.invoice_id) {
-                    const { data: inv } = await supa.from('invoices').select('id, mail_status, total_paid').eq('id', head.invoice_id).maybeSingle();
-                    if (inv && (!inv.mail_status || inv.mail_status === 'entwurf') && (!inv.total_paid || Number(inv.total_paid) === 0)) {
-                        await supa.from('invoice_positions').insert({
-                            invoice_id: inv.id,
-                            position_nr: nextPosNr,
-                            description: posDesc,
-                            quantity: 1,
-                            unit_price: creditAmount,
-                            amount: creditAmount,
-                            konto: '1301'
-                        });
-                        await supa.from('invoices').update({
-                            total_amount: Math.max(0, newGesamt),
-                            open_amount: Math.max(0, newGesamt),
-                            pdf_url: null,
-                            pdf_storage_path: null,
-                            updated_at: new Date().toISOString()
-                        }).eq('id', inv.id);
-                        console.log(`[Gruppengewinne] Rechnungsentwurf ${inv.id} automatisch aktualisiert.`);
+                    // Falls bereits ein Rechnungsentwurf im RechnungsCore existiert (und noch unversendet/unbezahlt ist):
+                    // Diesen direkt mit der neuen Gutschrift synchronisieren!
+                    if (head && head.invoice_id) {
+                        const { data: inv } = await supa.from('invoices').select('id, mail_status, total_paid').eq('id', head.invoice_id).maybeSingle();
+                        if (inv && (!inv.mail_status || inv.mail_status === 'entwurf') && (!inv.total_paid || Number(inv.total_paid) === 0)) {
+                            await supa.from('invoice_positions').insert({
+                                invoice_id: inv.id,
+                                position_nr: nextPosNr,
+                                description: posDesc,
+                                quantity: 1,
+                                unit_price: creditAmount,
+                                amount: creditAmount,
+                                konto: '1301'
+                            });
+                            await supa.from('invoices').update({
+                                total_amount: Math.max(0, newGesamt),
+                                open_amount: Math.max(0, newGesamt),
+                                pdf_url: null,
+                                pdf_storage_path: null,
+                                updated_at: new Date().toISOString()
+                            }).eq('id', inv.id);
+                            console.log(`[Gruppengewinne] Rechnungsentwurf ${inv.id} automatisch aktualisiert.`);
+                        }
                     }
-                }
 
-                // Status in group_competition_members auf verrechnet setzen
-                if (m.id) {
-                    await supa.from('group_competition_members').update({
-                        status: 'verrechnet',
-                        contribution_position_id: posId
-                    }).eq('id', m.id);
+                    // Status in group_competition_members auf verrechnet setzen
+                    if (m.id) {
+                        await supa.from('group_competition_members').update({
+                            status: 'verrechnet',
+                            contribution_position_id: posId
+                        }).eq('id', m.id);
+                    }
+                    m.status = 'verrechnet';
+                    m.contribution_position_id = posId;
+                    successCount++;
+                } catch (pErr) {
+                    console.error(`Fehler bei Übertragung für Schütze ${m.schuetze_name}:`, pErr);
                 }
-                m.status = 'verrechnet';
-                successCount++;
-            } catch (pErr) {
-                console.error(`Fehler bei Übertragung für Schütze ${m.schuetze_name}:`, pErr);
             }
-        }
 
-        if (failedShooters.length > 0 && window.UIConfirmKit) {
-            await UIConfirmKit.alert({
-                title: 'Schützen ohne Mitgliedsnummer',
-                message: `Folgende Schützen konnten nicht im Mitgliederstamm gefunden werden und wurden nicht übertragen: ${failedShooters.join(', ')}. Bitte verknüpfe sie im Editor.`,
-                type: 'warning'
-            });
-        }
+            if (failedShooters.length > 0 && window.UIConfirmKit) {
+                await UIConfirmKit.alert({
+                    title: 'Schützen ohne Mitgliedsnummer',
+                    message: `Folgende Schützen konnten nicht im Mitgliederstamm gefunden werden und wurden nicht übertragen: ${failedShooters.join(', ')}. Bitte verknüpfe sie im Editor.`,
+                    type: 'warning'
+                });
+            }
 
-        renderShooterRows(_jmCurrentEditingComp.members);
-        if (typeof showSuccess === 'function') {
-            showSuccess(`🎉 ${successCount} Schütze(n) erfolgreich im Jahresbeitrag ${yr} gutgeschrieben!`);
+            renderShooterRows(_jmCurrentEditingComp.members);
+            await jmRenderGruppengewinneList(yr);
+            await populateCompetitionOptions(_jmCurrentEditingComp.anlass_name);
+            if (typeof showSuccess === 'function') {
+                showSuccess(`🎉 ${successCount} Schütze(n) erfolgreich im Jahresbeitrag ${yr} gutgeschrieben!`);
+            }
+        };
+
+        if (window.UIButtonKit && btn) {
+            await UIButtonKit.withLoading(btn, runTransfer);
+        } else {
+            await runTransfer();
         }
     }
 
@@ -1783,115 +2263,126 @@
 
     /**
      * Erstellt Zahlungsaufträge für Schützen mit Banküberweisung.
+     * Speichert den Gruppengewinn automatisch vorab, falls noch ungespeichert.
      */
     async function jmTransferCurrentCompToPaymentOrder() {
-        if (!_jmCurrentEditingComp || !_jmCurrentEditingComp.id) {
-            if (window.UIConfirmKit) {
-                await UIConfirmKit.alert({ title: 'Zuerst speichern', message: 'Bitte speichere den Gruppengewinn zuerst, bevor du Zahlungsaufträge erstellst.', type: 'warning' });
-            }
-            return;
-        }
+        const btn = document.getElementById('jme-transfer-po-btn');
+        const runTransfer = async () => {
+            if (!_jmCurrentEditingComp) return;
 
-        const members = (_jmCurrentEditingComp.members || []).filter(m => m.payout_method === 'bank' && m.betrag > 0 && m.status !== 'in_zahlung' && m.status !== 'ausgefuehrt');
-        if (members.length === 0) {
-            if (window.UIConfirmKit) {
-                await UIConfirmKit.alert({ title: 'Keine Positionen für Banküberweisung', message: 'Es gibt keine Schützen mit Methode «Banküberweisung» und offenem Betrag.', type: 'info' });
-            }
-            return;
-        }
+            // Automatisch vorab in Supabase sichern
+            const saved = await _jmSaveCurrentCompInternal({ closeModal: false, silent: true });
+            if (!saved || !_jmCurrentEditingComp.id) return;
 
-        // Prüfen, ob alle eine gültige IBAN haben
-        const missingIban = members.filter(m => !m.iban || m.iban.trim().length < 15);
-        if (missingIban.length > 0) {
-            const names = missingIban.map(m => m.schuetze_name).join(', ');
+            const members = (_jmCurrentEditingComp.members || []).filter(m => m.payout_method === 'bank' && m.betrag > 0 && m.status !== 'in_zahlung' && m.status !== 'ausgefuehrt');
+            if (members.length === 0) {
+                if (window.UIConfirmKit) {
+                    await UIConfirmKit.alert({ title: 'Keine Positionen für Banküberweisung', message: 'Es gibt keine Schützen mit Methode «Banküberweisung» und offenem Betrag.', type: 'info' });
+                }
+                return;
+            }
+
+            // Prüfen, ob alle eine gültige IBAN haben
+            const missingIban = members.filter(m => !m.iban || m.iban.trim().length < 15);
+            if (missingIban.length > 0) {
+                const names = missingIban.map(m => m.schuetze_name).join(', ');
+                if (window.UIConfirmKit) {
+                    await UIConfirmKit.alert({
+                        title: 'IBAN fehlt',
+                        message: `Folgende Schützen haben keine gültige IBAN hinterlegt: ${names}. Bitte trage die IBAN ein oder stelle auf «Verrechnung Jahresbeitrag» um.`,
+                        type: 'warning'
+                    });
+                } else {
+                    alert(`IBAN fehlt für: ${names}`);
+                }
+                return;
+            }
+
+            let confirmed = false;
             if (window.UIConfirmKit) {
-                await UIConfirmKit.alert({
-                    title: 'IBAN fehlt',
-                    message: `Folgende Schützen haben keine gültige IBAN hinterlegt: ${names}. Bitte trage die IBAN ein oder stelle auf «Verrechnung Jahresbeitrag» um.`,
-                    type: 'warning'
+                confirmed = await UIConfirmKit.confirm({
+                    title: 'Zahlungsaufträge erstellen?',
+                    message: `Möchtest du für ${members.length} Schütze(n) Zahlungsaufträge (Konto 1301 an Bank 1020) im Gesamtbetrag von CHF ${members.reduce((a, b) => a + Number(b.betrag), 0).toFixed(2)} erstellen? Diese können anschliessend im Menü Finanzbuchhaltung als ISO 20022 pain.001 XML heruntergeladen werden.`,
+                    type: 'primary',
+                    confirmText: 'Ja, Zahlungsaufträge anlegen',
+                    cancelText: 'Abbrechen'
                 });
             } else {
-                alert(`IBAN fehlt für: ${names}`);
+                confirmed = confirm(`Zahlungsaufträge für ${members.length} Schützen anlegen?`);
             }
-            return;
-        }
 
-        let confirmed = false;
-        if (window.UIConfirmKit) {
-            confirmed = await UIConfirmKit.confirm({
-                title: 'Zahlungsaufträge erstellen?',
-                message: `Möchtest du für ${members.length} Schütze(n) Zahlungsaufträge (Konto 1301 an Bank 1020) im Gesamtbetrag von CHF ${members.reduce((a, b) => a + Number(b.betrag), 0).toFixed(2)} erstellen? Diese können anschliessend im Menü Finanzbuchhaltung als ISO 20022 pain.001 XML heruntergeladen werden.`,
-                type: 'primary',
-                confirmText: 'Ja, Zahlungsaufträge anlegen',
-                cancelText: 'Abbrechen'
-            });
-        } else {
-            confirmed = confirm(`Zahlungsaufträge für ${members.length} Schützen anlegen?`);
-        }
+            if (!confirmed) return;
 
-        if (!confirmed) return;
+            const supa = getSupa();
+            if (!supa) return;
 
-        const supa = getSupa();
-        if (!supa) return;
+            const yr = getActiveYear();
+            const todayStr = new Date().toISOString().split('T')[0];
+            let createdCount = 0;
 
-        const yr = getActiveYear();
-        const todayStr = new Date().toISOString().split('T')[0];
-        let createdCount = 0;
-
-        for (const m of members) {
-            try {
-                // Nächste Auftrags-Nr ZA-YYYY-xxx ermitteln
-                let nextNr = `ZA-${yr}-001`;
-                const { data: poRows } = await supa.from('accounting_payment_orders').select('order_nr').ilike('order_nr', `ZA-${yr}-%`).order('created_at', { ascending: false }).limit(1);
-                if (poRows && poRows.length > 0) {
-                    const match = poRows[0].order_nr.match(/(\d+)$/);
-                    if (match) {
-                        const cur = parseInt(match[1], 10);
-                        nextNr = `ZA-${yr}-${String(cur + 1).padStart(3, '0')}`;
+            for (const m of members) {
+                try {
+                    // Nächste Auftrags-Nr ZA-YYYY-xxx ermitteln
+                    let nextNr = `ZA-${yr}-001`;
+                    const { data: poRows } = await supa.from('accounting_payment_orders').select('order_nr').ilike('order_nr', `ZA-${yr}-%`).order('created_at', { ascending: false }).limit(1);
+                    if (poRows && poRows.length > 0) {
+                        const match = poRows[0].order_nr.match(/(\d+)$/);
+                        if (match) {
+                            const cur = parseInt(match[1], 10);
+                            nextNr = `ZA-${yr}-${String(cur + 1).padStart(3, '0')}`;
+                        }
                     }
-                }
 
-                const orderPayload = {
-                    order_nr: nextNr,
-                    jahr: yr,
-                    datum: todayStr,
-                    execution_date: todayStr,
-                    member_pn: m.person_number ? String(m.person_number) : null,
-                    recipient_name: m.schuetze_name,
-                    recipient_iban: m.iban.replace(/\s+/g, ''),
-                    betrag: Number(m.betrag),
-                    konto_soll: '1301',
-                    konto_haben: '1020',
-                    beschreibung: `Gruppengewinn ${_jmCurrentEditingComp.gruppe_name} (${_jmCurrentEditingComp.anlass_name})`,
-                    positions: [{
-                        text: `Anteil Gruppengewinn ${_jmCurrentEditingComp.gruppe_name}`,
+                    const orderPayload = {
+                        order_nr: nextNr,
+                        jahr: yr,
+                        datum: todayStr,
+                        execution_date: todayStr,
+                        member_pn: m.person_number ? String(m.person_number) : null,
+                        recipient_name: m.schuetze_name,
+                        recipient_iban: m.iban.replace(/\s+/g, ''),
                         betrag: Number(m.betrag),
-                        konto_soll: '1301'
-                    }],
-                    status: 'pendent'
-                };
+                        konto_soll: '1301',
+                        konto_haben: '1020',
+                        beschreibung: `Gruppengewinn ${_jmCurrentEditingComp.gruppe_name} (${_jmCurrentEditingComp.anlass_name})`,
+                        positions: [{
+                            text: `Anteil Gruppengewinn ${_jmCurrentEditingComp.gruppe_name}`,
+                            betrag: Number(m.betrag),
+                            konto_soll: '1301'
+                        }],
+                        status: 'pendent'
+                    };
 
-                const { data: insPo, error: insPoErr } = await supa.from('accounting_payment_orders').insert(orderPayload).select().single();
-                if (insPoErr) throw insPoErr;
+                    const { data: insPo, error: insPoErr } = await supa.from('accounting_payment_orders').insert(orderPayload).select().single();
+                    if (insPoErr) throw insPoErr;
 
-                // Status in group_competition_members aktualisieren
-                if (m.id) {
-                    await supa.from('group_competition_members').update({
-                        status: 'in_zahlung',
-                        payment_order_id: insPo.id
-                    }).eq('id', m.id);
+                    // Status in group_competition_members aktualisieren
+                    if (m.id) {
+                        await supa.from('group_competition_members').update({
+                            status: 'in_zahlung',
+                            payment_order_id: insPo.id
+                        }).eq('id', m.id);
+                    }
+                    m.status = 'in_zahlung';
+                    m.payment_order_id = insPo.id;
+                    createdCount++;
+                } catch (err) {
+                    console.error(`Fehler beim Erstellen des Zahlungsauftrags für ${m.schuetze_name}:`, err);
                 }
-                m.status = 'in_zahlung';
-                m.payment_order_id = insPo.id;
-                createdCount++;
-            } catch (err) {
-                console.error(`Fehler beim Erstellen des Zahlungsauftrags für ${m.schuetze_name}:`, err);
             }
-        }
 
-        renderShooterRows(_jmCurrentEditingComp.members);
-        if (typeof showSuccess === 'function') {
-            showSuccess(`🎉 ${createdCount} Zahlungsauftrag/-aufträge für Banküberweisung angelegt!`);
+            renderShooterRows(_jmCurrentEditingComp.members);
+            await jmRenderGruppengewinneList(yr);
+            await populateCompetitionOptions(_jmCurrentEditingComp.anlass_name);
+            if (typeof showSuccess === 'function') {
+                showSuccess(`🎉 ${createdCount} Zahlungsauftrag/-aufträge für Banküberweisung angelegt!`);
+            }
+        };
+
+        if (window.UIButtonKit && btn) {
+            await UIButtonKit.withLoading(btn, runTransfer);
+        } else {
+            await runTransfer();
         }
     }
 
@@ -2319,6 +2810,8 @@
     window.jmOnAnlassSelectChange = jmOnAnlassSelectChange;
     window.jmOnAnlassInputChange = jmOnAnlassInputChange;
     window.jmClearAnlassInput = jmClearAnlassInput;
+    window.jmToggleCustomAnlassInput = jmToggleCustomAnlassInput;
+    window.jmToggleGridShooterInEditor = jmToggleGridShooterInEditor;
     window.jmPopulateShootersFromJMRawGrid = jmPopulateShootersFromJMRawGrid;
     window.jmOpenGruppengewinneModal = jmOpenGruppengewinneModal;
     window.jmRenderGruppengewinneList = jmRenderGruppengewinneList;
