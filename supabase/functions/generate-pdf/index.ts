@@ -16,7 +16,7 @@
 
 import { corsHeaders } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.8";
-import { PDFDocument, rgb, StandardFonts } from "https://esm.sh/pdf-lib@1.17.1";
+import { PDFDocument, PDFName, PDFString, rgb, StandardFonts } from "https://esm.sh/pdf-lib@1.17.1";
 import qrcode from "https://esm.sh/qrcode-generator@1.4.4";
 import { EMBEDDED_LOGO_BASE64 } from "./logo-base64.ts";
 
@@ -1380,6 +1380,411 @@ async function generateInvoicePdf(
   }
   drawTotalsAndFooter(currentPage, curY);
   drawClubLegalFooter(currentPage, 12 * MM);
+
+  // ============================================================================
+  // OPTIONALES BEIBLATT: ZUSAMMENSETZUNG GRUPPENGEWINNE (KONTO 1301) BEI JAHRESBEITRAG
+  // ============================================================================
+  const hasGgPosition = (positions || []).some((p: any) =>
+    String(p.konto || "") === "1301" ||
+    String(p.description || p.text || p.beschreibung || "").toLowerCase().includes("gruppengewinn")
+  );
+  const isJbInvoice = String(docType || "").toLowerCase().includes("jahresbeitrag") || hasGgPosition;
+
+  if (isJbInvoice && supabaseClient) {
+    try {
+      let targetPn = String(
+        (recipient as any)?.person_number ||
+        (recipient as any)?.personNumber ||
+        (normRecipient as any)?.person_number ||
+        ""
+      ).trim();
+
+      if (!targetPn && invoiceId) {
+        const { data: invLookup } = await supabaseClient
+          .from("invoices")
+          .select("person_number")
+          .eq("id", invoiceId)
+          .maybeSingle();
+        if (invLookup?.person_number) {
+          targetPn = String(invLookup.person_number).trim();
+        }
+      }
+
+      if (targetPn) {
+        const yrNum = parseInt(yearStr, 10) || new Date().getFullYear();
+        const [{ data: compsData }, { data: compFilesData }] = await Promise.all([
+          supabaseClient
+            .from("group_competitions")
+            .select("*, members:group_competition_members(*)")
+            .eq("jahr", yrNum)
+            .order("created_at", { ascending: false }),
+          supabaseClient
+            .from("jm_competition_files")
+            .select("*")
+            .eq("jahr", yrNum),
+        ]);
+
+        const normKey = (s: string) =>
+          String(s || "")
+            .toLowerCase()
+            .replace(/ä/g, "ae")
+            .replace(/ö/g, "oe")
+            .replace(/ü/g, "ue")
+            .replace(/ß/g, "ss")
+            .replace(/[^a-z0-9]/g, "");
+
+        const normBaseKey = (s: string) =>
+          String(s || "")
+            .toLowerCase()
+            .replace(/\([^)]*\)/g, "")
+            .replace(/\b20\d{2}\b/g, "")
+            .replace(/^\d+\.\s*/, "")
+            .replace(/ä/g, "ae")
+            .replace(/ö/g, "oe")
+            .replace(/ü/g, "ue")
+            .replace(/ß/g, "ss")
+            .replace(/[^a-z0-9]/g, "");
+
+        const filesMap: Record<string, any[]> = {};
+        (compFilesData || []).forEach((row: any) => {
+          const k = normKey(row.anlass_name);
+          const bk = normBaseKey(row.anlass_name);
+          const fls = Array.isArray(row.files) ? row.files : [];
+          if (k) filesMap[k] = [...(filesMap[k] || []), ...fls];
+          if (bk && bk !== k) filesMap[bk] = [...(filesMap[bk] || []), ...fls];
+        });
+
+        const externalDomain = Deno.env.get("API_EXTERNAL_URL") || "https://supabase-muhen.danfamily.uk";
+        const signedExpiresSec = 180 * 24 * 60 * 60; // 180 Tage
+        const ggItems: any[] = [];
+        let totalGgShare = 0;
+
+        for (const comp of (compsData || [])) {
+          const members = Array.isArray(comp.members) ? comp.members : [];
+          const myMem = members.find((m: any) => String(m.person_number || "").trim() === targetPn);
+          if (!myMem) continue;
+
+          const doppel = Number(comp.gruppendoppel ?? 30);
+          const gewinn = Number(comp.gruppengewinn ?? 0);
+          const ueberschuss = Math.max(0, gewinn - doppel);
+          const count = members.length > 0 ? members.length : Number(comp.anzahl_schuetzen || 5);
+          const defShare = count > 0 && ueberschuss > 0 ? Math.round((ueberschuss / count) * 20) / 20 : 0;
+          const myShare = Number(myMem.betrag !== undefined && myMem.betrag !== null ? myMem.betrag : defShare);
+
+          if (myShare <= 0 && ueberschuss <= 0) continue;
+          if (myMem.payout_method && myMem.payout_method !== "jahresbeitrag") continue;
+
+          const sortedTeam = [...members].sort((a: any, b: any) => (Number(b.punkte) || 0) - (Number(a.punkte) || 0));
+          const teamStr = sortedTeam
+            .map((tm: any) => `${tm.schuetze_name || ""}${tm.punkte ? " (" + tm.punkte + ")" : ""}`)
+            .join(", ");
+
+          const calcPtsSum = Math.round(members.reduce((acc: number, m: any) => acc + (Number(m.punkte) || 0), 0) * 10) / 10;
+          const totalPts = comp.punkte_total || (calcPtsSum > 0 ? calcPtsSum : null);
+
+          // Ranglisten zusammenführen und 180-Tage-Links erzeugen
+          const directFiles = Array.isArray(comp.ranglisten_files) ? comp.ranglisten_files : [];
+          const k = normKey(comp.anlass_name);
+          const bk = normBaseKey(comp.anlass_name);
+          const mergedFiles: any[] = [];
+          const seenPaths = new Set<string>();
+          [...directFiles, ...(filesMap[k] || []), ...(filesMap[bk] || [])].forEach((f: any) => {
+            if (!f || !f.storage_path || seenPaths.has(f.storage_path)) return;
+            seenPaths.add(f.storage_path);
+            mergedFiles.push(f);
+          });
+
+          const signedLinks: Array<{ label: string; url: string }> = [];
+          for (const rf of mergedFiles) {
+            try {
+              const bucket = rf.storage_bucket || "jm-ranglisten";
+              const { data: sData } = await supabaseClient.storage
+                .from(bucket)
+                .createSignedUrl(rf.storage_path, signedExpiresSec);
+              if (sData?.signedUrl) {
+                const publicSignedUrl = String(sData.signedUrl).replace(
+                  /^https?:\/\/(api-gw|kong):8000/,
+                  externalDomain
+                );
+                signedLinks.push({
+                  label: rf.is_group_ranking ? "Gruppenrangliste öffnen" : "Rangliste öffnen",
+                  url: publicSignedUrl,
+                });
+              }
+            } catch (_) {}
+          }
+
+          totalGgShare += myShare;
+          ggItems.push({
+            anlassName: String(comp.anlass_name || "Auswärtiges Schiessen"),
+            gruppeName: String(comp.gruppe_name || "Strohaus"),
+            rang: comp.rang || null,
+            totalPts,
+            myPts: myMem.punkte || null,
+            gewinn,
+            doppel,
+            ueberschuss,
+            count,
+            myShare,
+            teamStr,
+            links: signedLinks,
+          });
+        }
+
+        if (ggItems.length > 0 && totalGgShare > 0) {
+          totalGgShare = Math.round(totalGgShare * 20) / 20;
+          const expiryDate = new Date(Date.now() + signedExpiresSec * 1000);
+          const validUntilStr = expiryDate.toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+          const addUriAnnot = (page: any, x: number, y: number, w: number, h: number, url: string) => {
+            try {
+              const linkAnnot = pdfDoc.context.register(
+                pdfDoc.context.obj({
+                  Type: "Annot",
+                  Subtype: "Link",
+                  Rect: [x, y, x + w, y + h],
+                  Border: [0, 0, 0],
+                  A: {
+                    Type: "Action",
+                    S: "URI",
+                    URI: PDFString.of(url),
+                  },
+                })
+              );
+              const existing = page.node.lookup(PDFName.of("Annots"));
+              if (existing && typeof (existing as any).push === "function") {
+                (existing as any).push(linkAnnot);
+              } else {
+                page.node.set(PDFName.of("Annots"), pdfDoc.context.obj([linkAnnot]));
+              }
+            } catch (_) {}
+          };
+
+          let ggPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+          let ggY = renderFollowUpHeader(ggPage);
+
+          // Titel des Beiblatts
+          ggPage.drawText(sanitizeText(`Beiblatt: Zusammensetzung Gruppengewinne ${yrNum} (Konto 1301)`), {
+            x: 20 * MM,
+            y: ggY,
+            size: 12.5,
+            font: fontBold,
+            color: rgb(0.06, 0.23, 0.36),
+          });
+          ggY -= 5 * MM;
+
+          const shooterDisplay = [normRecipient.vorname, normRecipient.nachname].filter(Boolean).join(" ") || normRecipient.name || targetPn;
+          ggPage.drawText(
+            sanitizeText(
+              `Detailaufstellung zu Rechnung ${invoiceId} · Schütze: ${shooterDisplay} (Nr. ${targetPn}) · Ranglisten-Links gültig bis ${validUntilStr}`
+            ),
+            {
+              x: 20 * MM,
+              y: ggY,
+              size: 8.5,
+              font: fontRegular,
+              color: rgb(0.35, 0.4, 0.48),
+            }
+          );
+          ggY -= 6 * MM;
+
+          const drawGgTableHeader = (p: any, yPos: number): number => {
+            p.drawRectangle({
+              x: 20 * MM,
+              y: yPos - 5 * MM,
+              width: 170 * MM,
+              height: 6.8 * MM,
+              color: rgb(0.06, 0.23, 0.36),
+            });
+            p.drawText("Anlass / Gruppe & Teamkollegen", { x: 22 * MM, y: yPos - 3.2 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+            p.drawText("Deine Pkt.", { x: 102 * MM, y: yPos - 3.2 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+            p.drawText("Gruppenabrechnung", { x: 120 * MM, y: yPos - 3.2 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+            p.drawText("Dein Anteil", { x: 149 * MM, y: yPos - 3.2 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+            p.drawText("Rangliste", { x: 168 * MM, y: yPos - 3.2 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+            return yPos - 8.5 * MM;
+          };
+
+          ggY = drawGgTableHeader(ggPage, ggY);
+
+          for (let i = 0; i < ggItems.length; i++) {
+            const it = ggItems[i];
+            const rangTxt = it.rang ? ` · ${it.rang}. Rang` : "";
+            const totTxt = it.totalPts ? ` · Total: ${it.totalPts} Pkt.` : "";
+            const subLine = `Gruppe «${it.gruppeName}»${rangTxt}${totTxt}`;
+            const teamLines = wrapText(sanitizeText(`Team: ${it.teamStr}`), fontRegular, 7.3, 78 * MM);
+            const rowLinesCount = Math.max(3, 2 + teamLines.length, 1 + (it.links?.length || 0));
+            const rowH = (rowLinesCount * 3.6 + 3.2) * MM;
+
+            if (ggY - rowH < 32 * MM) {
+              drawClubLegalFooter(ggPage, 12 * MM);
+              ggPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+              ggY = renderFollowUpHeader(ggPage);
+              ggY = drawGgTableHeader(ggPage, ggY);
+            }
+
+            if (i % 2 === 0) {
+              ggPage.drawRectangle({
+                x: 20 * MM,
+                y: ggY - rowH + 2 * MM,
+                width: 170 * MM,
+                height: rowH,
+                color: rgb(0.97, 0.98, 0.99),
+              });
+            }
+
+            let lineY = ggY - 1.5 * MM;
+            // Spalte 1: Anlass, Gruppe, Team
+            ggPage.drawText(sanitizeText(it.anlassName), {
+              x: 22 * MM,
+              y: lineY,
+              size: 8.5,
+              font: fontBold,
+              color: rgb(0.08, 0.1, 0.15),
+            });
+            ggPage.drawText(sanitizeText(subLine), {
+              x: 22 * MM,
+              y: lineY - 3.6 * MM,
+              size: 7.5,
+              font: fontRegular,
+              color: rgb(0.3, 0.35, 0.42),
+            });
+            teamLines.forEach((tl: string, tIdx: number) => {
+              ggPage.drawText(sanitizeText(tl), {
+                x: 22 * MM,
+                y: lineY - (7.2 + tIdx * 3.4) * MM,
+                size: 7.2,
+                font: fontRegular,
+                color: rgb(0.4, 0.45, 0.52),
+              });
+            });
+
+            // Spalte 2: Deine Punkte
+            const myPtsTxt = it.myPts ? `${it.myPts} Pkt.` : "-";
+            ggPage.drawText(sanitizeText(myPtsTxt), {
+              x: 103 * MM,
+              y: lineY,
+              size: 8.2,
+              font: fontBold,
+              color: rgb(0.1, 0.15, 0.25),
+            });
+
+            // Spalte 3: Brutto / Doppel / Netto
+            ggPage.drawText(sanitizeText(`Brutto: ${formatSwissChf(it.gewinn)}`), {
+              x: 120 * MM,
+              y: lineY,
+              size: 7.5,
+              font: fontRegular,
+              color: rgb(0.2, 0.25, 0.3),
+            });
+            ggPage.drawText(sanitizeText(`./. Doppel: ${formatSwissChf(it.doppel)}`), {
+              x: 120 * MM,
+              y: lineY - 3.5 * MM,
+              size: 7.2,
+              font: fontRegular,
+              color: rgb(0.45, 0.5, 0.55),
+            });
+            ggPage.drawText(sanitizeText(`Netto: ${formatSwissChf(it.ueberschuss)}`), {
+              x: 120 * MM,
+              y: lineY - 7.0 * MM,
+              size: 7.6,
+              font: fontBold,
+              color: rgb(0.1, 0.15, 0.25),
+            });
+
+            // Spalte 4: Dein Anteil
+            ggPage.drawText(sanitizeText(`- ${formatSwissChf(it.myShare)}`), {
+              x: 149 * MM,
+              y: lineY,
+              size: 8.5,
+              font: fontBold,
+              color: rgb(0.08, 0.5, 0.24),
+            });
+            ggPage.drawText(sanitizeText(`(1/${it.count} Anteil)`), {
+              x: 149 * MM,
+              y: lineY - 3.5 * MM,
+              size: 7,
+              font: fontRegular,
+              color: rgb(0.4, 0.45, 0.52),
+            });
+
+            // Spalte 5: Klickbare 180-Tage-Links auf die Ranglisten
+            if (it.links && it.links.length > 0) {
+              it.links.forEach((lk: { label: string; url: string }, lIdx: number) => {
+                const lkY = lineY - lIdx * 4.2 * MM;
+                const shortLabel = lk.label.includes("Gruppen") ? "> Gruppen-RL" : "> Rangliste";
+                ggPage.drawText(sanitizeText(shortLabel), {
+                  x: 168 * MM,
+                  y: lkY,
+                  size: 7.4,
+                  font: fontBold,
+                  color: rgb(0.11, 0.3, 0.85),
+                });
+                addUriAnnot(ggPage, 167 * MM, lkY - 1 * MM, 22 * MM, 4 * MM, lk.url);
+              });
+            } else {
+              ggPage.drawText("-", {
+                x: 172 * MM,
+                y: lineY,
+                size: 7.5,
+                font: fontRegular,
+                color: rgb(0.6, 0.6, 0.6),
+              });
+            }
+
+            ggPage.drawLine({
+              start: { x: 20 * MM, y: ggY - rowH + 2 * MM },
+              end: { x: 190 * MM, y: ggY - rowH + 2 * MM },
+              thickness: 0.4,
+              color: rgb(0.85, 0.88, 0.92),
+            });
+
+            ggY -= rowH;
+          }
+
+          // Total-Zeile Gruppengewinne
+          ggPage.drawRectangle({
+            x: 20 * MM,
+            y: ggY - 6 * MM,
+            width: 170 * MM,
+            height: 7.5 * MM,
+            color: rgb(0.94, 0.99, 0.96),
+          });
+          ggPage.drawText(sanitizeText(`Total Gutschrift Gruppengewinne ${yrNum} (auf Rechnung abgezogen):`), {
+            x: 22 * MM,
+            y: ggY - 3.5 * MM,
+            size: 8.8,
+            font: fontBold,
+            color: rgb(0.08, 0.33, 0.18),
+          });
+          ggPage.drawText(sanitizeText(`- CHF ${formatSwissChf(totalGgShare)}`), {
+            x: 146 * MM,
+            y: ggY - 3.5 * MM,
+            size: 9.2,
+            font: fontBold,
+            color: rgb(0.08, 0.5, 0.24),
+          });
+
+          ggY -= 12 * MM;
+          ggPage.drawText(
+            sanitizeText(
+              `Hinweis: Die blauen Ranglisten-Links sind direkt im PDF anklickbar und während 180 Tagen (bis ${validUntilStr}) gültig.`
+            ),
+            {
+              x: 20 * MM,
+              y: ggY,
+              size: 7.8,
+              font: fontRegular,
+              color: rgb(0.12, 0.25, 0.55),
+            }
+          );
+
+          drawClubLegalFooter(ggPage, 12 * MM);
+        }
+      }
+    } catch (ggPdfErr) {
+      console.warn("⚠️ Beiblatt Gruppengewinne im Rechnungs-PDF konnte nicht gerendert werden:", ggPdfErr);
+    }
+  }
 
   // ============================================================================
   // FINALE SEITE: DEDIZIERTER SCHWEIZER QR-ZAHLTEIL (ES ALLEIN AUF SEITE)
@@ -4121,6 +4526,9 @@ Deno.serve(async (req: Request) => {
 
       // Auto-Hydration der Empfänger-Adresse & Anrede aus members, falls strasse oder anrede noch fehlen
       const pNr = mergedRec.person_number || mergedRec.personNumber || mergedRec.member_id || mergedRec.memberId || invRow?.person_number;
+      if (pNr) {
+        (recipient as any).person_number = String(pNr);
+      }
       if ((!recipient.strasse || !recipient.anrede || !recipient.vorname) && pNr && supabase) {
         try {
           const { data: memberData } = await supabase

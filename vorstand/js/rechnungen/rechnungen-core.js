@@ -87,6 +87,7 @@ function mapInvoiceFromSupabase(r, posMap = {}) {
   return {
     id: invId,
     PersonNumber: r.person_number || '',
+    person_number: r.person_number || '',
     name: r.recipient_name || '',
     year: Number(r.year || new Date().getFullYear()),
     type: r.type || 'Jahresbeitrag',
@@ -1723,11 +1724,14 @@ window.RechnungsCore = {
     if (!inv) throw new Error(`Rechnung ${invoiceId} wurde nicht gefunden.`);
 
     const recipient = (inv.recipient_address && Object.keys(inv.recipient_address).length > 0)
-      ? inv.recipient_address
+      ? { ...inv.recipient_address }
       : (typeof rnGetRecipientForInvoice === 'function' ? rnGetRecipientForInvoice(inv) : {
           name: inv.name,
           strasse: '', plz: '', ort: '', email: ''
         });
+    if (!recipient.person_number && (inv.PersonNumber || inv.person_number)) {
+      recipient.person_number = inv.PersonNumber || inv.person_number;
+    }
 
     const sender = customOptions.sender || 
       (inv.sender_address && Object.keys(inv.sender_address).length > 0 ? inv.sender_address : null) || 

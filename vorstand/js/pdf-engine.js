@@ -340,7 +340,9 @@
             const payload = {
                 action: 'generate-invoice',
                 invoiceId: invoiceId,
+                forceRecreate: true,
                 recipient: {
+                    person_number: String(pn || ''),
                     vorname: m.FirstName || '',
                     nachname: m.LastName || '',
                     name: name,
@@ -356,15 +358,30 @@
                 type: 'Jahresbeitrag'
             };
 
-            let res = await window.generatePdfViaEngine(payload);
-            if (!res.success) throw new Error(res.error || "PDF-Erstellung auf Supabase fehlgeschlagen.");
+            let res = null;
+            if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
+                try {
+                    res = await window.RechnungsCore.renderPdf(invoiceId, { forceRecreate: true });
+                } catch (rcErr) {
+                    console.warn("RechnungsCore.renderPdf Fallback:", rcErr);
+                }
+            }
+            if (!res || !res.success) {
+                res = await window.generatePdfViaEngine(payload);
+            }
+            if (!res || !res.success) throw new Error(res?.error || "PDF-Erstellung auf Supabase fehlgeschlagen.");
 
             if (typeof showToast === 'function') {
                 showToast("🎉 QR-Rechnung erfolgreich generiert!");
             }
 
             if (res.pdfUrl && res.pdfUrl.startsWith('http')) {
-                window.open(res.pdfUrl, '_blank');
+                if (typeof window.jbOpenInvoicePdfSafe === 'function') {
+                    window.jbOpenInvoicePdfSafe(res.pdfUrl);
+                } else {
+                    const sep = res.pdfUrl.includes('?') ? '&' : '?';
+                    window.open(`${res.pdfUrl}${sep}t=${Date.now()}`, '_blank');
+                }
             } else if (res.pdfBase64 && typeof openPdfBase64 === 'function') {
                 openPdfBase64(res.pdfBase64);
             }

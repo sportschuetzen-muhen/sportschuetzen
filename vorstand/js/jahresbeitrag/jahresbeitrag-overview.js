@@ -1610,11 +1610,18 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
     const senderDisplayName = sender ? [sender.vorname, sender.nachname].filter(Boolean).join(' ') : 'Daniel Hunziker';
     const senderRole = sender?.funktion || 'Kassier';
 
-    // Persönliche Einzelberechnung Gruppengewinne (Konto 1301) inkl. 180-Tage-Links (nie als Datei-Anhang!) ermitteln
+    // Persönliche Einzelberechnung Gruppengewinne (Konto 1301) inkl. 180-Tage-Links + PDF «Zusammensetzung_Gruppengewinne_<Jahr>.pdf» ermitteln
     let ggSupp = null;
     if (typeof window.jmBuildShooterGruppengewinneMailSupplement === 'function') {
       try {
         ggSupp = await window.jmBuildShooterGruppengewinneMailSupplement(pn, r.year || new Date().getFullYear());
+        if (ggSupp && ggSupp.hasCredits && ggSupp.pdfAttachment && ggSupp.pdfAttachment.contentBase64) {
+          attachments.push({
+            filename: ggSupp.pdfAttachment.filename,
+            contentBase64: ggSupp.pdfAttachment.contentBase64,
+            contentType: 'application/pdf'
+          });
+        }
       } catch (ggErr) {
         console.warn('[Jahresbeitrag-Mail] Konnte Gruppengewinn-Einzelberechnung nicht laden:', ggErr);
       }

@@ -375,6 +375,29 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
   window._rnmBodyUserModified = false;
   window._rnmSubjectUserModified = false;
   window._rnmExtraAttachments = [];
+  window._rnmGruppengewinneSupplement = null;
+
+  // Bei Jahresbeitrag-Rechnungen mit Gruppengewinn-Gutschriften (Konto 1301):
+  // Einzelberechnung + 180-Tage Ranglisten-Links ermitteln und PDF «Zusammensetzung_Gruppengewinne_<Jahr>.pdf» direkt als Anhang vormerken
+  const invPn = inv.PersonNumber || inv.person_number || '';
+  if (String(inv.type || '').toLowerCase().includes('jahresbeitrag') && invPn && typeof window.jmBuildShooterGruppengewinneMailSupplement === 'function') {
+    try {
+      const ggSupp = await window.jmBuildShooterGruppengewinneMailSupplement(invPn, inv.year || new Date().getFullYear());
+      if (ggSupp && ggSupp.hasCredits) {
+        window._rnmGruppengewinneSupplement = ggSupp;
+        if (ggSupp.pdfAttachment && ggSupp.pdfAttachment.contentBase64) {
+          window._rnmExtraAttachments.push({
+            filename: ggSupp.pdfAttachment.filename,
+            contentType: 'application/pdf',
+            contentBase64: ggSupp.pdfAttachment.contentBase64,
+            size: ggSupp.pdfAttachment.size || 0
+          });
+        }
+      }
+    } catch (ggModalErr) {
+      console.warn('[Rechnungen-MailModal] Konnte Gruppengewinn-Zusammensetzung nicht vorab laden:', ggModalErr);
+    }
+  }
 
   let modalEl = document.getElementById('rnModalSendInvoiceMail');
   if (modalEl) modalEl.remove();
@@ -498,6 +521,18 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
                   <div class="form-text text-muted d-flex justify-content-between" style="font-size: 11px;">
                     <span><i class="fas fa-info-circle me-1"></i>Vollständiger E-Mail-Text aus der Vorlage ('${escapeHtml(inv.type || 'Sonstige')}'). Kann vor dem Senden frei angepasst werden.</span>
                   </div>
+                  ${window._rnmGruppengewinneSupplement && window._rnmGruppengewinneSupplement.hasCredits ? `
+                  <div class="alert alert-success py-2 px-3 mt-2 mb-0 small d-flex align-items-center justify-content-between flex-wrap gap-2">
+                    <div>
+                      <i class="fas fa-trophy text-warning me-1"></i>
+                      <strong>Gruppengewinne ${window._rnmGruppengewinneSupplement.year}:</strong>
+                      Die Aufstellung (${window._rnmGruppengewinneSupplement.items.length} Schiessen, Total -${fmtChf(window._rnmGruppengewinneSupplement.totalShare)}) inkl. <strong>180-Tage-Links auf die Ranglisten</strong> wird automatisch in die E-Mail eingebettet und das PDF <strong>Zusammensetzung_Gruppengewinne_${window._rnmGruppengewinneSupplement.year}.pdf</strong> angehängt.
+                    </div>
+                    <button type="button" class="btn btn-xs btn-outline-success fw-semibold" onclick="rnmSwitchTab('prev')">
+                      <i class="fas fa-eye me-1"></i>In Vorschau ansehen
+                    </button>
+                  </div>
+                  ` : ''}
                 </div>
 
                 <!-- Pane 2: Live HTML-Vorschau -->
@@ -583,6 +618,7 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
   const initialSenderPN = (sender && (sender.personNumber || sender.person_number || sender.PersonNumber)) || null;
   rnPopulateSenderSelect('rnm-sender-select', initialSenderPN, true);
   rnOnMailSenderChanged(inv.id);
+  window.rnmRenderExtraAttachmentsList();
 
   const subjEl = document.getElementById('rnm-subject');
   if (subjEl) {
@@ -630,19 +666,23 @@ window.rnmSwitchTab = function(mode) {
 
     const prevContent = document.getElementById('rnm-preview-body-content');
     if (prevContent) {
+      let renderedHtml = '';
       if (/<[a-z][\s\S]*>/i.test(bodyText)) {
-        prevContent.innerHTML = (window.ClubWysiwyg && typeof window.ClubWysiwyg.cleanHtml === 'function')
+        renderedHtml = (window.ClubWysiwyg && typeof window.ClubWysiwyg.cleanHtml === 'function')
           ? window.ClubWysiwyg.cleanHtml(bodyText)
           : bodyText;
       } else {
         const clean = String(bodyText).replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
         const paras = clean.split(/\n\s*\n/);
-        const parasHtml = paras.map(p => {
+        renderedHtml = paras.map(p => {
           const withBr = p.split('\n').map(line => escapeHtml(line.trim())).join('<br>');
           return `<p style="margin:0 0 12px 0;line-height:1.6;font-size:13px;color:#333;">${withBr}</p>`;
         }).join('');
-        prevContent.innerHTML = parasHtml || '<p class="text-muted fst-italic">Kein Text vorhanden.</p>';
       }
+      if (window._rnmGruppengewinneSupplement && window._rnmGruppengewinneSupplement.hasCredits && !renderedHtml.includes('Einzelberechnung Gruppengewinne')) {
+        renderedHtml += window._rnmGruppengewinneSupplement.htmlBlock;
+      }
+      prevContent.innerHTML = renderedHtml || '<p class="text-muted fst-italic">Kein Text vorhanden.</p>';
     }
     const subjPrev = document.getElementById('rnm-preview-subject');
     const subjVal = document.getElementById('rnm-subject')?.value || '';
@@ -958,13 +998,25 @@ window.rnExecuteSendMail = async function(invoiceId) {
       }
     }
 
-    // 3. Mail-HTML mit Vereins-CI (inkl. automatischer Einzelberechnung & 180-Tage Ranglisten-Links bei Jahresbeitrag mit Konto 1301)
-    let ggSupp = null;
-    if (String(inv.type || '').toLowerCase().includes('jahresbeitrag') && inv.person_number && typeof window.jmBuildShooterGruppengewinneMailSupplement === 'function') {
+    // 3. Mail-HTML mit Vereins-CI (inkl. automatischer Einzelberechnung, 180-Tage Ranglisten-Links & PDF «Zusammensetzung_Gruppengewinne_<Jahr>.pdf»)
+    let ggSupp = window._rnmGruppengewinneSupplement || null;
+    const invPn = inv.PersonNumber || inv.person_number || '';
+    if (!ggSupp && String(inv.type || '').toLowerCase().includes('jahresbeitrag') && invPn && typeof window.jmBuildShooterGruppengewinneMailSupplement === 'function') {
       try {
-        ggSupp = await window.jmBuildShooterGruppengewinneMailSupplement(inv.person_number, inv.year || new Date().getFullYear());
+        ggSupp = await window.jmBuildShooterGruppengewinneMailSupplement(invPn, inv.year || new Date().getFullYear());
       } catch (ggErr) {
         console.warn('[Rechnungen-Mail] Konnte Gruppengewinn-Einzelberechnung nicht erstellen:', ggErr);
+      }
+    }
+
+    if (ggSupp && ggSupp.hasCredits && ggSupp.pdfAttachment && ggSupp.pdfAttachment.contentBase64) {
+      const alreadyAttached = attachments.some(a => a.filename === ggSupp.pdfAttachment.filename);
+      if (!alreadyAttached) {
+        attachments.push({
+          filename: ggSupp.pdfAttachment.filename,
+          contentBase64: ggSupp.pdfAttachment.contentBase64,
+          contentType: 'application/pdf'
+        });
       }
     }
 
@@ -5512,11 +5564,19 @@ window.rnExecuteMassSend = async function() {
         .replace(/Rechnung\s+RE[-_]/gi, 'Rechnung ')
         .replace(/\bRE-(\d)/gi, '$1');
 
-      // Falls Jahresbeitrag und Schütze hat Gruppengewinne (Konto 1301): Einzelberechnung + 180-Tage Ranglisten-Links einbetten (nie als Anhang!)
+      // Falls Jahresbeitrag und Schütze hat Gruppengewinne (Konto 1301): Einzelberechnung + 180-Tage Ranglisten-Links einbetten + PDF «Zusammensetzung_Gruppengewinne_<Jahr>.pdf» anhängen
       let ggMassSupp = null;
-      if (String(inv.type || '').toLowerCase().includes('jahresbeitrag') && inv.person_number && typeof window.jmBuildShooterGruppengewinneMailSupplement === 'function') {
+      const massPn = inv.PersonNumber || inv.person_number || '';
+      if (String(inv.type || '').toLowerCase().includes('jahresbeitrag') && massPn && typeof window.jmBuildShooterGruppengewinneMailSupplement === 'function') {
         try {
-          ggMassSupp = await window.jmBuildShooterGruppengewinneMailSupplement(inv.person_number, inv.year || new Date().getFullYear());
+          ggMassSupp = await window.jmBuildShooterGruppengewinneMailSupplement(massPn, inv.year || new Date().getFullYear());
+          if (ggMassSupp && ggMassSupp.hasCredits && ggMassSupp.pdfAttachment && ggMassSupp.pdfAttachment.contentBase64) {
+            attachments.push({
+              filename: ggMassSupp.pdfAttachment.filename,
+              contentBase64: ggMassSupp.pdfAttachment.contentBase64,
+              contentType: 'application/pdf'
+            });
+          }
         } catch (ggErr) {
           console.warn('[Massenversand] Konnte Gruppengewinn-Einzelberechnung nicht laden:', ggErr);
         }

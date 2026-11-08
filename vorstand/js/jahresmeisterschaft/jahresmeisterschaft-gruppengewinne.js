@@ -45,6 +45,19 @@
     }
 
     /**
+     * Normalisiert einen Anlassnamen ohne Jahreszahl und Ortszusatz in Klammern (Fuzzy-Fallback).
+     */
+    function normalizeAnlassBaseKey(str) {
+        return String(str || '')
+            .toLowerCase()
+            .replace(/\([^)]*\)/g, '')
+            .replace(/\b20\d{2}\b/g, '')
+            .replace(/^\d+\.\s*/, '')
+            .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+            .replace(/[^a-z0-9]/g, '');
+    }
+
+    /**
      * Lädt alle hinterlegten Ranglisten-Dateien für ein Jahr aus public.jm_competition_files.
      */
     async function jmLoadCompetitionFiles(year) {
@@ -60,8 +73,13 @@
             const map = {};
             (data || []).forEach(row => {
                 const key = normalizeAnlassKey(row.anlass_name);
+                const baseKey = normalizeAnlassBaseKey(row.anlass_name);
+                const files = Array.isArray(row.files) ? row.files : [];
                 if (key) {
-                    map[key] = Array.isArray(row.files) ? row.files : [];
+                    map[key] = [...(map[key] || []), ...files];
+                }
+                if (baseKey && baseKey !== key) {
+                    map[baseKey] = [...(map[baseKey] || []), ...files];
                 }
             });
             window._jmCompetitionFilesMap = map;
@@ -79,12 +97,13 @@
         if (!comp) return [];
         const direct = Array.isArray(comp.ranglisten_files) ? comp.ranglisten_files : [];
         const key = normalizeAnlassKey(comp.anlass_name);
-        const fromCatalog = (key && window._jmCompetitionFilesMap && Array.isArray(window._jmCompetitionFilesMap[key]))
-            ? window._jmCompetitionFilesMap[key]
-            : [];
+        const baseKey = normalizeAnlassBaseKey(comp.anlass_name);
+        const map = window._jmCompetitionFilesMap || {};
+        const fromExact = (key && Array.isArray(map[key])) ? map[key] : [];
+        const fromBase = (baseKey && baseKey !== key && Array.isArray(map[baseKey])) ? map[baseKey] : [];
         const merged = [];
         const seenPaths = new Set();
-        [...direct, ...fromCatalog].forEach(f => {
+        [...direct, ...fromExact, ...fromBase].forEach(f => {
             if (!f || !f.storage_path) return;
             if (seenPaths.has(f.storage_path)) return;
             seenPaths.add(f.storage_path);
@@ -4655,34 +4674,238 @@
     }
 
     /**
+     * Erzeugt das persönliche Übersichts-PDF «Zusammensetzung_Gruppengewinne_<Jahr>.pdf»
+     * für einen einzelnen Schützen inkl. anklickbaren 180-Tage-Direktlinks auf die Ranglisten.
+     */
+    function jmGenerateShooterGruppengewinnePdfAttachment(supp) {
+        if (!supp || !supp.hasCredits || !Array.isArray(supp.items) || supp.items.length === 0) {
+            return null;
+        }
+        if (!window.jspdf || !window.jspdf.jsPDF) {
+            console.warn('[Gruppengewinne-PDF] jsPDF ist nicht verfügbar.');
+            return null;
+        }
+
+        try {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+            const yr = supp.year || new Date().getFullYear();
+            const fmtCurr = (window.UIFormatKit && typeof UIFormatKit.formatCurrency === 'function')
+                ? UIFormatKit.formatCurrency
+                : (v => `CHF ${Number(v || 0).toFixed(2)}`);
+            const todayStr = (window.UIFormatKit && typeof UIFormatKit.formatDate === 'function')
+                ? UIFormatKit.formatDate(new Date().toISOString().slice(0, 10))
+                : new Date().toLocaleDateString('de-CH');
+
+            // 1. Kopfbereich Sportschützen Muhen
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(15);
+            doc.setTextColor(15, 58, 93);
+            doc.text('SPORTSCHÜTZEN MUHEN', 15, 17);
+
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8.5);
+            doc.setTextColor(100, 116, 139);
+            doc.text('Gegründet 1928 · 5037 Muhen · www.sportschuetzen-muhen.ch', 15, 22);
+
+            // 2. Dokument-Titel & Untertitel
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(13);
+            doc.setTextColor(15, 23, 42);
+            doc.text(`Zusammensetzung Gruppengewinne ${yr} (Konto 1301)`, 15, 32);
+
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9);
+            doc.setTextColor(71, 85, 105);
+            doc.text(
+                `Beiblatt zur Jahresbeitrags-Rechnung ${yr} · Schütze: ${supp.shooterName || supp.personNumber || ''} · Stand: ${todayStr}`,
+                15,
+                37.5
+            );
+
+            // 3. Info-Box oben
+            doc.setDrawColor(203, 213, 225);
+            doc.setFillColor(248, 250, 252);
+            doc.roundedRect(15, 41, 180, 16, 2, 2, 'FD');
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9);
+            doc.setTextColor(30, 41, 59);
+            doc.text(`Schütze:`, 19, 47);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`${supp.shooterName || '-'} (Mitglied-Nr. ${supp.personNumber || '-'})`, 42, 47);
+
+            doc.setFont('helvetica', 'bold');
+            doc.text(`Anzahl Gruppenschiessen:`, 19, 53);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`${supp.items.length} Anlass/Anlässe mit Gewinnanteil`, 62, 53);
+
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(21, 128, 61);
+            doc.text(`Total Gutschrift ${yr}:`, 120, 47);
+            doc.text(`- ${fmtCurr(supp.totalShare)}`, 162, 47);
+
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8);
+            doc.setTextColor(71, 85, 105);
+            doc.text(`Ranglisten-Links gültig bis: ${supp.validUntilStr}`, 120, 53);
+
+            // 4. Tabelle der einzelnen Gruppenschiessen
+            const tableRows = supp.items.map((it, idx) => {
+                const rangStr = it.rang ? ` · ${it.rang}. Rang` : '';
+                const grpPtsStr = it.gruppeTotalPunkte ? `${it.gruppeTotalPunkte} Pkt.` : '-';
+                const anlassBlock = `${it.anlassName}\nGruppe «${it.gruppeName}»${rangStr} · Total: ${grpPtsStr}\nTeam: ${it.teamPlain}`;
+                const myPtsStr = it.schuetzePunkte ? `${it.schuetzePunkte} Pkt.` : '-';
+                const calcBlock = `Brutto: ${fmtCurr(it.gewinnBrutto)}\n./. Doppel: ${fmtCurr(it.abzugDoppel)}\nNetto: ${fmtCurr(it.nettoUeberschuss)}`;
+                const shareBlock = `- ${fmtCurr(it.schuetzeAnteil)}\n(1/${it.anzahlSchuetzen} Anteil)`;
+                const linkLabels = (it.links && it.links.length > 0)
+                    ? it.links.map(lk => `> ${lk.label} öffnen`).join('\n')
+                    : '-';
+
+                return [
+                    String(idx + 1),
+                    anlassBlock,
+                    myPtsStr,
+                    calcBlock,
+                    shareBlock,
+                    linkLabels
+                ];
+            });
+
+            if (typeof doc.autoTable === 'function') {
+                doc.autoTable({
+                    startY: 61,
+                    margin: { left: 15, right: 15 },
+                    head: [['#', 'Anlass / Gruppe & Team', 'Deine Pkt.', 'Gruppenabrechnung', 'Deine Gutschrift', 'Rangliste (Link)']],
+                    body: tableRows,
+                    foot: [[
+                        '',
+                        `Total Gutschrift Gruppengewinne ${yr} (auf Jahresbeitrags-Rechnung abgezogen):`,
+                        '',
+                        '',
+                        `- ${fmtCurr(supp.totalShare)}`,
+                        ''
+                    ]],
+                    theme: 'grid',
+                    styles: {
+                        font: 'helvetica',
+                        fontSize: 8.2,
+                        cellPadding: 2.5,
+                        textColor: [30, 41, 59],
+                        lineColor: [203, 213, 225],
+                        lineWidth: 0.2,
+                        valign: 'top'
+                    },
+                    headStyles: {
+                        fillColor: [15, 58, 93],
+                        textColor: [255, 255, 255],
+                        fontStyle: 'bold',
+                        fontSize: 8.2
+                    },
+                    footStyles: {
+                        fillColor: [240, 253, 244],
+                        textColor: [20, 83, 45],
+                        fontStyle: 'bold',
+                        fontSize: 9
+                    },
+                    columnStyles: {
+                        0: { cellWidth: 8, halign: 'center' },
+                        1: { cellWidth: 68 },
+                        2: { cellWidth: 18, halign: 'center', fontStyle: 'bold' },
+                        3: { cellWidth: 34, halign: 'right' },
+                        4: { cellWidth: 25, halign: 'right', fontStyle: 'bold', textColor: [21, 128, 61] },
+                        5: { cellWidth: 27, halign: 'left', textColor: [29, 78, 216], fontStyle: 'bold' }
+                    },
+                    didDrawCell: function (data) {
+                        // Klickbare 180-Tage-Links direkt in der PDF-Zelle hinterlegen
+                        if (data.section === 'body' && data.column.index === 5) {
+                            const item = supp.items[data.row.index];
+                            if (item && Array.isArray(item.links) && item.links.length > 0) {
+                                const slotH = data.cell.height / item.links.length;
+                                item.links.forEach((lk, lIdx) => {
+                                    if (lk && lk.url) {
+                                        doc.link(
+                                            data.cell.x,
+                                            data.cell.y + (lIdx * slotH),
+                                            data.cell.width,
+                                            slotH,
+                                            { url: lk.url }
+                                        );
+                                    }
+                                });
+                            }
+                        }
+                    }
+                });
+            }
+
+            const finalY = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 6 : 160;
+            if (finalY < 268) {
+                doc.setDrawColor(191, 219, 254);
+                doc.setFillColor(239, 246, 255);
+                doc.roundedRect(15, finalY, 180, 16, 2, 2, 'FD');
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(8.2);
+                doc.setTextColor(30, 58, 138);
+                doc.text('Hinweis zu den Ranglisten-Links (180 Tage gültig):', 18, finalY + 5.5);
+
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(7.8);
+                doc.text(
+                    `Die vollständigen PDF-Ranglisten sind über die blauen Links in der rechten Spalte (sowie direkt im E-Mail-Text) bis am ${supp.validUntilStr} abrufbar.`,
+                    18,
+                    finalY + 11
+                );
+            }
+
+            const dataUri = doc.output('datauristring');
+            const base64Content = String(dataUri || '').split(',')[1] || '';
+            if (!base64Content) return null;
+
+            const filename = `Zusammensetzung_Gruppengewinne_${yr}.pdf`;
+            const approxBytes = Math.round((base64Content.length * 3) / 4);
+            return {
+                name: filename,
+                filename: filename,
+                content: base64Content,
+                contentBase64: base64Content,
+                contentType: 'application/pdf',
+                size: approxBytes
+            };
+        } catch (err) {
+            console.warn('[Gruppengewinne-PDF] Konnte Zusammensetzung-PDF nicht generieren:', err);
+            return null;
+        }
+    }
+
+    /**
      * Erstellt die persönliche Einzelberechnung je Schütze inkl. 180 Tage gültigen Direktlinks
-     * zu allen hinterlegten Ranglisten (NIEMALS als Datei-Anhang, immer als signierter Link!).
+     * zu allen hinterlegten Ranglisten (Ranglisten als Link, plus PDF «Zusammensetzung_Gruppengewinne_<Jahr>.pdf» als Anhang).
      *
      * @param {number|string} personNumber - Lizenz-/Personennummer des Schützen
      * @param {number|string} year - Beitrags-/Saisonjahr (z. B. 2026)
-     * @returns {Promise<{hasCredits: boolean, shooterName: string, year: number, totalShare: number, items: Array, validUntilStr: string, htmlBlock: string, textBlock: string}>}
+     * @returns {Promise<{hasCredits: boolean, personNumber: string, shooterName: string, year: number, totalShare: number, items: Array, validUntilStr: string, htmlBlock: string, textBlock: string, pdfAttachment: Object|null}>}
      */
     async function jmBuildShooterGruppengewinneMailSupplement(personNumber, year) {
         const yr = parseInt(year || getActiveYear(), 10) || new Date().getFullYear();
         const pnStr = String(personNumber || '').trim();
         const emptyResult = {
             hasCredits: false,
+            personNumber: pnStr,
             shooterName: '',
             year: yr,
             totalShare: 0,
             items: [],
             validUntilStr: '',
             htmlBlock: '',
-            textBlock: ''
+            textBlock: '',
+            pdfAttachment: null
         };
         if (!pnStr) return emptyResult;
 
-        // Sicherstellen, dass Gruppengewinne und Ranglisten-Dateien für das Jahr geladen sind
-        if (!Array.isArray(window._jmGroupCompetitions) || window._jmGroupCompetitions.length === 0 || Number(_jmActiveCompYear) !== yr) {
-            await jmLoadGroupCompetitions(yr);
-        } else {
-            await jmLoadCompetitionFiles(yr);
-        }
+        // Immer frisch aus Supabase nachladen, damit soeben hochgeladene Ranglisten oder Mutationen sofort enthalten sind
+        await jmLoadGroupCompetitions(yr);
 
         const comps = window._jmGroupCompetitions || [];
         const shooterItems = [];
@@ -4722,7 +4945,7 @@
             const calcPtsSum = Math.round(members.reduce((acc, m) => acc + (Number(m.punkte) || 0), 0) * 10) / 10;
             const totalPts = comp.punkte_total || (calcPtsSum > 0 ? calcPtsSum : null);
 
-            // Für alle hinterlegten Ranglisten dieses Schiessens 180-Tage-Links generieren
+            // Für alle hinterlegten Ranglisten dieses Schiessens 180-Tage-Links generieren (keine Ranglisten-PDF-Anhänge)
             const rangFiles = getMergedRanglistenForComp(comp);
             const signedLinks = [];
             for (const rf of rangFiles) {
@@ -4773,7 +4996,7 @@
             ? UIFormatKit.formatCurrency
             : (v => `CHF ${Number(v || 0).toFixed(2)}`);
 
-        // HTML-Einzelberechnung + 180-Tage-Links (nie als Datei-Anhang!)
+        // HTML-Einzelberechnung + 180-Tage-Links (Ranglisten als Links)
         const rowsHtml = shooterItems.map(it => {
             const rangStr = it.rang ? ` · ${it.rang}. Rang` : '';
             const grpPtsStr = it.gruppeTotalPunkte ? `${it.gruppeTotalPunkte} Pkt.` : '–';
@@ -4810,7 +5033,7 @@
             <div style="margin:22px 0 18px 0; border:1px solid #cbd5e1; border-radius:8px; overflow:hidden; background:#ffffff; font-family:Arial, sans-serif;">
                 <div style="background:#f8fafc; padding:10px 14px; border-bottom:1px solid #cbd5e1;">
                     <div style="font-weight:700; font-size:14px; color:#0f172a;">🏆 Deine persönliche Einzelberechnung Gruppengewinne ${yr} (Konto 1301)</div>
-                    <div style="font-size:12px; color:#475569; margin-top:2px;">Aufstellung deiner gutgeschriebenen Gewinnanteile aus auswärtigen Gruppenschiessen inkl. direktem Zugriff auf die kompletten Ranglisten:</div>
+                    <div style="font-size:12px; color:#475569; margin-top:2px;">Aufstellung deiner gutgeschriebenen Gewinnanteile aus auswärtigen Gruppenschiessen inkl. direktem Zugriff auf die kompletten Ranglisten (auch als PDF «Zusammensetzung_Gruppengewinne_${yr}.pdf» im Anhang):</div>
                 </div>
                 <table style="width:100%; border-collapse:collapse; font-size:12.5px;">
                     <thead>
@@ -4834,7 +5057,7 @@
                     </tfoot>
                 </table>
                 <div style="background:#eff6ff; padding:9px 14px; border-top:1px solid #bfdbfe; font-size:11.5px; color:#1e3a8a; line-height:1.45;">
-                    🔒 <strong>Hinweis zu den Ranglisten-Links:</strong> Um dein E-Mail-Postfach zu schonen, werden die vollständigen Ranglisten nicht als Datei angehängt, sondern über geschützte Direktlinks bereitgestellt. Die Links sind ab Versand während <strong>180 Tagen (bis am ${escapeHtml(validUntilStr)})</strong> gültig.
+                    🔒 <strong>Hinweis zu den Ranglisten-Links:</strong> Um dein E-Mail-Postfach zu schonen, werden die vollständigen Ranglisten über geschützte Direktlinks bereitgestellt. Die Links sind ab Versand während <strong>180 Tagen (bis am ${escapeHtml(validUntilStr)})</strong> gültig. Die Übersicht findest du zusätzlich als PDF <strong>Zusammensetzung_Gruppengewinne_${yr}.pdf</strong> im Anhang.
                 </div>
             </div>
         `;
@@ -4865,19 +5088,49 @@
         textLines.push(
             `TOTAL GUTSCHRIFT GRUPPENGEWINNE ${yr}: -${fmtCurr(totalShare)}`,
             `Hinweis: Die Direktlinks auf die kompletten Ranglisten sind während 180 Tagen (bis ${validUntilStr}) gültig.`,
+            `Die Übersicht liegt dieser E-Mail zudem als PDF «Zusammensetzung_Gruppengewinne_${yr}.pdf» bei.`,
             `------------------------------------------------------------------------`
         );
 
-        return {
+        const resultObj = {
             hasCredits: true,
+            personNumber: pnStr,
             shooterName: shooterName,
             year: yr,
             totalShare: totalShare,
             items: shooterItems,
             validUntilStr: validUntilStr,
             htmlBlock: htmlBlock,
-            textBlock: textLines.join('\n')
+            textBlock: textLines.join('\n'),
+            pdfAttachment: null
         };
+
+        resultObj.pdfAttachment = jmGenerateShooterGruppengewinnePdfAttachment(resultObj);
+        return resultObj;
+    }
+
+    /**
+     * Lädt das PDF «Zusammensetzung_Gruppengewinne_<Jahr>.pdf» für einen Schützen direkt im Browser herunter.
+     */
+    async function jmDownloadShooterGruppengewinnePdf(personNumber, year) {
+        const supp = await jmBuildShooterGruppengewinneMailSupplement(personNumber, year);
+        if (!supp || !supp.hasCredits || !supp.pdfAttachment) {
+            if (window.UIConfirmKit) {
+                await UIConfirmKit.alert({
+                    title: 'Kein Übersichts-PDF verfügbar',
+                    message: 'Für dieses Mitglied konnten keine Gruppengewinn-Gutschriften gefunden werden.',
+                    type: 'warning'
+                });
+            }
+            return;
+        }
+        const linkSource = `data:application/pdf;base64,${supp.pdfAttachment.content}`;
+        const downloadLink = document.createElement('a');
+        downloadLink.href = linkSource;
+        downloadLink.download = supp.pdfAttachment.filename;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        downloadLink.remove();
     }
 
     /**
@@ -4912,7 +5165,7 @@
                             <span class="badge bg-warning text-dark"><i class="fas fa-trophy"></i></span>
                             <div>
                                 <h6 class="modal-title fw-bold mb-0">Einzelberechnung & 180-Tage Ranglisten-Links · ${escapeHtml(supp.shooterName || String(personNumber))}</h6>
-                                <div class="small text-white-50">Wird beim E-Mail-Versand des Jahresbeitrags ${supp.year} automatisch in die E-Mail eingefügt (ohne Datei-Anhang)</div>
+                                <div class="small text-white-50">Wird beim E-Mail-Versand des Jahresbeitrags ${supp.year} im Mail eingeblendet & als PDF «Zusammensetzung_Gruppengewinne_${supp.year}.pdf» angehängt</div>
                             </div>
                         </div>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
@@ -4920,7 +5173,10 @@
                     <div class="modal-body p-3 bg-light">
                         ${supp.htmlBlock}
                     </div>
-                    <div class="modal-footer py-2 px-3 bg-white">
+                    <div class="modal-footer py-2 px-3 bg-white d-flex justify-content-between">
+                        <button type="button" class="btn btn-sm btn-outline-primary fw-semibold" onclick="window.jmDownloadShooterGruppengewinnePdf('${escapeHtml(String(personNumber))}', ${supp.year})">
+                            <i class="fas fa-file-pdf text-danger me-1"></i>Zusammensetzung_Gruppengewinne_${supp.year}.pdf herunterladen
+                        </button>
                         <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Schliessen</button>
                     </div>
                 </div>
@@ -4939,7 +5195,9 @@
     window.jmOpenRanglisteFile = jmOpenRanglisteFile;
     window.jmHandleEditorRanglisteUpload = jmHandleEditorRanglisteUpload;
     window.jmTriggerQuickRanglisteUpload = jmTriggerQuickRanglisteUpload;
+    window.jmGenerateShooterGruppengewinnePdfAttachment = jmGenerateShooterGruppengewinnePdfAttachment;
     window.jmBuildShooterGruppengewinneMailSupplement = jmBuildShooterGruppengewinneMailSupplement;
+    window.jmDownloadShooterGruppengewinnePdf = jmDownloadShooterGruppengewinnePdf;
     window.jmOpenShooterGruppengewinnePreviewModal = jmOpenShooterGruppengewinnePreviewModal;
     window.jmOnAnlassSelectChange = jmOnAnlassSelectChange;
     window.jmOnAnlassInputChange = jmOnAnlassInputChange;
