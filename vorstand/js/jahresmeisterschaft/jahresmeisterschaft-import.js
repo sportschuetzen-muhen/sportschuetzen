@@ -190,7 +190,8 @@ async function jmPopulateTargetCompetitions(selectedCol = -1, detectedName = '',
             titleInput.value = detectedName;
         } else if (selectElem.value.startsWith('cat_')) {
             const opt = selectElem.selectedOptions[0];
-            titleInput.value = `${opt.getAttribute('data-anlass')} ${jmCurrentJahr || new Date().getFullYear()}`;
+            const jmYear = (typeof jmCurrentJahr !== 'undefined' && jmCurrentJahr && jmCurrentJahr !== 'current') ? jmCurrentJahr : new Date().getFullYear();
+            titleInput.value = `${opt.getAttribute('data-anlass')} ${jmYear}`;
         } else if (selectElem.value !== 'new') {
             const colIdx = parseInt(selectElem.value);
             titleInput.value = String(grid[2][colIdx] || '').trim();
@@ -215,9 +216,10 @@ function jmOnTargetCompetitionChange() {
         const catAnlass = opt?.getAttribute('data-anlass') || 'Auswärtiges Schiessen';
         const catMax = parseFloat(opt?.getAttribute('data-max')) || 100;
 
+        const jmYear = (typeof jmCurrentJahr !== 'undefined' && jmCurrentJahr && jmCurrentJahr !== 'current') ? jmCurrentJahr : new Date().getFullYear();
         _jmImportState.isNewComp = true;
         _jmImportState.targetCol = -1;
-        _jmImportState.targetTitle = `${catAnlass} ${jmCurrentJahr || new Date().getFullYear()}`;
+        _jmImportState.targetTitle = `${catAnlass} ${jmYear}`;
         _jmImportState.maxPoints = catMax;
 
         if (titleInput) titleInput.value = _jmImportState.targetTitle;
@@ -859,7 +861,8 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
     if (typeof jmMatchCompetitionFromCatalog === 'function') {
         catalogMatch = await jmMatchCompetitionFromCatalog(fullText, fileName);
         if (catalogMatch) {
-            detectedTitle = `${catalogMatch.anlass} ${jmCurrentJahr || new Date().getFullYear()}`;
+            const jmYear = (typeof jmCurrentJahr !== 'undefined' && jmCurrentJahr && jmCurrentJahr !== 'current') ? jmCurrentJahr : new Date().getFullYear();
+            detectedTitle = `${catalogMatch.anlass} ${jmYear}`;
             catalogReason = `Katalog: ${catalogMatch.anlass} (Erkannt: "${catalogMatch.matchedKeyword}")`;
         }
     }
@@ -875,20 +878,32 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
     }
 
     // 2. Tabellenkopf-Erkennung für Stiche (z.B. Kranzstich, Deisigrabenstich, Auszahler)
-    const ignoreColKeywords = ['rang', 'schütze', 'schuetze', 'schtze', 'name', 'vorname', 'jg', 'jahrgang', 'kat', 'kategorie', 'verein', 'sektion', 'gruppe', 'lizenz'];
+    const ignoreColKeywords = ['rang', 'schütze', 'schuetze', 'schtze', 'name', 'vorname', 'jg', 'jahrgang', 'kat', 'kategorie', 'verein', 'sektion', 'gruppe', 'lizenz', 'resultat', 'punkte', 'total', 'tot', 'res'];
     const headerStichKeywords = /(?:kranzstich|vereinsstich|gruppenstich|sektionsstich|auszahler|auszahlung|stich|gabenstich|ehrengabe|kunst|militär)/i;
 
     let detectedHeaderStiche = [];
     let boundaries = [];
 
     for (const l of lines) {
+        // Ignoriere Statistik-, Begrüssungs-, Preis- oder Mengenangaben (z.B. "Gelöste Stiche:", "Gruppenstich: 190")
+        if (/(?:gelöste|teilnehmer|zuschuss|gruppendoppel|franken|chf\b)/i.test(l.text)) continue;
+        if (/:\s*\d+/.test(l.text)) continue;
+
         if (headerStichKeywords.test(l.text) && l.items && l.items.length >= 3) {
+            // Echte Tabellenzeile muss mindestens einen Schützen-/Rang-Spaltenbezeichner enthalten
+            const hasTableCol = l.items.some(item => {
+                const c = item.str.trim().toLowerCase().replace(/[^a-z0-9äöü]/g, '');
+                return ignoreColKeywords.some(ig => c === ig || c.startsWith(ig));
+            });
+            if (!hasTableCol) continue;
+
             const cols = [];
             for (const item of l.items) {
                 const t = item.str.trim();
                 const clean = t.toLowerCase().replace(/[^a-z0-9äöü]/g, '');
                 const isIgnored = ignoreColKeywords.some(ig => clean === ig || clean.startsWith(ig));
-                if (!isIgnored && t.length > 2) {
+                // Spalte muss ein Textwort sein (keine reine Zahl wie "190" oder "154") und zu den Stich-Keywords passen
+                if (!isIgnored && t.length > 2 && /^[a-zäöü]/i.test(clean) && !/^\d+$/.test(clean) && headerStichKeywords.test(clean)) {
                     cols.push({ name: t, key: clean, x: item.x });
                 }
             }

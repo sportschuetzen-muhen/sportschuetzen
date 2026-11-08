@@ -2116,19 +2116,28 @@
             const t = (lines[i].text || lines[i] || '').trim();
             const m = t.match(/(?:^|\b)(\d+)\s+(\d+)\s+([A-Za-z0-9äöüÄÖÜß\-\s]+?)\s+Muhen/i);
             if (m) {
+                let cleanName = m[3].trim();
+                // Bereinige vorangestellte Schützenpunkte oder PDF-Sortierzahlen (z. B. "97 97 97 97 488 537 0 Strohhaus 1")
+                cleanName = cleanName.replace(/^(?:\d+[\s,.\-_]*)+/, '').trim();
+                if (!cleanName) cleanName = 'Strohhaus 1';
+
                 groupMatch = {
                     rang: parseInt(m[1], 10),
                     punkte: parseFloat(m[2]),
-                    name: m[3].trim()
+                    name: cleanName
                 };
                 groupLineIdx = i;
                 break;
-            } else if (/(?:muhen.*?strohaus|strohaus.*?muhen)/i.test(t)) {
+            } else if (/(?:muhen.*?stroh?haus|stroh?haus.*?muhen)/i.test(t)) {
                 const rangM = t.match(/\b(\d+)\b/);
+                let cleanName = 'Strohhaus 1';
+                const nameM = t.match(/(stroh?haus\s*\d*)/i);
+                if (nameM) cleanName = nameM[1].trim();
+
                 groupMatch = {
                     rang: rangM ? parseInt(rangM[1], 10) : 1,
                     punkte: null,
-                    name: 'Strohaus'
+                    name: cleanName
                 };
                 groupLineIdx = i;
                 break;
@@ -2155,18 +2164,38 @@
                 }
             }
 
-            // Auszahlung suchen
+            // Korrektur Gruppenpunkte, falls m[2] ein Einzelschützen-Wert war oder Shooters vorliegen
+            const shooterSum = detectedShooters.reduce((a, b) => a + (b.punkte || 0), 0);
+            if (shooterSum > 0 && (!groupMatch.punkte || groupMatch.punkte < 300 || groupMatch.punkte !== shooterSum)) {
+                groupMatch.punkte = shooterSum;
+            }
+
+            // Auszahlung suchen: Primär direkt in den Zeilen des Gruppenblocks
             let detectedAuszahlung = 0;
-            const auszMatch = fullText.match(/(?:auszahlung|gewinn|gabe)[\s\S]{0,100}?(?:150\.-[\s\n]+)?(\d{2,3})\.-/i);
-            if (auszMatch) {
-                detectedAuszahlung = parseFloat(auszMatch[1]);
-            } else {
-                const r2Match = fullText.match(/\b120\.-\b/);
-                if (r2Match) detectedAuszahlung = 120.00;
+            if (groupLineIdx >= 0) {
+                const startL = Math.max(0, groupLineIdx - 1);
+                const endL = Math.min(lines.length, groupLineIdx + 8);
+                const surrounding = lines.slice(startL, endL).map(l => (l.text || l || '')).join('\n');
+                const mP = surrounding.match(/(?:chf\s*|chf\.\s*)?(\d{2,4})(?:\.--|\.-|\s*chf)/i);
+                if (mP) {
+                    detectedAuszahlung = parseFloat(mP[1]);
+                }
+            }
+
+            // Fallback: Gesamtdokument durchsuchen (aber reine Auszahlungsstich-Einzelranglisten ignorieren)
+            if (!detectedAuszahlung) {
+                const cleanDoc = fullText.replace(/einzelrangliste\s+auszahlungsstich[\s\S]*/i, '');
+                const auszMatch = cleanDoc.match(/(?:auszahlung|gewinn|gabe)[\s\S]{0,100}?(?:150\.-[\s\n]+)?(\d{2,3})\.-/i);
+                if (auszMatch) {
+                    detectedAuszahlung = parseFloat(auszMatch[1]);
+                } else {
+                    const r2Match = cleanDoc.match(/\b120\.-\b/);
+                    if (r2Match) detectedAuszahlung = 120.00;
+                }
             }
 
             return {
-                gruppe_name: groupMatch.name || 'Strohaus',
+                gruppe_name: groupMatch.name || 'Strohhaus 1',
                 rang: groupMatch.rang || null,
                 punkte_total: groupMatch.punkte || null,
                 gruppendoppel: 30.00,
