@@ -2256,7 +2256,36 @@
 
                     <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
                         <h6 class="fw-bold mb-0"><i class="fas fa-eye me-2 text-primary"></i>Vorschau & Abgleich mit Jahresmeisterschaft:</h6>
-                        <span class="text-muted small">Wähle Schützen ab, falls du einzelne Zeilen nicht übernehmen möchtest.</span>
+                        <div class="d-flex align-items-center gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-primary rounded-pill fw-semibold" id="jm-import-add-shooter-btn" onclick="jmToggleManualShooterCard()">
+                                <i class="fas fa-user-plus me-1"></i>Schütze manuell hinzufügen
+                            </button>
+                            <span class="text-muted small">Wähle Schützen ab, falls du einzelne Zeilen nicht übernehmen möchtest.</span>
+                        </div>
+                    </div>
+
+                    <!-- Bereich zum manuellen Hinzufügen eines Schützen -->
+                    <div id="jm-import-manual-shooter-card" class="card bg-light border-primary border-opacity-25 p-3 mb-3 d-none rounded-3 shadow-xs">
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold mb-1"><i class="fas fa-user me-1 text-primary"></i>Schütze aus Jahresmeisterschaft auswählen:</label>
+                                <select id="jm-import-manual-shooter-select" class="form-select form-select-sm">
+                                    <!-- Dynamisch befüllt mit Schützen der aktuellen JM, die noch nicht in der Vorschau sind -->
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold mb-1"><i class="fas fa-crosshairs me-1 text-success"></i>Punkte / Resultat:</label>
+                                <input type="number" step="any" id="jm-import-manual-score-input" class="form-control form-control-sm text-center fw-bold" placeholder="z. B. 76">
+                            </div>
+                            <div class="col-md-3 d-flex gap-2">
+                                <button type="button" class="btn btn-sm btn-primary rounded-pill fw-semibold flex-grow-1" onclick="jmAddManualShooterToPreview()">
+                                    <i class="fas fa-plus me-1"></i>Hinzufügen
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" onclick="jmToggleManualShooterCard(false)">
+                                    Abbrechen
+                                </button>
+                            </div>
+                        </div>
                     </div>
                     <div id="jm-import-stats" class="mb-3"></div>
                     <div class="table-responsive border rounded-3 bg-white shadow-xs" style="max-height: 420px; overflow-y: auto;">

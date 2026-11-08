@@ -58,6 +58,9 @@ function openJMImportModal() {
     const previewContainer = document.getElementById('jm-import-preview-container');
     if (previewContainer) previewContainer.classList.add('d-none');
 
+    const manualCard = document.getElementById('jm-import-manual-shooter-card');
+    if (manualCard) manualCard.classList.add('d-none');
+
     const previewBody = document.getElementById('jm-import-preview-body');
     if (previewBody) previewBody.innerHTML = '';
 
@@ -931,14 +934,38 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
         knownShooters.forEach(s => {
             if (seenRows.has(s.rowIndex)) return;
 
-            const nachnameMatches = s.nachname && new RegExp('\\b' + escapeReg(s.nachname) + '\\b', 'i').test(lineText);
-            const vornameMatches = s.vorname && (
-                new RegExp('\\b' + escapeReg(s.vorname) + '\\b', 'i').test(lineText) ||
-                (s.vorname.length >= 3 && new RegExp('\\b' + escapeReg(s.vorname.substring(0, 3)), 'i').test(lineText))
+            const nachnameMatches = s.nachname && (
+                new RegExp('\\b' + escapeReg(s.nachname) + '\\b', 'i').test(lineText) ||
+                (s.nachname.length >= 4 && lineText.toLowerCase().includes(s.nachname.toLowerCase()))
             );
+
+            // Vornamen-Abgleich: Exakt, W/V-Äquivalenz (z.B. Riwana/Rivana), Präfix (mind. 3 Zeichen)
+            let vornameMatches = false;
+            if (s.vorname) {
+                if (new RegExp('\\b' + escapeReg(s.vorname) + '\\b', 'i').test(lineText)) {
+                    vornameMatches = true;
+                } else {
+                    const wvVornameRegex = escapeReg(s.vorname).replace(/[vw]/gi, '[vw]');
+                    if (new RegExp('\\b' + wvVornameRegex + '\\b', 'i').test(lineText)) {
+                        vornameMatches = true;
+                    } else if (s.vorname.length >= 3) {
+                        const wvPrefixRegex = escapeReg(s.vorname.substring(0, 3)).replace(/[vw]/gi, '[vw]');
+                        if (new RegExp('\\b' + wvPrefixRegex, 'i').test(lineText)) {
+                            vornameMatches = true;
+                        }
+                    }
+                }
+            }
+
+            // Geburtsjahrgangs-Validierung (z.B. 2005) als starke Bestätigung bei passendem Nachnamen
+            const jgMatches = s.jg && (
+                new RegExp('\\b' + s.jg + '\\b').test(lineText) ||
+                lineText.includes(String(s.jg))
+            );
+
             const lizenzMatches = s.lizenz && s.lizenz !== '000000' && (lineText.includes(s.lizenz) || (s.shortLiz && lineText.includes(s.shortLiz)));
 
-            if ((nachnameMatches && vornameMatches) || lizenzMatches) {
+            if ((nachnameMatches && (vornameMatches || jgMatches)) || lizenzMatches) {
                 const shooterStiche = {};
 
                 if (boundaries.length > 0 && l.items && l.items.length > 0) {
@@ -962,7 +989,8 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
                     if (s.lizenz && s.lizenz !== '000000') cleanLine = cleanLine.replace(new RegExp('\\b' + s.lizenz + '\\b', 'g'), ' ');
                     if (s.shortLiz) cleanLine = cleanLine.replace(new RegExp('\\b' + s.shortLiz + '\\b', 'g'), ' ');
 
-                    const nMatch = cleanLine.match(new RegExp('\\b' + escapeReg(s.nachname) + '\\b', 'i'));
+                    const nMatch = cleanLine.match(new RegExp('\\b' + escapeReg(s.nachname) + '\\b', 'i')) ||
+                                   cleanLine.match(new RegExp(escapeReg(s.nachname), 'i'));
                     let searchLine = nMatch && nMatch.index !== undefined ? cleanLine.substring(nMatch.index) : cleanLine;
 
                     // 1. Spezifische Suche nach Schlüsselwörtern Total / Resultat / Punkte
@@ -1009,13 +1037,27 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
 
         // Unbekannte Schützen auf Ranglistenzeilen erkennen (sofern nicht gematcht)
         if (!matchedLineIndices.has(lIdx)) {
-            const extMatch = lineText.match(/(?:^|\d+\s+)([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-\s]{2,}),\s*([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]{2,})/);
-            if (extMatch) {
-                const extNach = extMatch[1].trim();
-                const extVor = extMatch[2].trim();
+            let extNach = '';
+            let extVor = '';
+            let afterName = '';
+
+            const extMatchComma = lineText.match(/(?:^|\d+\s+)([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-\s]{2,}),\s*([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]{2,})/);
+            if (extMatchComma) {
+                extNach = extMatchComma[1].trim();
+                extVor = extMatchComma[2].trim();
+                afterName = lineText.substring(extMatchComma.index + extMatchComma[0].length);
+            } else if (/(?:muhen|strohhaus)/i.test(lineText)) {
+                const extMatchSpace = lineText.match(/(?:muhen|strohhaus\s*\d*)\s+([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]{2,})\s+([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]{2,})/i);
+                if (extMatchSpace) {
+                    extNach = extMatchSpace[1].trim();
+                    extVor = extMatchSpace[2].trim();
+                    afterName = lineText.substring(extMatchSpace.index + extMatchSpace[0].length);
+                }
+            }
+
+            if (extNach && extVor) {
                 const excludeHeader = /^(?:schiessanlage|freischützen|mannschaft|gruppenrangliste|rangliste|verein|sektion)$/i;
                 if (!excludeHeader.test(extNach) && !excludeHeader.test(extVor)) {
-                    const afterName = lineText.substring(extMatch.index + extMatch[0].length);
                     const extNums = afterName.match(/\b\d+(?:[.,]\d+)?\b/g);
                     if (extNums && extNums.length > 0) {
                         const candidates = extNums
@@ -1723,6 +1765,11 @@ function jmRenderPreview(parsedData, type, meta) {
         targetTitle = _jmImportState.targetTitle || 'Auswärtiges Schiessen';
     }
 
+    _jmImportState.targetCol = targetCol;
+    _jmImportState.targetTitle = targetTitle;
+    _jmImportState.type = type;
+    _jmImportState.metadata = meta;
+
     // Schützen aus Grid indizieren
     const gridShooters = [];
     for (let r = 5; r < grid.length; r++) {
@@ -1761,11 +1808,16 @@ function jmRenderPreview(parsedData, type, meta) {
         }
         if (!matched && entry.name) {
             const cleanEntryName = entry.name.toLowerCase().replace(/[^a-zäöü]/g, '');
+            const normEntryName = cleanEntryName.replace(/w/g, 'v');
             // Strikt: Name muss mind. 3 Buchstaben haben, um fehlerhafte Matches zu verhindern
             if (cleanEntryName.length >= 3) {
                 matched = gridShooters.find(s => {
                     const sName = s.fullName.toLowerCase().replace(/[^a-zäöü]/g, '');
-                    return sName.length >= 3 && (sName.includes(cleanEntryName) || cleanEntryName.includes(sName));
+                    const normSName = sName.replace(/w/g, 'v');
+                    return sName.length >= 3 && (
+                        sName.includes(cleanEntryName) || cleanEntryName.includes(sName) ||
+                        normSName.includes(normEntryName) || normEntryName.includes(normSName)
+                    );
                 });
             }
         }
@@ -1782,6 +1834,7 @@ function jmRenderPreview(parsedData, type, meta) {
             previewList.push({
                 selected: true,
                 matched: true,
+                isManual: false,
                 rowIndex: matched.rowIndex,
                 targetCol: targetCol,
                 lizenz: entry.lizenz || matched.lizenz,
@@ -1795,6 +1848,7 @@ function jmRenderPreview(parsedData, type, meta) {
             previewList.push({
                 selected: false, // Standardmässig nicht ausgewählt bei Schützen ausserhalb der JM
                 matched: false,
+                isManual: false,
                 rowIndex: null,
                 targetCol: targetCol,
                 lizenz: entry.lizenz || '–',
@@ -1807,15 +1861,39 @@ function jmRenderPreview(parsedData, type, meta) {
     });
 
     _jmImportState.previewData = previewList;
+    jmRenderPreviewTableRows();
+    jmPopulateManualShooterSelect();
+}
 
-    // Vorschau HTML
+/**
+ * Rendert die Tabellenzeilen aus _jmImportState.previewData.
+ */
+function jmRenderPreviewTableRows() {
+    const previewContainer = document.getElementById('jm-import-preview-container');
+    const previewBody = document.getElementById('jm-import-preview-body');
+    if (!previewContainer || !previewBody) return;
+
+    previewBody.innerHTML = '';
+    previewContainer.classList.remove('d-none');
+
+    const previewList = _jmImportState.previewData || [];
+
     let rowsHtml = '';
     previewList.forEach((item, idx) => {
         let badge = `<span class="badge bg-warning text-dark"><i class="fas fa-exclamation-triangle me-1"></i>Nicht in JM</span>`;
-        if (item.matched) {
+        if (item.isManual) {
+            badge = item.selected
+                ? `<span class="badge bg-primary"><i class="fas fa-user-plus me-1"></i>Manuell</span>`
+                : `<span class="badge bg-secondary"><i class="fas fa-ban me-1"></i>Abgewählt</span>`;
+        } else if (item.matched) {
             badge = item.selected
                 ? `<span class="badge bg-success"><i class="fas fa-check me-1"></i>Gematcht</span>`
                 : `<span class="badge bg-secondary"><i class="fas fa-ban me-1"></i>Abgewählt</span>`;
+        }
+
+        let deleteBtn = '';
+        if (item.isManual) {
+            deleteBtn = `<button type="button" class="btn btn-sm btn-link text-danger p-0 ms-2" onclick="jmRemoveManualShooterRow(${idx})" title="Diesen manuellen Eintrag entfernen"><i class="fas fa-trash-alt"></i></button>`;
         }
 
         let diffBadge = `<span class="text-muted">±0</span>`;
@@ -1843,16 +1921,186 @@ function jmRenderPreview(parsedData, type, meta) {
                            ${item.selected ? '' : 'disabled'}>
                 </td>
                 <td class="text-center" id="jm-import-diff-${idx}">${diffBadge}</td>
-                <td id="jm-import-badge-${idx}">${badge}</td>
+                <td id="jm-import-badge-${idx}">${badge}${deleteBtn}</td>
             </tr>
         `;
     });
 
     previewBody.innerHTML = rowsHtml;
 
-    // Statistik-Hinweis & Aktionsbutton aktualisieren
-    jmUpdatePreviewStats(targetTitle, meta);
+    const targetTitle = _jmImportState.targetTitle || 'Auswärtiges Schiessen';
+    jmUpdatePreviewStats(targetTitle, _jmImportState.metadata);
 }
+window.jmRenderPreviewTableRows = jmRenderPreviewTableRows;
+
+/**
+ * Öffnet/schliesst die Eingabekarte zum manuellen Hinzufügen eines Schützen.
+ */
+function jmToggleManualShooterCard(forceState) {
+    const card = document.getElementById('jm-import-manual-shooter-card');
+    if (!card) return;
+
+    const isVisible = !card.classList.contains('d-none');
+    const newState = (typeof forceState === 'boolean') ? forceState : !isVisible;
+
+    if (newState) {
+        card.classList.remove('d-none');
+        jmPopulateManualShooterSelect();
+        const scoreInput = document.getElementById('jm-import-manual-score-input');
+        if (scoreInput) {
+            scoreInput.value = '';
+            scoreInput.focus();
+        }
+    } else {
+        card.classList.add('d-none');
+    }
+}
+window.jmToggleManualShooterCard = jmToggleManualShooterCard;
+
+/**
+ * Befüllt das Schützen-Dropdown mit allen Schützen aus jmRawGrid,
+ * die aktuell noch NICHT in der Vorschau-Tabelle (previewData) sind.
+ */
+function jmPopulateManualShooterSelect() {
+    const select = document.getElementById('jm-import-manual-shooter-select');
+    if (!select) return;
+
+    select.innerHTML = '';
+    const grid = jmRawGrid;
+    if (!grid || grid.length < 6) {
+        select.innerHTML = '<option value="">Keine Schützen in Jahresmeisterschaft vorhanden</option>';
+        return;
+    }
+
+    const previewList = _jmImportState.previewData || [];
+    const usedRowIndices = new Set(previewList.map(p => p.rowIndex).filter(idx => idx !== null && idx !== undefined));
+
+    let colJahrgang = -1;
+    if (grid[4]) {
+        colJahrgang = grid[4].findIndex(t => String(t || '').trim().toLowerCase() === 'jahrgang');
+    }
+    if (colJahrgang === -1) colJahrgang = 3;
+
+    const availableShooters = [];
+    for (let r = 5; r < grid.length; r++) {
+        if (!grid[r] || r === 13 || r === 14) continue;
+        if (usedRowIndices.has(r)) continue;
+
+        const nachname = String(grid[r][1] || '').trim();
+        const vorname = String(grid[r][2] || '').trim();
+        if (!nachname && !vorname) continue;
+
+        const fullName = `${nachname} ${vorname}`.trim();
+        const rawLiz = String(grid[r][4] || '').replace(/\D/g, '');
+        const lizenz = rawLiz.padStart(6, '0');
+        const jg = grid[r][colJahrgang] || '';
+
+        availableShooters.push({
+            rowIndex: r,
+            fullName,
+            lizenz,
+            jg
+        });
+    }
+
+    availableShooters.sort((a, b) => a.fullName.localeCompare(b.fullName, 'de'));
+
+    if (availableShooters.length === 0) {
+        select.innerHTML = '<option value="">Alle Schützen der Jahresmeisterschaft sind bereits in der Liste</option>';
+        return;
+    }
+
+    availableShooters.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.rowIndex;
+        opt.textContent = `${s.fullName} ${s.jg ? `(${s.jg})` : ''} ${s.lizenz && s.lizenz !== '000000' ? `– Lizenz: ${s.lizenz}` : ''}`;
+        select.appendChild(opt);
+    });
+}
+window.jmPopulateManualShooterSelect = jmPopulateManualShooterSelect;
+
+/**
+ * Fügt den ausgewählten Schützen manuell mit der eingegebenen Punktzahl zur Vorschau hinzu.
+ */
+function jmAddManualShooterToPreview() {
+    const select = document.getElementById('jm-import-manual-shooter-select');
+    const scoreInput = document.getElementById('jm-import-manual-score-input');
+    if (!select || !scoreInput) return;
+
+    const rowIndex = parseInt(select.value);
+    if (isNaN(rowIndex) || rowIndex < 5) {
+        if (typeof showError === 'function') showError("Bitte wähle einen gültigen Schützen aus.");
+        return;
+    }
+
+    const rawPts = scoreInput.value.replace(',', '.').trim();
+    const newPoints = parseFloat(rawPts);
+    if (isNaN(newPoints) || newPoints <= 0) {
+        if (typeof showError === 'function') showError("Bitte trage eine gültige Punktzahl ein.");
+        scoreInput.focus();
+        return;
+    }
+
+    const grid = jmRawGrid;
+    if (!grid || !grid[rowIndex]) return;
+
+    const nachname = String(grid[rowIndex][1] || '').trim();
+    const vorname = String(grid[rowIndex][2] || '').trim();
+    const fullName = `${nachname} ${vorname}`.trim();
+    const lizenz = String(grid[rowIndex][4] || '').replace(/\D/g, '').padStart(6, '0');
+
+    let targetCol = _jmImportState.targetCol;
+    if (targetCol === -1 && _jmImportState.type === 'auswaertig') {
+        const selElem = document.getElementById('jm-import-target-competition');
+        if (selElem && selElem.value && !selElem.value.startsWith('cat_') && selElem.value !== 'new') {
+            targetCol = parseInt(selElem.value);
+        }
+    }
+
+    const currentScore = (targetCol !== -1 && grid[rowIndex][targetCol] !== undefined)
+        ? (parseFloat(String(grid[rowIndex][targetCol] || '').replace(',', '.')) || 0)
+        : 0;
+
+    const previewList = _jmImportState.previewData || [];
+    previewList.push({
+        selected: true,
+        matched: true,
+        isManual: true,
+        rowIndex: rowIndex,
+        targetCol: targetCol,
+        lizenz: lizenz,
+        name: fullName,
+        oldScore: currentScore,
+        newScore: newPoints,
+        diff: newPoints - currentScore
+    });
+
+    _jmImportState.previewData = previewList;
+
+    jmRenderPreviewTableRows();
+    jmPopulateManualShooterSelect();
+    scoreInput.value = '';
+    jmToggleManualShooterCard(false);
+
+    if (typeof showSuccess === 'function') {
+        showSuccess(`Schütze ${fullName} manuell mit ${newPoints} Punkten hinzugefügt.`);
+    }
+}
+window.jmAddManualShooterToPreview = jmAddManualShooterToPreview;
+
+/**
+ * Entfernt eine manuell hinzugefügte Zeile aus der Vorschau.
+ */
+function jmRemoveManualShooterRow(idx) {
+    const previewList = _jmImportState.previewData || [];
+    if (!previewList[idx]) return;
+
+    previewList.splice(idx, 1);
+    _jmImportState.previewData = previewList;
+    jmRenderPreviewTableRows();
+    jmPopulateManualShooterSelect();
+}
+window.jmRemoveManualShooterRow = jmRemoveManualShooterRow;
 
 /**
  * Aktualisiert die Statistik und den Übernehmen-Button basierend auf den aktiven Checkboxen.
@@ -1866,16 +2114,18 @@ function jmUpdatePreviewStats(targetTitle, meta) {
     const matchedCount = previewList.filter(item => item.matched).length;
     const selectedCount = previewList.filter(item => item.matched && item.selected).length;
     const unmatchedCount = previewList.filter(item => !item.matched).length;
+    const manualCount = previewList.filter(item => item.isManual).length;
 
     if (statsElem) {
         let sollText = (meta && meta.soll) ? ` | Soll-Teilnehmer: <strong>${meta.soll}</strong>` : '';
+        const manualBadge = manualCount > 0 ? ` <span class="badge bg-primary-subtle text-primary border ms-1">+${manualCount} manuell</span>` : '';
         statsElem.innerHTML = `
             <div class="alert alert-info py-2 px-3 small mb-0 d-flex justify-content-between align-items-center flex-wrap gap-2 rounded-3 border-0 shadow-xs">
                 <div>
                     <i class="fas fa-info-circle me-1"></i>
                     Ziel: <strong>${escapeHtml(targetTitle || 'Jahresmeisterschaft')}</strong> |
                     Gefunden in Datei: <strong>${totalCount}</strong> |
-                    Gematcht: <strong class="text-success">${matchedCount}</strong> |
+                    Gematcht: <strong class="text-success">${matchedCount}</strong>${manualBadge} |
                     Ausserhalb JM: <strong class="text-warning">${unmatchedCount}</strong>
                     ${sollText}
                 </div>
@@ -1922,9 +2172,16 @@ function jmToggleAllPreviewRows(checked) {
 
         const badgeEl = document.getElementById(`jm-import-badge-${idx}`);
         if (badgeEl && item.matched) {
-            badgeEl.innerHTML = item.selected
-                ? `<span class="badge bg-success"><i class="fas fa-check me-1"></i>Gematcht</span>`
-                : `<span class="badge bg-secondary"><i class="fas fa-ban me-1"></i>Abgewählt</span>`;
+            if (item.isManual) {
+                const delBtn = `<button type="button" class="btn btn-sm btn-link text-danger p-0 ms-2" onclick="jmRemoveManualShooterRow(${idx})" title="Diesen manuellen Eintrag entfernen"><i class="fas fa-trash-alt"></i></button>`;
+                badgeEl.innerHTML = item.selected
+                    ? `<span class="badge bg-primary"><i class="fas fa-user-plus me-1"></i>Manuell</span>${delBtn}`
+                    : `<span class="badge bg-secondary"><i class="fas fa-ban me-1"></i>Abgewählt</span>${delBtn}`;
+            } else {
+                badgeEl.innerHTML = item.selected
+                    ? `<span class="badge bg-success"><i class="fas fa-check me-1"></i>Gematcht</span>`
+                    : `<span class="badge bg-secondary"><i class="fas fa-ban me-1"></i>Abgewählt</span>`;
+            }
         }
     });
 
@@ -1954,9 +2211,16 @@ function jmTogglePreviewRow(idx, checked) {
 
     const badgeEl = document.getElementById(`jm-import-badge-${idx}`);
     if (badgeEl && previewList[idx].matched) {
-        badgeEl.innerHTML = checked
-            ? `<span class="badge bg-success"><i class="fas fa-check me-1"></i>Gematcht</span>`
-            : `<span class="badge bg-secondary"><i class="fas fa-ban me-1"></i>Abgewählt</span>`;
+        if (previewList[idx].isManual) {
+            const delBtn = `<button type="button" class="btn btn-sm btn-link text-danger p-0 ms-2" onclick="jmRemoveManualShooterRow(${idx})" title="Diesen manuellen Eintrag entfernen"><i class="fas fa-trash-alt"></i></button>`;
+            badgeEl.innerHTML = checked
+                ? `<span class="badge bg-primary"><i class="fas fa-user-plus me-1"></i>Manuell</span>${delBtn}`
+                : `<span class="badge bg-secondary"><i class="fas fa-ban me-1"></i>Abgewählt</span>${delBtn}`;
+        } else {
+            badgeEl.innerHTML = checked
+                ? `<span class="badge bg-success"><i class="fas fa-check me-1"></i>Gematcht</span>`
+                : `<span class="badge bg-secondary"><i class="fas fa-ban me-1"></i>Abgewählt</span>`;
+        }
     }
 
     const targetTitle = _jmImportState.targetTitle || '';
