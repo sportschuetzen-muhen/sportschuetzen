@@ -886,64 +886,302 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
         }
     }
 
-    // 2. Tabellenkopf-Erkennung für Stiche (z.B. Kranzstich, Deisigrabenstich, Auszahler)
+    // 2. Tabellenkopf-Erkennung für Stiche (z.B. Kranz, Vindonissa, Wasserschloss, Kranzstich, Deisigrabenstich, Auszahler)
+    // Funktioniert sowohl für digitale PDFs (mit x-Koordinaten) als auch für Screenshots/OCR (reine Textzeilen)!
     const ignoreColKeywords = ['rang', 'schütze', 'schuetze', 'schtze', 'name', 'vorname', 'jg', 'jahrgang', 'kat', 'kategorie', 'verein', 'sektion', 'gruppe', 'lizenz', 'resultat', 'punkte', 'total', 'tot', 'res'];
-    const headerStichKeywords = /(?:kranzstich|vereinsstich|gruppenstich|sektionsstich|auszahler|auszahlung|stich|gabenstich|ehrengabe|kunst|militär)/i;
+    const personHeaderKeywords = ['rang', 'schütze', 'schuetze', 'schtze', 'name', 'vorname', 'jg', 'jahrgang', 'kat', 'kategorie', 'verein', 'sektion', 'gruppe', 'lizenz'];
+    const headerStichKeywords = /(?:kranzstich|vereinsstich|gruppenstich|sektionsstich|auszahler|auszahlung|stich|gabenstich|ehrengabe|kunst|militär|kranz|glück|glueck)/i;
 
     let detectedHeaderStiche = [];
     let boundaries = [];
+    const headerLineIndices = new Set();
 
-    for (const l of lines) {
+    for (let lIdx = 0; lIdx < Math.min(35, lines.length); lIdx++) {
+        const l = lines[lIdx];
         // Ignoriere Statistik-, Begrüssungs-, Preis- oder Mengenangaben (z.B. "Gelöste Stiche:", "Gruppenstich: 190")
-        if (/(?:gelöste|teilnehmer|zuschuss|gruppendoppel|franken|chf\b)/i.test(l.text)) continue;
+        if (/(?:gelöste|teilnehmer|zuschuss|gruppendoppel|franken|chf\b|einzelresultate\s+nach)/i.test(l.text)) continue;
         if (/:\s*\d+/.test(l.text)) continue;
+        // Echte Kopfzeile enthält keinen 4-stelligen Geburtsjahrgang eines Schützen
+        if (/\b(19\d{2}|20\d{2})\b/.test(l.text)) continue;
 
-        if (headerStichKeywords.test(l.text) && l.items && l.items.length >= 3) {
-            // Echte Tabellenzeile muss mindestens einen Schützen-/Rang-Spaltenbezeichner enthalten
-            const hasTableCol = l.items.some(item => {
+        // A) PDF-Modus mit x-Koordinaten (l.items vorhanden)
+        if (l.items && l.items.length >= 3) {
+            const matchedPersonItems = l.items.filter(item => {
                 const c = item.str.trim().toLowerCase().replace(/[^a-z0-9äöü]/g, '');
-                return ignoreColKeywords.some(ig => c === ig || c.startsWith(ig));
+                return personHeaderKeywords.some(pk => c === pk || (pk.length >= 4 && c.startsWith(pk)));
             });
-            if (!hasTableCol) continue;
 
-            const cols = [];
-            for (const item of l.items) {
-                const t = item.str.trim();
-                const clean = t.toLowerCase().replace(/[^a-z0-9äöü]/g, '');
-                const isIgnored = ignoreColKeywords.some(ig => clean === ig || clean.startsWith(ig));
-                // Spalte muss ein Textwort sein (keine reine Zahl wie "190" oder "154") und zu den Stich-Keywords passen
-                if (!isIgnored && t.length > 2 && /^[a-zäöü]/i.test(clean) && !/^\d+$/.test(clean) && headerStichKeywords.test(clean)) {
-                    cols.push({ name: t, key: clean, x: item.x });
+            if (matchedPersonItems.length >= 2 || (matchedPersonItems.length >= 1 && headerStichKeywords.test(l.text))) {
+                const maxPersonX = Math.max(...matchedPersonItems.map(it => it.x));
+                const cols = [];
+
+                for (const item of l.items) {
+                    const t = item.str.trim();
+                    const clean = t.toLowerCase().replace(/[^a-z0-9äöü]/g, '');
+                    const isIgnored = ignoreColKeywords.some(ig => clean === ig || (ig.length >= 4 && clean.startsWith(ig)));
+                    const isRightOfPersonCols = item.x > (maxPersonX + 12);
+
+                    if (!isIgnored && t.length >= 2 && /^[a-zäöü]/i.test(clean) && !/^\d+$/.test(clean) && (isRightOfPersonCols || headerStichKeywords.test(clean))) {
+                        cols.push({ name: t, key: clean, x: item.x });
+                    }
+                }
+
+                // Mehrzeilige Spaltentitel mit Bindestrich zusammenführen (z.B. "Wasser-" über/neben "schloss")
+                if (cols.length >= 1) {
+                    const prevL = lIdx > 0 ? lines[lIdx - 1] : null;
+                    const nextL = lIdx + 1 < lines.length ? lines[lIdx + 1] : null;
+
+                    // Fall 1: Vorherige Zeile enthält ein Wort mit Bindestrich am Ende (z.B. "Wasser-")
+                    if (prevL && prevL.text && /^[A-Za-zÄÖÜäöüß]+-$/.test(prevL.text.trim())) {
+                        const prefix = prevL.text.trim().replace(/-$/, '');
+                        headerLineIndices.add(lIdx - 1);
+                        const lastCol = cols[cols.length - 1];
+                        if (lastCol && /^[a-zäöüß]+$/.test(lastCol.name)) {
+                            lastCol.name = prefix + lastCol.name;
+                            lastCol.key = lastCol.name.toLowerCase().replace(/[^a-z0-9äöü]/g, '');
+                        } else if (nextL && nextL.text && /^[a-zäöüß]+$/i.test(nextL.text.trim()) && !/\d/.test(nextL.text)) {
+                            const suffix = nextL.text.trim();
+                            const mergedName = prefix + suffix;
+                            const xCoord = (prevL.items && prevL.items[0]) ? prevL.items[0].x : (lastCol ? lastCol.x + 55 : 450);
+                            cols.push({ name: mergedName, key: mergedName.toLowerCase().replace(/[^a-z0-9äöü]/g, ''), x: xCoord });
+                            headerLineIndices.add(lIdx + 1);
+                        }
+                    }
+                    // Fall 2: Letzte Spalte endet auf "-" (z.B. "Wasser-") und nächste Zeile enthält die Fortsetzung (z.B. "schloss")
+                    const lastCol = cols[cols.length - 1];
+                    if (lastCol && lastCol.name.endsWith('-') && nextL && nextL.text && /^[a-zäöüß]+$/i.test(nextL.text.trim()) && !/\d/.test(nextL.text)) {
+                        lastCol.name = lastCol.name.replace(/-$/, '') + nextL.text.trim();
+                        lastCol.key = lastCol.name.toLowerCase().replace(/[^a-z0-9äöü]/g, '');
+                        headerLineIndices.add(lIdx + 1);
+                    }
+                }
+
+                if (cols.length >= 2) {
+                    detectedHeaderStiche = cols;
+                    headerLineIndices.add(lIdx);
+                    break;
                 }
             }
-            if (cols.length >= 2) {
-                detectedHeaderStiche = cols;
-                break;
+        }
+
+        // B) OCR- / Text-Modus (Screenshots ohne x-Koordinaten, l.items ist leer)
+        const rawTokens = l.text.replace(/[,;|]/g, ' ').split(/\s+/).map(t => t.trim()).filter(Boolean);
+        if (rawTokens.length >= 4) {
+            let personColCount = 0;
+            let lastPersonTokenIdx = -1;
+
+            rawTokens.forEach((tok, tIdx) => {
+                const clean = tok.toLowerCase().replace(/[^a-z0-9äöü]/g, '');
+                if (personHeaderKeywords.some(pk => clean === pk || (pk.length >= 4 && clean.startsWith(pk)))) {
+                    personColCount++;
+                    lastPersonTokenIdx = tIdx;
+                }
+            });
+
+            if (personColCount >= 2 && lastPersonTokenIdx !== -1 && lastPersonTokenIdx < rawTokens.length - 1) {
+                const candidateTokens = rawTokens.slice(lastPersonTokenIdx + 1);
+                const cols = [];
+
+                candidateTokens.forEach((tok, idx) => {
+                    const clean = tok.toLowerCase().replace(/[^a-z0-9äöü]/g, '');
+                    const isIgnored = ignoreColKeywords.some(ig => clean === ig || (ig.length >= 4 && clean.startsWith(ig)));
+                    if (!isIgnored && tok.length >= 2 && /^[a-zäöü]/i.test(clean) && !/^\d+$/.test(clean)) {
+                        cols.push({ name: tok, key: clean, x: null, colIndex: idx });
+                    }
+                });
+
+                // Mehrzeilige Spaltentitel mit Bindestrich zusammenführen (z.B. "Wasser-" + "schloss" -> "Wasserschloss")
+                const prevL = lIdx > 0 ? lines[lIdx - 1] : null;
+                const nextL = lIdx + 1 < lines.length ? lines[lIdx + 1] : null;
+
+                if (prevL && prevL.text && /^[A-Za-zÄÖÜäöüß]+-$/.test(prevL.text.trim())) {
+                    const prefix = prevL.text.trim().replace(/-$/, '');
+                    headerLineIndices.add(lIdx - 1);
+                    const lastCol = cols[cols.length - 1];
+                    if (lastCol && /^[a-zäöüß]+$/.test(lastCol.name)) {
+                        lastCol.name = prefix + lastCol.name;
+                        lastCol.key = lastCol.name.toLowerCase().replace(/[^a-z0-9äöü]/g, '');
+                    } else if (nextL && nextL.text && /^[a-zäöüß]+$/i.test(nextL.text.trim()) && !/\d/.test(nextL.text)) {
+                        const mergedName = prefix + nextL.text.trim();
+                        cols.push({ name: mergedName, key: mergedName.toLowerCase().replace(/[^a-z0-9äöü]/g, ''), x: null, colIndex: cols.length });
+                        headerLineIndices.add(lIdx + 1);
+                    }
+                } else if (cols.length > 0 && cols[cols.length - 1].name.endsWith('-')) {
+                    const lastCol = cols[cols.length - 1];
+                    if (nextL && nextL.text && /^[a-zäöüß]+$/i.test(nextL.text.trim()) && !/\d/.test(nextL.text)) {
+                        lastCol.name = lastCol.name.replace(/-$/, '') + nextL.text.trim();
+                        lastCol.key = lastCol.name.toLowerCase().replace(/[^a-z0-9äöü]/g, '');
+                        headerLineIndices.add(lIdx + 1);
+                    } else {
+                        lastCol.name = lastCol.name.replace(/-$/, '');
+                        lastCol.key = lastCol.name.toLowerCase().replace(/[^a-z0-9äöü]/g, '');
+                    }
+                }
+
+                // Falls "Wasser-schloss" in einer Zeile zusammengezogen wurde, Bindestrich bei Kleinbuchstaben glätten
+                cols.forEach(c => {
+                    if (/^[A-ZÄÖÜ][a-zäöüß]+-[a-zäöüß]+$/.test(c.name)) {
+                        c.name = c.name.replace('-', '');
+                        c.key = c.name.toLowerCase().replace(/[^a-z0-9äöü]/g, '');
+                    }
+                });
+
+                if (cols.length >= 2) {
+                    detectedHeaderStiche = cols;
+                    headerLineIndices.add(lIdx);
+                    break;
+                }
             }
         }
     }
 
-    // Spalten-Grenzen für erkannte Stiche berechnen
-    if (detectedHeaderStiche.length > 0) {
-        for (let i = 0; i < detectedHeaderStiche.length; i++) {
-            const cur = detectedHeaderStiche[i];
-            const minX = i > 0 ? (detectedHeaderStiche[i - 1].x + cur.x) / 2 : cur.x - 40;
-            const maxX = i < detectedHeaderStiche.length - 1 ? (cur.x + detectedHeaderStiche[i + 1].x) / 2 : cur.x + 55;
+    // 2b. Stich-Spaltenprofile (Beobachtete Min/Max-Werte & Maximalpunkte) über alle Dokumentzeilen kalibrieren
+    // Dadurch werden 80er-Stiche (z.B. Kranz Max 80), 100er-Stiche (z.B. Vindonissa Max 100) und 300er-Stiche (z.B. Wasserschloss Max 300)
+    // exakt erkannt und auch Zeilen mit ausgelassenen Stichen (z.B. Läuppi Raphael nur Kranz 78) der richtigen Spalte zugeordnet!
+    const stichCount = detectedHeaderStiche.length;
+    const colStats = detectedHeaderStiche.map((c, idx) => {
+        let defaultMax = 100;
+        if (/auszahl/i.test(c.name)) defaultMax = 600;
+        else if (/kantonal|30|wasser/i.test(c.name)) defaultMax = 300;
+        else if (/verein|verband|20/i.test(c.name)) defaultMax = 200;
+        else if (/15/i.test(c.name)) defaultMax = 150;
+        return {
+            idx,
+            key: c.key,
+            label: c.name,
+            x: c.x,
+            samples: [],
+            obsMin: null,
+            obsMax: null,
+            maxPoints: defaultMax
+        };
+    });
 
-            let maxPts = 100;
-            if (/auszahl/i.test(cur.name)) maxPts = 600;
-            else if (/kantonal|30/i.test(cur.name)) maxPts = 300;
-            else if (/verein|verband|20/i.test(cur.name)) maxPts = 200;
-            else if (/15/i.test(cur.name)) maxPts = 150;
+    if (stichCount >= 2) {
+        lines.forEach((l, idx) => {
+            if (headerLineIndices.has(idx)) return;
+            const jgMatch = l.text.match(/\b(19\d{2}|20\d{2})\b/);
+            if (!jgMatch) return;
+            const afterJg = l.text.substring(jgMatch.index + jgMatch[0].length);
+            const rawNums = afterJg.match(/\b\d+(?:[.,]\d+)?\b/g);
+            if (!rawNums) return;
+            const nums = rawNums.map(n => parseFloat(n.replace(',', '.'))).filter(n => !isNaN(n) && n > 0 && n <= 654);
+            // Vollständige Zeilen (alle Stiche geschossen) kalibrieren die Spaltenbereiche zu 100 % zuverlässig
+            if (nums.length === stichCount) {
+                nums.forEach((val, cIdx) => {
+                    colStats[cIdx].samples.push(val);
+                });
+            }
+        });
+
+        const has100Col = colStats.some(cs => cs.samples.length > 0 && Math.max(...cs.samples) > 80 && Math.max(...cs.samples) <= 100);
+
+        colStats.forEach(cs => {
+            if (cs.samples.length > 0) {
+                cs.obsMin = Math.min(...cs.samples);
+                cs.obsMax = Math.max(...cs.samples);
+                if (cs.obsMax > 300) cs.maxPoints = cs.obsMax > 600 ? 654 : 600;
+                else if (cs.obsMax > 200) cs.maxPoints = 300;
+                else if (cs.obsMax > 150) cs.maxPoints = 200;
+                else if (cs.obsMax > 120) cs.maxPoints = 150;
+                else if (cs.obsMax > 100) cs.maxPoints = 120;
+                else if (cs.obsMax > 80) cs.maxPoints = 100;
+                else if (cs.obsMax >= 50 && cs.obsMax <= 80 && (cs.samples.length >= 3 || has100Col)) {
+                    cs.maxPoints = 80; // 8-Schuss Stich (z.B. Kranz Max. 80 beim Vindonissa-Schiessen)
+                } else {
+                    cs.maxPoints = 100;
+                }
+            }
+        });
+
+        // Spalten-Grenzen für erkannte Stiche aufbauen
+        for (let i = 0; i < stichCount; i++) {
+            const cur = detectedHeaderStiche[i];
+            const cs = colStats[i];
+            const hasX = typeof cur.x === 'number' && !isNaN(cur.x);
+            const minX = hasX ? (i > 0 ? (detectedHeaderStiche[i - 1].x + cur.x) / 2 : cur.x - 35) : null;
+            const maxX = hasX ? (i < stichCount - 1 ? (cur.x + detectedHeaderStiche[i + 1].x) / 2 : cur.x + 75) : null;
 
             boundaries.push({
-                key: cur.key,
-                label: cur.name,
+                key: cs.key,
+                label: cs.label,
                 minX: minX,
                 maxX: maxX,
-                maxPoints: maxPts
+                obsMin: cs.obsMin,
+                obsMax: cs.obsMax,
+                maxPoints: cs.maxPoints
             });
         }
+    }
+
+    /**
+     * Ordnet die auf einer Textzeile gefundenen Punktzahlen (nums) den erkannten Stichen (boundaries) zu.
+     * Berücksichtigt ausgelassene Stiche (z.B. wenn ein Schütze nur 1 von 3 Stichen geschossen hat).
+     */
+    function assignRowNumbersToStiche(nums, bounds) {
+        const result = {};
+        if (!nums || nums.length === 0 || !bounds || bounds.length === 0) return result;
+        const M = bounds.length;
+
+        // Fall 1: Schütze hat alle Stiche geschossen (oder mehr Zahlen durch Tiefschuss am Ende)
+        if (nums.length === M) {
+            for (let i = 0; i < M; i++) {
+                result[bounds[i].key] = nums[i];
+            }
+            return result;
+        }
+
+        // Fall 2: Schütze hat weniger Stiche geschossen (z.B. 1 oder 2 von 3 Stichen)
+        // Finde die streng aufsteigende Spaltenzuordnung c_0 < c_1 < ... mit minimaler Distanz zu den beobachteten Spaltenbereichen
+        const k = Math.min(nums.length, M);
+        const subNums = nums.slice(0, k);
+        let bestCols = null;
+        let bestCost = Infinity;
+
+        function searchCols(numIdx, startCol, currentCols, currentCost) {
+            if (numIdx === k) {
+                if (currentCost < bestCost) {
+                    bestCost = currentCost;
+                    bestCols = [...currentCols];
+                }
+                return;
+            }
+            const val = subNums[numIdx];
+            for (let c = startCol; c <= M - (k - numIdx); c++) {
+                const b = bounds[c];
+                // Wert darf das Programmmaximum der Spalte nicht überschreiten (Toleranz für Zehntelwertung)
+                if (val > b.maxPoints * 1.09) continue;
+
+                let cost = 0;
+                if (b.obsMin !== null && b.obsMax !== null) {
+                    if (val < b.obsMin) cost = (b.obsMin - val) * 2;
+                    else if (val > b.obsMax) cost = (val - b.obsMax) * 2;
+                    else cost = 0; // Liegt exakt im beobachteten Wertebereich dieser Spalte!
+                } else {
+                    // Distanz zur typischen 70..100%-Zone des jeweiligen Stich-Maximums
+                    const expectedLow = b.maxPoints * 0.7;
+                    if (val < expectedLow) cost = expectedLow - val;
+                }
+                // Leichte Präferenz für weiter links stehende Spalten bei identischer Kostenbewertung (z.B. 1. Stich)
+                cost += c * 0.01;
+
+                searchCols(numIdx + 1, c + 1, [...currentCols, c], currentCost + cost);
+            }
+        }
+
+        searchCols(0, 0, [], 0);
+
+        if (bestCols && bestCols.length === k) {
+            for (let i = 0; i < k; i++) {
+                result[bounds[bestCols[i]].key] = subNums[i];
+            }
+        } else {
+            // Fallback: Von links nach rechts zuordnen
+            for (let i = 0; i < k; i++) {
+                result[bounds[i].key] = subNums[i];
+            }
+        }
+        return result;
     }
 
     // 3. Schützen zeilenweise matchen
@@ -952,8 +1190,11 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
     const seenRows = new Set();
     const matchedLineIndices = new Set();
     const escapeReg = str => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const expectedCatalogMax = catalogMatch ? (parseFloat(catalogMatch.max_punkte) || 100) : null;
+    const isLiegendDoc = /60\s*schuss|liegend/i.test(fullText) || (expectedCatalogMax && expectedCatalogMax >= 600);
 
     lines.forEach((l, lIdx) => {
+        if (headerLineIndices.has(lIdx)) return;
         const lineText = l.text;
         knownShooters.forEach(s => {
             if (seenRows.has(s.rowIndex)) return;
@@ -990,28 +1231,31 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
             const lizenzMatches = s.lizenz && s.lizenz !== '000000' && (lineText.includes(s.lizenz) || (s.shortLiz && lineText.includes(s.shortLiz)));
 
             if ((nachnameMatches && (vornameMatches || jgMatches)) || lizenzMatches) {
-                const shooterStiche = {};
+                let shooterStiche = {};
 
-                if (boundaries.length > 0 && l.items && l.items.length > 0) {
-                    // Präzise Extraktion via Spalten-Koordinaten
+                if (boundaries.length > 0 && l.items && l.items.length > 0 && boundaries.every(b => b.minX !== null)) {
+                    // Präzise Extraktion via PDF-Spalten-Koordinaten
                     boundaries.forEach(b => {
                         const colItems = l.items.filter(it => it.x >= b.minX && it.x < b.maxX);
-                        const nums = colItems.map(it => it.str).filter(str => /^\d+$/.test(str)).map(str => parseInt(str, 10));
+                        const nums = colItems
+                            .map(it => it.str)
+                            .filter(str => /^\d+(?:[.,]\d+)?$/.test(str))
+                            .map(str => parseFloat(str.replace(',', '.')))
+                            .filter(n => !isNaN(n) && n !== s.jg && !(n >= 1920 && n <= 2025 && b.maxPoints <= 300));
                         if (nums.length > 0) {
                             shooterStiche[b.key] = nums[0]; // Erstes Element = Punktzahl, allfälliges zweites = Tiefschuss
                         }
                     });
                 } else {
-                    // Fallback Text-Extraktion (nur tatsächlichen Jahrgang des Schützen maskieren!)
+                    // Text-basierte Extraktion (Screenshots/OCR sowie Tabellen ohne PDF-Koordinaten)
+                    const hasFourDigitYear = /\b(19\d{2}|20\d{2})\b/.test(lineText);
                     let cleanLine = lineText;
                     if (s.jg) {
                         cleanLine = cleanLine.replace(new RegExp('\\b' + s.jg + '\\b', 'g'), ' ');
-                        const shortJg = String(s.jg).slice(-2);
-                        cleanLine = cleanLine.replace(new RegExp('\\b' + shortJg + '\\b', 'g'), ' ');
                     }
                     cleanLine = cleanLine.replace(/\b(19\d{2}|20\d{2})\b/g, ' ');
                     if (s.lizenz && s.lizenz !== '000000') cleanLine = cleanLine.replace(new RegExp('\\b' + s.lizenz + '\\b', 'g'), ' ');
-                    if (s.shortLiz) cleanLine = cleanLine.replace(new RegExp('\\b' + s.shortLiz + '\\b', 'g'), ' ');
+                    if (s.shortLiz && s.shortLiz.length >= 4) cleanLine = cleanLine.replace(new RegExp('\\b' + s.shortLiz + '\\b', 'g'), ' ');
 
                     const nMatch = cleanLine.match(new RegExp('\\b' + escapeReg(s.nachname) + '\\b', 'i')) ||
                                    cleanLine.match(new RegExp(escapeReg(s.nachname), 'i'));
@@ -1037,55 +1281,91 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
 
                     let searchLine = nameEndIndex !== -1 ? cleanLine.substring(nameEndIndex) : cleanLine;
 
-                    // 1. Spezifische Suche nach Schlüsselwörtern Total / Resultat / Punkte (nach dem Namen)
-                    const totMatch = searchLine.match(/(?:total|punkte|resultat|res|tot)[\s:=-]*(\d+(?:[.,]\d+)?)/i);
-                    if (totMatch) {
-                        shooterStiche['default'] = parseFloat(totMatch[1].replace(',', '.'));
-                    } else {
-                        // 2. Extraktion aller numerischen Werte nach dem Namen (inkl. Dezimalstellen wie 621.0 oder 103.7)
+                    // Zweistelligen Jahrgang (z.B. "65" oder "95") NUR dann direkt hinter dem Namen entfernen,
+                    // wenn KEIN 4-stelliger Jahrgang in der Zeile stand und danach noch mindestens eine weitere Zahl folgt!
+                    if (!hasFourDigitYear && s.jg) {
+                        const shortJg = String(s.jg).slice(-2);
+                        const leadJgRegex = new RegExp('^(\\s*[\'’]?' + escapeReg(shortJg) + '\\b)(?=.*\\b\\d{2,3}\\b)');
+                        searchLine = searchLine.replace(leadJgRegex, ' ');
+                    }
+
+                    // Fall A: Mehrere Stiche aus Tabellenkopf bekannt (z.B. Kranz | Vindonissa | Wasserschloss)
+                    if (boundaries.length >= 2) {
                         const rawNums = searchLine.match(/\b\d+(?:[.,]\d+)?\b/g);
                         if (rawNums && rawNums.length > 0) {
                             const candidates = rawNums
                                 .map(n => parseFloat(n.replace(',', '.')))
-                                .filter(num => !isNaN(num) && num <= 654); // Filtert z.B. 6-stellige PassNr/IDs aus
-
-                            if (candidates.length >= 2) {
-                                // Bei Serien (z.B. Meyton 6 Serien + Total) ist das Gesamttotal die letzte Zahl
-                                const lastNum = candidates[candidates.length - 1];
-                                const maxOther = Math.max(...candidates.slice(0, -1));
-                                if (lastNum >= maxOther || lastNum > 100) {
-                                    shooterStiche['default'] = lastNum;
-                                } else {
-                                    shooterStiche['default'] = candidates[0];
-                                }
-                            } else if (candidates.length === 1) {
-                                shooterStiche['default'] = candidates[0];
+                                .filter(num => !isNaN(num) && num > 0 && num <= 654);
+                            if (candidates.length > 0) {
+                                shooterStiche = assignRowNumbersToStiche(candidates, boundaries);
                             }
                         }
-                    }
-
-                    // 3. Fallback: Falls NACH dem Namen keine Punktzahl gefunden wurde -> VOR dem Namen suchen!
-                    // Speziell für WinFire / Schweizer Ranglisten: z.B. "97 Fischer Marco 1986" oder "2. 97 Fischer Marco"
-                    if (shooterStiche['default'] === undefined && nameStartIndex > 0) {
-                        const preLine = cleanLine.substring(0, nameStartIndex).trim();
-                        if (preLine) {
-                            const preNums = preLine.match(/\b\d+(?:[.,]\d+)?\b/g);
-                            if (preNums && preNums.length > 0) {
-                                const preCandidates = preNums
+                    } else {
+                        // Fall B: Kein mehrspaltiger Stich-Header erkannt -> Einzel-Extraktion
+                        const totMatch = searchLine.match(/(?:total|punkte|resultat|res|tot)[\s:=-]*(\d+(?:[.,]\d+)?)/i);
+                        if (totMatch) {
+                            shooterStiche['default'] = parseFloat(totMatch[1].replace(',', '.'));
+                        } else {
+                            const rawNums = searchLine.match(/\b\d+(?:[.,]\d+)?\b/g);
+                            if (rawNums && rawNums.length > 0) {
+                                const candidates = rawNums
                                     .map(n => parseFloat(n.replace(',', '.')))
-                                    .filter(num => !isNaN(num) && num <= 654);
+                                    .filter(num => !isNaN(num) && num > 0 && num <= 654);
 
-                                if (preCandidates.length === 1) {
-                                    // z. B. "97 Fischer Marco"
-                                    shooterStiche['default'] = preCandidates[0];
-                                } else if (preCandidates.length >= 2) {
-                                    // z. B. "2. 97 Fischer Marco" (Rang 2, Punkte 97)
-                                    // Plausible Schiesspunkte (>= 50) bevorzugen
-                                    const plausible = preCandidates.filter(p => p >= 50 && p <= 654);
-                                    if (plausible.length > 0) {
-                                        shooterStiche['default'] = plausible[plausible.length - 1];
+                                // Alle Rohkandidaten für allfällige spaltenlose Multi-Stich-Gruppierung merken
+                                shooterStiche['_rawCandidates'] = candidates;
+
+                                if (candidates.length >= 2) {
+                                    const lastNum = candidates[candidates.length - 1];
+                                    const preceding = candidates.slice(0, -1);
+                                    const sumPreceding = preceding.reduce((a, b) => a + b, 0);
+                                    const isSeriesPlusTotal = (
+                                        (isLiegendDoc && lastNum > 300) ||
+                                        (preceding.length >= 2 && Math.abs(sumPreceding - lastNum) <= 2)
+                                    );
+
+                                    if (isSeriesPlusTotal) {
+                                        // Echter Serien-Wettkampf (z.B. 6 Serien + Total am Ende)
+                                        shooterStiche['default'] = lastNum;
+                                    } else if (expectedCatalogMax && expectedCatalogMax <= 100) {
+                                        // Katalog gibt Max. 100 vor (z.B. Vindonissa-Schiessen): Ignoriere 300er-Auszahler (293, 284) am Zeilenende!
+                                        const validFor100 = candidates.filter(c => c <= expectedCatalogMax);
+                                        if (validFor100.length > 0) {
+                                            // Falls 80er-Kranz (<=80) + 100er-Hauptstich (81..100) in einer Zeile stehen, bevorzuge den 100er-Stich
+                                            const in81to100 = validFor100.filter(c => c > 80 && c <= 100);
+                                            shooterStiche['default'] = in81to100.length > 0 ? in81to100[0] : validFor100[0];
+                                        } else {
+                                            shooterStiche['default'] = candidates[0];
+                                        }
                                     } else {
-                                        shooterStiche['default'] = preCandidates[preCandidates.length - 1];
+                                        shooterStiche['default'] = candidates[0];
+                                    }
+                                } else if (candidates.length === 1) {
+                                    shooterStiche['default'] = candidates[0];
+                                }
+                            }
+                        }
+
+                        // Fallback: Falls NACH dem Namen keine Punktzahl gefunden wurde -> VOR dem Namen suchen!
+                        // Speziell für WinFire / Schweizer Ranglisten: z.B. "97 Fischer Marco 1986" oder "2. 97 Fischer Marco"
+                        if (shooterStiche['default'] === undefined && nameStartIndex > 0) {
+                            const preLine = cleanLine.substring(0, nameStartIndex).trim();
+                            if (preLine) {
+                                const preNums = preLine.match(/\b\d+(?:[.,]\d+)?\b/g);
+                                if (preNums && preNums.length > 0) {
+                                    const preCandidates = preNums
+                                        .map(n => parseFloat(n.replace(',', '.')))
+                                        .filter(num => !isNaN(num) && num <= 654);
+
+                                    if (preCandidates.length === 1) {
+                                        shooterStiche['default'] = preCandidates[0];
+                                    } else if (preCandidates.length >= 2) {
+                                        const plausible = preCandidates.filter(p => p >= 50 && p <= 654);
+                                        if (plausible.length > 0) {
+                                            shooterStiche['default'] = plausible[plausible.length - 1];
+                                        } else {
+                                            shooterStiche['default'] = preCandidates[preCandidates.length - 1];
+                                        }
                                     }
                                 }
                             }
@@ -1093,7 +1373,7 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
                     }
                 }
 
-                if (Object.keys(shooterStiche).length > 0) {
+                if (Object.keys(shooterStiche).filter(k => k !== '_rawCandidates').length > 0) {
                     seenRows.add(s.rowIndex);
                     matchedLineIndices.add(lIdx);
                     matchedShootersWithStiche.push({
@@ -1144,13 +1424,14 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
                 if (!excludeHeader.test(extNach) && !excludeHeader.test(extVor)) {
                     let extTotal = prePts;
                     if (extTotal === null) {
-                        const extNums = afterName.match(/\b\d+(?:[.,]\d+)?\b/g);
+                        const cleanAfter = afterName.replace(/\b(19\d{2}|20\d{2})\b/g, ' ');
+                        const extNums = cleanAfter.match(/\b\d+(?:[.,]\d+)?\b/g);
                         if (extNums && extNums.length > 0) {
                             const candidates = extNums
                                 .map(n => parseFloat(n.replace(',', '.')))
-                                .filter(num => !isNaN(num) && num <= 654);
+                                .filter(num => !isNaN(num) && num > 0 && num <= 654);
                             if (candidates.length > 0) {
-                                extTotal = (candidates.length >= 2 && candidates[candidates.length - 1] >= Math.max(...candidates.slice(0, -1)))
+                                extTotal = (isLiegendDoc && candidates.length >= 2 && candidates[candidates.length - 1] > 300)
                                     ? candidates[candidates.length - 1]
                                     : candidates[0];
                             }
@@ -1168,6 +1449,63 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
             }
         }
     });
+
+    // 3d. Fallback für kopflose Ausschnitte (Screenshots ohne Tabellenkopf, aber mit mehreren Stich-Spalten pro Zeile):
+    // Wenn z.B. nur der "Muhen"-Block (77 | 97 | 293) ohne Kopfzeile ausgeschnitten wurde, gruppieren wir die Spalten automatisch!
+    if (boundaries.length === 0 && !isLiegendDoc && matchedShootersWithStiche.length >= 2) {
+        const candArrays = matchedShootersWithStiche
+            .map(s => s.stiche['_rawCandidates'] || [])
+            .filter(arr => arr.length > 0);
+        const maxRowLen = candArrays.length > 0 ? Math.max(...candArrays.map(a => a.length)) : 0;
+        const multiColRows = candArrays.filter(a => a.length === maxRowLen);
+
+        if (maxRowLen >= 2 && maxRowLen <= 5 && multiColRows.length >= 2) {
+            const virtualBounds = [];
+            const has100Band = Array.from({ length: maxRowLen }).some((_, cIdx) => {
+                const vals = multiColRows.map(r => r[cIdx]);
+                const mx = Math.max(...vals);
+                return mx > 80 && mx <= 100;
+            });
+
+            for (let cIdx = 0; cIdx < maxRowLen; cIdx++) {
+                const vals = multiColRows.map(r => r[cIdx]);
+                const obsMin = Math.min(...vals);
+                const obsMax = Math.max(...vals);
+                let maxPts = 100;
+                if (obsMax > 300) maxPts = obsMax > 600 ? 654 : 600;
+                else if (obsMax > 200) maxPts = 300;
+                else if (obsMax > 150) maxPts = 200;
+                else if (obsMax > 120) maxPts = 150;
+                else if (obsMax > 100) maxPts = 120;
+                else if (obsMax > 80) maxPts = 100;
+                else if (obsMax >= 50 && obsMax <= 80 && has100Band) maxPts = 80;
+
+                virtualBounds.push({
+                    key: `stich_${cIdx + 1}`,
+                    label: `Stich ${cIdx + 1}`,
+                    minX: null,
+                    maxX: null,
+                    obsMin,
+                    obsMax,
+                    maxPoints: maxPts
+                });
+            }
+
+            // Nur aktivieren, wenn sich die Spalten in ihrem Maximalwert unterscheiden (z.B. 80 / 100 / 300)
+            // oder mindestens 2 klar getrennte Stichspalten vorliegen
+            const distinctMaxes = new Set(virtualBounds.map(b => b.maxPoints));
+            if (distinctMaxes.size >= 2 || maxRowLen >= 2) {
+                boundaries = virtualBounds;
+                matchedShootersWithStiche.forEach(s => {
+                    const rawCands = s.stiche['_rawCandidates'] || [];
+                    if (rawCands.length > 0) {
+                        const assigned = assignRowNumbersToStiche(rawCands, boundaries);
+                        s.stiche = { ...assigned, _rawCandidates: rawCands };
+                    }
+                });
+            }
+        }
+    }
 
     // 4. Stiche zusammenstellen & Standard bestimmen
     let availableStiche = [];
@@ -1198,8 +1536,23 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
         }];
     }
 
-    // Default-Stich: Bevorzuge Kranzstich, ansonsten ersten Nicht-Auszahler
-    let defaultStich = availableStiche.find(s => s.key.includes('kranz'));
+    // Default-Stich intelligent auswählen:
+    // 1. Stich der zum Katalog-Maximum passt (z.B. Max 100: Kranzstich 100 oder Namens-Stich wie "Vindonissa" 100)
+    // 2. Kranzstich (falls vorhanden)
+    // 3. Erster Nicht-Auszahler
+    const targetCatalogMax = catalogMatch ? (parseFloat(catalogMatch.max_punkte) || 100) : 100;
+    const catCleanName = catalogMatch ? catalogMatch.anlass.toLowerCase().replace(/schiessen|stich|[^a-z0-9äöü]/g, '') : '';
+
+    let defaultStich = availableStiche.find(s => s.maxPoints === targetCatalogMax && s.key.includes('kranz'));
+    if (!defaultStich && catCleanName.length >= 4) {
+        defaultStich = availableStiche.find(s => s.maxPoints === targetCatalogMax && (s.key.includes(catCleanName) || catCleanName.includes(s.key)));
+    }
+    if (!defaultStich) {
+        defaultStich = availableStiche.find(s => s.maxPoints === targetCatalogMax && !s.key.includes('auszahl'));
+    }
+    if (!defaultStich) {
+        defaultStich = availableStiche.find(s => s.key.includes('kranz'));
+    }
     if (!defaultStich) {
         defaultStich = availableStiche.find(s => !s.key.includes('auszahl'));
     }
@@ -1340,18 +1693,21 @@ function jmRenderStichPills(stiche, activeKey) {
         return;
     }
 
+    const shooters = _jmImportState.matchedShootersWithStiche || [];
     container.classList.remove('d-none');
     let html = '';
     stiche.forEach(s => {
         const isActive = s.key === activeKey;
         const btnClass = isActive ? 'btn-primary text-white' : 'btn-outline-primary';
         const iconClass = isActive ? 'fas fa-dot-circle' : 'far fa-circle';
+        const count = shooters.filter(sh => sh.stiche && sh.stiche[s.key] !== undefined && sh.stiche[s.key] > 0).length;
+        const countSuffix = count > 0 ? ` · ${count}` : '';
         html += `
             <button type="button" class="btn btn-sm ${btnClass} jm-stich-pill fw-semibold" 
                     data-stich-key="${escapeHtml(s.key)}" 
                     onclick="jmSelectImportStich('${escapeHtml(s.key)}')">
                 <i class="${iconClass} me-1"></i>${escapeHtml(s.label)} 
-                <span class="badge ${isActive ? 'bg-light text-primary' : 'bg-primary-subtle text-primary'} ms-1">Max. ${s.maxPoints}</span>
+                <span class="badge ${isActive ? 'bg-light text-primary' : 'bg-primary-subtle text-primary'} ms-1">Max. ${s.maxPoints}${countSuffix}</span>
             </button>
         `;
     });
@@ -1369,6 +1725,9 @@ function jmSelectImportStich(stichKey) {
 
     _jmImportState.activeStichKey = stichKey;
     _jmImportState.maxPoints = stich.maxPoints;
+    if (_jmImportState.metadata) {
+        _jmImportState.metadata.maxPoints = stich.maxPoints;
+    }
 
     const maxInput = document.getElementById('jm-import-max-points');
     if (maxInput) maxInput.value = stich.maxPoints;
@@ -1380,16 +1739,7 @@ function jmSelectImportStich(stichKey) {
     if (reasonHint) reasonHint.innerText = `💡 ${stich.label} (Max. ${stich.maxPoints})`;
 
     // UI-Pills umschalten
-    document.querySelectorAll('.jm-stich-pill').forEach(btn => {
-        const isCurrent = btn.getAttribute('data-stich-key') === stichKey;
-        btn.classList.toggle('btn-primary', isCurrent);
-        btn.classList.toggle('text-white', isCurrent);
-        btn.classList.toggle('btn-outline-primary', !isCurrent);
-        const icon = btn.querySelector('i');
-        if (icon) {
-            icon.className = isCurrent ? 'fas fa-dot-circle me-1' : 'far fa-circle me-1';
-        }
-    });
+    jmRenderStichPills(_jmImportState.availableStiche, stichKey);
 
     // Vorschau-Daten mit den Punkten dieses Stichs aktualisieren
     const rows = [];
