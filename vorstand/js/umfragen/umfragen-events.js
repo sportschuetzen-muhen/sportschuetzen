@@ -1,5 +1,8 @@
 // === SUB-MODUL: UMFRAGEN & ANMELDUNGEN - EVENTS ===
 
+let umfragenFilterCtrl = null;
+let umfragenTableController = null;
+
 function renderUmfragenEventsList() {
     const tbody = document.getElementById('umfragen-events-body');
     const cardsContainer = document.getElementById('umfragen-events-cards');
@@ -24,7 +27,7 @@ function renderUmfragenEventsList() {
     });
 
     if (!umfragenState || umfragenState.length === 0) {
-        if (tbody) tbody.innerHTML = '<tr><td colspan="12" class="text-center p-4 text-muted">Keine Events gefunden.</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="13" class="text-center p-4 text-muted">Keine Events gefunden.</td></tr>';
         if (cardsContainer) cardsContainer.innerHTML = '<div class="text-center p-4 text-muted border rounded bg-white">Keine Events gefunden.</div>';
         return;
     }
@@ -46,6 +49,14 @@ function renderUmfragenEventsList() {
         uniqueGroups.sort();
         datalist.innerHTML = uniqueGroups.map(g => `<option value="${escapeHtml(g)}">`).join('');
     }
+
+    // TableKit-Synchronisation (Spaltenbreiten, Sortierung, Sichtbarkeit)
+    if (window.TableKit && typeof window.TableKit.syncTable === 'function') {
+        window.TableKit.syncTable('#umfragen-events-table');
+    }
+    if (umfragenFilterCtrl && typeof umfragenFilterCtrl.apply === 'function') {
+        umfragenFilterCtrl.apply();
+    }
 }
 
 function renderDesktopEventRow(e, idx, canWrite) {
@@ -53,25 +64,27 @@ function renderDesktopEventRow(e, idx, canWrite) {
     const parsedOpts = (typeof parsePollOptions === 'function') ? parsePollOptions(e.options) : (Array.isArray(e.options) ? e.options : []);
     const optCount = parsedOpts.length;
     const qCount = Array.isArray(e.questions_schema) ? e.questions_schema.length : 0;
+    const isGv = (e.title || '').toLowerCase().includes('generalversammlung');
+    const statusCategory = isSchiess ? 'schiessen' : (isGv ? 'gv' : (isTrue(e.aktiv) ? 'aktiv' : 'inaktiv'));
 
     return `
-    <tr>
-        <td class="text-muted small align-middle">${escapeHtml(e.id || '-')}</td>
-        <td>
+    <tr data-id="${escapeHtml(e.id || idx)}" data-idx="${idx}" data-status="${statusCategory}">
+        <td data-col-id="id" class="text-muted small align-middle">${escapeHtml(e.id || '-')}</td>
+        <td data-col-id="title">
             <div class="d-flex flex-column gap-1">
                 <input type="text" class="form-control form-control-sm" value="${escapeHtml(e.title || '')}" onchange="onUmfrageTitleChange(${idx}, this.value)" ${!canWrite?'readonly disabled':''}>
-                ${(e.title || '').toLowerCase().includes('generalversammlung') ? '<span class="badge bg-primary-subtle text-primary border border-primary-subtle text-start py-0.5 px-1.5" style="font-size:0.68rem; width: fit-content;"><i class="fas fa-landmark me-1"></i>Generalversammlung</span>' : ''}
+                ${isGv ? '<span class="badge bg-primary-subtle text-primary border border-primary-subtle text-start py-0.5 px-1.5" style="font-size:0.68rem; width: fit-content;"><i class="fas fa-landmark me-1"></i>Generalversammlung</span>' : ''}
             </div>
         </td>
-        <td><input type="date" class="form-control form-control-sm" value="${formatISODate(e.datum)}" onchange="umfragenState[${idx}].datum=this.value; syncEventField(${idx}, 'datum', this.value); window.markUnsaved()" ${!canWrite?'readonly disabled':''}></td>
-        <td>
+        <td data-col-id="datum"><input type="date" class="form-control form-control-sm" value="${formatISODate(e.datum)}" onchange="umfragenState[${idx}].datum=this.value; syncEventField(${idx}, 'datum', this.value); window.markUnsaved()" ${!canWrite?'readonly disabled':''}></td>
+        <td data-col-id="gruppe">
             <select class="form-select form-select-sm" onchange="umfragenState[${idx}].gruppe=this.value; syncEventField(${idx}, 'gruppe', this.value); window.markUnsaved()" ${!canWrite?'disabled':''}>
                 <option value="aktiv" ${(e.gruppe === 'aktiv' || !e.gruppe) ? 'selected' : ''}>Aktiv</option>
                 <option value="passiv" ${e.gruppe === 'passiv' ? 'selected' : ''}>Passiv</option>
                 <option value="alle" ${e.gruppe === 'alle' ? 'selected' : ''}>Alle</option>
             </select>
         </td>
-        <td class="text-center align-middle">
+        <td data-col-id="schiessanlass" class="text-center align-middle">
             <div style="display:flex; flex-direction:column; align-items:center; gap:3px;">
                 <input type="checkbox" id="cb-schiess-${idx}" class="form-check-input" ${isSchiess ? 'checked' : ''}
                     onchange="onSchiessanlassChange(${idx}, this.checked)" ${!canWrite?'disabled':''}>
@@ -82,30 +95,30 @@ function renderDesktopEventRow(e, idx, canWrite) {
                 </button>
             </div>
         </td>
-        <td class="text-center align-middle">
+        <td data-col-id="aktiv" class="text-center align-middle">
             <input type="checkbox" id="cb-aktiv-${idx}" class="form-check-input" ${isTrue(e.aktiv) ? 'checked' : ''} onchange="umfragenState[${idx}].aktiv=this.checked; syncEventField(${idx}, 'aktiv', this.checked); window.markUnsaved()" ${!canWrite?'disabled':''}>
         </td>
-        <td class="text-center align-middle" style="opacity:${isSchiess ? '0.3' : '1'}" title="${isSchiess ? 'Bei externen Gruppenschiessen automatisch sichtbar (für Teambildung)' : ''}">
+        <td data-col-id="showparticipants" class="text-center align-middle" style="opacity:${isSchiess ? '0.3' : '1'}" title="${isSchiess ? 'Bei externen Gruppenschiessen automatisch sichtbar (für Teambildung)' : ''}">
             <input type="checkbox" id="cb-part-${idx}" class="form-check-input" ${(isSchiess || isTrue(e.showparticipants)) ? 'checked' : ''}
                 onchange="umfragenState[${idx}].showparticipants=this.checked; syncEventField(${idx}, 'showparticipants', this.checked); window.markUnsaved()"
                 ${!canWrite || isSchiess ? 'disabled' : ''}>
         </td>
-        <td class="text-center align-middle" style="opacity:${isSchiess ? '0.3' : '1'}" title="${isSchiess ? 'Nicht anwendbar bei externen Gruppenschiessen' : ''}">
+        <td data-col-id="frage_begleitung" class="text-center align-middle" style="opacity:${isSchiess ? '0.3' : '1'}" title="${isSchiess ? 'Nicht anwendbar bei externen Gruppenschiessen' : ''}">
             <input type="checkbox" id="cb-begl-${idx}" class="form-check-input" ${isTrue(e.frage_begleitung) && !isSchiess ? 'checked' : ''}
                 onchange="umfragenState[${idx}].frage_begleitung=this.checked; syncEventField(${idx}, 'frage_begleitung', this.checked); window.markUnsaved()"
                 ${!canWrite || isSchiess ? 'disabled' : ''}>
         </td>
-        <td class="text-center align-middle" style="opacity:${isSchiess ? '0.3' : '1'}" title="${isSchiess ? 'Nicht anwendbar bei externen Gruppenschiessen' : ''}">
+        <td data-col-id="frage_essen" class="text-center align-middle" style="opacity:${isSchiess ? '0.3' : '1'}" title="${isSchiess ? 'Nicht anwendbar bei externen Gruppenschiessen' : ''}">
             <input type="checkbox" id="cb-essen-${idx}" class="form-check-input" ${isTrue(e.frage_essen) && !isSchiess ? 'checked' : ''}
                 onchange="umfragenState[${idx}].frage_essen=this.checked; syncEventField(${idx}, 'frage_essen', this.checked); window.markUnsaved()"
                 ${!canWrite || isSchiess ? 'disabled' : ''}>
         </td>
-        <td class="text-center align-middle" style="opacity:${isSchiess ? '0.3' : '1'}" title="${isSchiess ? 'Nicht anwendbar bei externen Gruppenschiessen' : ''}">
+        <td data-col-id="frage_grund" class="text-center align-middle" style="opacity:${isSchiess ? '0.3' : '1'}" title="${isSchiess ? 'Nicht anwendbar bei externen Gruppenschiessen' : ''}">
             <input type="checkbox" id="cb-grund-${idx}" class="form-check-input" ${isTrue(e.frage_grund) && !isSchiess ? 'checked' : ''}
                 onchange="umfragenState[${idx}].frage_grund=this.checked; syncEventField(${idx}, 'frage_grund', this.checked); window.markUnsaved()"
                 ${!canWrite || isSchiess ? 'disabled' : ''}>
         </td>
-        <td class="text-center align-middle">
+        <td data-col-id="questions" class="text-center align-middle">
             <button class="btn btn-xs ${qCount > 0 ? 'btn-primary' : 'btn-outline-secondary'} px-2 py-1"
                 id="btn-questions-${idx}"
                 style="font-size:0.75rem;"
@@ -114,7 +127,7 @@ function renderDesktopEventRow(e, idx, canWrite) {
                 📝 ${qCount > 0 ? qCount + (qCount === 1 ? ' Frage' : ' Fragen') : '+ Fragen'}
             </button>
         </td>
-        <td class="align-middle">
+        <td data-col-id="dokument" class="align-middle">
             <div class="input-group input-group-sm" style="min-width: 185px;">
                 <input type="text" id="event-doc-input-${idx}" class="form-control form-control-sm"
                     placeholder="URL(s), Drive-ID(s)..."
@@ -138,8 +151,8 @@ function renderDesktopEventRow(e, idx, canWrite) {
                 onchange="if(this.files.length) uploadEventDocumentFiles(this.files, ${idx})">
             <div id="event-doc-status-${idx}" class="small" style="font-size:0.75rem;"></div>
         </td>
-        <td class="align-middle">
-            <button class="btn btn-link text-danger p-0" onclick="removeUmfrageEvent(${idx})" ${!canWrite ? 'disabled':''}>🗑️</button>
+        <td data-col-id="aktionen" class="text-center align-middle">
+            <button class="btn btn-link text-danger p-0" onclick="removeUmfrageEvent(${idx})" ${!canWrite ? 'disabled':''} title="Event löschen">🗑️</button>
         </td>
     </tr>
     `;
@@ -150,9 +163,11 @@ function renderMobileEventCard(e, idx, canWrite) {
     const parsedOpts = (typeof parsePollOptions === 'function') ? parsePollOptions(e.options) : (Array.isArray(e.options) ? e.options : []);
     const optCount = parsedOpts.length;
     const isAktiv = isTrue(e.aktiv);
+    const isGv = (e.title || '').toLowerCase().includes('generalversammlung');
+    const statusCategory = isSchiess ? 'schiessen' : (isGv ? 'gv' : (isAktiv ? 'aktiv' : 'inaktiv'));
 
     return `
-    <div class="event-mobile-card" id="event-mobile-card-${idx}">
+    <div class="event-mobile-card tk-draggable-item" id="event-mobile-card-${idx}" data-id="${escapeHtml(e.id || idx)}" data-idx="${idx}" data-status="${statusCategory}">
         <!-- Card Top Bar: Status Badge + Aktiv Toggle + Delete -->
         <div class="d-flex justify-content-between align-items-center mb-2">
             <div class="d-flex align-items-center gap-2">
@@ -387,18 +402,91 @@ function addUmfrageEvent() {
     if (typeof updateUmfragenSaveButtonState === 'function') updateUmfragenSaveButtonState();
 }
 
-function removeUmfrageEvent(idx) {
-    if(!confirm("Event wirklich aus der Umfragenliste löschen?")) return;
-    window.markUnsaved();
+async function removeUmfrageEvent(idx) {
+    const e = umfragenState && umfragenState[idx];
+    if (!e) return;
+
+    const eventTitle = e.title || 'Unbenannter Anlass';
+    const isPersisted = window._umfragenOriginalState && window._umfragenOriginalState.some(o => String(o.id) === String(e.id));
+
+    const confirmed = await (window.UIConfirmKit ? UIConfirmKit.confirm({
+        title: 'Event endgültig löschen?',
+        message: `Möchtest du den Anlass <b>«${escapeHtml(eventTitle)}»</b> wirklich löschen?<br><br><span class="text-danger small"><i class="fas fa-exclamation-triangle me-1"></i>Hinweis: Alle zugehörigen Rückmeldungen und Abstimmungen in Supabase werden ebenfalls unwiderruflich gelöscht.</span>`,
+        type: 'danger',
+        confirmText: 'Endgültig löschen',
+        cancelText: 'Abbrechen'
+    }) : Promise.resolve(confirm(`Event «${eventTitle}» wirklich löschen?`)));
+
+    if (!confirmed) return;
+
+    const supa = (typeof getPollSupabaseClient === 'function') ? getPollSupabaseClient() : (window.supabaseClient || null);
+
+    // Wenn der Event bereits in Supabase existiert, sofort transaktionssicher aus DB löschen
+    if (supa && isPersisted && e.id) {
+        try {
+            const { error: delErr } = await supa.from('poll_events').delete().eq('id', String(e.id));
+            if (delErr) {
+                console.error("Fehler beim Löschen des Events aus Supabase:", delErr);
+                if (window.UIConfirmKit) {
+                    await UIConfirmKit.alert({
+                        title: 'Fehler beim Löschen',
+                        message: 'Der Event konnte in Supabase nicht gelöscht werden: ' + delErr.message,
+                        type: 'danger'
+                    });
+                } else {
+                    alert('Fehler beim Löschen: ' + delErr.message);
+                }
+                return;
+            }
+            console.log(`🗑️ Event «${eventTitle}» (${e.id}) erfolgreich aus Supabase gelöscht.`);
+        } catch (err) {
+            console.error("Netzwerk-/DB-Fehler beim Löschen:", err);
+            if (window.UIConfirmKit) {
+                await UIConfirmKit.alert({
+                    title: 'Verbindungsfehler',
+                    message: 'Der Löschvorgang ist fehlgeschlagen: ' + err.message,
+                    type: 'danger'
+                });
+            } else {
+                alert('Fehler: ' + err.message);
+            }
+            return;
+        }
+    }
+
+    // Aus lokalem State und Original-State entfernen
     umfragenState.splice(idx, 1);
+    if (window._umfragenOriginalState) {
+        window._umfragenOriginalState = window._umfragenOriginalState.filter(item => String(item.id) !== String(e.id));
+    }
+
     renderUmfragenEventsList();
     if (typeof updateUmfragenSaveButtonState === 'function') updateUmfragenSaveButtonState();
+
+    // Unsaved-Flag zurücksetzen falls keine anderen offenen Änderungen vorhanden sind
+    const remainingChanges = typeof getUmfragenChangeCount === 'function' ? getUmfragenChangeCount() : 0;
+    if (remainingChanges === 0 && window.clearUnsaved) {
+        window.clearUnsaved();
+    }
 }
+window.removeUmfrageEvent = removeUmfrageEvent;
 
 async function saveUmfragenData() {
-    if(!confirm("Alle Events in der Umfrage-App speichern?")) return;
-    if (typeof updateUmfragenSaveButtonState === 'function') updateUmfragenSaveButtonState(true);
-    try {
+    const changeCount = typeof getUmfragenChangeCount === 'function' ? getUmfragenChangeCount() : 0;
+    if (changeCount === 0) return;
+
+    const confirmed = await (window.UIConfirmKit ? UIConfirmKit.confirm({
+        title: 'Änderungen speichern?',
+        message: `Möchtest du die <b>${changeCount} Änderung(en)</b> an den Events in Supabase speichern?`,
+        type: 'primary',
+        confirmText: 'Speichern',
+        cancelText: 'Abbrechen'
+    }) : Promise.resolve(confirm("Alle Events in der Umfrage-App speichern?")));
+
+    if (!confirmed) return;
+
+    const saveAction = async () => {
+        if (typeof updateUmfragenSaveButtonState === 'function') updateUmfragenSaveButtonState(true);
         const cleanEvents = (umfragenState || []).map(e => {
             const opts = (typeof parsePollOptions === 'function') ? parsePollOptions(e.options) : (Array.isArray(e.options) ? e.options : []);
             return {
@@ -407,50 +495,188 @@ async function saveUmfragenData() {
             };
         });
 
-        const payload = {
-            action: "saveEventsAdmin",
-            events: cleanEvents
-        };
-
         // 1. SUPABASE MASTER: Direkt und schnell speichern
         const supa = (typeof getPollSupabaseClient === 'function') ? getPollSupabaseClient() : (window.supabaseClient || null);
         if (supa) {
-            const pollRows = cleanEvents.map(e => ({
-                id: String(e.id || ('pe_' + Date.now())),
-                title: String(e.title || 'Unbenannter Anlass'),
-                datum: e.datum ? formatISODate(e.datum) : null,
-                gruppe: String(e.gruppe || 'aktiv').trim(),
-                schiessanlass: isTrue(e.schiessanlass),
-                aktiv: isTrue(e.aktiv),
-                showparticipants: isTrue(e.showparticipants),
-                frage_begleitung: isTrue(e.frage_begleitung),
-                frage_essen: isTrue(e.frage_essen),
-                frage_grund: isTrue(e.frage_grund),
-                dokument_url: String(e.dokument_url || ''),
-                details: String(e.details || ''),
-                options: e.options || [],
-                questions_schema: e.questions_schema || [],
-                event_type: e.event_type || (isTrue(e.schiessanlass) ? 'schiessen' : 'standard')
-            }));
+            // A) Gelöschte Events in Supabase löschen (Differenz zwischen Original-State und aktuellem State)
+            if (window._umfragenOriginalState && Array.isArray(window._umfragenOriginalState)) {
+                const currentIds = new Set(cleanEvents.map(e => String(e.id)));
+                const deletedIds = window._umfragenOriginalState
+                    .map(e => String(e.id))
+                    .filter(id => id && !currentIds.has(id));
 
-            const { error: supaErr } = await supa.from('poll_events').upsert(pollRows);
-            if (supaErr) {
-                console.error("Fehler beim Speichern in Supabase:", supaErr);
-                throw new Error("Supabase Fehler: " + supaErr.message);
+                if (deletedIds.length > 0) {
+                    console.log('🗑️ Lösche entfernte Events aus Supabase:', deletedIds);
+                    const { error: delErr } = await supa.from('poll_events').delete().in('id', deletedIds);
+                    if (delErr) {
+                        console.error("Fehler beim Löschen aus Supabase:", delErr);
+                        throw new Error("Fehler beim Löschen entfernter Events: " + delErr.message);
+                    }
+                }
             }
-            console.log(`✅ ${pollRows.length} Events erfolgreich in Supabase gespeichert.`);
+
+            // B) Aktuelle Events upserten
+            if (cleanEvents.length > 0) {
+                const pollRows = cleanEvents.map(e => ({
+                    id: String(e.id || ('pe_' + Date.now())),
+                    title: String(e.title || 'Unbenannter Anlass'),
+                    datum: e.datum ? formatISODate(e.datum) : null,
+                    gruppe: String(e.gruppe || 'aktiv').trim(),
+                    schiessanlass: isTrue(e.schiessanlass),
+                    aktiv: isTrue(e.aktiv),
+                    showparticipants: isTrue(e.showparticipants),
+                    frage_begleitung: isTrue(e.frage_begleitung),
+                    frage_essen: isTrue(e.frage_essen),
+                    frage_grund: isTrue(e.frage_grund),
+                    dokument_url: String(e.dokument_url || ''),
+                    details: String(e.details || ''),
+                    options: e.options || [],
+                    questions_schema: e.questions_schema || [],
+                    event_type: e.event_type || (isTrue(e.schiessanlass) ? 'schiessen' : 'standard')
+                }));
+
+                const { error: supaErr } = await supa.from('poll_events').upsert(pollRows);
+                if (supaErr) {
+                    console.error("Fehler beim Speichern in Supabase:", supaErr);
+                    throw new Error("Supabase Fehler: " + supaErr.message);
+                }
+                console.log(`✅ ${pollRows.length} Events erfolgreich in Supabase gespeichert.`);
+            }
         }
 
         window.clearUnsaved();
         window._umfragenOriginalState = JSON.parse(JSON.stringify(umfragenState));
         if (typeof updateUmfragenSaveButtonState === 'function') updateUmfragenSaveButtonState(false);
-        alert("✅ Umfragen erfolgreich in Supabase gespeichert!");
+        if (window.UIConfirmKit) {
+            await UIConfirmKit.alert({
+                title: 'Erfolgreich gespeichert',
+                message: 'Alle Änderungen an den Events wurden erfolgreich in Supabase gespeichert.',
+                type: 'info'
+            });
+        } else {
+            alert("✅ Umfragen erfolgreich in Supabase gespeichert!");
+        }
         loadUmfragenData();
+    };
+
+    try {
+        if (window.UIButtonKit && typeof window.UIButtonKit.withLoading === 'function') {
+            await window.UIButtonKit.withLoading('#btn-save-umfragen', saveAction);
+        } else {
+            await saveAction();
+        }
     } catch(e) {
         if (typeof updateUmfragenSaveButtonState === 'function') updateUmfragenSaveButtonState(false);
-        alert("Fehler beim Speichern der Umfragen: " + e.message);
+        if (window.UIConfirmKit) {
+            await UIConfirmKit.alert({
+                title: 'Fehler beim Speichern',
+                message: 'Fehler beim Speichern der Umfragen: ' + e.message,
+                type: 'danger'
+            });
+        } else {
+            alert("Fehler beim Speichern der Umfragen: " + e.message);
+        }
     }
 }
+window.saveUmfragenData = saveUmfragenData;
+
+// =====================================================================
+// TABLEKIT INTEGRATION FÜR UMFRAGEN-EVENTS
+// =====================================================================
+
+function initTableKitForUmfragen() {
+    if (typeof window.TableKit === 'undefined') return;
+
+    // 1. All-in-One Table Controller (Resize, Reorder, Column Toggle)
+    const tableEl = document.getElementById('umfragen-events-table');
+    if (tableEl) {
+        umfragenTableController = window.TableKit.initTable('#umfragen-events-table', {
+            id: 'umfragen_events',
+            storageKeyWidths: 'tk_cols_umfragen_widths',
+            storageKeyOrder: 'tk_cols_umfragen_order',
+            storageKeyCols: 'tk_cols_umfragen_cols',
+            resizable: {
+                minWidth: 45,
+                columns: {
+                    'aktionen': { resizable: false, defaultWidth: 50 }
+                }
+            },
+            reorderable: {
+                lockedColumns: ['aktionen']
+            },
+            columnToggle: document.getElementById('umfragenColToggleContainer') ? {
+                container: '#umfragenColToggleContainer',
+                columns: [
+                    { id: 'id', name: 'ID', defaultVisible: true },
+                    { id: 'title', name: 'Titel', defaultVisible: true },
+                    { id: 'datum', name: 'Datum', defaultVisible: true },
+                    { id: 'gruppe', name: 'Personenkreis', defaultVisible: true },
+                    { id: 'schiessanlass', name: 'Ext. Gruppenschiessen', defaultVisible: true },
+                    { id: 'aktiv', name: 'Aktiv', defaultVisible: true },
+                    { id: 'showparticipants', name: 'Teilnehmer sichtbar', defaultVisible: true },
+                    { id: 'frage_begleitung', name: 'Frage: Begleitung', defaultVisible: true },
+                    { id: 'frage_essen', name: 'Frage: Essen', defaultVisible: true },
+                    { id: 'frage_grund', name: 'Frage: Abmeldegrund', defaultVisible: true },
+                    { id: 'questions', name: 'Zusatzfragen', defaultVisible: true },
+                    { id: 'dokument', name: 'Dokument / Link', defaultVisible: true },
+                    { id: 'aktionen', name: 'Aktionen', defaultVisible: true }
+                ]
+            } : null
+        });
+
+        // 2. Sortierung
+        window.TableKit.makeSortable(tableEl, {
+            onSort: (colId, dir) => {
+                if (!umfragenState) return;
+                const field = colId === 'questions' ? 'questions_schema' : colId;
+                umfragenState.sort((a, b) => {
+                    let valA = a[field] || '';
+                    let valB = b[field] || '';
+                    if (field === 'datum') {
+                        valA = valA ? new Date(valA).getTime() : 0;
+                        valB = valB ? new Date(valB).getTime() : 0;
+                    } else if (typeof valA === 'boolean' || typeof valB === 'boolean') {
+                        valA = valA ? 1 : 0;
+                        valB = valB ? 1 : 0;
+                    } else if (Array.isArray(valA) || Array.isArray(valB)) {
+                        valA = Array.isArray(valA) ? valA.length : 0;
+                        valB = Array.isArray(valB) ? valB.length : 0;
+                    } else {
+                        valA = String(valA).toLowerCase();
+                        valB = String(valB).toLowerCase();
+                    }
+                    if (valA < valB) return -1 * dir;
+                    if (valA > valB) return 1 * dir;
+                    return 0;
+                });
+                renderUmfragenEventsList();
+                if (umfragenFilterCtrl && typeof umfragenFilterCtrl.apply === 'function') {
+                    umfragenFilterCtrl.apply();
+                }
+            }
+        });
+    }
+
+    // 3. Filter & Live-Suche (Desktop & Mobile)
+    const container = document.getElementById('tab-umfragen-events');
+    if (container) {
+        umfragenFilterCtrl = window.TableKit.setupFilter({
+            container: container,
+            searchInput: '#umfragen-search-input',
+            pillsContainer: '#umfragen-status-pills',
+            rowSelector: '#umfragen-events-body tr[data-id], #umfragen-events-cards .tk-draggable-item',
+            getStatus: (row) => row.dataset.status || 'all',
+            matchStatus: (row, filter, status) => {
+                if (filter === 'all') return true;
+                if (filter === 'aktiv') return status === 'aktiv' || status === 'schiessen' || status === 'gv';
+                if (filter === 'schiessen') return status === 'schiessen';
+                if (filter === 'gv') return status === 'gv';
+                return true;
+            }
+        });
+    }
+}
+window.initTableKitForUmfragen = initTableKitForUmfragen;
 
 function sortUmfragenEvents(field) {
     if (umfragenSortField === field) {

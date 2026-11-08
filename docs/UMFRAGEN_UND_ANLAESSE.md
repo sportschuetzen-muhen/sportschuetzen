@@ -167,6 +167,15 @@ Gemäss **Projekt-Richtlinie 7** (`AGENTS.md`) gilt für das Modul das symmetris
     * Ist `showparticipants = true` geschaltet, dürfen alle Mitglieder die Liste der angemeldeten Namen einsehen (personenbezogene Details wie Essen oder freie Antworten bleiben geschützt).
   * `INSERT / UPDATE`: Mitglieder dürfen nur für ihre **eigene Lizenz** schreiben. Vorstand mit `umfragen.manage` darf Korrekturen erfassen.
 
+### 4.3 Event-Lebenszyklus, Lösch-Kontrakt & TableKit-Standard
+* **Transaktionssicheres Löschen:** Das Löschen eines Events im Vorstandsportal (`removeUmfrageEvent`) führt für persistierte Datensätze eine direkte und sofortige Löschung auf `public.poll_events` aus (autorisiert über `umfragen.manage`). Verknüpfte Rückmeldungen in `public.poll_responses` werden via PostgreSQL `ON DELETE CASCADE` atomar mitgelöscht. Beim Batch-Speichern (`saveUmfragenData`) bereinigt eine Differenzprüfung (`deletedIds`) zusätzlich allfällig entfernte Einträge.
+* **TableKit-Standard im Event-Cockpit:** Die Tabelle in *«Events verwalten»* nutzt den zentralen Standard (`TableKit.initTable`):
+  * Spalten-Sortierung (`TableKit.makeSortable`), dynamische Spaltenbreiten (Resize) und Reordering mit LocalStorage-Persistenz.
+  * Spalten-Ausblender (`setupColumnToggle`) und Excel-Export via `UIExportKit.exportTableToExcel`.
+  * Live-Suche und Status-Filter-Pills (`setupFilter`) für Desktop und mobile Card-Ansicht.
+  * Double-Submit-Schutz mit Ladespinner via `UIButtonKit.withLoading`.
+  * Dialogführung ausnahmslos über `UIConfirmKit.confirm` und `UIConfirmKit.alert` in vereinsnaher Du-Form.
+
 ---
 
 ## 5. Schnittstellen & Integration in bestehende Subsysteme

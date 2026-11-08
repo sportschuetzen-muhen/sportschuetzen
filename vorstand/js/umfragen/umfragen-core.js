@@ -362,7 +362,7 @@ async function loadUmfragenData(force = false) {
             .select('*')
             .order('datum', { ascending: false });
         
-        if (!error && Array.isArray(data) && data.length > 0) {
+        if (!error && Array.isArray(data)) {
             umfragenState = data.map(e => ({
                 id: String(e.id),
                 title: e.title || '',

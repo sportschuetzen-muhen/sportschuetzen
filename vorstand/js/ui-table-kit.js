@@ -571,11 +571,15 @@
     }
     status = String(status || '').toLowerCase();
 
+    if (options.matchStatus && typeof options.matchStatus === 'function') {
+      return options.matchStatus(row, filter, status);
+    }
+
     if (filter === 'active-only') return status !== 'abgesagt';
     if (filter === 'fix') return status === 'fix';
     if (filter === 'provisorisch') return status === 'provisorisch';
     if (filter === 'abgesagt') return status === 'abgesagt';
-    return true;
+    return status === filter;
   }
 
   function checkSearchMatch(row, query, options) {

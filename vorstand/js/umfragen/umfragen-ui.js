@@ -30,34 +30,55 @@ function renderUmfragenUI(container) {
             </div>
 
             <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-                <div class="d-flex gap-2">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
                     ${canWrite ? `
                     <button class="btn btn-sm btn-success write-protected" onclick="addUmfrageEvent()">+ Neuer Event</button>
                     <button id="btn-save-umfragen" class="btn btn-sm btn-outline-secondary write-protected" disabled onclick="saveUmfragenData()">💾 Gespeichert</button>
                     ` : ''}
+                    <div class="vr mx-1 d-none d-md-block"></div>
+                    <!-- TableKit Filter-Pills -->
+                    <div class="tk-filter-pills" id="umfragen-status-pills">
+                        <button type="button" class="tk-pill-btn active" data-filter="all">Alle</button>
+                        <button type="button" class="tk-pill-btn" data-filter="aktiv">Nur Aktive</button>
+                        <button type="button" class="tk-pill-btn" data-filter="schiessen">Gruppenschiessen 🎯</button>
+                        <button type="button" class="tk-pill-btn" data-filter="gv">Generalversammlung 🏛️</button>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <!-- Live-Suche -->
+                    <div class="position-relative" style="min-width: 190px;">
+                        <input type="text" id="umfragen-search-input" class="form-control form-control-sm ps-4" placeholder="Events filtern...">
+                        <i class="fas fa-search position-absolute text-muted" style="left: 10px; top: 9px; font-size: 0.8rem;"></i>
+                    </div>
+                    <!-- Spalten-Ausblender (TableKit Standard) -->
+                    <div id="umfragenColToggleContainer" class="d-inline-block"></div>
+                    <!-- Excel-Export (TableKit Standard) -->
+                    <button class="btn btn-sm btn-outline-success py-1 fw-bold" onclick="if(window.UIExportKit)UIExportKit.exportTableToExcel('#umfragen-events-table', 'Events_Umfragen.xlsx')" title="Tabelle als Excel exportieren">
+                        <i class="fas fa-file-excel me-1"></i>Excel
+                    </button>
                 </div>
             </div>
             <!-- Mobile Ansicht: Touch-optimierte Karten -->
             <div id="umfragen-events-cards" class="d-md-none"></div>
 
-            <!-- Desktop & Tablet Ansicht: 12-Spalten-Tabelle -->
+            <!-- Desktop & Tablet Ansicht: 13-Spalten-Tabelle mit TableKit-Standard -->
             <div class="table-responsive bg-white border rounded d-none d-md-block">
-                <table class="table table-sm table-hover mb-0" style="min-width: 980px;">
+                <table id="umfragen-events-table" class="table table-sm table-hover mb-0" style="min-width: 1080px;">
                     <thead class="table-light">
-                        <tr style="cursor:pointer; user-select:none;">
-                            <th onclick="sortUmfragenEvents('id')">ID ⇅</th>
-                            <th onclick="sortUmfragenEvents('title')">Titel ⇅</th>
-                            <th onclick="sortUmfragenEvents('datum')">Datum ⇅</th>
-                            <th onclick="sortUmfragenEvents('gruppe')">Personenkreis ⇅</th>
-                            <th class="text-center" onclick="sortUmfragenEvents('schiessanlass')" title="Auswärtiges Gruppenschiessen mit Terminauswahl (Poll) & 5er-Teams. Begleitung, Essen und Abmeldegrund entfallen hier.">Ext. Gruppen-<br>schiessen 🎯 ⇅</th>
-                            <th class="text-center" onclick="sortUmfragenEvents('aktiv')">Aktiv ⇅</th>
-                            <th class="text-center" onclick="sortUmfragenEvents('showparticipants')">Teilnehmer<br>sichtbar ⇅</th>
-                            <th class="text-center" onclick="sortUmfragenEvents('frage_begleitung')">Frage:<br>Begleitung ⇅</th>
-                            <th class="text-center" onclick="sortUmfragenEvents('frage_essen')">Frage:<br>Essen ⇅</th>
-                            <th class="text-center" onclick="sortUmfragenEvents('frage_grund')">Frage:<br>Abmeldegrund 💬 ⇅</th>
-                            <th class="text-center" style="cursor:default;">Zusatzfragen 📝</th>
-                            <th style="cursor:default; min-width: 175px;">Dokument / Link 📄</th>
-                            <th style="cursor:default;"></th>
+                        <tr>
+                            <th data-col-id="id" data-col-name="ID" class="tk-sortable" style="width: 110px;">ID</th>
+                            <th data-col-id="title" data-col-name="Titel" class="tk-sortable">Titel</th>
+                            <th data-col-id="datum" data-col-name="Datum" class="tk-sortable" style="width: 140px;">Datum</th>
+                            <th data-col-id="gruppe" data-col-name="Personenkreis" class="tk-sortable" style="width: 115px;">Personenkreis</th>
+                            <th data-col-id="schiessanlass" data-col-name="Ext. Gruppenschiessen" class="text-center tk-sortable" style="width: 115px;" title="Auswärtiges Gruppenschiessen mit Terminauswahl (Poll) & 5er-Teams. Begleitung, Essen und Abmeldegrund entfallen hier.">Ext. Gruppen-<br>schiessen 🎯</th>
+                            <th data-col-id="aktiv" data-col-name="Aktiv" class="text-center tk-sortable" style="width: 70px;">Aktiv</th>
+                            <th data-col-id="showparticipants" data-col-name="Teilnehmer sichtbar" class="text-center tk-sortable" style="width: 90px;">Teilnehmer<br>sichtbar</th>
+                            <th data-col-id="frage_begleitung" data-col-name="Frage: Begleitung" class="text-center tk-sortable" style="width: 85px;">Frage:<br>Begleitung</th>
+                            <th data-col-id="frage_essen" data-col-name="Frage: Essen" class="text-center tk-sortable" style="width: 75px;">Frage:<br>Essen</th>
+                            <th data-col-id="frage_grund" data-col-name="Frage: Abmeldegrund" class="text-center tk-sortable" style="width: 105px;">Frage:<br>Abmeldegrund 💬</th>
+                            <th data-col-id="questions" data-col-name="Zusatzfragen" class="text-center" style="width: 110px;">Zusatzfragen 📝</th>
+                            <th data-col-id="dokument" data-col-name="Dokument / Link" style="min-width: 175px;">Dokument / Link 📄</th>
+                            <th data-col-id="aktionen" data-col-name="Aktionen" data-col-toggle="false" class="text-center" style="width: 50px;"></th>
                         </tr>
                     </thead>
                     <tbody id="umfragen-events-body"></tbody>
@@ -371,6 +392,7 @@ function renderUmfragenUI(container) {
     </div>
   `;
   renderUmfragenEventsList();
+  if (typeof initTableKitForUmfragen === 'function') initTableKitForUmfragen();
   if (typeof updateUmfragenSaveButtonState === 'function') updateUmfragenSaveButtonState();
 }
 
