@@ -86,9 +86,12 @@ function renderMitgliederView(data) {
     </style>
 
     <!-- Navigation Tabs -->
-    <div class="d-flex gap-2 mb-3 border-bottom pb-2">
+    <div class="d-flex flex-wrap gap-2 mb-3 border-bottom pb-2">
       <div class="mgl-pill-tab ${listTabActive}" onclick="mglSwitchTab('liste')">
         <i class="fas fa-list-ul me-1"></i> Mitgliederliste
+      </div>
+      <div class="mgl-pill-tab ${_mglActiveTab === 'jubilaeen' ? 'active' : ''}" onclick="mglSwitchTab('jubilaeen')">
+        <i class="fas fa-award me-1"></i> Jubiläen &amp; Vereinsjahre
       </div>
       <div class="mgl-pill-tab ${analyseTabActive}" onclick="mglSwitchTab('analyse')">
         <i class="fas fa-chart-pie me-1"></i> Mitglieder-Analyse
@@ -184,6 +187,8 @@ function renderMitgliederView(data) {
   // Render correct tab
   if (_mglActiveTab === 'liste') {
     mglRenderListe(data);
+  } else if (_mglActiveTab === 'jubilaeen') {
+    mglRenderJubilaeen(data);
   } else if (_mglActiveTab === 'analyse') {
     mglRenderAnalyse(data);
   } else if (_mglActiveTab === 'import') {
@@ -259,7 +264,11 @@ function mglStatusBadge(m) {
   const u21Badge = isU21 ? ' <span class="badge bg-info text-dark ms-1" title="Nachwuchs / Jugend (U21)"><i class="fas fa-child me-1"></i>U21</span>' : '';
 
   if (isDeceased) return '<span class="badge bg-dark">† Verstorben</span>';
-  if (isEhren) return `<span class="badge bg-warning text-dark">Ehrenmitglied</span>${u21Badge}`;
+  if (isEhren) {
+    const yr = m._ernennungsjahr || (m.HonoraryMemberSince ? (window.mglExtractYear ? window.mglExtractYear(m.HonoraryMemberSince) : new Date(m.HonoraryMemberSince).getFullYear()) : null);
+    const yrBadge = yr && !isNaN(yr) ? ` (${yr})` : '';
+    return `<span class="badge bg-warning text-dark" title="Ehrenmitglied${yrBadge ? ' seit ' + yr : ''}"><i class="fas fa-medal me-1"></i>Ehrenmitglied${yrBadge}</span>${u21Badge}`;
+  }
   if (isPassiv) return `<span class="badge bg-secondary">Passiv</span>${u21Badge}`;
   if (isAktiv && hatAktLiz) return `<span class="badge bg-success">Aktiv</span>${u21Badge}`;
   if (isAktiv && !hatAktLiz) return `<span class="badge bg-success opacity-75">Aktiv</span>${u21Badge}`;
@@ -859,6 +868,8 @@ function mglRenderAnalyse(data) {
               <ul class="list-group list-group-flush">
                 ${ehrenListe.map(m => {
                   const pn = String(m.PersonNumber || '').trim();
+                  const yr = m._ernennungsjahr || (m.HonoraryMemberSince ? (window.mglExtractYear ? window.mglExtractYear(m.HonoraryMemberSince) : new Date(m.HonoraryMemberSince).getFullYear()) : null);
+                  const yrBadge = yr ? `Ernannt ${yr}` : (m.HonoraryMemberSince ? `seit ${mglFmtDate(m.HonoraryMemberSince)}` : 'Ehrenmitglied');
                   return `
                     <li class="list-group-item d-flex justify-content-between align-items-center px-0">
                       <div>
@@ -866,7 +877,7 @@ function mglRenderAnalyse(data) {
                           ${escapeHtml(m.FirstName)} ${escapeHtml(m.LastName)}
                         </a>
                       </div>
-                      <span class="badge bg-warning-subtle text-warning border border-warning-subtle rounded-pill px-2 py-1 small">seit ${mglFmtDate(m.HonoraryMemberSince)}</span>
+                      <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-2 py-1 small fw-semibold"><i class="fas fa-medal me-1"></i>${yrBadge}</span>
                     </li>
                   `;
                 }).join('')}
@@ -939,3 +950,417 @@ function mglRenderAnalyse(data) {
     </div>
   `;
 }
+
+// ==============================================================================
+// SUB-MODUL: MITGLIEDER - JUBILÄEN & VEREINSJAHRE
+// ==============================================================================
+
+window._mglJubileeYear = window._mglJubileeYear || new Date().getFullYear();
+window._mglJubileeFilter = window._mglJubileeFilter || 'alle';
+window._mglJubileeScope = window._mglJubileeScope || 'aktiv_passiv';
+
+function mglSetJubileeYear(yr) {
+  window._mglJubileeYear = parseInt(yr, 10) || new Date().getFullYear();
+  mglRenderJubilaeen(window._mglData);
+}
+window.mglSetJubileeYear = mglSetJubileeYear;
+
+function mglSetJubileeFilter(ms) {
+  window._mglJubileeFilter = String(ms);
+  mglRenderJubilaeen(window._mglData);
+}
+window.mglSetJubileeFilter = mglSetJubileeFilter;
+
+function mglSetJubileeScope(scope) {
+  window._mglJubileeScope = scope;
+  mglRenderJubilaeen(window._mglData);
+}
+window.mglSetJubileeScope = mglSetJubileeScope;
+
+function mglJubileeBadge(milestone, customText) {
+  const m = Number(milestone);
+  if (m === 25) {
+    return `<span class="badge shadow-xs text-nowrap" style="background: linear-gradient(135deg, #64748b, #94a3b8); color: #fff; border: 1px solid #cbd5e1;"><i class="fas fa-medal me-1"></i>${customText || '🥈 25 Jahre (Silber)'}</span>`;
+  }
+  if (m === 50) {
+    return `<span class="badge shadow-xs text-nowrap" style="background: linear-gradient(135deg, #d97706, #f59e0b); color: #fff; border: 1px solid #fbbf24;"><i class="fas fa-crown me-1"></i>${customText || '🥇 50 Jahre (Gold)'}</span>`;
+  }
+  if (m === 60) {
+    return `<span class="badge shadow-xs text-nowrap" style="background: linear-gradient(135deg, #0284c7, #38bdf8); color: #fff; border: 1px solid #38bdf8;"><i class="fas fa-gem me-1"></i>${customText || '💎 60 Jahre (Diamant)'}</span>`;
+  }
+  if (m >= 65) {
+    return `<span class="badge bg-danger-subtle text-danger border border-danger-subtle text-nowrap"><i class="fas fa-crown me-1"></i>${customText || m + ' Jahre (Kranz)'}</span>`;
+  }
+  if (m === 40) {
+    return `<span class="badge bg-warning-subtle text-dark border border-warning text-nowrap"><i class="fas fa-star me-1 text-warning"></i>${customText || '⭐ 40 Jahre'}</span>`;
+  }
+  if (m === 30) {
+    return `<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle text-nowrap"><i class="fas fa-award me-1"></i>${customText || '🏅 30 Jahre'}</span>`;
+  }
+  if (m === 20) {
+    return `<span class="badge bg-primary-subtle text-primary border border-primary-subtle text-nowrap"><i class="fas fa-bullseye me-1"></i>${customText || '🎯 20 Jahre'}</span>`;
+  }
+  if (m === 10) {
+    return `<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle text-nowrap"><i class="fas fa-certificate me-1"></i>${customText || '🥉 10 Jahre'}</span>`;
+  }
+  return `<span class="badge bg-light text-dark border text-nowrap">${customText || m + ' Jahre'}</span>`;
+}
+window.mglJubileeBadge = mglJubileeBadge;
+
+function mglExportJubilaeenExcel() {
+  if (window.UIExportKit?.exportTableToExcel) {
+    window.UIExportKit.exportTableToExcel('#mgl-jubilaeen-table', `Vereinsjubilaeen_Sportschuetzen_Muhen_${window._mglJubileeYear}.xlsx`);
+  } else {
+    alert('Excel-Exportmodul nicht bereit.');
+  }
+}
+window.mglExportJubilaeenExcel = mglExportJubilaeenExcel;
+
+function mglRenderJubilaeen(data) {
+  const allList = Array.isArray(data) ? data : (Array.isArray(window._mglData) ? window._mglData : []);
+  const targetYear = window._mglJubileeYear || new Date().getFullYear();
+  const scope = window._mglJubileeScope || 'aktiv_passiv';
+  const filterMs = window._mglJubileeFilter || 'alle';
+
+  // Scope-Filterung
+  const filteredMembers = allList.filter(m => {
+    const isDeceased = m.Deceased == 1 || m.Deceased === true || m.Deceased === '1';
+    if (scope === 'aktiv') {
+      return (m.IsActive == 1 || m.IsActive === true || m.IsActive === '1') && !isDeceased;
+    }
+    if (scope === 'aktiv_passiv') {
+      return ((m.IsActive == 1 || m.IsActive === true || m.IsActive === '1') || m._istPassiv || m._istEhren) && !isDeceased;
+    }
+    return true; // 'alle' inkl. Archiv & Verstorbene
+  });
+
+  // Berechnung der Mitgliedsjahre im Zieljahr
+  const membersWithYears = filteredMembers.map(m => {
+    const entryDate = m.ClubEntryDate || m.FirstClubEntryDateSSV;
+    const entryYear = window.mglExtractYear ? window.mglExtractYear(entryDate) : (entryDate ? new Date(entryDate).getFullYear() : null);
+    const exitYear = m.Vereinsaustritt ? (window.mglExtractYear ? window.mglExtractYear(m.Vereinsaustritt) : new Date(m.Vereinsaustritt).getFullYear()) : null;
+    
+    let yearsInTarget = null;
+    if (entryYear && entryYear > 1900) {
+      const effEnd = exitYear && exitYear < targetYear ? exitYear : targetYear;
+      yearsInTarget = Math.max(0, effEnd - entryYear);
+    }
+
+    const isCelebrator = yearsInTarget && yearsInTarget > 0 && (window.JUBILEE_MILESTONES ? window.JUBILEE_MILESTONES.includes(yearsInTarget) : [10, 20, 25, 30, 40, 50, 60, 65, 70, 75, 80].includes(yearsInTarget)) && (!exitYear || exitYear >= targetYear);
+    const nextJubilee = entryDate ? (window.mglNextJubilee ? window.mglNextJubilee(entryDate, targetYear) : null) : null;
+
+    return {
+      member: m,
+      entryDate,
+      entryYear,
+      exitYear,
+      yearsInTarget: yearsInTarget || 0,
+      isCelebrator,
+      nextJubilee
+    };
+  }).filter(item => item.entryYear && item.entryYear > 1900);
+
+  // Jubilare des Zieljahres
+  const allCelebrators = membersWithYears.filter(item => item.isCelebrator);
+  
+  // Meilenstein-Filter anwenden auf Jubilare
+  const displayCelebrators = allCelebrators.filter(item => {
+    if (filterMs === 'alle') return true;
+    if (filterMs === '65plus') return item.yearsInTarget >= 65;
+    return item.yearsInTarget === parseInt(filterMs, 10);
+  }).sort((a, b) => b.yearsInTarget - a.yearsInTarget || String(a.member.LastName || '').localeCompare(String(b.member.LastName || '')));
+
+  // Gesamtrangliste sortiert nach Dienstjahren
+  const rankingList = [...membersWithYears].sort((a, b) => b.yearsInTarget - a.yearsInTarget || String(a.member.LastName || '').localeCompare(String(b.member.LastName || '')));
+
+  // Statistiken
+  const countSilber = allCelebrators.filter(c => c.yearsInTarget === 25).length;
+  const countGold = allCelebrators.filter(c => c.yearsInTarget === 50).length;
+  const countDiamant = allCelebrators.filter(c => c.yearsInTarget === 60).length;
+  const maxYears = rankingList.length > 0 ? rankingList[0].yearsInTarget : 0;
+
+  const currentCalYear = new Date().getFullYear();
+
+  document.getElementById('mglTabContent').innerHTML = `
+    <!-- HEADER & AKTIONEN -->
+    <div class="card border-0 shadow-sm mb-4" style="background: linear-gradient(135deg, rgba(15, 58, 93, 0.04) 0%, rgba(245, 158, 11, 0.06) 100%); border-radius: 14px;">
+      <div class="card-body p-3 p-md-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+          <div>
+            <h4 class="fw-bold mb-1 text-dark d-flex align-items-center gap-2">
+              <span class="fs-3">🏆</span> Jubiläen &amp; Vereinsjahre
+            </h4>
+            <div class="text-muted small">
+              Ehrungen für die Generalversammlung, runde Meilensteine &amp; Bestenliste nach Vereinsjahren.
+            </div>
+          </div>
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <!-- Zieljahr-Auswahl -->
+            <div class="d-flex align-items-center gap-1 bg-white p-1 rounded-3 border shadow-xs">
+              <span class="small text-muted px-2 fw-semibold">Jubiläumsjahr:</span>
+              <button class="btn btn-sm ${targetYear === currentCalYear ? 'btn-primary' : 'btn-outline-secondary'} py-1 px-2" onclick="mglSetJubileeYear(${currentCalYear})">
+                ${currentCalYear} (Aktuell)
+              </button>
+              <button class="btn btn-sm ${targetYear === currentCalYear + 1 ? 'btn-primary' : 'btn-outline-secondary'} py-1 px-2" onclick="mglSetJubileeYear(${currentCalYear + 1})">
+                ${currentCalYear + 1} (Kommende GV)
+              </button>
+              <select class="form-select form-select-sm" style="width: 100px;" onchange="mglSetJubileeYear(this.value)">
+                ${[currentCalYear - 2, currentCalYear - 1, currentCalYear, currentCalYear + 1, currentCalYear + 2].map(y => `
+                  <option value="${y}" ${y === targetYear ? 'selected' : ''}>${y}</option>
+                `).join('')}
+              </select>
+            </div>
+
+            <!-- Excel-Export Button -->
+            <button class="btn btn-sm btn-outline-success ms-md-2" onclick="mglExportJubilaeenExcel()" title="Jubiläumsliste und Rangliste als Excel-Datei exportieren">
+              <i class="fas fa-file-excel me-1"></i> Excel-Export
+            </button>
+          </div>
+        </div>
+
+        <!-- STATS KARTEN -->
+        <div class="row g-2 g-md-3 mt-3">
+          <div class="col-6 col-md-3">
+            <div class="mgl-stat-card p-3 h-100 border-start border-4 border-warning">
+              <div class="mgl-stat-title text-uppercase mb-1">Jubilare im Jahr ${targetYear}</div>
+              <div class="mgl-stat-value text-warning">${allCelebrators.length}</div>
+              <div class="small text-muted" style="font-size:0.7rem">Runde Vereinsjubiläen</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="mgl-stat-card p-3 h-100 border-start border-4 border-secondary">
+              <div class="mgl-stat-title text-uppercase mb-1">Silber (25 Jahre)</div>
+              <div class="mgl-stat-value text-secondary">${countSilber}</div>
+              <div class="small text-muted" style="font-size:0.7rem">Eintritt ${targetYear - 25}</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="mgl-stat-card p-3 h-100 border-start border-4 border-primary">
+              <div class="mgl-stat-title text-uppercase mb-1">Gold (50 Jahre)</div>
+              <div class="mgl-stat-value text-primary">${countGold}</div>
+              <div class="small text-muted" style="font-size:0.7rem">Eintritt ${targetYear - 50}</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="mgl-stat-card p-3 h-100 border-start border-4 border-success">
+              <div class="mgl-stat-title text-uppercase mb-1">Spitzenreiter</div>
+              <div class="mgl-stat-value text-success">${maxYears} Jahre</div>
+              <div class="small text-muted" style="font-size:0.7rem">Längste Vereinszugehörigkeit</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FILTERLEISTEN: SCOPE & MEILENSTEINE -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+      <!-- Meilenstein Filter Chips -->
+      <div class="d-flex flex-wrap gap-1 align-items-center">
+        <span class="text-muted small me-2" style="font-weight: 600;">Jubiläen ${targetYear}:</span>
+        <div class="mgl-pill-tab ${filterMs === 'alle' ? 'active' : ''}" onclick="mglSetJubileeFilter('alle')">
+          Alle Jubilare <span class="badge rounded-pill bg-light text-dark ms-1" style="font-size:0.7rem">${allCelebrators.length}</span>
+        </div>
+        <div class="mgl-pill-tab ${filterMs === '25' ? 'active' : ''}" onclick="mglSetJubileeFilter('25')">
+          🥈 25 Jahre (Silber) <span class="badge rounded-pill bg-light text-dark ms-1" style="font-size:0.7rem">${countSilber}</span>
+        </div>
+        <div class="mgl-pill-tab ${filterMs === '50' ? 'active' : ''}" onclick="mglSetJubileeFilter('50')">
+          🥇 50 Jahre (Gold) <span class="badge rounded-pill bg-light text-dark ms-1" style="font-size:0.7rem">${countGold}</span>
+        </div>
+        <div class="mgl-pill-tab ${filterMs === '40' ? 'active' : ''}" onclick="mglSetJubileeFilter('40')">
+          ⭐ 40 Jahre <span class="badge rounded-pill bg-light text-dark ms-1" style="font-size:0.7rem">${allCelebrators.filter(c => c.yearsInTarget === 40).length}</span>
+        </div>
+        <div class="mgl-pill-tab ${filterMs === '30' ? 'active' : ''}" onclick="mglSetJubileeFilter('30')">
+          🏅 30 Jahre <span class="badge rounded-pill bg-light text-dark ms-1" style="font-size:0.7rem">${allCelebrators.filter(c => c.yearsInTarget === 30).length}</span>
+        </div>
+        <div class="mgl-pill-tab ${filterMs === '20' ? 'active' : ''}" onclick="mglSetJubileeFilter('20')">
+          🎯 20 Jahre <span class="badge rounded-pill bg-light text-dark ms-1" style="font-size:0.7rem">${allCelebrators.filter(c => c.yearsInTarget === 20).length}</span>
+        </div>
+        <div class="mgl-pill-tab ${filterMs === '10' ? 'active' : ''}" onclick="mglSetJubileeFilter('10')">
+          🥉 10 Jahre <span class="badge rounded-pill bg-light text-dark ms-1" style="font-size:0.7rem">${allCelebrators.filter(c => c.yearsInTarget === 10).length}</span>
+        </div>
+      </div>
+
+      <!-- Scope Filter -->
+      <div class="d-flex align-items-center gap-1">
+        <span class="text-muted small me-1">Umfang:</span>
+        <div class="btn-group btn-group-sm" role="group">
+          <button type="button" class="btn btn-outline-secondary ${scope === 'aktiv' ? 'active' : ''}" onclick="mglSetJubileeScope('aktiv')">Nur Aktive</button>
+          <button type="button" class="btn btn-outline-secondary ${scope === 'aktiv_passiv' ? 'active' : ''}" onclick="mglSetJubileeScope('aktiv_passiv')">Aktiv &amp; Passiv</button>
+          <button type="button" class="btn btn-outline-secondary ${scope === 'alle' ? 'active' : ''}" onclick="mglSetJubileeScope('alle')">Alle inkl. Archiv</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEKTION 1: JUBILARE DES JAHRES (KARTEN) -->
+    <div class="mb-4">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h5 class="fw-bold text-dark mb-0 d-flex align-items-center gap-2">
+          <span>🎉</span> Jubilare im Jahr ${targetYear}
+          <span class="badge bg-warning text-dark fs-6">${displayCelebrators.length}</span>
+        </h5>
+        <span class="small text-muted">Kandidaten für die GV-Ehrung im Jahr ${targetYear}</span>
+      </div>
+
+      ${displayCelebrators.length > 0 ? `
+        <div class="row g-3">
+          ${displayCelebrators.map(item => {
+            const m = item.member;
+            const pn = String(m.PersonNumber || '');
+            const name = escapeHtml((m.FirstName || '') + ' ' + (m.LastName || ''));
+            const city = escapeHtml(m.City || '');
+            const initials = `${(m.FirstName || '').charAt(0)}${(m.LastName || '').charAt(0)}`.trim() || '??';
+            const jubileeBadgeHtml = mglJubileeBadge(item.yearsInTarget);
+            const statusBadgeHtml = mglStatusBadge(m);
+
+            return `
+              <div class="col-sm-6 col-md-4 col-lg-3">
+                <div class="card border-0 shadow-sm h-100 position-relative" style="border-radius: 12px; transition: transform 0.2s;" onmouseenter="this.style.transform='translateY(-2px)'" onmouseleave="this.style.transform='none'">
+                  <div class="card-body p-3 d-flex flex-column">
+                    <div class="d-flex align-items-start justify-content-between mb-2">
+                      <div class="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold flex-shrink-0" style="width: 46px; height: 46px; background: linear-gradient(135deg, var(--primary) 0%, #1e4b7a 100%); font-size: 1rem; overflow: hidden;">
+                        ${m.AvatarUrl ? `<img src="${m.AvatarUrl}" alt="${name}" style="width:100%; height:100%; object-fit:cover;">` : initials}
+                      </div>
+                      <div>
+                        ${jubileeBadgeHtml}
+                      </div>
+                    </div>
+
+                    <div class="fw-bold text-dark text-truncate fs-6" title="${name}">
+                      <a href="#" class="text-dark text-decoration-none" onclick="mglOpenDetail('${escapeJs(pn)}'); return false;">${name}</a>
+                    </div>
+                    ${city ? `<div class="text-muted small" style="font-size:0.75rem;"><i class="fas fa-location-dot me-1 text-muted opacity-50"></i>${city}</div>` : ''}
+
+                    <div class="d-flex flex-wrap gap-1 my-2">
+                      ${statusBadgeHtml}
+                    </div>
+
+                    <div class="mt-auto pt-2 border-top small text-muted">
+                      <div class="d-flex justify-content-between">
+                        <span>Eintritt:</span>
+                        <span class="fw-semibold text-dark">${mglFmtDate(item.entryDate)}</span>
+                      </div>
+                      <div class="d-flex justify-content-between mt-1">
+                        <span>Vereinsjahre ${targetYear}:</span>
+                        <span class="fw-bold text-primary">${item.yearsInTarget} Jahre</span>
+                      </div>
+                    </div>
+
+                    <button class="btn btn-sm btn-outline-primary mt-2 w-100" onclick="mglOpenDetail('${escapeJs(pn)}')">
+                      <i class="fas fa-eye me-1"></i> Details anzeigen
+                    </button>
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      ` : `
+        <div class="card border-0 shadow-sm p-4 text-center text-muted">
+          <i class="fas fa-calendar-times fa-2x mb-2 text-muted opacity-50"></i>
+          <h6 class="fw-bold text-dark">Keine Jubilare für die gewählten Filter im Jahr ${targetYear}</h6>
+          <p class="small mb-0">Im Jahr ${targetYear} steht unter den gewählten Kriterien kein Meilenstein-Jubiläum an.</p>
+        </div>
+      `}
+    </div>
+
+    <!-- SEKTION 2: GESAMTRANGLISTE ALLER MITGLIEDER NACH VEREINSJAHREN -->
+    <div class="card border-0 shadow-sm mt-4">
+      <div class="card-header bg-white border-0 py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+          <h5 class="fw-bold text-dark mb-0 d-flex align-items-center gap-2">
+            <span>🎖️</span> Gesamtrangliste nach Vereinsjahren
+            <span class="badge bg-secondary rounded-pill small">${rankingList.length}</span>
+          </h5>
+          <span class="small text-muted">Vollständige Rangfolge aller Vereinsmitglieder geordnet nach Treuejahren im Verein.</span>
+        </div>
+        <div id="mgl-jubilaeen-col-toggle"></div>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover table-sm mb-0 align-middle" id="mgl-jubilaeen-table">
+            <thead class="table-light sticky-top small text-muted text-uppercase" style="font-size: 11px; z-index: 10;">
+              <tr>
+                <th data-col-id="rank" data-col-name="Rang" class="py-2 text-center" style="width: 50px;">#</th>
+                <th data-col-id="member" data-col-name="Mitglied" class="py-2">Mitglied</th>
+                <th data-col-id="status" data-col-name="Status" class="py-2">Status</th>
+                <th data-col-id="entry" data-col-name="Vereinseintritt" class="py-2">Vereinseintritt</th>
+                <th data-col-id="years" data-col-name="Vereinsjahre" class="py-2 text-center" style="width: 140px;">Vereinsjahre (${targetYear})</th>
+                <th data-col-id="next" data-col-name="Nächstes Jubiläum" class="py-2">Nächstes Jubiläum</th>
+                <th data-col-id="actions" data-col-name="Aktionen" class="text-end py-2" style="width: 80px;"></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rankingList.map((item, idx) => {
+                const m = item.member;
+                const pn = String(m.PersonNumber || '');
+                const name = escapeHtml((m.FirstName || '') + ' ' + (m.LastName || ''));
+                const city = escapeHtml(m.City || '');
+                const statusBadgeHtml = mglStatusBadge(m);
+                const next = item.nextJubilee;
+                
+                let nextHtml = '–';
+                if (item.isCelebrator) {
+                  nextHtml = `<span class="badge bg-success shadow-xs"><i class="fas fa-party-horn me-1"></i>Feiert ${item.yearsInTarget} Jahre in ${targetYear}!</span>`;
+                } else if (next) {
+                  const badgeIcon = next.milestone === 50 ? '🥇' : (next.milestone === 25 ? '🥈' : '🎖');
+                  const inText = next.inYears === 1 ? 'nächstes Jahr' : `in ${next.inYears} Jahren`;
+                  nextHtml = `<span class="badge bg-light text-dark border"><i class="fas fa-hourglass-half me-1 text-muted"></i>${badgeIcon} ${next.milestone} Jahre in ${next.jubileeYear} <span class="text-muted fw-normal">(${inText})</span></span>`;
+                }
+
+                // Fortschrittsbalken relativ zu 50 Jahren
+                const pct = Math.min(100, Math.round((item.yearsInTarget / 50) * 100));
+
+                return `
+                  <tr>
+                    <td data-col-id="rank" class="text-center font-monospace fw-bold text-muted small">${idx + 1}</td>
+                    <td data-col-id="member">
+                      <a href="#" class="text-decoration-none fw-semibold text-dark" onclick="mglOpenDetail('${escapeJs(pn)}'); return false;">
+                        ${name}
+                      </a>
+                      ${city ? `<div class="text-muted small" style="font-size:0.74rem;"><i class="fas fa-location-dot me-1 text-muted opacity-50"></i>${city}</div>` : ''}
+                    </td>
+                    <td data-col-id="status">${statusBadgeHtml}</td>
+                    <td data-col-id="entry" class="small text-nowrap">
+                      <div>${mglFmtDate(item.entryDate)}</div>
+                      <div class="text-muted" style="font-size: 0.72rem;">Eintritt ${item.entryYear}</div>
+                    </td>
+                    <td data-col-id="years" class="text-center">
+                      <div class="fw-bold fs-6 text-primary">${item.yearsInTarget} Jahre</div>
+                      <div class="progress" style="height: 4px; width: 80px; margin: 2px auto 0 auto;" title="${item.yearsInTarget} Jahre">
+                        <div class="progress-bar ${item.yearsInTarget >= 50 ? 'bg-warning' : (item.yearsInTarget >= 25 ? 'bg-secondary' : 'bg-primary')}" style="width: ${pct}%;"></div>
+                      </div>
+                    </td>
+                    <td data-col-id="next">${nextHtml}</td>
+                    <td data-col-id="actions" class="text-end text-nowrap">
+                      <button class="btn btn-outline-primary btn-sm py-0 px-2" onclick="mglOpenDetail('${escapeJs(pn)}')" title="Mitgliedsprofil öffnen">
+                        <i class="fas fa-eye"></i>
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+
+  if (typeof window.TableKit?.initTable === 'function') {
+    window.TableKit.initTable('#mgl-jubilaeen-table', {
+      id: 'portal_mgl_jubilaeen',
+      storageKeyWidths: 'portal_mgl_jubilaeen_widths',
+      storageKeyOrder: 'portal_mgl_jubilaeen_order',
+      storageKeyCols: 'portal_mgl_jubilaeen_cols',
+      resizable: {
+        minWidth: 50,
+        columns: {
+          rank: { minWidth: 40, defaultWidth: 50, resizable: false },
+          actions: { minWidth: 70, defaultWidth: 80, resizable: false }
+        }
+      },
+      columnToggle: '#mgl-jubilaeen-col-toggle'
+    });
+  }
+}
+window.mglRenderJubilaeen = mglRenderJubilaeen;

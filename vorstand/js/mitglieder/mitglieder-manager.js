@@ -81,7 +81,9 @@ async function mglSaveMember(event, pn) {
     is_honorary: isHonorary,
     is_honorary_source: isHonorary ? 'manual' : (oldMember.IsHonoraryMemberSource || 'ssv'),
     honorary_member_since: honorarySince || null,
+    honorary_member_since_source: honorarySince ? 'manual' : (oldMember.HonoraryMemberSinceSource || 'ssv'),
     club_entry_date: clubEntry || null,
+    club_entry_date_source: clubEntry ? 'manual' : (oldMember.ClubEntryDateSource || 'ssv'),
     club_exit_date: austritt || null,
     remark: remark || null,
     avatar_url: avatarUrl,
@@ -120,6 +122,10 @@ async function mglSaveMember(event, pn) {
       if (oldMember.Kontoinhaber !== konto) changesSummary.push(`Kontoinhaber: ${konto || '–'}`);
       if (oldMember.Rechnungsversand !== rv) changesSummary.push(`Rechnungsversand: ${rv}`);
       if (Boolean(oldMember.Niemahnen) !== nieMahnen) changesSummary.push(`Nie mahnen: ${nieMahnen ? 'Ja' : 'Nein'}`);
+      if (Boolean(oldMember._istEhren) !== isHonorary) changesSummary.push(`Ehrenmitglied: ${isHonorary ? 'Ja' : 'Nein'}`);
+      if (oldMember.HonoraryMemberSince !== honorarySince) changesSummary.push(`Ernennungsdatum: ${honorarySince || '–'}`);
+      if (oldMember.ClubEntryDate !== clubEntry) changesSummary.push(`Vereinseintritt: ${clubEntry || '–'}`);
+      if (oldMember.Vereinsaustritt !== austritt) changesSummary.push(`Vereinsaustritt: ${austritt || '–'}`);
       if (oldMember.Remark !== remark) changesSummary.push(`Notiz aktualisiert`);
       if (oldMember.Street !== street || oldMember.City !== city) changesSummary.push(`Adresse geändert`);
       if (oldMember.PrimaryEmail !== email) changesSummary.push(`E-Mail geändert`);
@@ -143,6 +149,8 @@ async function mglSaveMember(event, pn) {
 
     // 3. LOKALEN STATE (RAM) AKTUALISIEREN
     if (idx >= 0) {
+      const ernennungsjahr = window.mglExtractYear ? window.mglExtractYear(honorarySince) : (honorarySince ? new Date(honorarySince).getFullYear() : null);
+      const mitgliedsjahre = window.mglCalcMitgliedsjahre ? window.mglCalcMitgliedsjahre(clubEntry, austritt) : 0;
       Object.assign(_mglData[idx], {
         FirstName: firstName,
         LastName: lastName,
@@ -160,7 +168,9 @@ async function mglSaveMember(event, pn) {
         IsHonoraryMember: isHonorary ? 1 : 0,
         IsHonoraryMemberSource: updatePayload.is_honorary_source,
         HonoraryMemberSince: honorarySince,
+        HonoraryMemberSinceSource: updatePayload.honorary_member_since_source,
         ClubEntryDate: clubEntry,
+        ClubEntryDateSource: updatePayload.club_entry_date_source,
         Vereinsaustritt: austritt,
         Remark: remark,
         AvatarUrl: avatarUrl,
@@ -170,9 +180,15 @@ async function mglSaveMember(event, pn) {
         Rechnungsversand: rv,
         Niemahnen: nieMahnen ? 1 : 0,
         _istEhren: isHonorary,
+        _ernennungsjahr: ernennungsjahr,
         _istPassiv: isPassive,
         _badgeAktiv: !isPassive && !austritt,
-        _isU21: typeof mglIsU21 === 'function' ? mglIsU21({ BirthDate: birthDate, PersonNumber: pn }) : false
+        _isU21: typeof mglIsU21 === 'function' ? mglIsU21({ BirthDate: birthDate, PersonNumber: pn }) : false,
+        _eintrittsdatum: clubEntry,
+        _eintrittsjahr: window.mglExtractYear ? window.mglExtractYear(clubEntry) : null,
+        _mitgliedsjahre: mitgliedsjahre,
+        _jubilaeumAktuell: window.mglIsJubileeInYear ? window.mglIsJubileeInYear(clubEntry) : null,
+        _naechstesJubilaeum: window.mglNextJubilee ? window.mglNextJubilee(clubEntry) : null
       });
     }
 

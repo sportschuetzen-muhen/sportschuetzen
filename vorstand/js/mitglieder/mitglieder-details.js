@@ -9,7 +9,8 @@ function mglAssembleTimeline(m, liz, fn, his) {
       timeline.push({ datum: entry, title: 'Vereinseintritt', typ: 'Eintritt', icon: '👤', color: '#2563eb' });
     }
     if ((m.IsHonoraryMember == 1 || m.IsHonoraryMember === true || m._istEhren) && m.HonoraryMemberSince) {
-      timeline.push({ datum: m.HonoraryMemberSince, title: 'Ehrenmitglied ernannt', typ: 'Ehren', icon: '🏆', color: '#f59e0b' });
+      const yr = m._ernennungsjahr || (window.mglExtractYear ? window.mglExtractYear(m.HonoraryMemberSince) : new Date(m.HonoraryMemberSince).getFullYear());
+      timeline.push({ datum: m.HonoraryMemberSince, title: `Ehrenmitglied ernannt (${yr})`, typ: 'Ehren', icon: '🏆', color: '#f59e0b' });
     }
     if (m.Vereinsaustritt) {
       timeline.push({ datum: m.Vereinsaustritt, title: 'Vereinsaustritt', typ: 'Austritt', icon: '🚪', color: '#6b7280' });
@@ -81,12 +82,13 @@ function mglOpenDetail(pn) {
     document.getElementById('mglDetailTitle').textContent = `${m.FirstName || ''} ${m.LastName || ''}`;
 
     const initials = `${(m.FirstName || '').charAt(0)}${(m.LastName || '').charAt(0)}`.trim() || '??';
-    const mitgliedSeit = m._mitgliedSeit || m.EntryDate || m.HonoraryMemberSince || '';
+    const mitgliedSeit = m._mitgliedSeit || m.ClubEntryDate || m.FirstClubEntryDateSSV || m.EntryDate || m.HonoraryMemberSince || '';
     const isDeceased = m.Deceased == 1 || m.Deceased === true || m.Deceased === '1';
     const badgeAktiv = (m._badgeAktiv || (m.IsActive == 1 || m.IsActive === true || m.IsActive === '1')) && !m._istPassiv && !isDeceased;
     const badgeLizenz = m._badgeLizenzText || `${Number(m._aktiveLizenzenCount || 0)} aktiv`;
     const badgeEhren = m._badgeEhren || m.IsHonoraryMember == 1 || m.IsHonoraryMember === true;
     const isU21 = typeof mglIsU21 === 'function' ? mglIsU21(m) : !!m._isU21;
+    const yrEhren = m._ernennungsjahr || (m.HonoraryMemberSince ? (window.mglExtractYear ? window.mglExtractYear(m.HonoraryMemberSince) : new Date(m.HonoraryMemberSince).getFullYear()) : null);
 
     document.getElementById('mglDetailTitle').textContent = `${m.FirstName || ''} ${m.LastName || ''} ${isDeceased ? '†' : ''}`;
 
@@ -175,15 +177,16 @@ function mglOpenDetail(pn) {
                 ${isDeceased ? `<span class="mgl-chip gray">† Verstorben</span>` : (badgeAktiv ? `<span class="mgl-chip green">Aktiv</span>` : `<span class="mgl-chip gray">Inaktiv</span>`)}
                 <span class="mgl-chip blue">${badgeLizenz}</span>
                 ${isU21 ? '<span class="mgl-chip" style="background:#0dcaf0;color:#000;font-weight:600;"><i class="fas fa-child me-1"></i>Jugend (U21)</span>' : ''}
-                ${badgeEhren ? `<span class="mgl-chip gold">Ehrenmitglied</span>` : ''}
+                ${badgeEhren ? `<span class="mgl-chip gold"><i class="fas fa-medal me-1"></i>Ehrenmitglied${yrEhren ? ' (' + yrEhren + ')' : ''}</span>` : ''}
               </div>
             </div>
           </div>
 
           <div class="mgl-detail-stats mt-4">
             <div class="mgl-overview-card">
-              <div class="mgl-overview-label">Mitgliedsjahre</div>
-              <div class="mgl-overview-value">${Number(m._mitgliedsjahre || 0)}</div>
+              <div class="mgl-overview-label">Vereinsjahre</div>
+              <div class="mgl-overview-value text-primary">${Number(m._mitgliedsjahre || 0)}</div>
+              <div class="small text-muted" style="font-size:0.7rem">Seit ${m._eintrittsjahr || (mitgliedSeit ? mglFmtDate(mitgliedSeit) : '–')}</div>
             </div>
             <div class="mgl-overview-card">
               <div class="mgl-overview-label">Aktive Lizenzen</div>
@@ -203,7 +206,7 @@ function mglOpenDetail(pn) {
           <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#mglTabLiz">Lizenzen</a></li>
           <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#mglTabFn">Funktionen</a></li>
           <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#mglTabTimeline">Timeline</a></li>
-          ${canEditVerein ? `<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#mglTabEdit">✏️ Zahlungsdaten</a></li>` : ''}
+          ${canEditVerein ? `<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#mglTabEdit">✏️ Vereins- &amp; Zahlungsdaten</a></li>` : ''}
         </ul>
 
         <div class="tab-content p-3">
@@ -216,12 +219,24 @@ function mglOpenDetail(pn) {
               <div class="col-md-6">
                 <h6 class="fw-bold mb-2">Vereinsintern</h6>
                 <div class="row border-bottom py-1">
-                  <div class="col-5 text-muted small">Ehrenmitglied</div>
-                  <div class="col-7 small">${badgeEhren ? '✅ Ja' : 'Nein'}</div>
+                  <div class="col-5 text-muted small">Vereinsstatus</div>
+                  <div class="col-7 small fw-semibold">${badgeEhren ? `<span class="badge bg-warning text-dark"><i class="fas fa-medal me-1"></i>Ehrenmitglied${yrEhren ? ' (' + yrEhren + ')' : ''}</span>` : (m._istPassiv ? '<span class="badge bg-secondary">Passiv</span>' : (badgeAktiv ? '<span class="badge bg-success">Aktiv</span>' : '<span class="badge bg-dark">Inaktiv</span>'))}</div>
                 </div>
                 <div class="row border-bottom py-1">
-                  <div class="col-5 text-muted small">Ehrenmitglied seit</div>
-                  <div class="col-7 small">${mglFmtDate(m.HonoraryMemberSince)}</div>
+                  <div class="col-5 text-muted small">Ehrenmitglied</div>
+                  <div class="col-7 small">${badgeEhren ? `✅ Ja${yrEhren ? ' (Ernannt ' + yrEhren + ')' : ''}` : 'Nein'}</div>
+                </div>
+                <div class="row border-bottom py-1">
+                  <div class="col-5 text-muted small">Ernennung Ehrenmitglied</div>
+                  <div class="col-7 small">${m.HonoraryMemberSince ? mglFmtDate(m.HonoraryMemberSince) + (yrEhren ? ' (Jahr ' + yrEhren + ')' : '') : '–'}</div>
+                </div>
+                <div class="row border-bottom py-1">
+                  <div class="col-5 text-muted small">Vereinseintritt</div>
+                  <div class="col-7 small">${mglFmtDate(m.ClubEntryDate || m.FirstClubEntryDateSSV) || '–'} <span class="badge bg-light text-dark border ms-1">${Number(m._mitgliedsjahre || 0)} Vereinsjahre</span></div>
+                </div>
+                <div class="row border-bottom py-1">
+                  <div class="col-5 text-muted small">Vereinsaustritt</div>
+                  <div class="col-7 small">${mglFmtDate(m.Vereinsaustritt) || '–'}</div>
                 </div>
                 <div class="row border-bottom py-1">
                   <div class="col-5 text-muted small">IBAN</div>
@@ -238,10 +253,6 @@ function mglOpenDetail(pn) {
                 <div class="row border-bottom py-1">
                   <div class="col-5 text-muted small">Nie mahnen</div>
                   <div class="col-7 small">${m.Niemahnen ? '✅ Ja' : 'Nein'}</div>
-                </div>
-                <div class="row border-bottom py-1">
-                  <div class="col-5 text-muted small">Vereinsaustritt</div>
-                  <div class="col-7 small">${mglFmtDate(m.Vereinsaustritt)}</div>
                 </div>
                 <div class="row py-1">
                   <div class="col-5 text-muted small">Bemerkung</div>
@@ -340,6 +351,46 @@ function mglOpenDetail(pn) {
                 </div>
               </div>
 
+              <!-- Sektion: Vereinsstatus, Ehrungen & Daten -->
+              <div class="card border mb-3 shadow-xs rounded-3">
+                <div class="card-header bg-light py-2 fw-bold small text-muted text-uppercase">
+                  <i class="fas fa-medal text-warning me-1"></i> Vereinsstatus, Ehrungen &amp; Historie
+                </div>
+                <div class="card-body p-3">
+                  <div class="row g-3">
+                    <div class="col-md-6">
+                      <div class="form-check form-switch mt-2">
+                        <input class="form-check-input" type="checkbox" id="mglEditIsHonorary" ${badgeEhren ? 'checked' : ''} onchange="const box = document.getElementById('mglEditHonoraryBox'); if (box) box.style.display = this.checked ? 'block' : 'none';">
+                        <label class="form-check-label fw-bold small" for="mglEditIsHonorary">
+                          <i class="fas fa-trophy text-warning me-1"></i>Ehrenmitglied
+                        </label>
+                      </div>
+                      <div class="small text-muted mt-1">Status als Ehrenmitglied (quellgeschützt gegen SSV-Import)</div>
+                    </div>
+                    <div class="col-md-6" id="mglEditHonoraryBox" style="${badgeEhren ? '' : 'display: none;'}">
+                      <label class="form-label small fw-bold text-muted">Ernennung zum Ehrenmitglied (Jahr / Datum)</label>
+                      <input type="date" class="form-control form-control-sm" id="mglEditHonorarySince" value="${m.HonoraryMemberSince ? String(m.HonoraryMemberSince).slice(0, 10) : ''}">
+                      <div class="small text-muted" style="font-size: 0.72rem;">Datum oder Stichtag (z.B. 01.01.YYYY) der GV-Ernennung</div>
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label small fw-bold text-muted">Vereinseintritt</label>
+                      <input type="date" class="form-control form-control-sm" id="mglEditClubEntry" value="${(m.ClubEntryDate || m.FirstClubEntryDateSSV) ? String(m.ClubEntryDate || m.FirstClubEntryDateSSV).slice(0, 10) : ''}">
+                      <div class="small text-muted" style="font-size: 0.72rem;">Grundlage für Vereinsjahre &amp; Jubiläen</div>
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label small fw-bold text-muted">Vereinsaustritt</label>
+                      <input type="date" class="form-control form-control-sm" id="mglEditAustritt" value="${m.Vereinsaustritt ? String(m.Vereinsaustritt).slice(0, 10) : ''}">
+                    </div>
+                    <div class="col-md-4">
+                      <div class="form-check form-switch mt-4">
+                        <input class="form-check-input" type="checkbox" id="mglEditIsPassive" ${m._istPassiv ? 'checked' : ''}>
+                        <label class="form-check-label fw-semibold small" for="mglEditIsPassive">Passivmitglied</label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <!-- Sektion: Zahlungsdaten & Rechnungen -->
               <div class="card border mb-3 shadow-xs rounded-3">
                 <div class="card-header bg-light py-2 fw-bold small text-muted text-uppercase">
@@ -383,7 +434,7 @@ function mglOpenDetail(pn) {
               <div class="d-flex justify-content-between align-items-center mt-3 pt-2 border-top">
                 <span class="small text-muted"><i class="fas fa-lock me-1"></i>Speicherung erfolgt direkt in Supabase PostgreSQL</span>
                 <button type="submit" class="btn btn-primary px-4 fw-bold shadow-sm" id="mglEditSubmitBtn">
-                  <i class="fas fa-save me-1"></i> Zahlungsdaten speichern
+                  <i class="fas fa-save me-1"></i> Vereins- &amp; Zahlungsdaten speichern
                 </button>
               </div>
             </form>

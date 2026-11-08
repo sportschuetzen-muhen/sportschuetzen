@@ -217,6 +217,16 @@ Dies erleichtert dem Vorstand und den Schützenmeistern die sofortige Einordnung
 * **Revisionssichere Historie (`public.member_history`):** Alle verifizierten Mutationen wurden in `public.members` eingepflegt (`club_entry_date_source = 'GV-Protokoll'`, `honorary_member_since_source = 'GV-Protokoll'`, `deceased = true`, `death_date`) und mit 59 Ereignissen in `public.member_history` (`source = 'GV-Protokoll-Abgleich'`) archiviert.
 * **Mehrfach-Stationen & Aktiv-Schutz:** Bei Personen mit zeitweiligen Eintritten/Austritten (z. B. Thomas Hochuli: Eintritt 1989, Austritt 2003, Wiedereintritt) bleibt der aktuelle Status `is_active = true` mit Eintritt `1989` geschützt, während der historische Austritt von 2003 als Zwischenstation im Audit-Log archiviert ist.
 
+### 7.11 Ernennungsjahr bei Ehrenmitgliedern & Cockpit «Jubiläen & Vereinsjahre»
+* **Ernennungsjahr auf Status-Badges:** Bei allen Ehrenmitgliedern wird das Ernennungsjahr (`honorary_member_since`) dynamisch im Status-Badge (`Ehrenmitglied (YYYY)`), auf den Karten, in der Haupttabelle und in der Ehrentafel ausgewiesen. Im Mutationsformular (`mglTabEdit`) stehen dedizierte Pflegefelder für Ehrenmitgliedschaft, Ernennungsdatum sowie Vereins-Ein- und Austritt zur Verfügung.
+* **Jubiläen & Vereinsjahre (`mglRenderJubilaeen`):** Eigener Navigations-Tab im Mitgliedermodul zur effizienten Vorbereitung von GV-Ehrungen:
+  - **Zieljahr-Filterung:** Stichtagsbezogene Auswertung (z. B. aktuelles Jahr `2026`, Vorbereitung kommende GV `2027`) für runde Vereinsjubiläen (10, 20, 25 [Silber], 30, 40, 50 [Gold], 60 [Diamant] Jahre).
+  - **Jubilare des Jahres:** Übersichtskarten mit Jubiläums-Badges (`🥈 25 Jahre`, `🥇 50 Jahre`) und Direktsprung in die Mitgliederdetails.
+  - **Gesamtrangliste nach Vereinsjahren:** TableKit-konforme Rangliste aller Mitglieder nach Treuejahren mit Fortschrittsbalken und Anzeige des jeweils nächsten anstehenden Jubiläums.
+  - **Excel-Export:** 1-Klick-Export aller Jubilare und Dienstjahre nach Excel via `UIExportKit`.
+  - **Core-Berechnung (`mitglieder-core.js`):** Berechnung von `_mitgliedsjahre`, `_ernennungsjahr` und Jubiläums-Flags erfolgt zentral beim Laden in `mapMemberFromSupabase`.
+
+
 
 
 

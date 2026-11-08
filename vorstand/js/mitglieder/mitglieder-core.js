@@ -13,8 +13,91 @@ window._mglHistoryCache = window._mglHistoryCache || {};
 // Globaler Singleton-Promise zur Vermeidung paralleler Anfragen
 window._mglLoadPromise = null;
 
+// Ermittelt das Alter einer Person
+function mglCalcAge(birthDate) {
+  if (!birthDate) return null;
+  const d = new Date(birthDate);
+  if (isNaN(d.getTime())) return null;
+  const currentYear = new Date().getFullYear();
+  return currentYear - d.getFullYear();
+}
+window.mglCalcAge = mglCalcAge;
+
+// Ermittelt das Jahr aus einem ISO-Datum oder String (z.B. '1997-04-25' -> 1997)
+function mglExtractYear(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (!isNaN(d.getTime())) {
+    const yr = d.getFullYear();
+    if (yr > 1900) return yr;
+  }
+  const match = String(dateStr).match(/\b(19\d\d|20\d\d)\b/);
+  return match ? parseInt(match[1], 10) : null;
+}
+window.mglExtractYear = mglExtractYear;
+
+// Berechnet die Anzahl Vereinsjahre (Mitgliedsjahre)
+function mglCalcMitgliedsjahre(entryDate, exitDate, targetYear = new Date().getFullYear()) {
+  if (!entryDate) return 0;
+  const entryYear = mglExtractYear(entryDate);
+  if (!entryYear || entryYear <= 1900) return 0;
+  const endYear = exitDate ? (mglExtractYear(exitDate) || targetYear) : targetYear;
+  if (!endYear || isNaN(endYear)) return 0;
+  return Math.max(0, endYear - entryYear);
+}
+window.mglCalcMitgliedsjahre = mglCalcMitgliedsjahre;
+
+// Offizielle Vereins-Jubiläen Meilensteine (in Jahren)
+const JUBILEE_MILESTONES = [10, 20, 25, 30, 40, 50, 60, 65, 70, 75, 80];
+window.JUBILEE_MILESTONES = JUBILEE_MILESTONES;
+
+// Prüft ob in einem Zieljahr ein Jubiläum gefeiert wird
+function mglIsJubileeInYear(entryDate, targetYear = new Date().getFullYear()) {
+  if (!entryDate) return null;
+  const entryYear = mglExtractYear(entryDate);
+  if (!entryYear || entryYear <= 1900) return null;
+  const years = targetYear - entryYear;
+  if (years > 0 && JUBILEE_MILESTONES.includes(years)) {
+    return {
+      years,
+      milestone: years,
+      isSilver: years === 25,
+      isGold: years === 50,
+      isDiamond: years === 60
+    };
+  }
+  return null;
+}
+window.mglIsJubileeInYear = mglIsJubileeInYear;
+
+// Ermittelt das nächste anstehende Jubiläum ab einem Bezugsjahr
+function mglNextJubilee(entryDate, fromYear = new Date().getFullYear()) {
+  if (!entryDate) return null;
+  const entryYear = mglExtractYear(entryDate);
+  if (!entryYear || entryYear <= 1900) return null;
+  const currentYears = fromYear - entryYear;
+  for (const m of JUBILEE_MILESTONES) {
+    if (m >= currentYears) {
+      const diff = m - currentYears;
+      return {
+        milestone: m,
+        inYears: diff,
+        jubileeYear: fromYear + diff,
+        isCurrentYear: diff === 0
+      };
+    }
+  }
+  return null;
+}
+window.mglNextJubilee = mglNextJubilee;
+
 // --- MAPPING HELPER FÜR SUPABASE POSTGREST ---
 function mapMemberFromSupabase(r) {
+  const entryDate = r.club_entry_date || r.first_club_entry_date_ssv || null;
+  const exitDate = r.club_exit_date || null;
+  const mitgliedsjahre = mglCalcMitgliedsjahre(entryDate, exitDate);
+  const ernennungsjahr = mglExtractYear(r.honorary_member_since);
+
   return {
     PersonNumber: r.person_number,
     AddressNumber: r.address_number,
@@ -65,24 +148,21 @@ function mapMemberFromSupabase(r) {
     synced_at: r.synced_at,
     AvatarUrl: r.avatar_url,
     _istEhren: Boolean(r.is_honorary),
+    _ernennungsjahr: ernennungsjahr,
     _istPassiv: Boolean(r.is_passive),
     _istVorstand: false,
     _badgeAktiv: Boolean(r.is_active) && !r.is_passive && !r.deceased,
     _isU21: mglIsU21({ BirthDate: r.birth_date, PersonNumber: r.person_number }),
     _altersklasse: mglCalcAltersklasse(r.birth_date),
-    _alter: mglCalcAge(r.birth_date)
+    _alter: mglCalcAge(r.birth_date),
+    _eintrittsdatum: entryDate,
+    _eintrittsjahr: mglExtractYear(entryDate),
+    _austrittsjahr: mglExtractYear(exitDate),
+    _mitgliedsjahre: mitgliedsjahre,
+    _jubilaeumAktuell: mglIsJubileeInYear(entryDate),
+    _naechstesJubilaeum: mglNextJubilee(entryDate)
   };
 }
-
-// Ermittelt das Alter einer Person
-function mglCalcAge(birthDate) {
-  if (!birthDate) return null;
-  const d = new Date(birthDate);
-  if (isNaN(d.getTime())) return null;
-  const currentYear = new Date().getFullYear();
-  return currentYear - d.getFullYear();
-}
-window.mglCalcAge = mglCalcAge;
 
 // Ermittelt die Altersklasse (U21, Elite, Senior, Veteran, Seniorveteran)
 function mglCalcAltersklasse(birthDate) {
