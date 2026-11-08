@@ -367,6 +367,36 @@ function jbCalculateLiveTotal(m, settings) {
       hasRA002 = true;
     }
   }
+
+  // 6. Gruppengewinne auswärtige Schiessen (Konto 1301) bewahren
+  const pnClean = String(m.PersonNumber || '').trim();
+  const yr = typeof _jbYear !== 'undefined' ? _jbYear : new Date().getFullYear();
+  if (typeof _jbPositionsCache !== 'undefined' && _jbPositionsCache && pnClean) {
+    const candidateKeys = [`CH-${yr}-${pnClean}`, `${yr}-${pnClean}`, pnClean];
+    for (const ck of candidateKeys) {
+      const list = _jbPositionsCache[ck];
+      if (Array.isArray(list) && list.length > 0) {
+        list.forEach(ep => {
+          const sf = String(ep.source_field || ep.sourcefield || ep.key || '').trim();
+          const kt = String(ep.konto || '').trim();
+          if (sf === '1301' || kt === '1301') {
+            const desc = ep.beschreibung || ep.name || 'Gutschrift Gruppengewinn';
+            const amt = -Math.abs(Number(ep.betrag || 0));
+            if (amt !== 0 && !positions.some(p => (p.key === '1301' || p.konto === '1301') && p.name === desc)) {
+              positions.push({
+                name: desc,
+                betrag: amt,
+                typ: 'Credit',
+                key: '1301',
+                konto: '1301'
+              });
+            }
+          }
+        });
+        break;
+      }
+    }
+  }
   
   // Summing up
   let total = 0;

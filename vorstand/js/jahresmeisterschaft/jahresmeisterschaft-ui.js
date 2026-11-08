@@ -2,7 +2,7 @@
 
 let jmViewMode = 'points'; // 'points' | 'percent' | 'both'
 window.jmViewMode = jmViewMode;
-let jmActiveTab = 'ligen'; // 'ligen' | 'junioren' | 'matrix'
+let jmActiveTab = 'ligen'; // 'ligen' | 'junioren' | 'matrix' | 'gruppengewinne'
 window.jmActiveTab = jmActiveTab;
 
 function jmSetActiveTab(tab) {
@@ -12,6 +12,10 @@ function jmSetActiveTab(tab) {
         renderJuniorenTabContent();
     } else if (tab === 'matrix') {
         renderMatrixTabContent();
+    } else if (tab === 'gruppengewinne') {
+        if (typeof window.jmRenderGruppengewinneTabPane === 'function') {
+            window.jmRenderGruppengewinneTabPane();
+        }
     }
 }
 window.jmSetActiveTab = jmSetActiveTab;
@@ -26,6 +30,8 @@ function setJMViewMode(mode) {
         jmActiveTab = 'junioren';
     } else if (activeNav && activeNav.id === 'matrix-tab') {
         jmActiveTab = 'matrix';
+    } else if (activeNav && activeNav.id === 'gruppengewinne-tab') {
+        jmActiveTab = 'gruppengewinne';
     } else if (activeNav && activeNav.id === 'ligen-tab') {
         jmActiveTab = 'ligen';
     }
@@ -257,6 +263,7 @@ function renderJahresmeisterschaft(grid) {
     const isLigenActive = (jmActiveTab === 'ligen');
     const isJuniorenActive = (jmActiveTab === 'junioren');
     const isMatrixActive = (jmActiveTab === 'matrix');
+    const isGruppengewinneActive = (jmActiveTab === 'gruppengewinne');
 
     // Hinweisbanner: Archiv (schreibgeschützt) bzw. reine Leserechte
     let jmInfoBanner = '';
@@ -283,7 +290,7 @@ function renderJahresmeisterschaft(grid) {
                     <li><strong>Resultate erfassen:</strong> Tippe die Punkte direkt in die Zelle des Schützen ein. Prozente, Streichresultat, Top&nbsp;4 SMM, «Auswärtiges 1/2» und das Total berechnet das System selbst.</li>
                     <li><strong>Automatisch übernehmen:</strong> Über «⚙️ Aktionen → Resultate importieren…» liest du Excel, PDF oder Fotos ein. Von Schützen eingereichte Belege findest du unter «Standblätter».</li>
                     <li><strong>Speichern nicht vergessen:</strong> Der Button oben rechts zeigt, wie viele Änderungen noch nicht gespeichert sind. Erst nach dem Speichern sind sie für alle sichtbar.</li>
-                    <li><strong>Auswärtsschiessen:</strong> Erfasse jedes Schiessen in seiner eigenen Spalte. Die zwei prozentual besten zählen automatisch (gelb markiert). Mit «Auswärtsschiessen exportieren» erhältst du eine Liste als PDF oder Excel.</li>
+                    <li><strong>Auswärtsschiessen &amp; Gruppengewinne:</strong> Erfasse jedes Schiessen in seiner eigenen Spalte. Die zwei prozentual besten zählen automatisch (gelb markiert). Im Reiter <strong>«🏆 Gruppengewinne (1301)»</strong> verwaltest du die Gruppenresultate, überträgst Gewinne mit 1 Klick in den Jahresbeitrag und exportierst die Auswertung als PDF oder Word für den Jahresbericht.</li>
                     <li><strong>Saisonende:</strong> Zuerst «Archivieren», danach «Neues Jahr starten» (Auf- und Abstieg). Alte Saisons wählst du oben im Auswahlfeld aus; sie sind schreibgeschützt.</li>
                 </ul>
                 <div><span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle me-1">gelb</span>zählendes Auswärtsresultat
@@ -308,8 +315,14 @@ function renderJahresmeisterschaft(grid) {
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
-                    <button class="nav-link ${isMatrixActive ? 'active' : ''} fw-bold text-dark px-4 py-2 border-0" id="matrix-tab" data-bs-toggle="tab" data-bs-target="#matrix-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: rgba(0,0,0,0.03);" title="Alle Spalten auf einen Blick (nur Ansicht, mit Excel-Export)" onclick="jmSetActiveTab('matrix')">
+                    <button class="nav-link ${isMatrixActive ? 'active' : ''} fw-bold text-dark px-4 py-2 border-0" id="matrix-tab" data-bs-toggle="tab" data-bs-target="#matrix-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; margin-right: 4px; background: rgba(0,0,0,0.03);" title="Alle Spalten auf einen Blick (nur Ansicht, mit Excel-Export)" onclick="jmSetActiveTab('matrix')">
                         <i class="fas fa-table me-2"></i>Gesamt-Matrix (Alle Spalten)
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link ${isGruppengewinneActive ? 'active' : ''} fw-bold text-dark px-4 py-2 border-0 position-relative" id="gruppengewinne-tab" data-bs-toggle="tab" data-bs-target="#gruppengewinne-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: rgba(255,193,7,0.12);" title="Auswärtige Gruppengewinne (Konto 1301), Schützen-Zuweisung, Übertrag in Jahresbeitrag & Jahresbericht-Export" onclick="jmSetActiveTab('gruppengewinne')">
+                        <i class="fas fa-trophy me-2 text-warning"></i>Gruppengewinne (1301)
+                        <span id="jm-gg-tab-badge" class="badge rounded-pill bg-warning text-dark ms-1 d-none" style="font-size: 0.7rem;"></span>
                     </button>
                 </li>
             </ul>
@@ -341,6 +354,9 @@ function renderJahresmeisterschaft(grid) {
             <div class="tab-pane fade ${isMatrixActive ? 'show active' : ''}" id="matrix-pane" role="tabpanel" aria-labelledby="matrix-tab">
                 <div class="text-center py-4 text-muted"><i class="fas fa-spinner fa-spin me-2"></i>Lade Gesamt-Matrix...</div>
             </div>
+            <div class="tab-pane fade ${isGruppengewinneActive ? 'show active' : ''}" id="gruppengewinne-pane" role="tabpanel" aria-labelledby="gruppengewinne-tab">
+                <div class="text-center py-4 text-muted"><i class="fas fa-spinner fa-spin me-2"></i>Lade Gruppengewinne (Konto 1301)...</div>
+            </div>
         </div>
     `;
 
@@ -351,11 +367,18 @@ function renderJahresmeisterschaft(grid) {
     // Check sizes initially
     checkLigaSizes();
 
-    // Falls der Junioren- oder Matrix-Tab aktiv war, Inhalt sofort rendern
+    // Falls der Junioren-, Matrix- oder Gruppengewinne-Tab aktiv war, Inhalt sofort rendern
     if (isJuniorenActive) {
         renderJuniorenTabContent();
     } else if (isMatrixActive) {
         renderMatrixTabContent();
+    } else if (isGruppengewinneActive && typeof window.jmRenderGruppengewinneTabPane === 'function') {
+        window.jmRenderGruppengewinneTabPane();
+    }
+
+    // Tab-Badge für offene Gruppengewinne im Hintergrund aktualisieren
+    if (typeof window.jmRefreshGruppengewinneBadge === 'function') {
+        window.jmRefreshGruppengewinneBadge();
     }
 }
 

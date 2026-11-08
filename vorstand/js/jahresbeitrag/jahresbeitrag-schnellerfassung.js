@@ -1003,6 +1003,42 @@ async function jbSaveSingleMemberDirect(pnClean) {
   // 2. Beitrag live berechnen
   const calc = (typeof jbCalculateLiveTotal === 'function') ? jbCalculateLiveTotal(m, settings) : { total: 0, positions: [] };
   const headId = `CH-${_jbYear}-${pn}`;
+
+  // Sicherstellen, dass bereits verrechnete Gruppengewinne (Konto 1301) niemals verloren gehen
+  const verified1301Links = [];
+  try {
+    const { data: gcmRows } = await supa
+      .from('group_competition_members')
+      .select('id, betrag, status, payout_method, competition:group_competitions!inner(jahr, gruppe_name, anlass_name)')
+      .eq('person_number', parseInt(pn, 10))
+      .eq('payout_method', 'jahresbeitrag')
+      .eq('status', 'verrechnet')
+      .eq('competition.jahr', Number(_jbYear));
+
+    if (Array.isArray(gcmRows) && gcmRows.length > 0) {
+      gcmRows.forEach(gw => {
+        const amt = -Math.abs(Number(gw.betrag || 0));
+        if (amt === 0) return;
+        const comp = gw.competition || {};
+        const desc = `Gutschrift Gruppengewinn: ${comp.gruppe_name || 'Gruppe'} (${comp.anlass_name || 'Schiessen'})`;
+        if (!calc.positions.some(p => (p.key === '1301' || p.konto === '1301') && p.name === desc)) {
+          calc.positions.push({
+            name: desc,
+            betrag: amt,
+            typ: 'Credit',
+            key: '1301',
+            konto: '1301'
+          });
+        }
+        verified1301Links.push({ gcmId: gw.id, desc });
+      });
+      const rawSum = calc.positions.reduce((s, p) => s + Number(p.betrag || 0), 0);
+      const hasJanitor = calc.positions.some(p => p.key === 'RA002');
+      calc.total = hasJanitor ? rawSum : Math.max(0, rawSum);
+    }
+  } catch (gwErr) {
+    console.warn('[Schnellerfassung] Hinweis beim Abgleich der Gruppengewinne (1301):', gwErr);
+  }
   
   // Vorhandenen Header ermitteln
   let existingHeader = (_jbData || []).find(x => String(x.PersonNumber).trim() === pn);
@@ -1035,6 +1071,14 @@ async function jbSaveSingleMemberDirect(pnClean) {
   await supa.from('contributions_positions').delete().eq('header_id', headId);
   if (newPos.length > 0) {
     await supa.from('contributions_positions').insert(newPos);
+  }
+
+  // Referenzen in group_competition_members auf die neue Positions-ID aktualisieren
+  for (const link of verified1301Links) {
+    const matchedNewPos = newPos.find(np => np.konto === '1301' && np.beschreibung === link.desc);
+    if (matchedNewPos && link.gcmId) {
+      await supa.from('group_competition_members').update({ contribution_position_id: matchedNewPos.id }).eq('id', link.gcmId);
+    }
   }
 
   // Lokale Caches updaten
@@ -1449,11 +1493,47 @@ async function jbSaveAllBulkLocalChanges() {
             const calc = jbCalculateLiveTotal(m, settings);
             const headId = `CH-${year}-${pn}`;
 
+            const verified1301Links = [];
+            try {
+              const { data: gcmRows } = await supa
+                .from('group_competition_members')
+                .select('id, betrag, status, payout_method, competition:group_competitions!inner(jahr, gruppe_name, anlass_name)')
+                .eq('person_number', parseInt(pn, 10))
+                .eq('payout_method', 'jahresbeitrag')
+                .eq('status', 'verrechnet')
+                .eq('competition.jahr', Number(year));
+
+              if (Array.isArray(gcmRows) && gcmRows.length > 0) {
+                gcmRows.forEach(gw => {
+                  const amt = -Math.abs(Number(gw.betrag || 0));
+                  if (amt === 0) return;
+                  const comp = gw.competition || {};
+                  const desc = `Gutschrift Gruppengewinn: ${comp.gruppe_name || 'Gruppe'} (${comp.anlass_name || 'Schiessen'})`;
+                  if (!calc.positions.some(p => (p.key === '1301' || p.konto === '1301') && p.name === desc)) {
+                    calc.positions.push({
+                      name: desc,
+                      betrag: amt,
+                      typ: 'Credit',
+                      key: '1301',
+                      konto: '1301'
+                    });
+                  }
+                  verified1301Links.push({ gcmId: gw.id, desc });
+                });
+                const rawSum = calc.positions.reduce((s, p) => s + Number(p.betrag || 0), 0);
+                const hasJanitor = calc.positions.some(p => p.key === 'RA002');
+                calc.total = hasJanitor ? rawSum : Math.max(0, rawSum);
+              }
+            } catch (_) {}
+
+            let existingHeader = (_jbData || []).find(x => String(x.PersonNumber).trim() === pn);
+            const statusToSet = existingHeader?.status === 'bezahlt' ? 'bezahlt' : 'offen';
+
             await supa.from('contributions_header').upsert({
               id: headId,
               person_number: pn,
               year: Number(year),
-              status: 'offen',
+              status: statusToSet,
               gesamt: calc.total,
               updated_at: new Date().toISOString()
             }, { onConflict: 'person_number,year' });
@@ -1475,6 +1555,13 @@ async function jbSaveAllBulkLocalChanges() {
             await supa.from('contributions_positions').delete().eq('header_id', headId);
             if (newPos.length > 0) {
               await supa.from('contributions_positions').insert(newPos);
+            }
+
+            for (const link of verified1301Links) {
+              const matchedNewPos = newPos.find(np => np.konto === '1301' && np.beschreibung === link.desc);
+              if (matchedNewPos && link.gcmId) {
+                await supa.from('group_competition_members').update({ contribution_position_id: matchedNewPos.id }).eq('id', link.gcmId);
+              }
             }
           }
         }

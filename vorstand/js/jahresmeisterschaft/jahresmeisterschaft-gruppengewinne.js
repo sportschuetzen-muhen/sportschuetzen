@@ -71,12 +71,372 @@
         }
     }
 
+    window._jmFibu1301Cache = [];
+
     /**
-     * Öffnet das zentrale Übersichts-Modal für Gruppengewinne.
+     * Lädt die Buchungen auf Konto 1301 (und Gruppenauszahlungen auf 4410) für das gewählte Jahr aus accounting_journal.
      */
-    async function jmOpenGruppengewinneModal(year) {
+    async function jmLoadAccounting1301Entries(year) {
+        const yr = year || getActiveYear();
+        const supa = getSupa();
+        if (!supa) return [];
+
+        try {
+            const startStr = `${yr}-01-01`;
+            const endStr = `${yr}-12-31`;
+            const { data, error } = await supa
+                .from('accounting_journal')
+                .select('id, datum, beleg_nr, konto_soll, konto_haben, betrag, beschreibung')
+                .gte('datum', startStr)
+                .lte('datum', endStr)
+                .or('konto_soll.eq.1301,konto_haben.eq.1301,beschreibung.ilike.%gruppengewinn%,beschreibung.ilike.%gruppenauszahlung%')
+                .order('datum', { ascending: false });
+
+            if (error) throw error;
+            window._jmFibu1301Cache = data || [];
+            return window._jmFibu1301Cache;
+        } catch (err) {
+            console.warn('[Gruppengewinne] Konnte Buchhaltung Konto 1301 nicht abfragen:', err);
+            return [];
+        }
+    }
+
+    /**
+     * Gleicht die erfassten Gruppengewinne mit den Buchhaltungs-Buchungen auf Konto 1301 ab.
+     */
+    function reconcileFibu1301WithCompetitions(compList, fibuRows) {
+        const comps = Array.isArray(compList) ? compList : [];
+        const rows = Array.isArray(fibuRows) ? fibuRows : [];
+
+        // Haben-Buchungen auf 1301 = Zahlungseingänge von Ausrichtern (Schützen-Überschuss)
+        const haben1301 = rows.filter(r => String(r.konto_haben) === '1301' && Number(r.betrag || 0) > 0);
+        // Direkt auf 4410 gebuchte Gruppenauszahlungen (wenn Gewinn <= Doppel, z.B. Deisigraben)
+        const haben4410Group = rows.filter(r => String(r.konto_haben) === '4410' && String(r.konto_soll) === '1020' && /(?:gruppengewinn|gruppenauszahlung)/i.test(r.beschreibung || ''));
+
+        const norm = str => String(str || '')
+            .toLowerCase()
+            .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+            .replace(/schiessen|schuetzenfest|schuetzengesellschaft|sportschuetzen|verein|gruppe|strohhaus|strohaus|muhen|teilbetrag|gruppengewinn|gruppenauszahlung|\d+/g, ' ')
+            .replace(/[^a-z]/g, ' ')
+            .split(/\s+/)
+            .filter(w => w.length >= 4);
+
+        //Synonyme für bekannte Ausrichter/Ortschaften
+        const synonyms = {
+            'sobe': ['sonnenberg', 'reinach'],
+            'reinach': ['sonnenberg', 'sobe'],
+            'villmergen': ['baerenmoos'],
+            'brugg': ['vindonissa', 'windisch'],
+            'windisch': ['vindonissa', 'brugg'],
+            'balsthal': ['balsthaler', 'liegendmatch'],
+            'sulz': ['deisigraben'],
+            'menziken': ['stumpenland', 'burg'],
+            'siggenthal': ['siggenberg'],
+            'mettau': ['laubberg'],
+            'eidg': ['chur', 'eidgenoessisches']
+        };
+
+        const expandWords = (words) => {
+            const set = new Set(words);
+            words.forEach(w => {
+                Object.entries(synonyms).forEach(([k, vals]) => {
+                    if (w.includes(k) || k.includes(w)) {
+                        vals.forEach(v => set.add(v));
+                    }
+                });
+            });
+            return Array.from(set);
+        };
+
+        const matchedCompIds = new Set();
+        const matchedFibuIds = new Set();
+        const compToFibuMap = {};
+
+        comps.forEach(comp => {
+            const cWords = expandWords(norm(comp.anlass_name));
+            const ueberschuss = Math.max(0, Number(comp.gruppengewinn || 0) - Number(comp.gruppendoppel || 30));
+
+            // 1. Suche in haben1301
+            let bestFibu = null;
+            for (const f of haben1301) {
+                if (matchedFibuIds.has(f.id)) continue;
+                const fWords = expandWords(norm(f.beschreibung));
+                const wordHit = cWords.some(cw => fWords.some(fw => fw.includes(cw) || cw.includes(fw)));
+                const amtHit = Math.abs(Number(f.betrag || 0) - ueberschuss) < 0.05;
+                if (wordHit && amtHit) {
+                    bestFibu = f;
+                    break;
+                } else if (wordHit && !bestFibu) {
+                    bestFibu = f;
+                }
+            }
+
+            // 2. Falls ueberschuss === 0 (wie Deisigraben), prüfe haben4410Group
+            if (!bestFibu && ueberschuss === 0) {
+                for (const f of haben4410Group) {
+                    const fWords = expandWords(norm(f.beschreibung));
+                    const wordHit = cWords.some(cw => fWords.some(fw => fw.includes(cw) || cw.includes(fw)));
+                    if (wordHit) {
+                        bestFibu = f;
+                        break;
+                    }
+                }
+            }
+
+            if (bestFibu) {
+                matchedCompIds.add(comp.id);
+                matchedFibuIds.add(bestFibu.id);
+                compToFibuMap[comp.id] = bestFibu;
+            }
+        });
+
+        const unmatchedFibu1301 = haben1301.filter(f => !matchedFibuIds.has(f.id));
+        const unmatchedComps = comps.filter(c => {
+            const ueb = Math.max(0, Number(c.gruppengewinn || 0) - Number(c.gruppendoppel || 30));
+            return ueb > 0 && !matchedCompIds.has(c.id);
+        });
+
+        const totalFibuHaben1301 = haben1301.reduce((acc, r) => acc + Number(r.betrag || 0), 0);
+
+        return {
+            totalFibuHaben1301,
+            compToFibuMap,
+            unmatchedFibu1301,
+            unmatchedComps
+        };
+    }
+
+    /**
+     * Aktualisiert das Badge im Reiter «🏆 Gruppengewinne (1301)» und im Header-Button.
+     */
+    async function jmRefreshGruppengewinneBadge(year) {
+        const yr = year || getActiveYear();
+        const list = (window._jmGroupCompetitions && window._jmGroupCompetitions.length > 0 && Number(_jmActiveCompYear) === Number(yr))
+            ? window._jmGroupCompetitions
+            : await jmLoadGroupCompetitions(yr);
+
+        let openCompCount = 0;
+        (list || []).forEach(c => {
+            const ueb = Math.max(0, Number(c.gruppengewinn || 0) - Number(c.gruppendoppel || 30));
+            const members = Array.isArray(c.members) ? c.members : [];
+            const hasOpen = ueb > 0 && members.some(m => (m.payout_method || 'jahresbeitrag') === 'jahresbeitrag' && m.status !== 'verrechnet' && m.status !== 'ausgefuehrt');
+            if (hasOpen) openCompCount++;
+        });
+
+        const tabBadge = document.getElementById('jm-gg-tab-badge');
+        if (tabBadge) {
+            if (openCompCount > 0) {
+                tabBadge.textContent = `${openCompCount} offen`;
+                tabBadge.classList.remove('d-none');
+            } else {
+                tabBadge.textContent = '';
+                tabBadge.classList.add('d-none');
+            }
+        }
+    }
+
+    /**
+     * Erzeugt das gemeinsame HTML-Gerüst für Tab-Ansicht und Modal-Fallback.
+     */
+    function buildGruppengewinneWorkspaceHTML() {
+        return `
+            <!-- Info-Banner in Du-Form -->
+            <div class="alert alert-info py-2 px-3 small d-flex align-items-start justify-content-between gap-2 mb-3 shadow-xs border-0 rounded-3">
+                <div class="d-flex align-items-start gap-2">
+                    <i class="fas fa-info-circle fa-lg mt-1 text-primary"></i>
+                    <div>
+                        <strong>Vereinsregel für auswärtige Gruppenschiessen (Konto 1301):</strong>
+                        Der Verein übernimmt das Gruppendoppel (standardmässig <strong>CHF 30.00</strong>).
+                        Darüber hinausgehende Gruppengewinne stehen vollumfänglich den beteiligten Schützen zu.
+                        Ist die Auszahlung kleiner oder gleich dem Doppel (z.&nbsp;B. CHF 20.00 bei CHF 30.00 Doppel), geht der Betrag zur teilweisen Deckung des Doppels an den Verein (Konto 4410) und für die Schützen entsteht kein Überschuss (CHF 0.00).
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4 KPI-Kacheln -->
+            <div class="row g-2 mb-3" id="jm-gg-kpi-row">
+                <div class="col-sm-6 col-xl-3">
+                    <div class="card border-0 shadow-xs h-100 bg-white rounded-3">
+                        <div class="card-body py-2.5 px-3">
+                            <div class="text-muted small fw-semibold"><i class="fas fa-coins text-success me-1"></i>Erfasste Brutto-Gewinne</div>
+                            <div class="fs-5 fw-bold text-success mt-0.5" id="jm-gg-kpi-brutto">CHF 0.00</div>
+                            <div class="text-muted" style="font-size: 11px;" id="jm-gg-kpi-brutto-sub">0 Gruppenschiessen erfasst</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-xl-3">
+                    <div class="card border-0 shadow-xs h-100 bg-white rounded-3">
+                        <div class="card-body py-2.5 px-3">
+                            <div class="text-muted small fw-semibold"><i class="fas fa-shield-alt text-secondary me-1"></i>Vereinsanteil (Doppel-Deckung)</div>
+                            <div class="fs-5 fw-bold text-dark mt-0.5" id="jm-gg-kpi-doppel">CHF 0.00</div>
+                            <div class="text-muted" style="font-size: 11px;" id="jm-gg-kpi-doppel-sub">Konto 4410 Gruppendoppel</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-xl-3">
+                    <div class="card border-0 shadow-xs h-100 bg-white rounded-3">
+                        <div class="card-body py-2.5 px-3">
+                            <div class="text-muted small fw-semibold"><i class="fas fa-users text-primary me-1"></i>Schützen-Überschuss (1301)</div>
+                            <div class="fs-5 fw-bold text-primary mt-0.5" id="jm-gg-kpi-netto">CHF 0.00</div>
+                            <div style="font-size: 11px;" id="jm-gg-kpi-netto-sub">
+                                <span class="text-success fw-semibold">Abgewickelt: CHF 0.00</span> · <span class="text-warning-emphasis fw-semibold">Offen: CHF 0.00</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-xl-3">
+                    <div class="card border-0 shadow-xs h-100 bg-white rounded-3">
+                        <div class="card-body py-2.5 px-3">
+                            <div class="text-muted small fw-semibold"><i class="fas fa-balance-scale text-info me-1"></i>FiBu-Abgleich (Konto 1301)</div>
+                            <div class="fs-5 fw-bold text-dark mt-0.5" id="jm-gg-kpi-fibu">CHF 0.00</div>
+                            <div class="text-muted" style="font-size: 11px;" id="jm-gg-kpi-fibu-sub">Prüfe Buchhaltung...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Live-Abstimmungsbanner Buchhaltung Konto 1301 -->
+            <div id="jm-gg-fibu-reconcile-banner" class="d-none mb-3"></div>
+
+            <!-- Filter- & Aktionsleiste -->
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3 bg-white p-2.5 rounded-3 shadow-xs border">
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <label class="small fw-bold text-muted mb-0">Saison:</label>
+                    <select id="jm-gg-year-select" class="form-select form-select-sm fw-semibold" style="width: 105px;" onchange="window.jmOnGruppengewinneYearChange(this.value)">
+                        <option value="2026">2026</option>
+                        <option value="2025">2025</option>
+                        <option value="2024">2024</option>
+                    </select>
+                    <div class="input-group input-group-sm" style="width: 240px;">
+                        <span class="input-group-text bg-white text-muted border-end-0"><i class="fas fa-search"></i></span>
+                        <input type="text" id="jm-gg-search" class="form-control form-control-sm border-start-0" placeholder="Anlass, Gruppe, Schütze..." oninput="window.jmFilterGruppengewinneTable()">
+                        <button type="button" class="btn btn-outline-secondary d-none" id="jm-gg-search-clear" onclick="document.getElementById('jm-gg-search').value=''; window.jmFilterGruppengewinneTable();" title="Suche leeren">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.jmReloadGruppengewinneList()" title="Daten & Buchhaltungs-Abgleich neu laden">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+
+                    <!-- Sammel-Übertrag in Jahresbeitrag -->
+                    <button type="button" class="btn btn-sm btn-primary fw-bold shadow-xs d-none" id="jm-gg-bulk-transfer-jb-btn" onclick="window.jmTransferAllOpenToJahresbeitrag()">
+                        <i class="fas fa-file-invoice-dollar me-1"></i> Alle offenen in Jahresbeitrag übertragen
+                    </button>
+
+                    <!-- Export Dropdown (PDF & Word für Jahresbericht) -->
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-outline-success fw-semibold dropdown-toggle shadow-xs" type="button" data-bs-toggle="dropdown" title="Gesamtauswertung mit allen Gruppen, Teilnehmern und Einzelpunkten als PDF oder Word für den Jahresbericht ausgeben">
+                            <i class="fas fa-file-export me-1"></i> Jahresbericht / Export
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end shadow">
+                            <li><h6 class="dropdown-header">Saison-Gesamtauswertung</h6></li>
+                            <li>
+                                <a class="dropdown-item" href="#" onclick="event.preventDefault(); window.jmExportGruppengewinneSummaryPdf();">
+                                    <i class="fas fa-file-pdf text-danger me-2"></i>Gesamtauswertung &amp; Konto 1301 (PDF)
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="#" onclick="event.preventDefault(); window.jmExportGruppengewinneWord();">
+                                    <i class="fas fa-file-word text-primary me-2"></i>Bericht &amp; Tabellen für Jahresbericht (Word .doc)
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <button type="button" class="btn btn-sm btn-warning fw-bold shadow-xs" onclick="window.jmOpenGroupCompetitionEditor(null)">
+                        <i class="fas fa-plus me-1"></i> Neuer Gruppengewinn erfassen
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tabelle der Gruppenwettkämpfe inkl. direkter Schützen-Anzeige -->
+            <div class="card shadow-sm border-0 rounded-3">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0" id="jm-gg-main-table">
+                            <thead class="table-light sticky-top small text-muted border-bottom">
+                                <tr>
+                                    <th class="ps-3" style="width: 22%;">Anlass / Schiessen</th>
+                                    <th style="width: 10%;">Gruppe &amp; Rang</th>
+                                    <th class="text-end" style="width: 8%;">Doppel</th>
+                                    <th class="text-end" style="width: 9%;">Gewinn</th>
+                                    <th class="text-end" style="width: 10%;">Überschuss</th>
+                                    <th style="width: 28%;">Beteiligte Schützen, Punkte &amp; Anteil</th>
+                                    <th class="text-center pe-3" style="width: 13%;">Aktionen</th>
+                                </tr>
+                            </thead>
+                            <tbody id="jm-gg-table-body" class="small">
+                                <tr>
+                                    <td colspan="7" class="text-center py-4 text-muted">
+                                        <div class="spinner-border spinner-border-sm text-primary me-2"></div> Gruppengewinne werden geladen...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="card-footer bg-light py-2 px-3 border-top d-flex flex-wrap justify-content-between align-items-center small text-muted" id="jm-gg-summary-text">
+                    <span>Gesamt-Überschuss Schützen (Konto 1301): <strong class="text-dark">CHF 0.00</strong></span>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Rendert den 4. Haupt-Tab «🏆 Gruppengewinne (1301)» direkt in der Jahresmeisterschaft.
+     */
+    async function jmRenderGruppengewinneTabPane(year) {
         const yr = year || getActiveYear();
         _jmActiveCompYear = yr;
+        const pane = document.getElementById('gruppengewinne-pane');
+        if (!pane) return;
+
+        // Falls ein altes Modal im DOM liegt, entfernen, damit keine doppelten IDs existieren
+        const oldModal = document.getElementById('jmGruppengewinneModal');
+        if (oldModal && !oldModal.classList.contains('show')) {
+            oldModal.remove();
+        }
+
+        if (!pane.querySelector('#jm-gg-main-table')) {
+            pane.innerHTML = buildGruppengewinneWorkspaceHTML();
+        }
+
+        await jmRenderGruppengewinneList(yr);
+    }
+
+    /**
+     * Öffnet den Bereich Gruppengewinne:
+     * Wenn wir uns in der Jahresmeisterschaft befinden und der 4. Tab existiert, wird direkt auf den Tab gewechselt!
+     * Andernfalls wird das Modal geöffnet.
+     */
+    async function jmOpenGruppengewinneModal(year, opts = {}) {
+        const yr = year || getActiveYear();
+        _jmActiveCompYear = yr;
+
+        const tabBtn = document.getElementById('gruppengewinne-tab');
+        const jmView = document.getElementById('view-jahresmeisterschaft');
+        const isJmVisible = jmView && (jmView.classList.contains('active') || jmView.offsetParent !== null);
+
+        if (tabBtn && isJmVisible && !opts.forceModal) {
+            if (window.bootstrap && bootstrap.Tab) {
+                bootstrap.Tab.getOrCreateInstance(tabBtn).show();
+            } else {
+                tabBtn.click();
+            }
+            if (typeof window.jmSetActiveTab === 'function') {
+                window.jmSetActiveTab('gruppengewinne');
+            } else {
+                await jmRenderGruppengewinneTabPane(yr);
+            }
+            tabBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            return;
+        }
+
+        // Fallback: Modal öffnen (und vorher Tab-Pane leeren, um ID-Kollisionen zu vermeiden)
+        const pane = document.getElementById('gruppengewinne-pane');
+        if (pane) pane.innerHTML = '';
 
         let modalEl = document.getElementById('jmGruppengewinneModal');
         if (!modalEl) {
@@ -91,7 +451,7 @@
     }
 
     /**
-     * Erstellt das DOM für das Hauptmodal.
+     * Erstellt das DOM für das Hauptmodal (Fallback wenn ausserhalb der JM aufgerufen).
      */
     function createGruppengewinneModalDOM() {
         const div = document.createElement('div');
@@ -113,77 +473,9 @@
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
                     </div>
                     <div class="modal-body p-3 bg-light">
-                        <!-- Info-Banner in Du-Form -->
-                        <div class="alert alert-info py-2 px-3 small d-flex align-items-start gap-2 mb-3 shadow-sm border-0">
-                            <i class="fas fa-info-circle fa-lg mt-1 text-primary"></i>
-                            <div>
-                                <strong>Vereinsregel für auswärtige Schiessen:</strong>
-                                Der Verein übernimmt das Gruppendoppel (standardmässig <strong>CHF 30.00</strong>, frei übersteuerbar).
-                                Gruppengewinne darüber hinaus stehen vollumfänglich den beteiligten Schützen zu und werden zu gleichen Teilen aufgeteilt.
-                                Die Verrechnung erfolgt primär über einen Abzug bei der <strong>Jahresbeitragsrechnung</strong> oder per <strong>Banküberweisung (pain.001)</strong> über das Transitkonto <strong>1301</strong>.
-                            </div>
-                        </div>
-
-                        <!-- Filter- & Aktionsleiste -->
-                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3 bg-white p-2.5 rounded shadow-sm border">
-                            <div class="d-flex align-items-center gap-2">
-                                <label class="small fw-bold text-muted mb-0">Saison:</label>
-                                <select id="jm-gg-year-select" class="form-select form-select-sm" style="width: 110px;" onchange="window.jmOnGruppengewinneYearChange(this.value)">
-                                    <option value="2026">2026</option>
-                                    <option value="2025">2025</option>
-                                    <option value="2024">2024</option>
-                                </select>
-                                <div class="input-group input-group-sm" style="width: 250px;">
-                                    <span class="input-group-text bg-white text-muted border-end-0"><i class="fas fa-search"></i></span>
-                                    <input type="text" id="jm-gg-search" class="form-control form-control-sm border-start-0" placeholder="Anlass / Gruppe suchen..." oninput="window.jmFilterGruppengewinneTable()">
-                                    <button type="button" class="btn btn-outline-secondary d-none" id="jm-gg-search-clear" onclick="document.getElementById('jm-gg-search').value=''; window.jmFilterGruppengewinneTable();" title="Suche leeren">
-                                        <i class="fas fa-times"></i>
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="d-flex align-items-center gap-2">
-                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.jmReloadGruppengewinneList()" title="Liste neu laden">
-                                    <i class="fas fa-sync-alt"></i>
-                                </button>
-                                <button type="button" class="btn btn-sm btn-warning fw-bold shadow-sm" onclick="window.jmOpenGroupCompetitionEditor(null)">
-                                    <i class="fas fa-plus me-1"></i> Neuer Gruppengewinn erfassen
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Tabelle der Gruppenwettkämpfe -->
-                        <div class="card shadow-sm border-0">
-                            <div class="card-body p-0">
-                                <div class="table-responsive" style="max-height: 520px;">
-                                    <table class="table table-hover align-middle mb-0" id="jm-gg-main-table">
-                                        <thead class="table-light sticky-top small text-muted border-bottom">
-                                            <tr>
-                                                <th class="ps-3" style="width: 22%;">Anlass / Schiessen</th>
-                                                <th style="width: 14%;">Gruppe</th>
-                                                <th class="text-center" style="width: 7%;">Rang</th>
-                                                <th class="text-end" style="width: 10%;">Doppel</th>
-                                                <th class="text-end" style="width: 11%;">Gewinn</th>
-                                                <th class="text-end" style="width: 12%;">Überschuss</th>
-                                                <th class="text-center" style="width: 10%;">Schützen</th>
-                                                <th class="text-center" style="width: 14%;">Aktionen</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="jm-gg-table-body" class="small">
-                                            <tr>
-                                                <td colspan="8" class="text-center py-4 text-muted">
-                                                    <div class="spinner-border spinner-border-sm text-primary me-2"></div> Gruppengewinne werden geladen...
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
+                        ${buildGruppengewinneWorkspaceHTML()}
                     </div>
-                    <div class="modal-footer py-2 px-3 bg-light d-flex justify-content-between">
-                        <div class="small text-muted" id="jm-gg-summary-text">
-                            Gesamt-Überschuss Schützen (Konto 1301): <span class="fw-bold text-dark">CHF 0.00</span>
-                        </div>
+                    <div class="modal-footer py-2 px-3 bg-light d-flex justify-content-end">
                         <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Schliessen</button>
                     </div>
                 </div>
@@ -193,7 +485,7 @@
     }
 
     /**
-     * Re-rendert die Liste der Gruppengewinne.
+     * Re-rendert die Liste der Gruppengewinne inkl. KPI-Kacheln, Schützen-Pills und FiBu-Abgleich.
      */
     async function jmRenderGruppengewinneList(year) {
         const yr = year || getActiveYear();
@@ -203,110 +495,405 @@
         const tbody = document.getElementById('jm-gg-table-body');
         if (!tbody) return;
 
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-muted"><div class="spinner-border spinner-border-sm text-primary me-2"></div> Gruppengewinne werden geladen...</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-muted"><div class="spinner-border spinner-border-sm text-primary me-2"></div> Gruppengewinne & Konto 1301 werden geladen...</td></tr>`;
 
-        const list = await jmLoadGroupCompetitions(yr);
+        const [list, fibuRows] = await Promise.all([
+            jmLoadGroupCompetitions(yr),
+            jmLoadAccounting1301Entries(yr)
+        ]);
+
+        const fibuReconcile = reconcileFibu1301WithCompetitions(list, fibuRows);
+        await jmRefreshGruppengewinneBadge(yr);
 
         if (!list || list.length === 0) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="8" class="text-center py-5 text-muted">
+                    <td colspan="7" class="text-center py-5 text-muted">
                         <i class="fas fa-trophy fa-2x mb-2 text-black-50 opacity-50 d-block"></i>
                         Noch keine Gruppengewinne für die Saison ${yr} erfasst.<br>
                         <span class="small">Klicke oben auf <strong>«Neuer Gruppengewinn erfassen»</strong> oder importiere eine Rangliste im Auswärts-Import.</span>
                     </td>
                 </tr>
             `;
-            updateSummaryText(0, 0);
+            updateSummaryAndKpis([], fibuReconcile);
+            renderFibuReconcileBanner(fibuReconcile, yr);
             return;
         }
 
-        let totalUeberschuss = 0;
-        let totalGewinn = 0;
+        const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${Number(v || 0).toFixed(2)}`);
 
         tbody.innerHTML = list.map(comp => {
             const doppel = Number(comp.gruppendoppel || 30);
             const gewinn = Number(comp.gruppengewinn || 0);
             const ueberschuss = Math.max(0, gewinn - doppel);
+            const vereinsDeckung = Math.min(gewinn, doppel);
             const members = Array.isArray(comp.members) ? comp.members : [];
             const count = members.length > 0 ? members.length : Number(comp.anzahl_schuetzen || 5);
             const perShooter = count > 0 ? (ueberschuss / count) : 0;
 
-            totalGewinn += gewinn;
-            totalUeberschuss += ueberschuss;
-
-            const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${v.toFixed(2)}`);
-
             // Auszahlungsstatus der Schützen
-            const allVerrechnet = members.length > 0 && members.every(m => m.status === 'verrechnet' || m.status === 'ausgefuehrt');
-            const hasPendent = members.some(m => m.status === 'offen' || m.status === 'in_zahlung');
+            const allVerrechnet = members.length > 0 && ueberschuss > 0 && members.every(m => m.status === 'verrechnet' || m.status === 'ausgefuehrt');
+            const openJbMembers = members.filter(m => (m.payout_method || 'jahresbeitrag') === 'jahresbeitrag' && Number(m.betrag || perShooter) > 0 && m.status !== 'verrechnet' && m.status !== 'ausgefuehrt');
+            const someVerrechnet = members.some(m => m.status === 'verrechnet' || m.status === 'ausgefuehrt');
+
             let statusBadge = `<span class="badge bg-secondary">Offen</span>`;
-            if (allVerrechnet) {
-                statusBadge = `<span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Abgewickelt</span>`;
-            } else if (hasPendent && members.some(m => m.status === 'verrechnet' || m.status === 'ausgefuehrt')) {
-                statusBadge = `<span class="badge bg-info text-dark">Teilweise verrechnet</span>`;
-            } else if (ueberschuss === 0) {
-                statusBadge = `<span class="badge bg-light text-muted border">Kein Überschuss</span>`;
+            if (ueberschuss === 0) {
+                statusBadge = `<span class="badge bg-light text-muted border" title="Gewinn (${fmtCurr(gewinn)}) übersteigt das Gruppendoppel (${fmtCurr(doppel)}) nicht – kompletter Betrag (${fmtCurr(vereinsDeckung)}) deckt das Vereinsdoppel (Konto 4410).">Kein Überschuss (100% an Doppel)</span>`;
+            } else if (allVerrechnet) {
+                statusBadge = `<span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Abgewickelt (JB)</span>`;
+            } else if (someVerrechnet && openJbMembers.length > 0) {
+                statusBadge = `<span class="badge bg-info text-dark">Teilweise verrechnet (${openJbMembers.length} offen)</span>`;
             }
+
+            // FiBu-Status Badge
+            const matchedFibu = fibuReconcile.compToFibuMap?.[comp.id];
+            let fibuBadge = '';
+            if (matchedFibu) {
+                fibuBadge = `<span class="badge bg-success-subtle text-success border border-success-subtle ms-1" title="In Buchhaltung verbucht: ${escapeHtml(matchedFibu.beleg_nr)} (${escapeHtml(matchedFibu.datum)}) · ${escapeHtml(matchedFibu.beschreibung)}"><i class="fas fa-university me-1"></i>${escapeHtml(matchedFibu.beleg_nr)}</span>`;
+            } else if (ueberschuss > 0) {
+                fibuBadge = `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1" title="Für dieses Schiessen wurde auf Konto 1301 in der Buchhaltung noch kein passender Bankeingang gefunden."><i class="fas fa-clock me-1"></i>FiBu 1301 ausstehend</span>`;
+            }
+
+            // Rang-Badge (Podest farbig hervorheben)
+            let rangBadge = '<span class="text-muted">-</span>';
+            if (comp.rang) {
+                const rNum = Number(comp.rang);
+                const rCls = rNum === 1 ? 'bg-warning text-dark border border-warning' : (rNum === 2 ? 'bg-secondary text-white' : (rNum === 3 ? 'bg-danger-subtle text-danger-emphasis border' : 'bg-primary'));
+                const rIcon = rNum <= 3 ? '<i class="fas fa-medal me-1"></i>' : '';
+                rangBadge = `<span class="badge ${rCls}">${rIcon}${rNum}. Rang</span>`;
+            }
+
+            // Schützen-Liste direkt in der Zeile darstellen
+            const sortedMembers = [...members].sort((a, b) => (Number(b.punkte) || 0) - (Number(a.punkte) || 0));
+            const shooterPillsHtml = sortedMembers.length > 0
+                ? `<div class="d-flex flex-wrap gap-1">
+                    ${sortedMembers.map(m => {
+                        const isDone = m.status === 'verrechnet' || m.status === 'ausgefuehrt';
+                        const isBank = m.status === 'in_zahlung';
+                        const pillCls = isDone
+                            ? 'bg-success-subtle text-success-emphasis border-success-subtle'
+                            : (isBank ? 'bg-info-subtle text-info-emphasis border-info-subtle' : 'bg-light text-dark border-secondary-subtle');
+                        const icon = isDone ? '<i class="fas fa-check-circle text-success me-1"></i>' : (isBank ? '<i class="fas fa-university text-info me-1"></i>' : '<i class="far fa-clock text-muted me-1"></i>');
+                        const ptsStr = m.punkte ? `<strong>${m.punkte}</strong>` : '-';
+                        const shareVal = Number(m.betrag || perShooter || 0);
+                        const shareStr = shareVal > 0 ? ` · ${fmtCurr(shareVal)}` : '';
+                        const statusHint = isDone ? 'Im Jahresbeitrag gutgeschrieben' : (isBank ? 'In Bankzahlung' : (shareVal > 0 ? 'Noch offen für Übertrag in Jahresbeitrag' : 'Kein Überschuss'));
+                        return `<span class="badge ${pillCls} border fw-normal px-2 py-1" style="font-size: 11px;" title="${escapeHtml(m.schuetze_name)}: ${m.punkte || 0} Pkt.${shareStr} (${statusHint})">
+                            ${icon}${escapeHtml(m.schuetze_name)} (${ptsStr})${shareVal > 0 ? `<span class="text-muted ms-1">${fmtCurr(shareVal)}</span>` : ''}
+                        </span>`;
+                    }).join('')}
+                   </div>`
+                : `<span class="text-muted fst-italic">Noch keine Schützen zugewiesen (${count} Plätze)</span>`;
+
+            // Punkte-Plausibilität
+            const calcPtsSum = Math.round(members.reduce((acc, m) => acc + (Number(m.punkte) || 0), 0) * 10) / 10;
+            const totalPtsDisplay = comp.punkte_total || (calcPtsSum > 0 ? calcPtsSum : null);
 
             return `
                 <tr data-id="${comp.id}">
-                    <td class="ps-3 fw-semibold">
-                        <div class="text-dark">${escapeHtml(comp.anlass_name)}</div>
-                        <div class="text-muted" style="font-size: 11px;">
-                            ${comp.punkte_total ? `Total: ${comp.punkte_total} Pkt.` : ''} 
+                    <td class="ps-3">
+                        <div class="fw-bold text-dark">${escapeHtml(comp.anlass_name)}</div>
+                        <div class="d-flex flex-wrap align-items-center gap-1 mt-1" style="font-size: 11px;">
+                            ${totalPtsDisplay ? `<span class="badge bg-light text-dark border"><i class="fas fa-bullseye text-primary me-1"></i>Total: ${totalPtsDisplay} Pkt.</span>` : ''}
                             ${statusBadge}
+                            ${fibuBadge}
                         </div>
                     </td>
                     <td>
-                        <span class="badge bg-light text-dark border px-2 py-1 fw-bold">${escapeHtml(comp.gruppe_name)}</span>
-                    </td>
-                    <td class="text-center fw-bold">
-                        ${comp.rang ? `<span class="badge bg-primary">${comp.rang}.</span>` : '-'}
+                        <div class="fw-bold text-dark mb-1"><span class="badge bg-light text-dark border px-2 py-1">${escapeHtml(comp.gruppe_name)}</span></div>
+                        <div>${rangBadge}</div>
                     </td>
                     <td class="text-end text-muted">
-                        ${fmtCurr(doppel)}
+                        <div>${fmtCurr(doppel)}</div>
+                        ${gewinn > 0 && gewinn < doppel ? `<div class="text-warning-emphasis" style="font-size: 10px;" title="Da der Gewinn (${fmtCurr(gewinn)}) kleiner als das Doppel (${fmtCurr(doppel)}) war, deckt er ${fmtCurr(vereinsDeckung)} des Vereinsdoppels.">gedeckt: ${fmtCurr(vereinsDeckung)}</div>` : ''}
                     </td>
                     <td class="text-end fw-bold ${gewinn > 0 ? 'text-success' : 'text-muted'}">
                         ${fmtCurr(gewinn)}
                     </td>
-                    <td class="text-end fw-bold ${ueberschuss > 0 ? 'text-primary' : 'text-muted'}">
-                        ${fmtCurr(ueberschuss)}
+                    <td class="text-end">
+                        <div class="fw-bold ${ueberschuss > 0 ? 'text-primary' : 'text-muted'}">${fmtCurr(ueberschuss)}</div>
+                        <div class="text-muted" style="font-size: 10.5px;">
+                            ${ueberschuss > 0 ? `${count} × ${fmtCurr(perShooter)}` : 'Verein (4410)'}
+                        </div>
                     </td>
-                    <td class="text-center">
-                        <span class="badge bg-secondary-subtle text-dark border" title="${members.map(m => m.schuetze_name).join(', ')}">
-                            <i class="fas fa-users me-1 text-muted"></i>${count} Schützen
-                        </span>
-                        <div class="text-muted" style="font-size: 10px;">je ${fmtCurr(perShooter)}</div>
+                    <td>
+                        ${shooterPillsHtml}
                     </td>
                     <td class="text-center pe-3">
-                        <div class="btn-group btn-group-sm">
-                            <button type="button" class="btn btn-outline-primary" onclick="window.jmOpenGroupCompetitionEditor('${comp.id}')" title="Gruppe & Schützen bearbeiten">
-                                <i class="fas fa-pen"></i>
-                            </button>
-                            <button type="button" class="btn btn-outline-secondary" onclick="window.jmGenerateGruppengewinnPdf('${comp.id}')" title="Abrechnungs- & Quittungs-PDF drucken">
-                                <i class="fas fa-file-pdf text-danger"></i>
-                            </button>
-                            <button type="button" class="btn btn-outline-danger" onclick="window.jmDeleteGroupCompetition('${comp.id}')" title="Gruppe löschen">
-                                <i class="fas fa-trash-alt"></i>
-                            </button>
+                        <div class="d-flex justify-content-center gap-1 flex-wrap">
+                            ${openJbMembers.length > 0 && ueberschuss > 0 ? `
+                                <button type="button" class="btn btn-xs btn-primary fw-semibold px-2 py-1" id="jm-gg-row-jb-btn-${comp.id}" onclick="window.jmTransferSingleCompToJahresbeitrag('${comp.id}')" title="${openJbMembers.length} Schütze(n) (${fmtCurr(openJbMembers.length * perShooter)}) direkt in den Jahresbeitrag ${yr} übertragen">
+                                    <i class="fas fa-file-invoice-dollar me-1"></i>In JB
+                                </button>
+                            ` : ''}
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-primary" onclick="window.jmOpenGroupCompetitionEditor('${comp.id}')" title="Gruppe, Schützen & Beträge bearbeiten">
+                                    <i class="fas fa-pen"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary" onclick="window.jmGenerateGruppengewinnPdf('${comp.id}')" title="Einzel-Abrechnungsbeleg (PDF) drucken">
+                                    <i class="fas fa-file-pdf text-danger"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-danger" onclick="window.jmDeleteGroupCompetition('${comp.id}')" title="Gruppe löschen">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                            </div>
                         </div>
                     </td>
                 </tr>
             `;
         }).join('');
 
-        updateSummaryText(totalGewinn, totalUeberschuss);
+        updateSummaryAndKpis(list, fibuReconcile);
+        renderFibuReconcileBanner(fibuReconcile, yr);
     }
 
-    function updateSummaryText(totalGewinn, totalUeberschuss) {
+    /**
+     * Aktualisiert die 4 KPI-Kacheln, den Sammel-Übertragsbutton und die Fusszeile.
+     */
+    function updateSummaryAndKpis(list, fibuReconcile) {
+        const comps = Array.isArray(list) ? list : [];
+        const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${Number(v || 0).toFixed(2)}`);
+
+        let totalGewinn = 0;
+        let totalDoppelSoll = 0;
+        let totalDoppelGedeckt = 0;
+        let totalUeberschuss = 0;
+        let totalVerrechnet = 0;
+        let totalOffen = 0;
+        let openCompsCount = 0;
+        let openShootersCount = 0;
+        const partialDoppelNotes = [];
+
+        comps.forEach(c => {
+            const doppel = Number(c.gruppendoppel || 30);
+            const gewinn = Number(c.gruppengewinn || 0);
+            const ueb = Math.max(0, gewinn - doppel);
+            const gedeckt = Math.min(gewinn, doppel);
+
+            totalGewinn += gewinn;
+            totalDoppelSoll += doppel;
+            totalDoppelGedeckt += gedeckt;
+            totalUeberschuss += ueb;
+
+            if (gewinn > 0 && gewinn < doppel) {
+                partialDoppelNotes.push(`${c.anlass_name}: ${fmtCurr(gewinn)} statt ${fmtCurr(doppel)}`);
+            }
+
+            const members = Array.isArray(c.members) ? c.members : [];
+            const count = members.length > 0 ? members.length : Number(c.anzahl_schuetzen || 5);
+            const perShooter = count > 0 ? (ueb / count) : 0;
+
+            let compHasOpen = false;
+            members.forEach(m => {
+                const amt = Number(m.betrag || perShooter || 0);
+                if (amt <= 0) return;
+                if (m.status === 'verrechnet' || m.status === 'ausgefuehrt') {
+                    totalVerrechnet += amt;
+                } else {
+                    totalOffen += amt;
+                    if ((m.payout_method || 'jahresbeitrag') === 'jahresbeitrag') {
+                        compHasOpen = true;
+                        openShootersCount++;
+                    }
+                }
+            });
+            if (compHasOpen && ueb > 0) openCompsCount++;
+        });
+
+        // KPI 1: Brutto
+        const elBrutto = document.getElementById('jm-gg-kpi-brutto');
+        const elBruttoSub = document.getElementById('jm-gg-kpi-brutto-sub');
+        if (elBrutto) elBrutto.textContent = fmtCurr(totalGewinn);
+        if (elBruttoSub) elBruttoSub.textContent = `${comps.length} Gruppenschiessen erfasst`;
+
+        // KPI 2: Vereinsanteil Doppel-Deckung
+        const elDoppel = document.getElementById('jm-gg-kpi-doppel');
+        const elDoppelSub = document.getElementById('jm-gg-kpi-doppel-sub');
+        if (elDoppel) elDoppel.textContent = fmtCurr(totalDoppelGedeckt);
+        if (elDoppelSub) {
+            if (totalDoppelGedeckt < totalDoppelSoll && partialDoppelNotes.length > 0) {
+                elDoppelSub.innerHTML = `<span title="${escapeHtml(partialDoppelNotes.join(', '))}">aus ${fmtCurr(totalDoppelSoll)} Doppel (Deisigraben CHF 20.00)</span>`;
+            } else {
+                elDoppelSub.textContent = `aus ${comps.length} × Doppel (${fmtCurr(totalDoppelSoll)})`;
+            }
+        }
+
+        // KPI 3: Netto-Überschuss 1301
+        const elNetto = document.getElementById('jm-gg-kpi-netto');
+        const elNettoSub = document.getElementById('jm-gg-kpi-netto-sub');
+        if (elNetto) elNetto.textContent = fmtCurr(totalUeberschuss);
+        if (elNettoSub) {
+            elNettoSub.innerHTML = `<span class="text-success fw-semibold">Abgewickelt: ${fmtCurr(totalVerrechnet)}</span> · <span class="${totalOffen > 0 ? 'text-primary fw-bold' : 'text-muted'}">Offen: ${fmtCurr(totalOffen)}</span>`;
+        }
+
+        // KPI 4: FiBu Konto 1301
+        const elFibu = document.getElementById('jm-gg-kpi-fibu');
+        const elFibuSub = document.getElementById('jm-gg-kpi-fibu-sub');
+        const fibuTotal = fibuReconcile ? fibuReconcile.totalFibuHaben1301 : 0;
+        if (elFibu) elFibu.textContent = fmtCurr(fibuTotal);
+        if (elFibuSub && fibuReconcile) {
+            const unmFibu = fibuReconcile.unmatchedFibu1301?.length || 0;
+            const unmComps = fibuReconcile.unmatchedComps?.length || 0;
+            if (unmFibu === 0 && unmComps === 0 && Math.abs(fibuTotal - totalUeberschuss) < 0.05) {
+                elFibuSub.innerHTML = `<span class="text-success fw-semibold"><i class="fas fa-check-circle me-1"></i>100% synchron mit Buchhaltung</span>`;
+            } else {
+                const parts = [];
+                if (unmFibu > 0) parts.push(`<span class="text-danger fw-semibold">${unmFibu} in FiBu noch nicht zugewiesen</span>`);
+                if (unmComps > 0) parts.push(`<span class="text-warning-emphasis">${unmComps} ohne FiBu-Eingang</span>`);
+                elFibuSub.innerHTML = parts.join(' · ') || `Differenz: ${fmtCurr(fibuTotal - totalUeberschuss)}`;
+            }
+        }
+
+        // Sammel-Übertragsbutton steuern
+        const bulkBtn = document.getElementById('jm-gg-bulk-transfer-jb-btn');
+        if (bulkBtn) {
+            if (openCompsCount > 0 && totalOffen > 0) {
+                bulkBtn.classList.remove('d-none');
+                bulkBtn.innerHTML = `<i class="fas fa-file-invoice-dollar me-1"></i> Alle offenen in Jahresbeitrag übertragen <span class="badge bg-white text-primary ms-1">${openCompsCount} Schiessen · ${fmtCurr(totalOffen)}</span>`;
+            } else {
+                bulkBtn.classList.add('d-none');
+            }
+        }
+
+        // Fusszeile
         const sumEl = document.getElementById('jm-gg-summary-text');
-        if (!sumEl) return;
-        const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${v.toFixed(2)}`);
-        sumEl.innerHTML = `
-            Erfasster Gruppengewinn: <strong class="text-success">${fmtCurr(totalGewinn)}</strong> | 
-            Netto-Überschuss für Schützen (Konto 1301): <strong class="text-primary">${fmtCurr(totalUeberschuss)}</strong>
-        `;
+        if (sumEl) {
+            sumEl.innerHTML = `
+                <div>
+                    Brutto-Gewinne: <strong class="text-success">${fmtCurr(totalGewinn)}</strong>
+                    &minus; Vereinsanteil Doppel (Konto 4410): <strong class="text-dark">${fmtCurr(totalDoppelGedeckt)}</strong>
+                    = Netto-Überschuss Schützen (Konto 1301): <strong class="text-primary">${fmtCurr(totalUeberschuss)}</strong>
+                </div>
+                <div>
+                    <span class="badge bg-success-subtle text-success border border-success-subtle me-1">Verrechnet: ${fmtCurr(totalVerrechnet)}</span>
+                    <span class="badge ${totalOffen > 0 ? 'bg-warning text-dark' : 'bg-light text-muted border'}">Noch offen: ${fmtCurr(totalOffen)}</span>
+                </div>
+            `;
+        }
+    }
+
+    /**
+     * Zeigt ein interaktives Abstimmungs-Banner, falls in der Buchhaltung auf Konto 1301
+     * Gruppengewinne gebucht sind, die hier noch nicht erfasst/zugewiesen wurden (z.B. Laubberg, ESF),
+     * oder falls ein erfasster Gewinn in der FiBu noch fehlt (z.B. Siggenberg).
+     */
+    function renderFibuReconcileBanner(fibuReconcile, yr) {
+        const banner = document.getElementById('jm-gg-fibu-reconcile-banner');
+        if (!banner || !fibuReconcile) return;
+
+        const unmFibu = fibuReconcile.unmatchedFibu1301 || [];
+        const unmComps = fibuReconcile.unmatchedComps || [];
+
+        if (unmFibu.length === 0 && unmComps.length === 0) {
+            banner.className = 'd-none';
+            banner.innerHTML = '';
+            return;
+        }
+
+        const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${Number(v || 0).toFixed(2)}`);
+        let html = '';
+
+        if (unmFibu.length > 0) {
+            const rowsHtml = unmFibu.map(f => {
+                const net1301 = Number(f.betrag || 0);
+                const estBrutto = net1301 + 30;
+                return `
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 py-1.5 border-bottom border-warning-subtle">
+                        <div>
+                            <span class="badge bg-dark me-1">${escapeHtml(f.beleg_nr)}</span>
+                            <span class="text-muted me-1">(${escapeHtml(f.datum)})</span>
+                            <strong>${escapeHtml(f.beschreibung)}</strong>
+                            <span class="ms-2 badge bg-primary">Überschuss 1301: ${fmtCurr(net1301)}</span>
+                            <span class="text-muted small ms-1">(Brutto ca. ${fmtCurr(estBrutto)} bei CHF 30.00 Doppel)</span>
+                        </div>
+                        <button type="button" class="btn btn-xs btn-warning fw-bold shadow-xs" onclick="window.jmCreateCompFromFibuEntry(${f.id})">
+                            <i class="fas fa-plus-circle me-1"></i> Jetzt als Gruppengewinn erfassen &amp; Schützen zuweisen
+                        </button>
+                    </div>
+                `;
+            }).join('');
+
+            html += `
+                <div class="alert alert-warning py-2.5 px-3 small mb-2 shadow-xs border border-warning rounded-3">
+                    <div class="fw-bold text-dark mb-1">
+                        <i class="fas fa-university text-warning-emphasis me-1"></i>
+                        Buchhaltungs-Abgleich Konto 1301: ${unmFibu.length} Bankeingang/-eingänge in der Buchhaltung (${yr}) noch nicht als Gruppengewinn zugewiesen!
+                    </div>
+                    ${rowsHtml}
+                </div>
+            `;
+        }
+
+        if (unmComps.length > 0) {
+            const missingNames = unmComps.map(c => {
+                const ueb = Math.max(0, Number(c.gruppengewinn || 0) - Number(c.gruppendoppel || 30));
+                return `<strong>${escapeHtml(c.anlass_name)}</strong> (Überschuss ${fmtCurr(ueb)})`;
+            }).join(', ');
+
+            html += `
+                <div class="alert alert-secondary py-2 px-3 small mb-0 shadow-xs border rounded-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+                    <div>
+                        <i class="fas fa-info-circle text-secondary me-1"></i>
+                        <strong>Hinweis FiBu Konto 1301:</strong> Für ${missingNames} ist im Modul ein Überschuss erfasst, im Buchhaltungs-Journal (${yr}) aber noch keine Haben-Buchung auf Konto <code>1301</code> verbucht (evtl. Zahlung noch ausstehend oder bar verrechnet).
+                    </div>
+                </div>
+            `;
+        }
+
+        banner.className = 'mb-3';
+        banner.innerHTML = html;
+    }
+
+    /**
+     * Übernimmt eine unzugeordnete Buchhaltungs-Buchung (Konto 1301) per 1-Klick direkt in den Gruppengewinn-Editor.
+     */
+    async function jmCreateCompFromFibuEntry(journalId) {
+        const entry = (window._jmFibu1301Cache || []).find(r => Number(r.id) === Number(journalId));
+        if (!entry) return;
+
+        const net1301 = Number(entry.betrag || 0);
+        const doppel = 30.00;
+        const brutto = net1301 + doppel;
+        const desc = String(entry.beschreibung || '').trim();
+
+        // Versuche Anlassnamen & Rang intelligent aus dem Buchungstext abzuleiten
+        let guessedAnlass = desc
+            .replace(/^Gruppengewinn:\s*/i, '')
+            .replace(/\(Teilbetrag\s*\d+\)/gi, '')
+            .trim();
+
+        let guessedRang = null;
+        const rangMatch = desc.match(/(\d+)\.\s*Rang/i) || desc.match(/Rang\s*(\d+)/i);
+        if (rangMatch) {
+            guessedRang = parseInt(rangMatch[1], 10);
+        }
+
+        if (/laubberg/i.test(desc)) {
+            guessedAnlass = `Laubbergschiessen (Mettau) ${_jmActiveCompYear || getActiveYear()}`;
+        } else if (/eidg.*sch[uü]tzenfest|chur/i.test(desc)) {
+            guessedAnlass = `Eidg. Schützenfest (Chur) ${_jmActiveCompYear || getActiveYear()}`;
+        }
+
+        await jmOpenGroupCompetitionEditor({
+            id: null,
+            jahr: _jmActiveCompYear || getActiveYear(),
+            anlass_name: guessedAnlass,
+            gruppe_name: 'Strohaus',
+            rang: guessedRang,
+            punkte_total: null,
+            gruppendoppel: doppel,
+            gruppengewinn: brutto,
+            anzahl_schuetzen: 5,
+            bemerkung: `Übernommen aus FiBu ${entry.beleg_nr} (${entry.datum})`,
+            members: []
+        });
+
+        // Falls das Schiessen in der JM existiert, automatisch die 5 Schützen laden
+        const grid = await getJMGrid();
+        const matched = findJMColumnForAnlass(guessedAnlass, grid);
+        if (matched) {
+            await jmPopulateShootersFromJMRawGrid(matched.title, true);
+        }
     }
 
     /**
@@ -2086,19 +2673,179 @@
     // ==========================================================================
 
     /**
-     * Überträgt die offenen Beträge der aktuellen Gruppe als Gutschrift in den Jahresbeitrag.
-     * Speichert den Gruppengewinn automatisch vorab, falls noch ungespeichert.
+     * Interner Helfer: Überträgt offene Schützen-Anteile einer Gruppe als Gutschrift (Konto 1301) in den Jahresbeitrag.
+     */
+    async function _transferCompMembersToJahresbeitragInternal(comp, yr) {
+        const supa = getSupa();
+        if (!supa || !comp) return { successCount: 0, failedShooters: [] };
+
+        await ensureMembersLoaded();
+
+        const doppel = Number(comp.gruppendoppel || 30);
+        const gewinn = Number(comp.gruppengewinn || 0);
+        const ueberschuss = Math.max(0, gewinn - doppel);
+        const allMembers = Array.isArray(comp.members) ? comp.members : [];
+        const count = allMembers.length > 0 ? allMembers.length : Number(comp.anzahl_schuetzen || 5);
+        const defaultShare = (count > 0 && ueberschuss > 0) ? (Math.round((ueberschuss / count) * 20) / 20) : 0;
+
+        let successCount = 0;
+        const failedShooters = [];
+
+        for (const m of allMembers) {
+            const shareAmt = Number(m.betrag || defaultShare || 0);
+            if ((m.payout_method || 'jahresbeitrag') !== 'jahresbeitrag' || shareAmt <= 0) continue;
+
+            // Falls bereits als verrechnet markiert, prüfen ob die Position in contributions_positions noch existiert (Self-Healing)
+            if (m.status === 'verrechnet' && m.contribution_position_id) {
+                const { data: exPos } = await supa
+                    .from('contributions_positions')
+                    .select('id, konto')
+                    .eq('id', m.contribution_position_id)
+                    .maybeSingle();
+                if (exPos && String(exPos.konto) === '1301') {
+                    continue; // Bereits sauber vorhanden
+                }
+            } else if (m.status === 'ausgefuehrt') {
+                continue;
+            }
+
+            let pn = m.person_number;
+            if (!pn) {
+                const found = findMemberByName(m.schuetze_name);
+                if (found) {
+                    pn = found.person_number;
+                    m.person_number = pn;
+                    if (m.id) {
+                        await supa.from('group_competition_members').update({ person_number: pn }).eq('id', m.id);
+                    }
+                }
+            }
+
+            if (!pn) {
+                console.warn(`[Gruppengewinne] Schütze ${m.schuetze_name} hat keine Personennummer und wird übersprungen.`);
+                failedShooters.push(m.schuetze_name);
+                continue;
+            }
+
+            const pnStr = String(pn);
+            const headId = `CH-${yr}-${pnStr}`;
+            const posDesc = `Gutschrift Gruppengewinn: ${comp.gruppe_name} (${comp.anlass_name})`;
+            const creditAmount = -Math.abs(shareAmt);
+
+            try {
+                // Prüfen ob Header existiert
+                let { data: head } = await supa.from('contributions_header').select('*').eq('id', headId).maybeSingle();
+                if (!head) {
+                    const { data: newHead, error: nhErr } = await supa.from('contributions_header').insert({
+                        id: headId,
+                        person_number: pnStr,
+                        year: yr,
+                        status: 'offen',
+                        gesamt: 0.00
+                    }).select().single();
+                    if (nhErr) throw nhErr;
+                    head = newHead;
+                }
+
+                // Prüfen ob identische Gutschrift bereits für diesen Header existiert (Duplikatsschutz)
+                const { data: existingSame } = await supa
+                    .from('contributions_positions')
+                    .select('id, position_nr')
+                    .eq('header_id', headId)
+                    .eq('konto', '1301')
+                    .eq('beschreibung', posDesc)
+                    .maybeSingle();
+
+                let posId = existingSame?.id || null;
+                let nextPosNr = existingSame?.position_nr || 1;
+
+                if (!posId) {
+                    const { data: posList } = await supa
+                        .from('contributions_positions')
+                        .select('position_nr')
+                        .eq('header_id', headId)
+                        .order('position_nr', { ascending: false })
+                        .limit(1);
+                    nextPosNr = (posList && posList.length > 0) ? (posList[0].position_nr + 1) : 1;
+                    posId = `${headId}-${nextPosNr}`;
+
+                    const { error: insPosErr } = await supa.from('contributions_positions').insert({
+                        id: posId,
+                        header_id: headId,
+                        person_number: pnStr,
+                        year: yr,
+                        position_nr: nextPosNr,
+                        beschreibung: posDesc,
+                        betrag: creditAmount,
+                        typ: 'Credit',
+                        source_field: '1301',
+                        konto: '1301'
+                    });
+                    if (insPosErr) throw insPosErr;
+                }
+
+                // Header Gesamtbetrag neu berechnen
+                const { data: allPos } = await supa.from('contributions_positions').select('betrag').eq('header_id', headId);
+                const newGesamt = (allPos || []).reduce((acc, p) => acc + Number(p.betrag || 0), 0);
+                await supa.from('contributions_header').update({ gesamt: Math.max(0, newGesamt) }).eq('id', headId);
+
+                // Falls bereits ein Rechnungsentwurf im RechnungsCore existiert (und noch unversendet/unbezahlt ist):
+                if (head && head.invoice_id) {
+                    const { data: inv } = await supa.from('invoices').select('id, mail_status, total_paid').eq('id', head.invoice_id).maybeSingle();
+                    if (inv && (!inv.mail_status || inv.mail_status === 'entwurf') && (!inv.total_paid || Number(inv.total_paid) === 0)) {
+                        if (!existingSame) {
+                            await supa.from('invoice_positions').insert({
+                                invoice_id: inv.id,
+                                position_nr: nextPosNr,
+                                description: posDesc,
+                                quantity: 1,
+                                unit_price: creditAmount,
+                                amount: creditAmount,
+                                konto: '1301'
+                            });
+                        }
+                        await supa.from('invoices').update({
+                            total_amount: Math.max(0, newGesamt),
+                            open_amount: Math.max(0, newGesamt),
+                            pdf_url: null,
+                            pdf_storage_path: null,
+                            updated_at: new Date().toISOString()
+                        }).eq('id', inv.id);
+                    }
+                }
+
+                // Status in group_competition_members auf verrechnet setzen
+                if (m.id) {
+                    await supa.from('group_competition_members').update({
+                        betrag: shareAmt,
+                        status: 'verrechnet',
+                        contribution_position_id: posId
+                    }).eq('id', m.id);
+                }
+                m.betrag = shareAmt;
+                m.status = 'verrechnet';
+                m.contribution_position_id = posId;
+                successCount++;
+            } catch (pErr) {
+                console.error(`Fehler bei Übertragung für Schütze ${m.schuetze_name}:`, pErr);
+            }
+        }
+
+        return { successCount, failedShooters };
+    }
+
+    /**
+     * Überträgt die offenen Beträge der aktuellen Gruppe (im Editor) als Gutschrift in den Jahresbeitrag.
      */
     async function jmTransferCurrentCompToJahresbeitrag() {
         const btn = document.getElementById('jme-transfer-jb-btn');
         const runTransfer = async () => {
             if (!_jmCurrentEditingComp) return;
 
-            // Automatisch vorab in Supabase sichern, damit IDs & aktuelle Beträge garantiert konsistent sind
             const saved = await _jmSaveCurrentCompInternal({ closeModal: false, silent: true });
             if (!saved || !_jmCurrentEditingComp.id) return;
 
-            const members = (_jmCurrentEditingComp.members || []).filter(m => m.payout_method === 'jahresbeitrag' && m.betrag > 0 && m.status !== 'verrechnet');
+            const members = (_jmCurrentEditingComp.members || []).filter(m => (m.payout_method || 'jahresbeitrag') === 'jahresbeitrag' && m.betrag > 0 && m.status !== 'verrechnet');
             if (members.length === 0) {
                 if (window.UIConfirmKit) {
                     await UIConfirmKit.alert({ title: 'Keine offenen Positionen', message: 'Es gibt keine Schützen mit Methode «Verrechnung Jahresbeitrag» und offenem Betrag.', type: 'info' });
@@ -2121,118 +2868,8 @@
 
             if (!confirmed) return;
 
-            const supa = getSupa();
-            if (!supa) return;
-
-            let successCount = 0;
             const yr = getActiveYear();
-            const failedShooters = [];
-
-            for (const m of members) {
-                let pn = m.person_number;
-                if (!pn) {
-                    const found = findMemberByName(m.schuetze_name);
-                    if (found) {
-                        pn = found.person_number;
-                        m.person_number = pn;
-                        if (m.id) {
-                            await supa.from('group_competition_members').update({ person_number: pn }).eq('id', m.id);
-                        }
-                    }
-                }
-
-                if (!pn) {
-                    console.warn(`[Gruppengewinne] Schütze ${m.schuetze_name} hat keine Personennummer und wird übersprungen.`);
-                    failedShooters.push(m.schuetze_name);
-                    continue;
-                }
-
-                const pnStr = String(pn);
-                const headId = `CH-${yr}-${pnStr}`;
-
-                try {
-                    // Prüfen ob Header existiert
-                    let { data: head } = await supa.from('contributions_header').select('*').eq('id', headId).maybeSingle();
-                    if (!head) {
-                        // Header anlegen
-                        const { data: newHead, error: nhErr } = await supa.from('contributions_header').insert({
-                            id: headId,
-                            person_number: pnStr,
-                            year: yr,
-                            status: 'offen',
-                            gesamt: 0.00
-                        }).select().single();
-                        if (nhErr) throw nhErr;
-                        head = newHead;
-                    }
-
-                    // Höchste Positions-Nummer ermitteln
-                    const { data: posList } = await supa.from('contributions_positions').select('position_nr').eq('header_id', headId).order('position_nr', { ascending: false }).limit(1);
-                    const nextPosNr = (posList && posList.length > 0) ? (posList[0].position_nr + 1) : 1;
-                    const posId = `${headId}-${nextPosNr}`;
-
-                    const creditAmount = -Math.abs(Number(m.betrag));
-                    const posDesc = `Gutschrift Gruppengewinn: ${_jmCurrentEditingComp.gruppe_name} (${_jmCurrentEditingComp.anlass_name})`;
-
-                    // Gutschrift einfügen
-                    const { error: insPosErr } = await supa.from('contributions_positions').insert({
-                        id: posId,
-                        header_id: headId,
-                        person_number: pnStr,
-                        year: yr,
-                        position_nr: nextPosNr,
-                        beschreibung: posDesc,
-                        betrag: creditAmount,
-                        typ: 'Credit',
-                        source_field: '1301',
-                        konto: '1301'
-                    });
-                    if (insPosErr) throw insPosErr;
-
-                    // Header Gesamtbetrag neu berechnen
-                    const { data: allPos } = await supa.from('contributions_positions').select('betrag').eq('header_id', headId);
-                    const newGesamt = (allPos || []).reduce((acc, p) => acc + Number(p.betrag || 0), 0);
-                    await supa.from('contributions_header').update({ gesamt: Math.max(0, newGesamt) }).eq('id', headId);
-
-                    // Falls bereits ein Rechnungsentwurf im RechnungsCore existiert (und noch unversendet/unbezahlt ist):
-                    // Diesen direkt mit der neuen Gutschrift synchronisieren!
-                    if (head && head.invoice_id) {
-                        const { data: inv } = await supa.from('invoices').select('id, mail_status, total_paid').eq('id', head.invoice_id).maybeSingle();
-                        if (inv && (!inv.mail_status || inv.mail_status === 'entwurf') && (!inv.total_paid || Number(inv.total_paid) === 0)) {
-                            await supa.from('invoice_positions').insert({
-                                invoice_id: inv.id,
-                                position_nr: nextPosNr,
-                                description: posDesc,
-                                quantity: 1,
-                                unit_price: creditAmount,
-                                amount: creditAmount,
-                                konto: '1301'
-                            });
-                            await supa.from('invoices').update({
-                                total_amount: Math.max(0, newGesamt),
-                                open_amount: Math.max(0, newGesamt),
-                                pdf_url: null,
-                                pdf_storage_path: null,
-                                updated_at: new Date().toISOString()
-                            }).eq('id', inv.id);
-                            console.log(`[Gruppengewinne] Rechnungsentwurf ${inv.id} automatisch aktualisiert.`);
-                        }
-                    }
-
-                    // Status in group_competition_members auf verrechnet setzen
-                    if (m.id) {
-                        await supa.from('group_competition_members').update({
-                            status: 'verrechnet',
-                            contribution_position_id: posId
-                        }).eq('id', m.id);
-                    }
-                    m.status = 'verrechnet';
-                    m.contribution_position_id = posId;
-                    successCount++;
-                } catch (pErr) {
-                    console.error(`Fehler bei Übertragung für Schütze ${m.schuetze_name}:`, pErr);
-                }
-            }
+            const { successCount, failedShooters } = await _transferCompMembersToJahresbeitragInternal(_jmCurrentEditingComp, yr);
 
             if (failedShooters.length > 0 && window.UIConfirmKit) {
                 await UIConfirmKit.alert({
@@ -2254,6 +2891,157 @@
             await UIButtonKit.withLoading(btn, runTransfer);
         } else {
             await runTransfer();
+        }
+    }
+
+    /**
+     * 1-Klick-Übertrag eines einzelnen Schiessens direkt aus der Haupttabelle in den Jahresbeitrag.
+     */
+    async function jmTransferSingleCompToJahresbeitrag(compId) {
+        const comp = (window._jmGroupCompetitions || []).find(c => String(c.id) === String(compId));
+        if (!comp) return;
+
+        const btn = document.getElementById(`jm-gg-row-jb-btn-${compId}`);
+        const run = async () => {
+            const yr = comp.jahr || getActiveYear();
+            const doppel = Number(comp.gruppendoppel || 30);
+            const gewinn = Number(comp.gruppengewinn || 0);
+            const ueb = Math.max(0, gewinn - doppel);
+            const members = Array.isArray(comp.members) ? comp.members : [];
+            const count = members.length > 0 ? members.length : 5;
+            const perShooter = count > 0 ? (Math.round((ueb / count) * 20) / 20) : 0;
+
+            const openMembers = members.filter(m => (m.payout_method || 'jahresbeitrag') === 'jahresbeitrag' && Number(m.betrag || perShooter) > 0 && m.status !== 'verrechnet' && m.status !== 'ausgefuehrt');
+            if (openMembers.length === 0) return;
+
+            const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${Number(v || 0).toFixed(2)}`);
+            const totalSum = openMembers.reduce((acc, m) => acc + Number(m.betrag || perShooter), 0);
+
+            const confirmed = window.UIConfirmKit
+                ? await UIConfirmKit.confirm({
+                    title: 'In Jahresbeitrag übertragen?',
+                    message: `Möchtest du für <strong>${escapeHtml(comp.anlass_name)}</strong> (${escapeHtml(comp.gruppe_name)}) die Gewinnanteile von <strong>${openMembers.length} Schützen</strong> (je ${fmtCurr(perShooter)}, Total <strong>${fmtCurr(totalSum)}</strong>) direkt als Gutschrift in den Jahresbeitrag ${yr} übertragen?`,
+                    type: 'primary',
+                    confirmText: 'Ja, in Jahresbeitrag übertragen',
+                    cancelText: 'Abbrechen'
+                })
+                : confirm(`${openMembers.length} Schützen (${fmtCurr(totalSum)}) in Jahresbeitrag ${yr} übertragen?`);
+
+            if (!confirmed) return;
+
+            const { successCount, failedShooters } = await _transferCompMembersToJahresbeitragInternal(comp, yr);
+            if (failedShooters.length > 0 && window.UIConfirmKit) {
+                await UIConfirmKit.alert({
+                    title: 'Hinweis zu fehlenden Mitgliedernummern',
+                    message: `Folgende Schützen konnten nicht verknüpft werden: ${failedShooters.join(', ')}`,
+                    type: 'warning'
+                });
+            }
+
+            await jmRenderGruppengewinneList(yr);
+            if (typeof showSuccess === 'function') {
+                showSuccess(`🎉 ${successCount} Gewinnanteil(e) für «${comp.anlass_name}» im Jahresbeitrag ${yr} gutgeschrieben!`);
+            }
+        };
+
+        if (window.UIButtonKit && btn) {
+            await UIButtonKit.withLoading(btn, run);
+        } else {
+            await run();
+        }
+    }
+
+    /**
+     * Sammel-Übertrag: Überträgt ALLE noch offenen Gruppengewinne des Jahres mit 1 Klick in den Jahresbeitrag!
+     */
+    async function jmTransferAllOpenToJahresbeitrag() {
+        const btn = document.getElementById('jm-gg-bulk-transfer-jb-btn');
+        const runBulk = async () => {
+            const yr = getActiveYear();
+            const list = (window._jmGroupCompetitions && window._jmGroupCompetitions.length > 0)
+                ? window._jmGroupCompetitions
+                : await jmLoadGroupCompetitions(yr);
+
+            const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${Number(v || 0).toFixed(2)}`);
+
+            const openComps = [];
+            let totalShooters = 0;
+            let totalAmount = 0;
+
+            (list || []).forEach(c => {
+                const doppel = Number(c.gruppendoppel || 30);
+                const gewinn = Number(c.gruppengewinn || 0);
+                const ueb = Math.max(0, gewinn - doppel);
+                if (ueb <= 0) return;
+
+                const members = Array.isArray(c.members) ? c.members : [];
+                const count = members.length > 0 ? members.length : 5;
+                const perShooter = count > 0 ? (Math.round((ueb / count) * 20) / 20) : 0;
+
+                const openMems = members.filter(m => (m.payout_method || 'jahresbeitrag') === 'jahresbeitrag' && Number(m.betrag || perShooter) > 0 && m.status !== 'verrechnet' && m.status !== 'ausgefuehrt');
+                if (openMems.length > 0) {
+                    const compSum = openMems.reduce((acc, m) => acc + Number(m.betrag || perShooter), 0);
+                    openComps.push({ comp: c, count: openMems.length, sum: compSum });
+                    totalShooters += openMems.length;
+                    totalAmount += compSum;
+                }
+            });
+
+            if (openComps.length === 0) {
+                if (window.UIConfirmKit) {
+                    await UIConfirmKit.alert({
+                        title: 'Alles bereits übertragen',
+                        message: `Alle Gruppengewinne mit Überschuss der Saison ${yr} sind bereits im Jahresbeitrag gutgeschrieben.`,
+                        type: 'info'
+                    });
+                }
+                return;
+            }
+
+            const detailsHtml = openComps.map(oc =>
+                `<li><strong>${escapeHtml(oc.comp.anlass_name)}</strong> (${escapeHtml(oc.comp.gruppe_name)}): ${oc.count} Schützen · <strong>${fmtCurr(oc.sum)}</strong></li>`
+            ).join('');
+
+            const confirmed = window.UIConfirmKit
+                ? await UIConfirmKit.confirm({
+                    title: 'Alle offenen Gruppengewinne in Jahresbeitrag übertragen?',
+                    message: `Möchtest du die folgenden <strong>${openComps.length} offenen Gruppenschiessen</strong> (${totalShooters} Gutschriftspositionen, Gesamtsumme <strong>${fmtCurr(totalAmount)}</strong>) jetzt gesammelt in den Jahresbeitrag ${yr} (Konto 1301) übertragen?<ul class="mt-2 mb-0 ps-3 small">${detailsHtml}</ul>`,
+                    type: 'primary',
+                    confirmText: `Ja, alle übertragen (${fmtCurr(totalAmount)})`,
+                    cancelText: 'Abbrechen'
+                })
+                : confirm(`Alle ${openComps.length} offenen Schiessen (${fmtCurr(totalAmount)}) in den Jahresbeitrag ${yr} übertragen?`);
+
+            if (!confirmed) return;
+
+            let totalTransferred = 0;
+            const allFailed = new Set();
+
+            // Alle Wettkämpfe (inkl. Self-Healing für bereits verrechnete) durchgehen
+            for (const c of (list || [])) {
+                const { successCount, failedShooters } = await _transferCompMembersToJahresbeitragInternal(c, yr);
+                totalTransferred += successCount;
+                failedShooters.forEach(fn => allFailed.add(fn));
+            }
+
+            if (allFailed.size > 0 && window.UIConfirmKit) {
+                await UIConfirmKit.alert({
+                    title: 'Schützen ohne Mitgliedsnummer',
+                    message: `Folgende Schützen konnten nicht automatisch im Mitgliederstamm zugeordnet werden: ${Array.from(allFailed).join(', ')}`,
+                    type: 'warning'
+                });
+            }
+
+            await jmRenderGruppengewinneList(yr);
+            if (typeof showSuccess === 'function') {
+                showSuccess(`🎉 ${totalTransferred} Gutschriftsposition(en) aus ${openComps.length} Schiessen erfolgreich im Jahresbeitrag ${yr} verbucht!`);
+            }
+        };
+
+        if (window.UIButtonKit && btn) {
+            await UIButtonKit.withLoading(btn, runBulk);
+        } else {
+            await runBulk();
         }
     }
 
@@ -2503,10 +3291,14 @@
         doc.text(`${comp.punkte_total ? `${comp.punkte_total} Pkt.` : '-'}`, 145, 56);
 
         // Finanz-Tabelle
+        const effDoppel = Math.min(gewinn, doppel);
+        const doppelLabel = (gewinn > 0 && gewinn < doppel)
+            ? `Abzug Gruppendoppel (Teil-Deckung aus CHF ${doppel.toFixed(2)})`
+            : 'Abzug Gruppendoppel (Verein)';
         const finHead = [['Finanzielle Aufstellung', 'Betrag (CHF)', 'Buchungsziel']];
         const finBody = [
             ['Gruppengewinn Ausrichter (Brutto)', fmtCurr(gewinn), 'Geldeingang Bank 1020'],
-            ['Abzug Gruppendoppel (Verein)', `- ${fmtCurr(doppel)}`, 'Rückerstattung Aufwand 4200'],
+            [doppelLabel, `- ${fmtCurr(effDoppel)}`, 'Rückerstattung Aufwand 4410'],
             ['Netto-Überschuss für Schützen', fmtCurr(ueberschuss), 'Transitkonto 1301'],
             ['Anteil je Schütze (bei ' + count + ' Schützen)', fmtCurr(perShooter), 'Auszahlung / Verrechnung']
         ];
@@ -2581,6 +3373,539 @@
         // Download / Anzeige
         const safeName = (comp.gruppe_name || 'Gruppe').replace(/[^a-zA-Z0-9_-]/g, '_');
         doc.save(`Abrechnung_Gruppengewinn_${safeName}_${comp.jahr || '2026'}.pdf`);
+    }
+
+    // ==========================================================================
+    // GESAMTAUSWERTUNG & JAHRESBERICHT-EXPORT (PDF & WORD)
+    // ==========================================================================
+
+    /**
+     * Aggregiert alle Kennzahlen, Schiessen und Schützen-Statistiken für den PDF- und Word-Export.
+     */
+    async function buildGruppengewinneReportData(year) {
+        const yr = year || getActiveYear();
+        const comps = (window._jmGroupCompetitions && window._jmGroupCompetitions.length > 0 && Number(_jmActiveCompYear) === Number(yr))
+            ? window._jmGroupCompetitions
+            : await jmLoadGroupCompetitions(yr);
+
+        let totalGewinn = 0;
+        let totalDoppelSoll = 0;
+        let totalDoppelGedeckt = 0;
+        let totalUeberschuss = 0;
+        let totalVerrechnet = 0;
+        let totalOffen = 0;
+
+        const rank1List = [];
+        const rank2List = [];
+        const rank3List = [];
+        const shooterStatsMap = {};
+
+        // Chronologisch oder nach Rang sortierte Kopie
+        const sortedComps = [...(comps || [])].sort((a, b) => (Number(a.rang) || 99) - (Number(b.rang) || 99));
+
+        sortedComps.forEach(c => {
+            const doppel = Number(c.gruppendoppel || 30);
+            const gewinn = Number(c.gruppengewinn || 0);
+            const ueb = Math.max(0, gewinn - doppel);
+            const gedeckt = Math.min(gewinn, doppel);
+
+            totalGewinn += gewinn;
+            totalDoppelSoll += doppel;
+            totalDoppelGedeckt += gedeckt;
+            totalUeberschuss += ueb;
+
+            const r = Number(c.rang || 0);
+            if (r === 1) rank1List.push(c);
+            else if (r === 2) rank2List.push(c);
+            else if (r === 3) rank3List.push(c);
+
+            const members = Array.isArray(c.members) ? c.members : [];
+            const count = members.length > 0 ? members.length : Number(c.anzahl_schuetzen || 5);
+            const perShooter = count > 0 ? (Math.round((ueb / count) * 20) / 20) : 0;
+
+            members.forEach(m => {
+                const amt = Number(m.betrag || perShooter || 0);
+                const isDone = m.status === 'verrechnet' || m.status === 'ausgefuehrt';
+                if (amt > 0) {
+                    if (isDone) totalVerrechnet += amt;
+                    else totalOffen += amt;
+                }
+
+                // Schützenname normalisieren ("Vorname Nachname")
+                const rawName = String(m.schuetze_name || 'Unbekannt').trim();
+                const mObj = findMemberByPn(m.person_number) || findMemberByName(rawName);
+                const normName = mObj ? `${mObj.first_name} ${mObj.last_name}` : rawName;
+                const key = mObj ? `PN_${mObj.person_number}` : normName.toLowerCase();
+
+                if (!shooterStatsMap[key]) {
+                    shooterStatsMap[key] = {
+                        name: normName,
+                        pn: mObj?.person_number || m.person_number || '',
+                        einsaetze: 0,
+                        einsatz100Count: 0,
+                        sum100Pts: 0,
+                        best100Pts: 0,
+                        otherScores: [],
+                        totalShare: 0,
+                        verrechnetShare: 0,
+                        offenShare: 0,
+                        events: []
+                    };
+                }
+
+                const st = shooterStatsMap[key];
+                st.einsaetze++;
+                const pts = Number(m.punkte || 0);
+                if (pts > 0) {
+                    if (pts <= 100) {
+                        st.einsatz100Count++;
+                        st.sum100Pts += pts;
+                        if (pts > st.best100Pts) st.best100Pts = pts;
+                    } else {
+                        st.otherScores.push(`${pts} (${c.anlass_name})`);
+                    }
+                }
+                st.totalShare += amt;
+                if (isDone) st.verrechnetShare += amt;
+                else st.offenShare += amt;
+                st.events.push({
+                    anlass: c.anlass_name,
+                    gruppe: c.gruppe_name,
+                    rang: c.rang,
+                    punkte: pts,
+                    betrag: amt,
+                    status: m.status || 'offen'
+                });
+            });
+        });
+
+        const shooterStats = Object.values(shooterStatsMap).sort((a, b) => {
+            if (b.einsaetze !== a.einsaetze) return b.einsaetze - a.einsaetze;
+            if (b.totalShare !== a.totalShare) return b.totalShare - a.totalShare;
+            return b.sum100Pts - a.sum100Pts;
+        });
+
+        return {
+            year: yr,
+            comps: comps || [],
+            sortedComps,
+            totalGewinn,
+            totalDoppelSoll,
+            totalDoppelGedeckt,
+            totalUeberschuss,
+            totalVerrechnet,
+            totalOffen,
+            rank1List,
+            rank2List,
+            rank3List,
+            shooterStats
+        };
+    }
+
+    /**
+     * Erzeugt eine umfassende PDF-Gesamtauswertung aller Gruppengewinne, Teilnehmer, Einzelpunkte & Schützenstatistik.
+     */
+    async function jmExportGruppengewinneSummaryPdf(year) {
+        if (!window.jspdf || !window.jspdf.jsPDF) {
+            if (window.UIConfirmKit) {
+                await UIConfirmKit.alert({ title: 'PDF-Fehler', message: 'Die jsPDF-Bibliothek ist noch nicht geladen.', type: 'danger' });
+            }
+            return;
+        }
+
+        const data = await buildGruppengewinneReportData(year);
+        if (!data.comps || data.comps.length === 0) {
+            if (window.UIConfirmKit) {
+                await UIConfirmKit.alert({ title: 'Keine Daten', message: `Für die Saison ${data.year} sind noch keine Gruppengewinne erfasst.`, type: 'info' });
+            }
+            return;
+        }
+
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+        const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${Number(v || 0).toFixed(2)}`);
+        const todayStr = (window.UIFormatKit && UIFormatKit.formatDate) ? UIFormatKit.formatDate(new Date().toISOString().split('T')[0]) : new Date().toLocaleDateString('de-CH');
+
+        // Header
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(16);
+        doc.setTextColor(30, 64, 120);
+        doc.text(`SPORTSCHÜTZEN MUHEN – Auswärtige Gruppenschiessen & Konto 1301 (Saison ${data.year})`, 14, 15);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(90, 90, 90);
+        const podiumCount = data.rank1List.length + data.rank2List.length + data.rank3List.length;
+        doc.text(`Stand: ${todayStr} · ${data.comps.length} Gruppenschiessen (${podiumCount} Podestplätze: ${data.rank1List.length}x 1. Rang, ${data.rank2List.length}x 2. Rang, ${data.rank3List.length}x 3. Rang) · Buchungskonto: 1301`, 14, 20.5);
+
+        // Finanz-KPI Box
+        doc.setDrawColor(200, 210, 225);
+        doc.setFillColor(246, 248, 252);
+        doc.roundedRect(14, 24, 269, 13, 2, 2, 'FD');
+
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(25, 135, 84);
+        doc.text(`Brutto-Gewinne: ${fmtCurr(data.totalGewinn)}`, 18, 32);
+
+        doc.setTextColor(60, 60, 60);
+        doc.text(`Vereinsanteil Doppel (4410): ${fmtCurr(data.totalDoppelGedeckt)} (aus ${fmtCurr(data.totalDoppelSoll)})`, 78, 32);
+
+        doc.setTextColor(13, 110, 253);
+        doc.text(`Netto-Überschuss Schützen (1301): ${fmtCurr(data.totalUeberschuss)}`, 165, 32);
+
+        doc.setTextColor(40, 40, 40);
+        doc.text(`Abgewickelt: ${fmtCurr(data.totalVerrechnet)} | Offen: ${fmtCurr(data.totalOffen)}`, 235, 32);
+
+        // Tabelle 1: Alle Gruppenschiessen mit Teilnehmern & Einzelpunkten
+        const compHead = [['Anlass / Schützenfest', 'Gruppe', 'Rang', 'Total Pkt.', 'Doppel', 'Gewinn', 'Überschuss', 'Beteiligte Schützen (Einzelpunkte & Anteil)', 'Status']];
+        const compBody = data.comps.map(c => {
+            const doppel = Number(c.gruppendoppel || 30);
+            const gewinn = Number(c.gruppengewinn || 0);
+            const ueb = Math.max(0, gewinn - doppel);
+            const members = Array.isArray(c.members) ? [...c.members].sort((a, b) => (Number(b.punkte) || 0) - (Number(a.punkte) || 0)) : [];
+            const count = members.length > 0 ? members.length : 5;
+            const perShooter = count > 0 ? (Math.round((ueb / count) * 20) / 20) : 0;
+
+            const allDone = members.length > 0 && ueb > 0 && members.every(m => m.status === 'verrechnet' || m.status === 'ausgefuehrt');
+            const statusTxt = ueb === 0 ? 'Kein Überschuss' : (allDone ? 'Abgewickelt (JB)' : `Offen (je ${fmtCurr(perShooter)})`);
+
+            const shootersStr = members.map(m => `${m.schuetze_name} (${m.punkte || '-'} Pkt.)`).join(', ');
+            const calcPts = Math.round(members.reduce((a, b) => a + (Number(b.punkte) || 0), 0) * 10) / 10;
+
+            return [
+                c.anlass_name,
+                c.gruppe_name,
+                c.rang ? `${c.rang}.` : '-',
+                c.punkte_total ? `${c.punkte_total}` : (calcPts > 0 ? `${calcPts}` : '-'),
+                fmtCurr(doppel),
+                fmtCurr(gewinn),
+                fmtCurr(ueb),
+                shootersStr || '-',
+                statusTxt
+            ];
+        });
+
+        // Summenzeile anfügen
+        compBody.push([
+            `TOTAL (${data.comps.length} Schiessen)`,
+            '',
+            '',
+            '',
+            fmtCurr(data.totalDoppelGedeckt),
+            fmtCurr(data.totalGewinn),
+            fmtCurr(data.totalUeberschuss),
+            `Davon im Jahresbeitrag verrechnet: ${fmtCurr(data.totalVerrechnet)} · Noch offen: ${fmtCurr(data.totalOffen)}`,
+            ''
+        ]);
+
+        doc.autoTable({
+            head: compHead,
+            body: compBody,
+            startY: 41,
+            margin: { left: 14, right: 14 },
+            theme: 'grid',
+            styles: { font: 'helvetica', fontSize: 8, cellPadding: 2 },
+            headStyles: { fillColor: [30, 64, 120], textColor: 255, fontStyle: 'bold' },
+            columnStyles: {
+                0: { cellWidth: 48, fontStyle: 'bold' },
+                1: { cellWidth: 18 },
+                2: { cellWidth: 12, halign: 'center', fontStyle: 'bold' },
+                3: { cellWidth: 17, halign: 'right' },
+                4: { cellWidth: 20, halign: 'right' },
+                5: { cellWidth: 21, halign: 'right', fontStyle: 'bold' },
+                6: { cellWidth: 22, halign: 'right', fontStyle: 'bold' },
+                7: { cellWidth: 83, fontSize: 7.5 },
+                8: { cellWidth: 28 }
+            },
+            didParseCell: (hook) => {
+                if (hook.section === 'body' && hook.row.index === compBody.length - 1) {
+                    hook.cell.styles.fillColor = [232, 238, 248];
+                    hook.cell.styles.fontStyle = 'bold';
+                }
+            }
+        });
+
+        // Tabelle 2: Schützen-Statistik & Gewinnanteile über die ganze Saison
+        let nextY = doc.lastAutoTable.finalY + 8;
+        if (nextY > 155) {
+            doc.addPage();
+            nextY = 18;
+        }
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.setTextColor(30, 64, 120);
+        doc.text(`Schützen-Einsatzstatistik & Gewinnanteile (Saison ${data.year})`, 14, nextY);
+
+        const shooterHead = [['#', 'Schütze', 'Gruppen-Einsätze', 'Ø Punkte (100er)', 'Bestresultat', 'Teilnahmen & Einzelpunkte', 'Gewinnanteil Total', 'Davon verrechnet', 'Offen']];
+        const shooterBody = data.shooterStats.map((st, idx) => {
+            const avg100 = st.einsatz100Count > 0 ? (st.sum100Pts / st.einsatz100Count).toFixed(2) + ' Pkt.' : '-';
+            const bestStr = st.best100Pts > 0 ? `${st.best100Pts} Pkt.` : (st.otherScores[0] || '-');
+            const evDetails = st.events.map(e => {
+                const shortName = String(e.anlass || '').replace(/\s*\(.*?\)\s*/g, ' ').replace(/\b20\d\d\b/g, '').trim();
+                return `${shortName}: ${e.punkte || '-'} Pkt.`;
+            }).join(' | ');
+
+            return [
+                String(idx + 1),
+                st.name,
+                `${st.einsaetze}x`,
+                avg100,
+                bestStr,
+                evDetails,
+                fmtCurr(st.totalShare),
+                fmtCurr(st.verrechnetShare),
+                fmtCurr(st.offenShare)
+            ];
+        });
+
+        doc.autoTable({
+            head: shooterHead,
+            body: shooterBody,
+            startY: nextY + 3,
+            margin: { left: 14, right: 14 },
+            theme: 'grid',
+            styles: { font: 'helvetica', fontSize: 7.8, cellPadding: 1.8 },
+            headStyles: { fillColor: [70, 80, 95], textColor: 255, fontStyle: 'bold' },
+            columnStyles: {
+                0: { cellWidth: 8, halign: 'center' },
+                1: { cellWidth: 36, fontStyle: 'bold' },
+                2: { cellWidth: 22, halign: 'center' },
+                3: { cellWidth: 23, halign: 'right' },
+                4: { cellWidth: 20, halign: 'right' },
+                5: { cellWidth: 100, fontSize: 7.2 },
+                6: { cellWidth: 22, halign: 'right', fontStyle: 'bold' },
+                7: { cellWidth: 20, halign: 'right' },
+                8: { cellWidth: 18, halign: 'right' }
+            }
+        });
+
+        doc.save(`Gesamtauswertung_Gruppengewinne_1301_${data.year}.pdf`);
+        if (typeof showSuccess === 'function') {
+            showSuccess(`📄 PDF-Gesamtauswertung (${data.year}) erfolgreich erstellt!`);
+        }
+    }
+
+    /**
+     * Erzeugt ein direkt in Microsoft Word editierbares Dokument (.doc) mit Textbausteinen
+     * und detaillierten Tabellen für den Jahresbericht des Schützenmeisters / Präsidenten.
+     */
+    async function jmExportGruppengewinneWord(year) {
+        const data = await buildGruppengewinneReportData(year);
+        if (!data.comps || data.comps.length === 0) {
+            if (window.UIConfirmKit) {
+                await UIConfirmKit.alert({ title: 'Keine Daten', message: `Für die Saison ${data.year} sind noch keine Gruppengewinne erfasst.`, type: 'info' });
+            }
+            return;
+        }
+
+        const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${Number(v || 0).toFixed(2)}`);
+        const todayStr = (window.UIFormatKit && UIFormatKit.formatDate) ? UIFormatKit.formatDate(new Date().toISOString().split('T')[0]) : new Date().toLocaleDateString('de-CH');
+
+        // Formuliere druckreifen Jahresbericht-Fliesstext
+        const r1Names = data.rank1List.map(c => `${c.anlass_name} (${c.punkte_total ? c.punkte_total + ' Pkt.' : '1. Rang'})`).join(', ');
+        const r2Names = data.rank2List.map(c => `${c.anlass_name} (${c.punkte_total ? c.punkte_total + ' Pkt.' : '2. Rang'})`).join(', ');
+        const r3Names = data.rank3List.map(c => `${c.anlass_name} (${c.punkte_total ? c.punkte_total + ' Pkt.' : '3. Rang'})`).join(', ');
+
+        let proseParagraphs = `<p>In der Schiesssaison <strong>${data.year}</strong> nahmen die Sportschützen Muhen mit der Gruppe <strong>«Strohaus»</strong> erfolgreich an <strong>${data.comps.length} auswärtigen Gruppenschiessen</strong> teil. Insgesamt erzielte unsere Gruppe hervorragende Resultate und durfte Brutto-Gruppengaben von insgesamt <strong>${fmtCurr(data.totalGewinn)}</strong> (Netto-Ausschüttung an die Gruppenschützen nach Abzug der Vereinsdoppel: <strong>${fmtCurr(data.totalUeberschuss)}</strong>) entgegennehmen.</p>`;
+
+        const podiumSentences = [];
+        if (data.rank1List.length > 0) {
+            podiumSentences.push(`<strong>${data.rank1List.length}x den 1. Schlussrang (Gruppensieg)</strong> bei: <em>${escapeHtml(r1Names)}</em>`);
+        }
+        if (data.rank2List.length > 0) {
+            podiumSentences.push(`<strong>${data.rank2List.length}x den 2. Schlussrang</strong> bei: <em>${escapeHtml(r2Names)}</em>`);
+        }
+        if (data.rank3List.length > 0) {
+            podiumSentences.push(`<strong>${data.rank3List.length}x den 3. Schlussrang</strong> bei: <em>${escapeHtml(r3Names)}</em>`);
+        }
+
+        if (podiumSentences.length > 0) {
+            proseParagraphs += `<p>Besonders hervorzuheben sind die Podestplätze unserer Gruppe:<br>• ${podiumSentences.join('<br>• ')}</p>`;
+        }
+
+        const topActiveShooters = data.shooterStats.slice(0, 6).map(s => `${escapeHtml(s.name)} (${s.einsaetze} Einsätze${s.einsatz100Count > 0 ? ', Ø ' + (s.sum100Pts / s.einsatz100Count).toFixed(1) + ' Pkt.' : ''})`).join(', ');
+        if (topActiveShooters) {
+            proseParagraphs += `<p>Als fleissigste Gruppenschützen standen im Einsatz: ${topActiveShooters}.</p>`;
+        }
+
+        // Übersichtstabelle aller Schiessen
+        const overviewRowsHtml = data.comps.map(c => {
+            const doppel = Number(c.gruppendoppel || 30);
+            const gewinn = Number(c.gruppengewinn || 0);
+            const ueb = Math.max(0, gewinn - doppel);
+            const members = Array.isArray(c.members) ? [...c.members].sort((a, b) => (Number(b.punkte) || 0) - (Number(a.punkte) || 0)) : [];
+            const shooterText = members.map(m => `${escapeHtml(m.schuetze_name)} (${m.punkte || '-'})`).join(', ');
+            const calcPts = Math.round(members.reduce((a, b) => a + (Number(b.punkte) || 0), 0) * 10) / 10;
+
+            return `
+                <tr>
+                    <td><strong>${escapeHtml(c.anlass_name)}</strong></td>
+                    <td>${escapeHtml(c.gruppe_name)}</td>
+                    <td style="text-align:center;"><strong>${c.rang ? c.rang + '. Rang' : '-'}</strong></td>
+                    <td style="text-align:right;"><strong>${c.punkte_total || calcPts || '-'}</strong></td>
+                    <td style="text-align:right;">${fmtCurr(gewinn)}</td>
+                    <td style="text-align:right;">${fmtCurr(ueb)}</td>
+                    <td>${shooterText}</td>
+                </tr>
+            `;
+        }).join('');
+
+        // Detailblöcke je Schützenfest (für Jahresbericht-Anreicherung)
+        const eventDetailBlocksHtml = data.comps.map(c => {
+            const doppel = Number(c.gruppendoppel || 30);
+            const gewinn = Number(c.gruppengewinn || 0);
+            const ueb = Math.max(0, gewinn - doppel);
+            const members = Array.isArray(c.members) ? [...c.members].sort((a, b) => (Number(b.punkte) || 0) - (Number(a.punkte) || 0)) : [];
+            const count = members.length > 0 ? members.length : 5;
+            const perShooter = count > 0 ? (Math.round((ueb / count) * 20) / 20) : 0;
+            const calcPts = Math.round(members.reduce((a, b) => a + (Number(b.punkte) || 0), 0) * 10) / 10;
+
+            const mRows = members.map((m, idx) => `
+                <tr>
+                    <td style="text-align:center;">${idx + 1}.</td>
+                    <td><strong>${escapeHtml(m.schuetze_name)}</strong></td>
+                    <td style="text-align:right;"><strong>${m.punkte || '-'} Pkt.</strong></td>
+                    <td style="text-align:right;">${fmtCurr(Number(m.betrag || perShooter))}</td>
+                </tr>
+            `).join('');
+
+            return `
+                <div style="margin-bottom: 14pt; page-break-inside: avoid;">
+                    <h3 style="margin: 8pt 0 4pt 0; color: #1e4078; font-size: 11.5pt;">
+                        ${escapeHtml(c.anlass_name)} – Gruppe «${escapeHtml(c.gruppe_name)}»
+                        ${c.rang ? `(${c.rang}. Rang)` : ''} · Total: ${c.punkte_total || calcPts || '-'} Punkte
+                    </h3>
+                    <div style="font-size: 9.5pt; color: #444; margin-bottom: 4pt;">
+                        Gruppengabe Brutto: <strong>${fmtCurr(gewinn)}</strong> | Gruppendoppel Verein: ${fmtCurr(doppel)} | Netto-Überschuss Schützen: <strong>${fmtCurr(ueb)}</strong> (je ${fmtCurr(perShooter)})
+                    </div>
+                    <table border="1" cellspacing="0" cellpadding="4" style="border-collapse: collapse; width: 100%; font-size: 9.5pt; border-color: #cbd5e1;">
+                        <thead>
+                            <tr style="background-color: #f1f5f9;">
+                                <th style="width: 10%; text-align:center;">Nr.</th>
+                                <th style="width: 50%; text-align:left;">Schütze</th>
+                                <th style="width: 20%; text-align:right;">Einzelpunkte</th>
+                                <th style="width: 20%; text-align:right;">Gewinnanteil</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${mRows}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }).join('');
+
+        // Schützen-Einsatzstatistik Tabelle
+        const shooterStatRowsHtml = data.shooterStats.map((st, idx) => {
+            const avg100 = st.einsatz100Count > 0 ? (st.sum100Pts / st.einsatz100Count).toFixed(2) + ' Pkt.' : '-';
+            const bestStr = st.best100Pts > 0 ? `${st.best100Pts} Pkt.` : (st.otherScores[0] || '-');
+            const evList = st.events.map(e => `${escapeHtml(e.anlass)}: <strong>${e.punkte || '-'}</strong>`).join(', ');
+            return `
+                <tr>
+                    <td style="text-align:center;">${idx + 1}.</td>
+                    <td><strong>${escapeHtml(st.name)}</strong></td>
+                    <td style="text-align:center;">${st.einsaetze}</td>
+                    <td style="text-align:right;">${avg100}</td>
+                    <td style="text-align:right;">${bestStr}</td>
+                    <td>${evList}</td>
+                    <td style="text-align:right;"><strong>${fmtCurr(st.totalShare)}</strong></td>
+                </tr>
+            `;
+        }).join('');
+
+        const wordHtml = `
+            <html xmlns:o="urn:schemas-microsoft-com:office:office"
+                  xmlns:w="urn:schemas-microsoft-com:office:word"
+                  xmlns="http://www.w3.org/TR/REC-html40">
+            <head>
+                <meta charset="utf-8">
+                <title>Jahresbericht Auswärtige Gruppenschiessen ${data.year}</title>
+                <style>
+                    body { font-family: Calibri, Arial, sans-serif; font-size: 10.5pt; color: #1e293b; line-height: 1.4; }
+                    h1 { font-size: 16pt; color: #1e4078; margin-bottom: 2pt; }
+                    h2 { font-size: 13pt; color: #1e4078; border-bottom: 1px solid #cbd5e1; padding-bottom: 3pt; margin-top: 16pt; margin-bottom: 8pt; }
+                    table { border-collapse: collapse; width: 100%; margin-bottom: 10pt; }
+                    th, td { border: 1px solid #cbd5e1; padding: 5pt 6pt; vertical-align: top; }
+                    th { background-color: #1e4078; color: #ffffff; font-weight: bold; }
+                    .box { background-color: #f8fafc; border: 1px solid #cbd5e1; padding: 10pt; margin-bottom: 12pt; }
+                </style>
+            </head>
+            <body>
+                <h1>SPORTSCHÜTZEN MUHEN – Auswärtige Gruppenschiessen ${data.year}</h1>
+                <div style="color: #64748b; font-size: 9.5pt; margin-bottom: 12pt;">
+                    Auswertung für Jahresbericht &amp; Generalversammlung · Stand: ${todayStr}
+                </div>
+
+                <h2>1. Textvorlage für den Jahresbericht (Schützenmeister / Präsident)</h2>
+                <div class="box">
+                    ${proseParagraphs}
+                </div>
+
+                <h2>2. Gesamtübersicht der besuchten Gruppenschiessen (${data.year})</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:24%; text-align:left;">Anlass / Schützenfest</th>
+                            <th style="width:10%; text-align:left;">Gruppe</th>
+                            <th style="width:9%; text-align:center;">Rang</th>
+                            <th style="width:9%; text-align:right;">Total Pkt.</th>
+                            <th style="width:10%; text-align:right;">Gewinn</th>
+                            <th style="width:10%; text-align:right;">Überschuss</th>
+                            <th style="width:28%; text-align:left;">Gruppenschützen (Einzelpunkte)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${overviewRowsHtml}
+                        <tr style="background-color: #e2e8f0; font-weight: bold;">
+                            <td colspan="4">TOTAL SAISON ${data.year} (${data.comps.length} Gruppenschiessen)</td>
+                            <td style="text-align:right;">${fmtCurr(data.totalGewinn)}</td>
+                            <td style="text-align:right;">${fmtCurr(data.totalUeberschuss)}</td>
+                            <td>Vereinsanteil Doppel (4410): ${fmtCurr(data.totalDoppelGedeckt)}</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h2>3. Einsatz- &amp; Erfolgsstatistik der Gruppenschützen (${data.year})</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:5%; text-align:center;">#</th>
+                            <th style="width:20%; text-align:left;">Schütze</th>
+                            <th style="width:8%; text-align:center;">Einsätze</th>
+                            <th style="width:11%; text-align:right;">Ø (100er)</th>
+                            <th style="width:11%; text-align:right;">Bestwert</th>
+                            <th style="width:33%; text-align:left;">Einzelresultate</th>
+                            <th style="width:12%; text-align:right;">Gewinnanteil</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${shooterStatRowsHtml}
+                    </tbody>
+                </table>
+
+                <h2>4. Detailresultate je Schützenfest (zum Einfügen in den Jahresbericht)</h2>
+                ${eventDetailBlocksHtml}
+            </body>
+            </html>
+        `;
+
+        const blob = new Blob(['\ufeff', wordHtml], { type: 'application/msword;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Jahresbericht_Gruppenschiessen_${data.year}.doc`;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }, 200);
+
+        if (typeof showSuccess === 'function') {
+            showSuccess(`📘 Word-Dokument für den Jahresbericht (${data.year}) erfolgreich heruntergeladen!`);
+        }
     }
 
     // ==========================================================================
@@ -2814,6 +4139,9 @@
     window.jmToggleGridShooterInEditor = jmToggleGridShooterInEditor;
     window.jmPopulateShootersFromJMRawGrid = jmPopulateShootersFromJMRawGrid;
     window.jmOpenGruppengewinneModal = jmOpenGruppengewinneModal;
+    window.jmRenderGruppengewinneTabPane = jmRenderGruppengewinneTabPane;
+    window.jmRefreshGruppengewinneBadge = jmRefreshGruppengewinneBadge;
+    window.jmCreateCompFromFibuEntry = jmCreateCompFromFibuEntry;
     window.jmRenderGruppengewinneList = jmRenderGruppengewinneList;
     window.jmReloadGruppengewinneList = jmReloadGruppengewinneList;
     window.jmOnGruppengewinneYearChange = jmOnGruppengewinneYearChange;
@@ -2830,9 +4158,13 @@
     window.jmOnShooterIbanChange = jmOnShooterIbanChange;
     window.jmSaveCurrentComp = jmSaveCurrentComp;
     window.jmTransferCurrentCompToJahresbeitrag = jmTransferCurrentCompToJahresbeitrag;
+    window.jmTransferSingleCompToJahresbeitrag = jmTransferSingleCompToJahresbeitrag;
+    window.jmTransferAllOpenToJahresbeitrag = jmTransferAllOpenToJahresbeitrag;
     window.jmTransferCurrentCompToPaymentOrder = jmTransferCurrentCompToPaymentOrder;
     window.jmGenerateGruppengewinnPdf = jmGenerateGruppengewinnPdf;
     window.jmGenerateGruppengewinnPdfFromEditor = jmGenerateGruppengewinnPdfFromEditor;
+    window.jmExportGruppengewinneSummaryPdf = jmExportGruppengewinneSummaryPdf;
+    window.jmExportGruppengewinneWord = jmExportGruppengewinneWord;
     window.jmDetectGroupCompetitionFromImportLines = jmDetectGroupCompetitionFromImportLines;
 
 })(window);
