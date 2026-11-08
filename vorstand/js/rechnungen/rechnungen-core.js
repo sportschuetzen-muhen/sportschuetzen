@@ -1285,8 +1285,11 @@ window.RechnungsCore = {
       }
     }
 
+    const recFirma = (rec.firma || rec.company || '').trim();
+    const isRecFirma = rec.typ === 'firma' || rec.type === 'firma' || (!rec.memberId && Boolean(recFirma));
     const recipientSnapshot = {
-      type: rec.type || (rec.memberId ? 'mitglied' : (rec.firma ? 'firma' : 'extern')),
+      type: rec.type || (rec.memberId ? 'mitglied' : (isRecFirma ? 'firma' : 'extern')),
+      typ: isRecFirma ? 'firma' : 'privat',
       anrede: recAnrede,
       salutation: recAnrede,
       name: recipientName,
@@ -1294,7 +1297,9 @@ window.RechnungsCore = {
       last_name: rec.lastName || rec.nachname || '',
       vorname: rec.firstName || rec.vorname || '',
       nachname: rec.lastName || rec.nachname || '',
-      firma: rec.firma || '',
+      firma: isRecFirma ? recFirma : '',
+      abteilung: rec.abteilung || rec.department || '',
+      adresszusatz: rec.adresszusatz || rec.addition || '',
       contact_person: rec.contactPerson || rec.kontaktperson || '',
       street: recStreet,
       strasse: recStreet,

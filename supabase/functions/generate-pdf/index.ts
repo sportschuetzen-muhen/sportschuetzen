@@ -259,6 +259,7 @@ interface RecipientData {
   name?: string;
   firma?: string;
   abteilung?: string;
+  adresszusatz?: string;
   anrede?: string;
   strasse?: string;
   plz?: string;
@@ -332,24 +333,26 @@ function normalizeRecipient(r: any): RecipientData {
   const strasse = (r.strasse || r.street || r.adresse || "").trim();
   const plz = String(r.plz || r.zip || r.post_code || r.postCode || "").trim();
   const ort = (r.ort || r.city || "").trim();
-  let firma = (r.firma || "").trim();
-  const abteilung = (r.abteilung || r.zusatz || "").trim();
+  let firma = (r.firma || r.company || "").trim();
+  const abteilung = (r.abteilung || r.department || r.zusatz || "").trim();
+  const adresszusatz = (r.adresszusatz || r.addition || "").trim();
   const email = (r.email || r.mail || r.primary_email || "").trim();
   const telefon = (r.telefon || r.phone || r.mobil || "").trim();
   const land = (r.land || r.country || "Schweiz").trim();
   let typ = (r.typ || r.type || (firma ? "firma" : "privat")).trim().toLowerCase();
 
-  // Schutz gegen versehentlich als Firma gesetzte Personennamen
+  // Schutz gegen versehentlich als Firma gesetzte Personennamen (niemals fLower === nLower prüfen, da bei Firmen name === firma ist!)
   if (typ === "privat" || typ === "mitglied") {
     firma = "";
   } else if (firma) {
     const fnLn = `${vorname} ${nachname}`.trim().toLowerCase();
     const lnFn = `${nachname} ${vorname}`.trim().toLowerCase();
     const fLower = firma.trim().toLowerCase();
-    const nLower = name.trim().toLowerCase();
-    if (fLower === fnLn || fLower === lnFn || fLower === nLower) {
+    if (fnLn && (fLower === fnLn || fLower === lnFn)) {
       firma = "";
       typ = "privat";
+    } else {
+      typ = "firma";
     }
   }
 
@@ -359,6 +362,7 @@ function normalizeRecipient(r: any): RecipientData {
     name: name || [vorname, nachname].filter(Boolean).join(" ") || firma || "Mitglied",
     firma,
     abteilung,
+    adresszusatz,
     anrede,
     strasse,
     plz,
@@ -1246,6 +1250,12 @@ async function generateInvoicePdf(
       currentPage.drawText(sanitizeText(contactPerson), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
       addrY -= 4.2 * MM;
     }
+
+    // 4. Optionaler Adresszusatz / Postfach (falls vorhanden und nicht identisch mit Abteilung)
+    if (normRecipient.adresszusatz && normRecipient.adresszusatz !== normRecipient.abteilung) {
+      currentPage.drawText(sanitizeText(normRecipient.adresszusatz), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+      addrY -= 4.2 * MM;
+    }
   } else {
     // PRIVATPERSON / VEREINSMITGLIED
     // 1. Anrede (Herr / Frau)
@@ -1373,7 +1383,12 @@ async function generateInvoicePdf(
     color: rgb(0.1, 0.15, 0.3),
   });
 
-  const recSummary = [recipient.anrede, recipient.vorname, recipient.nachname].filter(Boolean).join(" ").trim() || recipient.firma || recipient.name || "Rechnungsempfänger";
+  const cpSummary = [normRecipient.anrede, normRecipient.vorname, normRecipient.nachname].filter(Boolean).join(" ").trim();
+  const recSummary = isCompany
+    ? (cpSummary && cpSummary.toLowerCase() !== normRecipient.firma!.toLowerCase()
+        ? `${normRecipient.firma} (${cpSummary})`
+        : normRecipient.firma!)
+    : (cpSummary || normRecipient.name || "Rechnungsempfänger");
   qrPage.drawText(sanitizeWinAnsiText(`Rechnungsempfänger: ${recSummary}   |   Rechnungsbetrag: CHF ${formatSwissChf(totalAmount)}   |   Zahlbar bis: ${dueDateStr}`), {
     x: 20 * MM,
     y: 252 * MM,
@@ -1383,7 +1398,7 @@ async function generateInvoicePdf(
   });
 
   // Schweizer QR-Zahlteil (SIX SPC 0200 1) auf den unteren 105 mm (kein Footer auf dieser Seite!)
-  drawSwissQrBillSection(qrPage, fontRegular, fontBold, invoiceId, totalAmount, recipient, yearStr, docType);
+  drawSwissQrBillSection(qrPage, fontRegular, fontBold, invoiceId, totalAmount, normRecipient, yearStr, docType);
 
   // ============================================================================
   // SEITENNUMMERIERUNG & FORTSETZUNGSHINWEISE
@@ -2842,42 +2857,76 @@ async function generateLetterPdf(
 
   // Empfänger-Adresse (DIN 5008 Fenster rechts ab 125 mm, Höhe 246 mm) mit separater Anredezeile
   let addrY = 246 * MM;
-  if (normRecipient.abteilung) {
-    currentPage.drawText(sanitizeWinAnsiText(normRecipient.abteilung), {
-      x: 125 * MM,
-      y: addrY,
-      size: 9.5,
-      font: fontRegular,
-    });
-    addrY -= 4.2 * MM;
-  }
-  if (normRecipient.firma) {
-    currentPage.drawText(sanitizeWinAnsiText(normRecipient.firma), {
+  const isLetterCompany = Boolean(normRecipient.firma && normRecipient.typ !== "privat" && normRecipient.typ !== "mitglied");
+  const fullRecName = [normRecipient.vorname, normRecipient.nachname].filter(Boolean).join(" ").trim() || (normRecipient.name || "");
+
+  if (isLetterCompany) {
+    currentPage.drawText(sanitizeWinAnsiText(normRecipient.firma!), {
       x: 125 * MM,
       y: addrY,
       size: 9.5,
       font: fontBold,
     });
     addrY -= 4.2 * MM;
-  }
-  if (normRecipient.anrede && !normRecipient.firma) {
-    currentPage.drawText(sanitizeWinAnsiText(normRecipient.anrede), {
-      x: 125 * MM,
-      y: addrY,
-      size: 9.5,
-      font: fontRegular,
-    });
-    addrY -= 4.2 * MM;
-  }
-  const fullRecName = [normRecipient.vorname, normRecipient.nachname].filter(Boolean).join(" ").trim() || (normRecipient.name || "");
-  if (fullRecName && (!normRecipient.firma || fullRecName !== normRecipient.firma)) {
-    currentPage.drawText(sanitizeWinAnsiText(fullRecName), {
-      x: 125 * MM,
-      y: addrY,
-      size: 9.5,
-      font: fontRegular,
-    });
-    addrY -= 4.2 * MM;
+
+    if (normRecipient.abteilung) {
+      currentPage.drawText(sanitizeWinAnsiText(normRecipient.abteilung), {
+        x: 125 * MM,
+        y: addrY,
+        size: 9.5,
+        font: fontRegular,
+      });
+      addrY -= 4.2 * MM;
+    }
+
+    const contactPerson = [normRecipient.anrede, normRecipient.vorname, normRecipient.nachname].filter(Boolean).join(" ").trim();
+    if (contactPerson && contactPerson.toLowerCase() !== normRecipient.firma!.toLowerCase()) {
+      currentPage.drawText(sanitizeWinAnsiText(contactPerson), {
+        x: 125 * MM,
+        y: addrY,
+        size: 9.5,
+        font: fontRegular,
+      });
+      addrY -= 4.2 * MM;
+    }
+
+    if (normRecipient.adresszusatz && normRecipient.adresszusatz !== normRecipient.abteilung) {
+      currentPage.drawText(sanitizeWinAnsiText(normRecipient.adresszusatz), {
+        x: 125 * MM,
+        y: addrY,
+        size: 9.5,
+        font: fontRegular,
+      });
+      addrY -= 4.2 * MM;
+    }
+  } else {
+    if (normRecipient.anrede) {
+      currentPage.drawText(sanitizeWinAnsiText(normRecipient.anrede), {
+        x: 125 * MM,
+        y: addrY,
+        size: 9.5,
+        font: fontRegular,
+      });
+      addrY -= 4.2 * MM;
+    }
+    if (fullRecName) {
+      currentPage.drawText(sanitizeWinAnsiText(fullRecName), {
+        x: 125 * MM,
+        y: addrY,
+        size: 9.5,
+        font: fontRegular,
+      });
+      addrY -= 4.2 * MM;
+    }
+    if (normRecipient.abteilung || normRecipient.adresszusatz) {
+      currentPage.drawText(sanitizeWinAnsiText((normRecipient.abteilung || normRecipient.adresszusatz)!), {
+        x: 125 * MM,
+        y: addrY,
+        size: 9.5,
+        font: fontRegular,
+      });
+      addrY -= 4.2 * MM;
+    }
   }
   if (normRecipient.strasse) {
     currentPage.drawText(sanitizeWinAnsiText(normRecipient.strasse), {
