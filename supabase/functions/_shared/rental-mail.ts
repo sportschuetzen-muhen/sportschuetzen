@@ -74,7 +74,8 @@ export function buildRentalPlaceholders(d: Row | null, s: Record<string, string>
   const vermieterFirst = s.sender_first_name || "";
   const vermieterLast = s.sender_last_name || "";
   const bookingNr = r.booking_number || "";
-  const feedbackBaseUrl = s.feedback_base_url || "https://sportschuetzen-muhen.ch/storno_feedback.html";
+  // Kein Hardcoded-Fallback: fehlt die Einstellung, bricht renderRentalMail bei Vorlagen mit {feedback_url} ab.
+  const feedbackBaseUrl = s.feedback_base_url || "";
   const strasse = r.street || "";
   const plz = r.post_code || "";
   const ort = r.city || "";
@@ -118,7 +119,7 @@ export function buildRentalPlaceholders(d: Row | null, s: Record<string, string>
     gebuehr_storno: Number(s.storno_fee || 100).toFixed(2),
     bemerkung: r.inquiry_note || r.admin_comment || "–",
     cockpit_url: "https://sportschuetzen-muhen.ch/vorstand/#vermietung",
-    feedback_url: `${feedbackBaseUrl}?vnr=${encodeURIComponent(bookingNr)}`,
+    feedback_url: feedbackBaseUrl ? `${feedbackBaseUrl}?vnr=${encodeURIComponent(bookingNr)}` : "",
     club_email: clubEmail,
   };
   return { ...map, ...extra };
@@ -179,6 +180,11 @@ export async function renderRentalMail(
   extra: Record<string, string> = {},
 ): Promise<{ subject: string; html: string }> {
   const tpl = await loadMailTemplate(supabase, tplCode);
+  if (/feedback_url/i.test(`${tpl.mail_subject} ${tpl.mail_body}`) && !settings.feedback_base_url && !extra.feedback_url) {
+    throw new Error(
+      `Konfigurationsfehler: Die Vorlage '${tplCode}' benötigt {feedback_url}, aber 'feedback_base_url' fehlt in rental_settings.`,
+    );
+  }
   const map = buildRentalPlaceholders(rental, settings, extra);
   const subject = applyPlaceholders(tpl.mail_subject, map);
   const body = applyPlaceholders(tpl.mail_body, map);

@@ -545,7 +545,7 @@ function renderRentalSettingsForm() {
 
   const iban = s.iban || 'CH44 8080 8009 1234 5678 9';
   const mapsUrl = s.maps_url || 'https://www.google.com/maps/search/?api=1&query=Schützenhaus+Muhen';
-  const fbUrl = s.feedback_base_url || 'https://sportschuetzen-muhen.github.io/sportschuetzen/vermietungen/storno_feedback.html';
+  const fbUrl = s.feedback_base_url || 'https://sps-b55.pages.dev/sportschuetzen-website/frontend/storno_feedback';
 
   container.innerHTML = `
     <form id="rental-settings-form" onsubmit="event.preventDefault(); saveRentalSettings();">

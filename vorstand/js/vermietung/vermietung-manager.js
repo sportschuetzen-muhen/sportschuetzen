@@ -229,7 +229,8 @@ async function sendRentalWorkflowEmail(action, d, settings) {
   const wirtschaftEmail = s.wirtschaft_email || clubEmail;
   const wirtschaftName = s.wirtschaft_name || "Wirtschaftsteam";
   const wirtschaftPhone = s.wirtschaft_phone || "079 123 45 67";
-  const feedbackBaseUrl = s.feedback_base_url || "https://sportschuetzen-muhen.ch/storno_feedback.html";
+  // Kein Hardcoded-Fallback: fehlt die Einstellung, wird bei Vorlagen mit {feedback_url} unten ein klarer Fehler geworfen.
+  const feedbackBaseUrl = s.feedback_base_url || "";
 
   // Vermieter-Kontaktdaten aus Tarife & Einstellungen
   const vermieterFirst = s.sender_first_name || '';
@@ -292,7 +293,12 @@ async function sendRentalWorkflowEmail(action, d, settings) {
     ? d.deposit_amount_chf
     : (d.kaution ? String(d.kaution).replace(/[^\d.]/g, '') : 200);
   const depositStr = Number(rawDep || 200).toFixed(2);
-  const feedbackUrl = `${feedbackBaseUrl}?vnr=${encodeURIComponent(bookingNr)}`;
+  if (/feedback_url/i.test(`${tpl.mail_subject} ${tpl.mail_body}`) && !feedbackBaseUrl) {
+    throw new Error(
+      `Konfigurationsfehler: Die Vorlage '${tplCode}' benötigt {feedback_url}, aber die Storno-Feedback-URL fehlt. Bitte unter 'Tarife & Einstellungen' eintragen.`
+    );
+  }
+  const feedbackUrl = feedbackBaseUrl ? `${feedbackBaseUrl}?vnr=${encodeURIComponent(bookingNr)}` : '';
 
   const mieterFirst = d.first_name || d.vorname || '';
   const mieterLast = d.last_name || d.nachname || '';

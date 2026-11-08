@@ -749,7 +749,7 @@
       gebuehr_glas: Number(s.glass_fee || 2).toFixed(2),
       gebuehr_teller: Number(s.plate_fee || 5).toFixed(2),
       mietobjekt: s.rental_object || 'Schützenstube Rüteli',
-      feedback_url: 'https://sportschuetzen-muhen.ch/storno_feedback.html?vnr=V-2026-0102',
+      feedback_url: 'https://sps-b55.pages.dev/sportschuetzen-website/frontend/storno_feedback?vnr=V-2026-0102',
       cockpit_url: 'https://sportschuetzen-muhen.ch/vorstand/#vermietung',
       club_email: clubEmail
     };

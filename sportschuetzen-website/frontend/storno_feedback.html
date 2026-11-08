@@ -467,6 +467,8 @@
       btn.disabled = true;
       btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Übermittle Rückmeldung...`;
 
+      // "Zahlung bereits getätigt" ist immer dringend; die 14-Tage-Regel (Mietdatum)
+      // ergänzt der DB-Trigger rental_feedback_enrich serverseitig.
       const isUrgent = selectedReasonVal.indexOf("Zahlung bereits getätigt") !== -1;
 
       // Payload direkt für Supabase rental_cancellation_feedbacks
@@ -484,7 +486,8 @@
             'apikey': SUPABASE_ANON_KEY,
             'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
             'Content-Type': 'application/json',
-            'Prefer': 'return=representation'
+            // return=minimal: anon darf einfügen, aber nicht lesen (RLS) – representation würde 42501 auslösen
+            'Prefer': 'return=minimal'
           },
           body: JSON.stringify(payload)
         });
