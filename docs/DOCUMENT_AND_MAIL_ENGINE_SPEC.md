@@ -111,7 +111,8 @@ Aufbau einer zentralen, robusten Dokumenten- und Kommunikations-Engine für den 
       `[Strasse Hausnummer]`  
       `[PLZ Ort]`
   - **Titel (H1):**
-    - Linksbündig, 14–16 pt Bold (z. B. **Schulsport Semester** oder **Jahresbeitrag 2026**).
+    - Linksbündig, 13.5 pt Bold (z. B. **Schulsport Semester** oder **Jahresbeitrag 2026**). Überlange Dokumententitel werden automatisch mehrzeilig auf `170 mm` Satzspiegelbreite umgebrochen, wobei der nachfolgende Einleitungstext dynamisch nach unten rückt.
+    - **Server-Side Single Source of Truth:** Die Edge Function `generate-pdf` bezieht `title`, `intro`, `outro` und `notice` bei echten Rechnungen vorrangig direkt aus `public.document_templates` (nur bei `TEST-PREVIEW-*` hat das Live-Formular-Payload Vorrang). Beim Speichern einer Rechnungsvorlage in `templates-ui.js` sowie beim Klick auf «PDF neu generieren» (`rnGeneratePDFOnly`) werden Entwurfs-PDFs mit `{ forceRecreate: true }` neu gerendert.
   - **Anrede & Intro:**
     - Persönliche Anrede (*Guten Tag Mike*) gefolgt vom Anschreibetext.
   - **Positionstabelle:**

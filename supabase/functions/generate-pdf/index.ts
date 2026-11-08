@@ -908,12 +908,20 @@ async function generateInvoicePdf(
       }
 
       if (tmpl) {
-        resolvedLayout = {
-          title: resolvedLayout.title || tmpl.title,
-          intro: resolvedLayout.intro || tmpl.intro,
-          outro: resolvedLayout.outro || tmpl.outro,
-          notice: resolvedLayout.notice || tmpl.notice,
-        };
+        const isPreviewTest = invoiceId.startsWith("TEST-PREVIEW-");
+        resolvedLayout = isPreviewTest
+          ? {
+              title: resolvedLayout.title || tmpl.title,
+              intro: resolvedLayout.intro || tmpl.intro,
+              outro: resolvedLayout.outro || tmpl.outro,
+              notice: resolvedLayout.notice || tmpl.notice,
+            }
+          : {
+              title: tmpl.title || resolvedLayout.title,
+              intro: tmpl.intro || resolvedLayout.intro,
+              outro: tmpl.outro || resolvedLayout.outro,
+              notice: tmpl.notice || resolvedLayout.notice,
+            };
       }
     } catch (_) {}
   }
@@ -1301,16 +1309,21 @@ async function generateInvoicePdf(
     const cleanDocTitle = finalTitle.replace(/^Rechnung\s*[-–]?\s*/i, "").trim();
     finalTitle = `Rechnung ${invoiceId} – ${cleanDocTitle || docType || "Materialverkauf"}`;
   }
-  currentPage.drawText(sanitizeText(finalTitle), {
-    x: 20 * MM,
-    y: 195 * MM,
-    size: 13.5,
-    font: fontBold,
-    color: rgb(0.05, 0.05, 0.05),
-  });
+  const wrappedTitleLines = wrapText(sanitizeText(finalTitle), fontBold, 13.5, 170 * MM);
+  let titleY = 195 * MM;
+  for (const tLine of wrappedTitleLines) {
+    currentPage.drawText(tLine, {
+      x: 20 * MM,
+      y: titleY,
+      size: 13.5,
+      font: fontBold,
+      color: rgb(0.05, 0.05, 0.05),
+    });
+    titleY -= 5.5 * MM;
+  }
 
-  // 5. Einleitung (ab ca. 182 mm) mit Absätzen und automatischem Zeilenumbruch
-  let curY = 182 * MM;
+  // 5. Einleitung (ab ca. 182 mm bzw. dynamisch unter mehrzeiligem Titel) mit Absätzen und automatischem Zeilenumbruch
+  let curY = Math.min(182 * MM, titleY - 4 * MM);
 
   let introRaw = (resolvedLayout.intro || "Anbei erhalten Sie die Rechnung.")
     .replace(/{rechnungsnummer}/g, invoiceId)

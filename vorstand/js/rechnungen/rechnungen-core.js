@@ -1732,7 +1732,9 @@ window.RechnungsCore = {
     const sender = customOptions.sender || 
       (inv.sender_address && Object.keys(inv.sender_address).length > 0 ? inv.sender_address : null) || 
       (typeof rnGetLoggedInSender === 'function' ? rnGetLoggedInSender(inv.type) : null);
-    const layout = customOptions.layout || (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || null;
+    // Server-Side Single Source of Truth: document_templates in der Edge Function hat Vorrang,
+    // sofern nicht explizit ein customOptions.layout (z.B. für Live-Vorschau) übergeben wird.
+    const layout = customOptions.layout || null;
 
     const renderPayload = {
       action: 'generate-invoice',

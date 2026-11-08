@@ -186,10 +186,10 @@ window.rnGeneratePDFOnly = async function(invoiceId, name) {
   try {
     let result = null;
 
-    // 1. Primär: Zentraler Aufruf an RechnungsCore (Single Source of Truth)
+    // 1. Primär: Zentraler Aufruf an RechnungsCore (Single Source of Truth, immer forceRecreate)
     if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
       try {
-        result = await window.RechnungsCore.renderPdf(invoiceId);
+        result = await window.RechnungsCore.renderPdf(invoiceId, { forceRecreate: true });
       } catch (coreErr) {
         console.warn("⚠️ RechnungsCore.renderPdf Fehler:", coreErr);
         throw coreErr;
@@ -205,17 +205,16 @@ window.rnGeneratePDFOnly = async function(invoiceId, name) {
       const sender = (inv.sender_address && Object.keys(inv.sender_address).length > 0)
         ? inv.sender_address
         : ((typeof rnGetLoggedInSender === 'function') ? rnGetLoggedInSender(inv.type || 'Rechnung') : null);
-      const layout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || null;
 
       result = await window.generatePdfViaEngine({
         action: 'generate-invoice',
         invoiceId: invoiceId,
         recipient: recipient,
         sender: sender,
-        layout: layout,
         totalAmount: inv.total_amount,
         year: inv.year || new Date().getFullYear(),
-        type: inv.type || 'Rechnung'
+        type: inv.type || 'Rechnung',
+        forceRecreate: true
       });
     } else {
       throw new Error("Weder RechnungsCore noch PDF-Engine verfügbar.");

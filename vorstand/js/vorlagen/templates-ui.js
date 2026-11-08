@@ -50,8 +50,16 @@
 
       // Synchronisation für abwärtskompatible Alt-Module (_invoiceLayouts)
       if (!window._invoiceLayouts) window._invoiceLayouts = {};
+      const aliasMap = {
+        'depot_pfand': ['Depot / Pfand', 'depot / pfand'],
+        'materialverkauf': ['Materialverkauf', 'Material- & Kleiderbezug'],
+        'mahnung_1': ['Mahnung 1', '1. Mahnung'],
+        'mahnung_2': ['Mahnung 2', '2. Mahnung'],
+        'mahnung_3': ['Mahnung 3', '3. Mahnung'],
+        'brief_standard': ['Freier Brief']
+      };
       window._docTemplatesData.forEach(t => {
-        window._invoiceLayouts[t.code] = {
+        const entry = {
           type: t.code,
           title: t.title,
           intro: t.intro,
@@ -60,9 +68,16 @@
           mail_subject: t.mail_subject,
           mail_body: t.mail_body
         };
+        window._invoiceLayouts[t.code] = entry;
         const capKey = t.code.charAt(0).toUpperCase() + t.code.slice(1);
-        window._invoiceLayouts[capKey] = window._invoiceLayouts[t.code];
+        window._invoiceLayouts[capKey] = entry;
+        if (aliasMap[t.code]) {
+          aliasMap[t.code].forEach(alias => { window._invoiceLayouts[alias] = entry; });
+        }
       });
+      try {
+        localStorage.setItem('portal_invoice_layouts', JSON.stringify(window._invoiceLayouts));
+      } catch (_) {}
       console.log(`✅ [Vorlagen-Pool] ${window._docTemplatesData.length} Vorlagen & ${window._docClausesData.length} Klauseln geladen.`);
     } catch (err) {
       console.error("❌ [Vorlagen-Pool] Fehler beim Laden:", err);
@@ -916,6 +931,35 @@
         await window.loadDocumentTemplatesData();
         const container = document.getElementById('dokument-vorlagen-container');
         if (container) window.renderDokumentVorlagen(container);
+
+        // Automatische PDF-Neugenerierung für offene Entwurfs-Rechnungen dieses Vorlagentyps
+        if (window._docActiveCategory === 'rechnung' && window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
+          try {
+            const codeLower = (code || '').toLowerCase().trim();
+            const matchTypes = [codeLower, codeLower.charAt(0).toUpperCase() + codeLower.slice(1)];
+            if (codeLower === 'depot_pfand') matchTypes.push('Depot / Pfand', 'depot / pfand');
+            if (codeLower === 'materialverkauf') matchTypes.push('Materialverkauf', 'Material- & Kleiderbezug');
+
+            const { data: draftInvoices } = await sb
+              .from('invoices')
+              .select('id, type, status, mail_status, total_paid')
+              .in('type', matchTypes)
+              .eq('mail_status', 'entwurf')
+              .neq('status', 'bezahlt')
+              .neq('status', 'storniert');
+
+            if (Array.isArray(draftInvoices) && draftInvoices.length > 0) {
+              const eligibleDrafts = draftInvoices.filter(inv => Number(inv.total_paid || 0) === 0);
+              for (const draft of eligibleDrafts) {
+                window.RechnungsCore.renderPdf(draft.id, { forceRecreate: true }).catch(err => {
+                  console.warn(`[Vorlagen-Pool] Hintergrund-PDF-Update für ${draft.id} fehlgeschlagen:`, err);
+                });
+              }
+            }
+          } catch (bgErr) {
+            console.warn("[Vorlagen-Pool] Hinweis bei Entwurfs-Synchronisation:", bgErr);
+          }
+        }
       } catch (err) {
         console.error("❌ Speicherfehler:", err);
         showError("Fehler beim Speichern der Vorlage: " + (err.message || err));

@@ -76,8 +76,9 @@ Das Rechnungswesen bildet das zentrale kaufmännische Nervenzentrum des Vereins 
 * **Hauptbuch (`public.accounting_journal`):** Automatische Verbuchung bei Zahlungseingang (`Soll 1020 Bank an Haben 1100 Debitoren`).
 * **Ergebnis:** Salden und Offene Posten stimmen in Echtzeit überein.
 
-### 2.9 Warum automatische PDF-Neugenerierung & Cache-Busting?
-* Jede Mutation an einer Rechnung (Erstellung, Statusänderung, Zahlungseingang, Storno) ruft im Hintergrund unmittelbar `RechnungsCore.renderPdf(invoiceId, { forceRecreate: true })` auf.
+### 2.9 Warum automatische PDF-Neugenerierung, Server-Side Vorlagen-Vorrang & Cache-Busting?
+* Jede Mutation an einer Rechnung (Erstellung, Statusänderung, Zahlungseingang, Storno) sowie der manuelle Button «PDF neu generieren» (`rnGeneratePDFOnly`) und das Speichern einer Rechnungsvorlage in `templates-ui.js` (für offene Entwürfe des betroffenen Vorlagentyps) rufen `RechnungsCore.renderPdf(invoiceId, { forceRecreate: true })` auf, um den WORM-Archiv-Kurzschluss gezielt zu übersteuern.
+* In der Edge Function `generate-pdf` (`generateInvoicePdf`) hat für reguläre Rechnungen zwingend der frisch aus `public.document_templates` geladene Datenbank-Vorlagentext Vorrang vor etwaigen clientseitigen `layout`-Payloads; überlange Dokumententitel (`finalTitle`) werden bei `13.5 pt` automatisch auf maximal `170 mm` Breite mehrzeilig umgebrochen.
 * Da Browser und Proxies PDF-URLs aggressiv cachen, müssen alle Frontend-Aufrufe mit Zeitstempel aufgerufen werden (`?t=${Date.now()}`).
 
 ---

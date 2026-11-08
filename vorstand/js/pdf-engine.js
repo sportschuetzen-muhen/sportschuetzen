@@ -197,10 +197,10 @@
         try {
             let result = null;
 
-            // 1. Primär: Zentrale RechnungsCore-Engine nutzen (Single Source of Truth)
+            // 1. Primär: Zentrale RechnungsCore-Engine nutzen (Single Source of Truth, immer forceRecreate)
             if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
                 try {
-                    result = await window.RechnungsCore.renderPdf(invoiceId);
+                    result = await window.RechnungsCore.renderPdf(invoiceId, { forceRecreate: true });
                 } catch (coreErr) {
                     console.warn("⚠️ RechnungsCore.renderPdf Fehler:", coreErr);
                     throw coreErr;
@@ -230,8 +230,6 @@
                         ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag')
                         : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag') : null));
 
-                const layout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || null;
-
                 let positions = inv.positions || (window._invoicePositionsCache && window._invoicePositionsCache[invoiceId]) || [];
                 const supa = (typeof window.getSupabaseClient === 'function')
                     ? window.getSupabaseClient()
@@ -256,11 +254,11 @@
                     invoiceId: invoiceId,
                     recipient: recipient,
                     sender: sender,
-                    layout: layout,
                     positions: positions,
                     totalAmount: totalAmount,
                     year: inv.year || new Date().getFullYear(),
-                    type: inv.type || 'Rechnung'
+                    type: inv.type || 'Rechnung',
+                    forceRecreate: true
                 };
 
                 result = await window.generatePdfViaEngine(payload);
@@ -278,9 +276,10 @@
                     inv.pdf_storage_path = result.storagePath || inv.pdf_storage_path;
                 }
 
-                // PDF im neuen Browser-Tab öffnen
+                // PDF im neuen Browser-Tab mit Cache-Busting öffnen
                 if (result.pdfUrl && result.pdfUrl.startsWith('http')) {
-                    window.open(result.pdfUrl, '_blank');
+                    const urlToOpen = result.pdfUrl.includes('?') ? `${result.pdfUrl}&t=${Date.now()}` : `${result.pdfUrl}?t=${Date.now()}`;
+                    window.open(urlToOpen, '_blank');
                 } else if (result.pdfBase64) {
                     if (typeof openPdfBase64 === 'function') {
                         openPdfBase64(result.pdfBase64);
