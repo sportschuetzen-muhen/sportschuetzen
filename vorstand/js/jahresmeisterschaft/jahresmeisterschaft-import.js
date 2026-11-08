@@ -1006,14 +1006,34 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
 
                     const nMatch = cleanLine.match(new RegExp('\\b' + escapeReg(s.nachname) + '\\b', 'i')) ||
                                    cleanLine.match(new RegExp(escapeReg(s.nachname), 'i'));
-                    let searchLine = nMatch && nMatch.index !== undefined ? cleanLine.substring(nMatch.index) : cleanLine;
+                    const vMatch = s.vorname ? (
+                        cleanLine.match(new RegExp('\\b' + escapeReg(s.vorname) + '\\b', 'i')) ||
+                        cleanLine.match(new RegExp(escapeReg(s.vorname), 'i'))
+                    ) : null;
 
-                    // 1. Spezifische Suche nach Schlüsselwörtern Total / Resultat / Punkte
+                    let nameStartIndex = -1;
+                    let nameEndIndex = -1;
+                    if (nMatch && nMatch.index !== undefined) {
+                        nameStartIndex = nMatch.index;
+                        nameEndIndex = nMatch.index + nMatch[0].length;
+                    }
+                    if (vMatch && vMatch.index !== undefined) {
+                        if (nameStartIndex === -1 || vMatch.index < nameStartIndex) {
+                            nameStartIndex = vMatch.index;
+                        }
+                        if (nameEndIndex === -1 || (vMatch.index + vMatch[0].length) > nameEndIndex) {
+                            nameEndIndex = vMatch.index + vMatch[0].length;
+                        }
+                    }
+
+                    let searchLine = nameEndIndex !== -1 ? cleanLine.substring(nameEndIndex) : cleanLine;
+
+                    // 1. Spezifische Suche nach Schlüsselwörtern Total / Resultat / Punkte (nach dem Namen)
                     const totMatch = searchLine.match(/(?:total|punkte|resultat|res|tot)[\s:=-]*(\d+(?:[.,]\d+)?)/i);
                     if (totMatch) {
                         shooterStiche['default'] = parseFloat(totMatch[1].replace(',', '.'));
                     } else {
-                        // 2. Extraktion aller numerischen Werte (inkl. Dezimalstellen wie 621.0 oder 103.7)
+                        // 2. Extraktion aller numerischen Werte nach dem Namen (inkl. Dezimalstellen wie 621.0 oder 103.7)
                         const rawNums = searchLine.match(/\b\d+(?:[.,]\d+)?\b/g);
                         if (rawNums && rawNums.length > 0) {
                             const candidates = rawNums
@@ -1031,6 +1051,34 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
                                 }
                             } else if (candidates.length === 1) {
                                 shooterStiche['default'] = candidates[0];
+                            }
+                        }
+                    }
+
+                    // 3. Fallback: Falls NACH dem Namen keine Punktzahl gefunden wurde -> VOR dem Namen suchen!
+                    // Speziell für WinFire / Schweizer Ranglisten: z.B. "97 Fischer Marco 1986" oder "2. 97 Fischer Marco"
+                    if (shooterStiche['default'] === undefined && nameStartIndex > 0) {
+                        const preLine = cleanLine.substring(0, nameStartIndex).trim();
+                        if (preLine) {
+                            const preNums = preLine.match(/\b\d+(?:[.,]\d+)?\b/g);
+                            if (preNums && preNums.length > 0) {
+                                const preCandidates = preNums
+                                    .map(n => parseFloat(n.replace(',', '.')))
+                                    .filter(num => !isNaN(num) && num <= 654);
+
+                                if (preCandidates.length === 1) {
+                                    // z. B. "97 Fischer Marco"
+                                    shooterStiche['default'] = preCandidates[0];
+                                } else if (preCandidates.length >= 2) {
+                                    // z. B. "2. 97 Fischer Marco" (Rang 2, Punkte 97)
+                                    // Plausible Schiesspunkte (>= 50) bevorzugen
+                                    const plausible = preCandidates.filter(p => p >= 50 && p <= 654);
+                                    if (plausible.length > 0) {
+                                        shooterStiche['default'] = plausible[plausible.length - 1];
+                                    } else {
+                                        shooterStiche['default'] = preCandidates[preCandidates.length - 1];
+                                    }
+                                }
                             }
                         }
                     }
@@ -1055,6 +1103,7 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
             let extNach = '';
             let extVor = '';
             let afterName = '';
+            let prePts = null;
 
             const extMatchComma = lineText.match(/(?:^|\d+\s+)([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-\s]{2,}),\s*([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]{2,})/);
             if (extMatchComma) {
@@ -1068,27 +1117,43 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
                     extVor = extMatchSpace[2].trim();
                     afterName = lineText.substring(extMatchSpace.index + extMatchSpace[0].length);
                 }
+            } else {
+                // Punkte vor Namen (z. B. "97 Meier Peter 1975")
+                const extMatchPre = lineText.match(/(?:^|\s)(\d{2,3}(?:[.,]\d+)?)\s+([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]{2,})\s+([A-ZÄÖÜ][a-zA-ZäöüÄÖÜß\-]{2,})(?:\s+(\d{4}|\d{2}))?/);
+                if (extMatchPre) {
+                    const cPts = parseFloat(extMatchPre[1].replace(',', '.'));
+                    if (cPts >= 50 && cPts <= 654) {
+                        extNach = extMatchPre[2].trim();
+                        extVor = extMatchPre[3].trim();
+                        prePts = cPts;
+                    }
+                }
             }
 
             if (extNach && extVor) {
                 const excludeHeader = /^(?:schiessanlage|freischützen|mannschaft|gruppenrangliste|rangliste|verein|sektion)$/i;
                 if (!excludeHeader.test(extNach) && !excludeHeader.test(extVor)) {
-                    const extNums = afterName.match(/\b\d+(?:[.,]\d+)?\b/g);
-                    if (extNums && extNums.length > 0) {
-                        const candidates = extNums
-                            .map(n => parseFloat(n.replace(',', '.')))
-                            .filter(num => !isNaN(num) && num <= 654);
-                        if (candidates.length > 0) {
-                            const extTotal = (candidates.length >= 2 && candidates[candidates.length - 1] >= Math.max(...candidates.slice(0, -1)))
-                                ? candidates[candidates.length - 1]
-                                : candidates[0];
-                            unmatchedShooters.push({
-                                name: `${extNach} ${extVor}`,
-                                lizenz: '',
-                                points: extTotal,
-                                matched: false
-                            });
+                    let extTotal = prePts;
+                    if (extTotal === null) {
+                        const extNums = afterName.match(/\b\d+(?:[.,]\d+)?\b/g);
+                        if (extNums && extNums.length > 0) {
+                            const candidates = extNums
+                                .map(n => parseFloat(n.replace(',', '.')))
+                                .filter(num => !isNaN(num) && num <= 654);
+                            if (candidates.length > 0) {
+                                extTotal = (candidates.length >= 2 && candidates[candidates.length - 1] >= Math.max(...candidates.slice(0, -1)))
+                                    ? candidates[candidates.length - 1]
+                                    : candidates[0];
+                            }
                         }
+                    }
+                    if (extTotal !== null && extTotal > 0) {
+                        unmatchedShooters.push({
+                            name: `${extNach} ${extVor}`,
+                            lizenz: '',
+                            points: extTotal,
+                            matched: false
+                        });
                     }
                 }
             }
@@ -1133,6 +1198,82 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
         defaultStich = availableStiche[0];
     }
 
+    // 3b. Allfällige Gruppenwertung und Gruppengewinne erkennen
+    let detectedGroupObj = null;
+    if (typeof window.jmDetectGroupCompetitionFromImportLines === 'function') {
+        const detectedGroup = window.jmDetectGroupCompetitionFromImportLines(lines, fullText, fileName);
+        if (detectedGroup) {
+            detectedGroupObj = {
+                ...detectedGroup,
+                anlass_name: detectedTitle
+            };
+            _jmImportState.detectedGroup = detectedGroupObj;
+        } else {
+            _jmImportState.detectedGroup = null;
+        }
+    }
+
+    // 3c. Falls eine Gruppenwertung erkannt wurde: Schützen aus der Gruppenwertung direkt abgleichen!
+    if (detectedGroupObj && Array.isArray(detectedGroupObj.shooters) && detectedGroupObj.shooters.length > 0) {
+        detectedGroupObj.shooters.forEach(gs => {
+            if (!gs || !gs.schuetze_name || !gs.punkte) return;
+            const cleanGrpName = gs.schuetze_name.toLowerCase().replace(/[^a-zäöü]/g, '');
+            const normGrpName = cleanGrpName.replace(/w/g, 'v');
+
+            // Prüfen ob bereits in matchedShootersWithStiche
+            const alreadyMatched = matchedShootersWithStiche.find(m => {
+                const mName = m.name.toLowerCase().replace(/[^a-zäöü]/g, '');
+                const normMName = mName.replace(/w/g, 'v');
+                return mName.includes(cleanGrpName) || cleanGrpName.includes(mName) ||
+                       normMName.includes(normGrpName) || normGrpName.includes(normMName);
+            });
+
+            if (!alreadyMatched) {
+                // In knownShooters der Jahresmeisterschaft suchen
+                const found = knownShooters.find(s => {
+                    if (seenRows.has(s.rowIndex)) return false;
+                    const sName = s.fullName.toLowerCase().replace(/[^a-zäöü]/g, '');
+                    const normSName = sName.replace(/w/g, 'v');
+                    const nameOk = sName.includes(cleanGrpName) || cleanGrpName.includes(sName) ||
+                                  normSName.includes(normGrpName) || normGrpName.includes(normSName);
+                    if (nameOk) return true;
+                    if (s.nachname && gs.jahrgang && s.jg === gs.jahrgang) {
+                        return cleanGrpName.includes(s.nachname.toLowerCase());
+                    }
+                    return false;
+                });
+
+                if (found) {
+                    seenRows.add(found.rowIndex);
+                    matchedShootersWithStiche.push({
+                        rowIndex: found.rowIndex,
+                        name: found.fullName,
+                        lizenz: found.lizenz,
+                        matched: true,
+                        stiche: {
+                            [defaultStich.key]: gs.punkte,
+                            default: gs.punkte
+                        }
+                    });
+                } else {
+                    // Ausserhalb der Jahresmeisterschaft
+                    const alreadyUnmatched = unmatchedShooters.find(u => {
+                        const uName = u.name.toLowerCase().replace(/[^a-zäöü]/g, '');
+                        return uName.includes(cleanGrpName) || cleanGrpName.includes(uName);
+                    });
+                    if (!alreadyUnmatched) {
+                        unmatchedShooters.push({
+                            name: gs.schuetze_name,
+                            lizenz: '',
+                            points: gs.punkte,
+                            matched: false
+                        });
+                    }
+                }
+            }
+        });
+    }
+
     _jmImportState.availableStiche = availableStiche;
     _jmImportState.activeStichKey = defaultStich.key;
     _jmImportState.matchedShootersWithStiche = matchedShootersWithStiche;
@@ -1171,19 +1312,6 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
             matched: false
         });
     });
-
-    // 3b. Allfällige Gruppenwertung und Gruppengewinne erkennen
-    if (typeof window.jmDetectGroupCompetitionFromImportLines === 'function') {
-        const detectedGroup = window.jmDetectGroupCompetitionFromImportLines(lines, fullText, fileName);
-        if (detectedGroup) {
-            _jmImportState.detectedGroup = {
-                ...detectedGroup,
-                anlass_name: detectedTitle
-            };
-        } else {
-            _jmImportState.detectedGroup = null;
-        }
-    }
 
     _jmImportState.rows = rows;
     await jmSetupAuswaertigPreview(detectedTitle, defaultStich.maxPoints, catalogReason || `${defaultStich.label} (Erkannt)`, rows, catalogMatch);

@@ -142,6 +142,8 @@ graph LR
    * Konvertiert Smartphone-Formate (inkl. Apple `.heic` via `heic2any`) clientseitig zu JPEG.
    * **Direktes Einfügen aus Zwischenablage (`Strg + V`):** Ranglisten-Ausschnitte (z. B. via Snipping-Tool / Win+Shift+S) können ohne Dateispeicherung direkt ins Modal eingefügt werden.
    * **Robuste OCR-Pipeline via Gemini Vision (`action=ocr_text`):** Das Bild wird an Google Gemini übergeben und der extrahierte Volltext zeilenweise an den intelligenten Textparser (`jmProcessAuswaertigFromText`) weitergeleitet.
+   * **Zweiseitige Punkte-Erkennung:** Unterstützt sowohl Ranglisten mit Punkten nach dem Namen als auch Schweizer Ranglistenformate (z. B. WinFire-Gruppen- und Einzelranglisten), bei welchen die Punktzahl vor dem Schützennamen steht (z. B. `97 Fischer Marco 1986` oder `2. 99 Morgenthaler Lars 1988`).
+   * **Nahtlose Synergie mit Gruppenwertungen:** Werden in einem Ausschnitt Gruppenranglisten erkannt (`jmDetectGroupCompetitionFromImportLines`), werden die dort identifizierten Schützen automatisch mit der Jahresmeisterschaft abgeglichen und in die Vorschautabelle übernommen.
    * **Liegendmatch & Zehntelwertung (Meyton / Sius):** Unterstützt 60-Schuss-Liegendmatches (Max. 600 bzw. 654 Punkte bei Zehntelwertung). Erkennt in mehrspaltigen Serien Ranglistentotale am Zeilenende (z. B. `621.0`, `618.5`) und unterscheidet zuverlässig zwischen Vereinsmitgliedern und Schützen ausserhalb der Jahresmeisterschaft.
 5. **Intelligenter Schützenfeste-Katalogabgleich (`public.jm_competitions_catalog`):**
    * **Robuste Zonierungs- & Header-Erkennung:** Analysiert mit hoher Priorität den Dokumentkopf (Zeilen 1–15 bzw. erste 1'500 Zeichen) sowie den Dateinamen (+150/+100 Punkte), wo der eigentliche Wettkampfname steht.
