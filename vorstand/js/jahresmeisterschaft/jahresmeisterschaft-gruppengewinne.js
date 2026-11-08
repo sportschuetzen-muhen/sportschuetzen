@@ -11,6 +11,7 @@
     'use strict';
 
     window._jmGroupCompetitions = [];
+    window._jmCompetitionFilesMap = {};
     let _jmActiveCompYear = null;
     let _jmCurrentEditingComp = null;
 
@@ -34,6 +35,65 @@
     }
 
     /**
+     * Normalisiert einen Anlassnamen für den Dateivergleich zwischen jm_competition_files und group_competitions.
+     */
+    function normalizeAnlassKey(str) {
+        return String(str || '')
+            .toLowerCase()
+            .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+            .replace(/[^a-z0-9]/g, '');
+    }
+
+    /**
+     * Lädt alle hinterlegten Ranglisten-Dateien für ein Jahr aus public.jm_competition_files.
+     */
+    async function jmLoadCompetitionFiles(year) {
+        const yr = year || getActiveYear();
+        const supa = getSupa();
+        if (!supa) return {};
+        try {
+            const { data, error } = await supa
+                .from('jm_competition_files')
+                .select('*')
+                .eq('jahr', yr);
+            if (error) throw error;
+            const map = {};
+            (data || []).forEach(row => {
+                const key = normalizeAnlassKey(row.anlass_name);
+                if (key) {
+                    map[key] = Array.isArray(row.files) ? row.files : [];
+                }
+            });
+            window._jmCompetitionFilesMap = map;
+            return map;
+        } catch (err) {
+            console.warn('[Gruppengewinne] Konnte jm_competition_files nicht laden:', err);
+            return window._jmCompetitionFilesMap || {};
+        }
+    }
+
+    /**
+     * Kombiniert die direkt am Gruppengewinn gespeicherten Ranglisten mit jenen aus jm_competition_files.
+     */
+    function getMergedRanglistenForComp(comp) {
+        if (!comp) return [];
+        const direct = Array.isArray(comp.ranglisten_files) ? comp.ranglisten_files : [];
+        const key = normalizeAnlassKey(comp.anlass_name);
+        const fromCatalog = (key && window._jmCompetitionFilesMap && Array.isArray(window._jmCompetitionFilesMap[key]))
+            ? window._jmCompetitionFilesMap[key]
+            : [];
+        const merged = [];
+        const seenPaths = new Set();
+        [...direct, ...fromCatalog].forEach(f => {
+            if (!f || !f.storage_path) return;
+            if (seenPaths.has(f.storage_path)) return;
+            seenPaths.add(f.storage_path);
+            merged.push(f);
+        });
+        return merged;
+    }
+
+    /**
      * Lädt alle Gruppengewinne und zugehörige Schützen für ein Jahr aus Supabase.
      */
     async function jmLoadGroupCompetitions(year) {
@@ -46,17 +106,23 @@
         }
 
         try {
-            const { data, error } = await supa
-                .from('group_competitions')
-                .select(`
-                    *,
-                    members:group_competition_members(*)
-                `)
-                .eq('jahr', yr)
-                .order('created_at', { ascending: false });
+            const [{ data, error }] = await Promise.all([
+                supa
+                    .from('group_competitions')
+                    .select(`
+                        *,
+                        members:group_competition_members(*)
+                    `)
+                    .eq('jahr', yr)
+                    .order('created_at', { ascending: false }),
+                jmLoadCompetitionFiles(yr)
+            ]);
 
             if (error) throw error;
-            window._jmGroupCompetitions = data || [];
+            window._jmGroupCompetitions = (data || []).map(c => {
+                c.ranglisten_files = getMergedRanglistenForComp(c);
+                return c;
+            });
             return window._jmGroupCompetitions;
         } catch (err) {
             console.error("[Gruppengewinne] Fehler beim Laden:", err);
@@ -589,6 +655,18 @@
             const calcPtsSum = Math.round(members.reduce((acc, m) => acc + (Number(m.punkte) || 0), 0) * 10) / 10;
             const totalPtsDisplay = comp.punkte_total || (calcPtsSum > 0 ? calcPtsSum : null);
 
+            // Hinterlegte Ranglisten-Dateien für diesen Anlass
+            const rangFiles = getMergedRanglistenForComp(comp);
+            const rangBadgesHtml = rangFiles.length > 0
+                ? rangFiles.map(rf => `
+                    <button type="button" class="badge bg-info-subtle text-info-emphasis border border-info-subtle fw-normal px-2 py-1 d-inline-flex align-items-center gap-1" style="font-size: 10.5px; cursor: pointer;" onclick="window.jmOpenRanglisteFile('${escapeHtml(rf.storage_bucket || 'jm-ranglisten')}', '${escapeHtml(rf.storage_path)}')" title="Gespeicherte Rangliste öffnen: ${escapeHtml(rf.filename || rf.title || 'Rangliste.pdf')} (${rf.size_kb || '?'} KB)">
+                        <i class="fas fa-file-pdf text-danger"></i> ${escapeHtml(rf.is_group_ranking ? 'Gruppenrangliste' : 'Rangliste')} (${rf.size_kb || '?'} KB)
+                    </button>
+                `).join('')
+                : `<button type="button" class="badge bg-light text-muted border fw-normal px-2 py-1 d-inline-flex align-items-center gap-1" style="font-size: 10px; cursor: pointer;" onclick="window.jmTriggerQuickRanglisteUpload('${comp.id}')" title="Rangliste (PDF oder Bild) für dieses Schiessen hochladen">
+                    <i class="fas fa-cloud-upload-alt text-secondary"></i> + Rangliste
+                </button>`;
+
             return `
                 <tr data-id="${comp.id}">
                     <td class="ps-3">
@@ -597,6 +675,7 @@
                             ${totalPtsDisplay ? `<span class="badge bg-light text-dark border"><i class="fas fa-bullseye text-primary me-1"></i>Total: ${totalPtsDisplay} Pkt.</span>` : ''}
                             ${statusBadge}
                             ${fibuBadge}
+                            ${rangBadgesHtml}
                         </div>
                     </td>
                     <td>
@@ -1834,6 +1913,7 @@
             }
 
             await renderExistingSettlementNotice(val);
+            renderEditorRanglistenFiles(_jmCurrentEditingComp);
 
             // Automatische Übernahme der Schützen & Punkte aus der Jahresmeisterschaft!
             const matched = findJMColumnForAnlass(val, grid);
@@ -2161,7 +2241,7 @@
                         </div>
 
                         <!-- 2. Beteiligte Schützen & Gewinnaufteilung -->
-                        <div class="card shadow-sm border-0">
+                        <div class="card shadow-sm border-0 mb-3">
                             <div class="card-header bg-white py-2 d-flex align-items-center justify-content-between border-bottom small">
                                 <span class="fw-bold text-dark">
                                     <i class="fas fa-users me-1 text-primary"></i> 2. Beteiligte Schützen & Zuweisung (<span id="jme-shooter-count">0</span>)
@@ -2193,6 +2273,29 @@
                                             <!-- Dynamische Schützenzeilen -->
                                         </tbody>
                                     </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 3. Offizielle Rangliste(n) & Belege (für 180-Tage-Links beim Jahresbeitrags-Versand) -->
+                        <div class="card shadow-sm border-0">
+                            <div class="card-header bg-white py-2 d-flex align-items-center justify-content-between border-bottom small">
+                                <span class="fw-bold text-dark">
+                                    <i class="fas fa-file-pdf me-1 text-danger"></i> 3. Offizielle Ranglisten-Belege (automatische 180-Tage-Links beim Jahresbeitrag)
+                                </span>
+                                <div class="d-flex align-items-center gap-2">
+                                    <input type="file" id="jme-rangliste-file-input" class="d-none" accept=".pdf,image/*" onchange="window.jmHandleEditorRanglisteUpload(this.files)">
+                                    <button type="button" class="btn btn-xs btn-outline-primary fw-semibold" onclick="document.getElementById('jme-rangliste-file-input')?.click()">
+                                        <i class="fas fa-cloud-upload-alt me-1"></i> Rangliste / Snip hochladen
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body p-2.5 bg-white">
+                                <div id="jme-ranglisten-list" class="d-flex flex-wrap gap-2 align-items-center">
+                                    <span class="text-muted small fst-italic">Noch keine Rangliste verknüpft. Beim Import in der Jahresmeisterschaft wird die Datei automatisch hier hinterlegt.</span>
+                                </div>
+                                <div class="text-muted mt-1.5" style="font-size: 11px;">
+                                    <i class="fas fa-link text-primary me-1"></i> Hinterlegte Ranglisten erhalten automatisch einen sauberen Titel, bleiben komplett erhalten und werden beim Versand des Jahresbeitrags als <strong>180 Tage gültiger Direktlink</strong> (ohne E-Mail-Anhang) in der persönlichen Einzelberechnung des Schützen mitgesendet.
                                 </div>
                             </div>
                         </div>
@@ -2240,6 +2343,7 @@
 
         renderShooterRows(comp.members || []);
         jmRecalculateCurrentComp();
+        renderEditorRanglistenFiles(comp);
         checkAnlassJMSyncBanner(comp.anlass_name);
     }
 
@@ -2566,6 +2670,7 @@
             if (!proceed) return false;
         }
 
+        const mergedRanglisten = getMergedRanglistenForComp(_jmCurrentEditingComp);
         const payloadComp = {
             jahr: _jmCurrentEditingComp?.jahr || getActiveYear(),
             anlass_name: anlass,
@@ -2576,7 +2681,8 @@
             gruppengewinn: gewinn,
             anzahl_schuetzen: members.length,
             betrag_pro_schuetze: members.length > 0 ? (Math.max(0, gewinn - doppel) / members.length) : 0,
-            status: 'offen'
+            status: 'offen',
+            ranglisten_files: mergedRanglisten
         };
 
         try {
@@ -4131,7 +4237,710 @@
             .replace(/'/g, '&#39;');
     }
 
+    // ==========================================================================
+    // RANGLISTEN-STORAGE, VOLLSTÄNDIGE PDF-OPTIMIERUNG, EINZELBERECHNUNG & 180-TAGE-LINKS
+    // ==========================================================================
+
+    const RANGLISTEN_BUCKET = 'jm-ranglisten';
+    const SIGNED_URL_EXPIRES_SECONDS = 180 * 24 * 60 * 60; // 180 Tage = 15'552'000 Sekunden
+
+    /**
+     * Erzeugt einen sauberen, standardisierten Dateinamen je Rangliste analog zur Jahresmeisterschaft.
+     * Beispiel: "Rangliste_Baerenmoos-Schiessen_Villmergen_2026.pdf" oder "Gruppenrangliste_58_Siggenbergschiessen_2026.pdf"
+     */
+    function jmBuildCleanRanglisteFilename(anlassTitle, year, isGroupRanking = false) {
+        const yr = year || getActiveYear();
+        let formattedTitle = String(anlassTitle || 'Auswaertsschiessen').trim();
+        if (typeof window.jmFormatCompetitionTitle === 'function') {
+            formattedTitle = window.jmFormatCompetitionTitle(formattedTitle);
+        }
+        const safeSlug = formattedTitle
+            .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue')
+            .replace(/Ä/g, 'Ae').replace(/Ö/g, 'Oe').replace(/Ü/g, 'Ue')
+            .replace(/ß/g, 'ss')
+            .replace(/[^a-zA-Z0-9\-_.]+/g, '_')
+            .replace(/_+/g, '_')
+            .replace(/^_|_$/g, '');
+
+        const prefix = isGroupRanking ? 'Gruppenrangliste' : 'Rangliste';
+        const hasYear = safeSlug.includes(String(yr));
+        return `${prefix}_${safeSlug}${hasYear ? '' : '_' + yr}.pdf`;
+    }
+
+    /**
+     * Optimiert eine hochgeladene Rangliste (PDF oder Bild/Snip):
+     * - Bilder / Screenshots (Strg+V): Werden auf max. 1600px skaliert, als JPEG (0.78) komprimiert
+     *   und in ein sauberes 1-seitiges A4-PDF mit Titelkopf eingebettet.
+     * - PDFs: Die Rangliste bleibt IMMER zu 100% komplett erhalten (alle Seiten!).
+     *   Nur wenn das PDF gross ist (> 350 KB) und eine verlustarme Re-Komprimierung aller Seiten
+     *   tatsächlich eine kleinere Datei ergibt, wird die verkleinerte Version verwendet –
+     *   andernfalls bleibt das Original-PDF 1:1 unverändert erhalten.
+     */
+    async function jmOptimizeAndConvertToPdfBlob(file, cleanTitle) {
+        if (!file) return null;
+
+        // 1. Bild / Screenshot (Strg+V oder Foto) -> Komprimiertes 1-Seiten A4-PDF erzeugen
+        if (file.type && file.type.startsWith('image/')) {
+            try {
+                if (window.jspdf && window.jspdf.jsPDF) {
+                    const imgData = await new Promise((resolve, reject) => {
+                        const img = new Image();
+                        const url = URL.createObjectURL(file);
+                        img.onload = () => {
+                            URL.revokeObjectURL(url);
+                            const maxDim = 1600;
+                            let w = img.width;
+                            let h = img.height;
+                            if (w > maxDim || h > maxDim) {
+                                if (w > h) {
+                                    h = Math.round(h * (maxDim / w));
+                                    w = maxDim;
+                                } else {
+                                    w = Math.round(w * (maxDim / h));
+                                    h = maxDim;
+                                }
+                            }
+                            const canvas = document.createElement('canvas');
+                            canvas.width = w;
+                            canvas.height = h;
+                            const ctx = canvas.getContext('2d');
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fillRect(0, 0, w, h);
+                            ctx.drawImage(img, 0, 0, w, h);
+                            resolve({
+                                dataUrl: canvas.toDataURL('image/jpeg', 0.78),
+                                width: w,
+                                height: h
+                            });
+                        };
+                        img.onerror = reject;
+                        img.src = url;
+                    });
+
+                    const isLandscape = imgData.width > imgData.height * 1.15;
+                    const { jsPDF } = window.jspdf;
+                    const doc = new jsPDF({
+                        orientation: isLandscape ? 'landscape' : 'portrait',
+                        unit: 'mm',
+                        format: 'a4',
+                        compress: true
+                    });
+
+                    const pageW = doc.internal.pageSize.getWidth();
+                    const pageH = doc.internal.pageSize.getHeight();
+
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(11);
+                    doc.setTextColor(30, 41, 59);
+                    doc.text(`Ranglisten-Beleg: ${cleanTitle || 'Auswärtsschiessen'}`, 12, 12);
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(8.5);
+                    doc.setTextColor(100, 116, 139);
+                    const dateStr = window.UIFormatKit ? UIFormatKit.formatDate(new Date().toISOString()) : new Date().toLocaleDateString('de-CH');
+                    doc.text(`Sportschützen Muhen · Erfasst am ${dateStr}`, 12, 17);
+
+                    const availW = pageW - 24;
+                    const availH = pageH - 30;
+                    const ratio = Math.min(availW / imgData.width, availH / imgData.height);
+                    const drawW = imgData.width * ratio;
+                    const drawH = imgData.height * ratio;
+
+                    doc.addImage(imgData.dataUrl, 'JPEG', 12, 21, drawW, drawH, undefined, 'FAST');
+                    return doc.output('blob');
+                }
+            } catch (imgErr) {
+                console.warn('[Ranglisten-Storage] Bild-zu-PDF Konvertierung fehlgeschlagen, speichere Originaldatei:', imgErr);
+            }
+            return file;
+        }
+
+        // 2. PDF-Dokument -> Alle Seiten bleiben 100% komplett erhalten!
+        // Nur wenn die Datei > 350 KB ist, prüfen wir, ob eine Re-Komprimierung aller Seiten kleiner ausfällt.
+        if ((file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '')) && file.size > 350 * 1024) {
+            if (window.pdfjsLib && window.jspdf && window.jspdf.jsPDF) {
+                try {
+                    const arrayBuf = await file.arrayBuffer();
+                    const pdfDoc = await window.pdfjsLib.getDocument({ data: arrayBuf }).promise;
+                    const numPages = pdfDoc.numPages;
+
+                    // Nur bei überschaubarer Seitenzahl (<= 25 Seiten) im Browser neu komprimieren,
+                    // alle Seiten bleiben dabei 1:1 vollständig erhalten!
+                    if (numPages >= 1 && numPages <= 25) {
+                        const { jsPDF } = window.jspdf;
+                        let outPdf = null;
+
+                        for (let p = 1; p <= numPages; p++) {
+                            const page = await pdfDoc.getPage(p);
+                            const vp1 = page.getViewport({ scale: 1.0 });
+                            const isLandscape = vp1.width > vp1.height;
+                            const scale = 1.35; // Gute Lesbarkeit bei kompakter Dateigrösse
+                            const viewport = page.getViewport({ scale });
+
+                            const canvas = document.createElement('canvas');
+                            canvas.width = viewport.width;
+                            canvas.height = viewport.height;
+                            const ctx = canvas.getContext('2d');
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                            await page.render({ canvasContext: ctx, viewport }).promise;
+                            const jpgData = canvas.toDataURL('image/jpeg', 0.74);
+
+                            if (!outPdf) {
+                                outPdf = new jsPDF({
+                                    orientation: isLandscape ? 'landscape' : 'portrait',
+                                    unit: 'pt',
+                                    format: [vp1.width, vp1.height],
+                                    compress: true
+                                });
+                            } else {
+                                outPdf.addPage([vp1.width, vp1.height], isLandscape ? 'landscape' : 'portrait');
+                            }
+
+                            outPdf.addImage(jpgData, 'JPEG', 0, 0, vp1.width, vp1.height, undefined, 'FAST');
+                        }
+
+                        if (outPdf) {
+                            const compressedBlob = outPdf.output('blob');
+                            // Nur übernehmen, wenn die komprimierte komplette Rangliste mindestens 10% kleiner ist als das Original!
+                            if (compressedBlob && compressedBlob.size < file.size * 0.90) {
+                                console.log(`[Ranglisten-Storage] Vollständige PDF-Rangliste (${numPages} S.) verkleinert: ${Math.round(file.size / 1024)} KB -> ${Math.round(compressedBlob.size / 1024)} KB`);
+                                return compressedBlob;
+                            }
+                        }
+                    }
+                } catch (pdfCompErr) {
+                    console.warn('[Ranglisten-Storage] PDF-Komprimierung übersprungen, verwende Original-PDF 1:1:', pdfCompErr);
+                }
+            }
+        }
+
+        // Standard: Original-PDF 1:1 unverändert beibehalten
+        return file;
+    }
+
+    /**
+     * Lädt eine Rangliste (PDF oder Snip) mit sauberem Titel in den privaten Bucket `jm-ranglisten` hoch
+     * und verknüpft sie sowohl in `public.jm_competition_files` als auch (falls vorhanden) in `public.group_competitions`.
+     */
+    async function jmUploadRanglisteToStorage(file, options = {}) {
+        const supa = getSupa();
+        if (!supa || !file) return null;
+
+        const yr = Number(options.jahr || getActiveYear());
+        let rawAnlass = String(options.anlassName || _jmCurrentEditingComp?.anlass_name || 'Auswaertsschiessen').trim();
+        const cleanTitle = (typeof window.jmFormatCompetitionTitle === 'function')
+            ? window.jmFormatCompetitionTitle(rawAnlass)
+            : rawAnlass;
+
+        const isGroupRanking = Boolean(
+            options.isGroupRanking ||
+            /gruppenrangliste|gruppe/i.test(file.name || '')
+        );
+
+        const cleanFilename = jmBuildCleanRanglisteFilename(cleanTitle, yr, isGroupRanking);
+        const storagePath = `${yr}/${cleanFilename}`;
+
+        try {
+            const finalBlob = await jmOptimizeAndConvertToPdfBlob(file, cleanTitle);
+            if (!finalBlob) return null;
+
+            const { error: upErr } = await supa.storage
+                .from(RANGLISTEN_BUCKET)
+                .upload(storagePath, finalBlob, {
+                    contentType: 'application/pdf',
+                    upsert: true
+                });
+
+            if (upErr) throw upErr;
+
+            const fileMeta = {
+                title: isGroupRanking ? `Gruppenrangliste – ${cleanTitle}` : `Rangliste – ${cleanTitle}`,
+                filename: cleanFilename,
+                storage_bucket: RANGLISTEN_BUCKET,
+                storage_path: storagePath,
+                size_kb: Math.max(1, Math.round(finalBlob.size / 1024)),
+                is_group_ranking: isGroupRanking,
+                uploaded_at: new Date().toISOString()
+            };
+
+            // 1. In public.jm_competition_files persistieren
+            const normKey = normalizeAnlassKey(cleanTitle);
+            await jmLoadCompetitionFiles(yr);
+            const existingFiles = Array.isArray(window._jmCompetitionFilesMap[normKey])
+                ? window._jmCompetitionFilesMap[normKey]
+                : [];
+            const updatedCatalogFiles = [
+                ...existingFiles.filter(f => f.storage_path !== storagePath),
+                fileMeta
+            ];
+            window._jmCompetitionFilesMap[normKey] = updatedCatalogFiles;
+
+            await supa
+                .from('jm_competition_files')
+                .upsert({
+                    jahr: yr,
+                    anlass_name: cleanTitle,
+                    files: updatedCatalogFiles,
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'jahr,anlass_name' });
+
+            // 2. Falls passende group_competitions existieren (oder compId übergeben wurde), dort ebenfalls eintragen
+            const matchingComps = (window._jmGroupCompetitions || []).filter(c =>
+                (options.compId && String(c.id) === String(options.compId)) ||
+                normalizeAnlassKey(c.anlass_name) === normKey
+            );
+
+            for (const comp of matchingComps) {
+                const merged = [
+                    ...(Array.isArray(comp.ranglisten_files) ? comp.ranglisten_files.filter(f => f.storage_path !== storagePath) : []),
+                    fileMeta
+                ];
+                comp.ranglisten_files = merged;
+                if (comp.id) {
+                    await supa
+                        .from('group_competitions')
+                        .update({ ranglisten_files: merged })
+                        .eq('id', comp.id);
+                }
+            }
+
+            if (_jmCurrentEditingComp && normalizeAnlassKey(_jmCurrentEditingComp.anlass_name) === normKey) {
+                _jmCurrentEditingComp.ranglisten_files = getMergedRanglistenForComp(_jmCurrentEditingComp);
+                renderEditorRanglistenFiles(_jmCurrentEditingComp);
+            }
+
+            return fileMeta;
+        } catch (err) {
+            console.error('[Ranglisten-Storage] Fehler beim Hochladen der Rangliste:', err);
+            return null;
+        }
+    }
+
+    /**
+     * Erzeugt einen kryptografisch signierten Direktlink (Standard: 180 Tage gültig = 15'552'000 Sekunden).
+     */
+    async function jmGetSignedRanglisteUrl(fileObj, expiresInSeconds = SIGNED_URL_EXPIRES_SECONDS) {
+        const supa = getSupa();
+        if (!supa || !fileObj || !fileObj.storage_path) return null;
+        const bucket = fileObj.storage_bucket || RANGLISTEN_BUCKET;
+        try {
+            const { data, error } = await supa.storage
+                .from(bucket)
+                .createSignedUrl(fileObj.storage_path, expiresInSeconds);
+            if (error) throw error;
+            return data?.signedUrl || null;
+        } catch (err) {
+            console.warn('[Ranglisten-Storage] Konnte Signed URL nicht erstellen:', err);
+            return null;
+        }
+    }
+
+    /**
+     * Öffnet eine gespeicherte Rangliste in einem neuen Browser-Tab.
+     */
+    async function jmOpenRanglisteFile(bucket, storagePath) {
+        const url = await jmGetSignedRanglisteUrl({
+            storage_bucket: bucket || RANGLISTEN_BUCKET,
+            storage_path: storagePath
+        }, SIGNED_URL_EXPIRES_SECONDS);
+
+        if (url) {
+            window.open(url, '_blank', 'noopener');
+        } else if (window.UIConfirmKit) {
+            await UIConfirmKit.alert({
+                title: 'Rangliste nicht abrufbar',
+                message: 'Der Link zur Rangliste konnte nicht generiert werden. Bitte prüfe deine Verbindung.',
+                type: 'warning'
+            });
+        }
+    }
+
+    /**
+     * Rendert die verknüpften Ranglisten im Gruppengewinn-Editor (#jme-ranglisten-list).
+     */
+    function renderEditorRanglistenFiles(comp) {
+        const container = document.getElementById('jme-ranglisten-list');
+        if (!container) return;
+
+        const files = getMergedRanglistenForComp(comp);
+        if (!files || files.length === 0) {
+            container.innerHTML = `<span class="text-muted small fst-italic">Noch keine Rangliste für diesen Anlass hinterlegt. Du kannst oben eine PDF-Rangliste oder einen Screenshot hochladen.</span>`;
+            return;
+        }
+
+        container.innerHTML = files.map(rf => `
+            <div class="badge bg-light text-dark border px-2.5 py-1.5 d-inline-flex align-items-center gap-2" style="font-size: 11.5px;">
+                <i class="fas fa-file-pdf text-danger fa-lg"></i>
+                <div class="text-start">
+                    <div class="fw-semibold">${escapeHtml(rf.filename || rf.title || 'Rangliste.pdf')}</div>
+                    <div class="text-muted" style="font-size: 9.5px;">${rf.size_kb || '?'} KB · Vollständige Rangliste (180-Tage-Link bereit)</div>
+                </div>
+                <button type="button" class="btn btn-xs btn-outline-primary ms-1 py-0 px-1.5" onclick="window.jmOpenRanglisteFile('${escapeHtml(rf.storage_bucket || RANGLISTEN_BUCKET)}', '${escapeHtml(rf.storage_path)}')" title="Rangliste im neuen Tab öffnen">
+                    <i class="fas fa-external-link-alt"></i> Öffnen
+                </button>
+            </div>
+        `).join('');
+    }
+
+    /**
+     * Datei-Upload aus dem Gruppengewinn-Editor (#jme-rangliste-file-input).
+     */
+    async function jmHandleEditorRanglisteUpload(fileList) {
+        if (!fileList || fileList.length === 0) return;
+        const file = fileList[0];
+        const anlass = (document.getElementById('jme-anlass')?.value || _jmCurrentEditingComp?.anlass_name || '').trim();
+        if (!anlass) {
+            if (window.UIConfirmKit) {
+                await UIConfirmKit.alert({
+                    title: 'Anlass wählen',
+                    message: 'Bitte wähle zuerst oben den Anlass / das Schiessen aus, damit die Rangliste einen sauberen Titel erhält.',
+                    type: 'warning'
+                });
+            }
+            return;
+        }
+
+        const meta = await jmUploadRanglisteToStorage(file, {
+            jahr: _jmCurrentEditingComp?.jahr || getActiveYear(),
+            anlassName: anlass,
+            compId: _jmCurrentEditingComp?.id || null
+        });
+
+        const inputEl = document.getElementById('jme-rangliste-file-input');
+        if (inputEl) inputEl.value = '';
+
+        if (meta) {
+            renderEditorRanglistenFiles(_jmCurrentEditingComp);
+            if (typeof showSuccess === 'function') {
+                showSuccess(`Rangliste «${meta.filename}» (${meta.size_kb} KB) gespeichert!`);
+            }
+        }
+    }
+
+    /**
+     * Direkt-Upload einer Rangliste aus der Haupttabelle (#jm-gg-main-table).
+     */
+    function jmTriggerQuickRanglisteUpload(compId) {
+        const comp = (window._jmGroupCompetitions || []).find(c => String(c.id) === String(compId));
+        if (!comp) return;
+
+        let tempInput = document.getElementById('jm-gg-quick-rangliste-input');
+        if (!tempInput) {
+            tempInput = document.createElement('input');
+            tempInput.type = 'file';
+            tempInput.id = 'jm-gg-quick-rangliste-input';
+            tempInput.className = 'd-none';
+            tempInput.accept = '.pdf,image/*';
+            document.body.appendChild(tempInput);
+        }
+
+        tempInput.onchange = async function () {
+            if (!this.files || this.files.length === 0) return;
+            const file = this.files[0];
+            const meta = await jmUploadRanglisteToStorage(file, {
+                jahr: comp.jahr || getActiveYear(),
+                anlassName: comp.anlass_name,
+                compId: comp.id
+            });
+            this.value = '';
+            if (meta) {
+                if (typeof showSuccess === 'function') {
+                    showSuccess(`Rangliste «${meta.filename}» (${meta.size_kb} KB) erfolgreich hinterlegt!`);
+                }
+                await jmRenderGruppengewinneList(comp.jahr || getActiveYear());
+            }
+        };
+        tempInput.click();
+    }
+
+    /**
+     * Erstellt die persönliche Einzelberechnung je Schütze inkl. 180 Tage gültigen Direktlinks
+     * zu allen hinterlegten Ranglisten (NIEMALS als Datei-Anhang, immer als signierter Link!).
+     *
+     * @param {number|string} personNumber - Lizenz-/Personennummer des Schützen
+     * @param {number|string} year - Beitrags-/Saisonjahr (z. B. 2026)
+     * @returns {Promise<{hasCredits: boolean, shooterName: string, year: number, totalShare: number, items: Array, validUntilStr: string, htmlBlock: string, textBlock: string}>}
+     */
+    async function jmBuildShooterGruppengewinneMailSupplement(personNumber, year) {
+        const yr = parseInt(year || getActiveYear(), 10) || new Date().getFullYear();
+        const pnStr = String(personNumber || '').trim();
+        const emptyResult = {
+            hasCredits: false,
+            shooterName: '',
+            year: yr,
+            totalShare: 0,
+            items: [],
+            validUntilStr: '',
+            htmlBlock: '',
+            textBlock: ''
+        };
+        if (!pnStr) return emptyResult;
+
+        // Sicherstellen, dass Gruppengewinne und Ranglisten-Dateien für das Jahr geladen sind
+        if (!Array.isArray(window._jmGroupCompetitions) || window._jmGroupCompetitions.length === 0 || Number(_jmActiveCompYear) !== yr) {
+            await jmLoadGroupCompetitions(yr);
+        } else {
+            await jmLoadCompetitionFiles(yr);
+        }
+
+        const comps = window._jmGroupCompetitions || [];
+        const shooterItems = [];
+        let shooterName = '';
+        let totalShare = 0;
+
+        for (const comp of comps) {
+            if (Number(comp.jahr) !== yr) continue;
+            const members = Array.isArray(comp.members) ? comp.members : [];
+            const myMember = members.find(m => String(m.person_number || '').trim() === pnStr);
+            if (!myMember) continue;
+
+            const doppel = Number(comp.gruppendoppel || 30);
+            const gewinn = Number(comp.gruppengewinn || 0);
+            const ueberschuss = Math.max(0, gewinn - doppel);
+            const count = members.length > 0 ? members.length : Number(comp.anzahl_schuetzen || 5);
+            const defaultPerShooter = (count > 0 && ueberschuss > 0) ? (Math.round((ueberschuss / count) * 20) / 20) : 0;
+            const myShare = Number(myMember.betrag !== undefined && myMember.betrag !== null ? myMember.betrag : defaultPerShooter);
+
+            // Nur Gruppenschiessen mit effektiver Gutschrift (oder Verrechnung auf Jahresbeitrag) aufführen
+            if (myShare <= 0 && ueberschuss <= 0) continue;
+            if (myMember.payout_method && myMember.payout_method !== 'jahresbeitrag') continue;
+
+            if (!shooterName && myMember.schuetze_name) {
+                shooterName = myMember.schuetze_name;
+            }
+
+            // Alle Teamkollegen mit Punktzahl formatieren
+            const sortedTeam = [...members].sort((a, b) => (Number(b.punkte) || 0) - (Number(a.punkte) || 0));
+            const teamSummary = sortedTeam.map(tm => {
+                const isMe = String(tm.person_number || '').trim() === pnStr;
+                const pStr = tm.punkte ? ` (${tm.punkte})` : '';
+                return isMe ? `<strong>${escapeHtml(tm.schuetze_name)}${pStr}</strong>` : `${escapeHtml(tm.schuetze_name)}${pStr}`;
+            }).join(', ');
+            const teamSummaryPlain = sortedTeam.map(tm => `${tm.schuetze_name}${tm.punkte ? ' (' + tm.punkte + ')' : ''}`).join(', ');
+
+            const calcPtsSum = Math.round(members.reduce((acc, m) => acc + (Number(m.punkte) || 0), 0) * 10) / 10;
+            const totalPts = comp.punkte_total || (calcPtsSum > 0 ? calcPtsSum : null);
+
+            // Für alle hinterlegten Ranglisten dieses Schiessens 180-Tage-Links generieren
+            const rangFiles = getMergedRanglistenForComp(comp);
+            const signedLinks = [];
+            for (const rf of rangFiles) {
+                const signedUrl = await jmGetSignedRanglisteUrl(rf, SIGNED_URL_EXPIRES_SECONDS);
+                if (signedUrl) {
+                    signedLinks.push({
+                        label: rf.is_group_ranking ? 'Gruppenrangliste (PDF)' : 'Rangliste (PDF)',
+                        filename: rf.filename || rf.title || 'Rangliste.pdf',
+                        sizeKb: rf.size_kb || null,
+                        url: signedUrl
+                    });
+                }
+            }
+
+            totalShare += myShare;
+            shooterItems.push({
+                compId: comp.id,
+                anlassName: comp.anlass_name,
+                gruppeName: comp.gruppe_name || 'Strohaus',
+                rang: comp.rang || null,
+                gruppeTotalPunkte: totalPts,
+                schuetzePunkte: myMember.punkte || null,
+                gewinnBrutto: gewinn,
+                abzugDoppel: doppel,
+                nettoUeberschuss: ueberschuss,
+                anzahlSchuetzen: count,
+                schuetzeAnteil: myShare,
+                teamHtml: teamSummary,
+                teamPlain: teamSummaryPlain,
+                links: signedLinks
+            });
+        }
+
+        if (shooterItems.length === 0 || totalShare <= 0) {
+            return emptyResult;
+        }
+
+        totalShare = Math.round(totalShare * 20) / 20;
+
+        // Ablaufdatum (+180 Tage) im Schweizer Format DD.MM.YYYY berechnen
+        const expiryDate = new Date(Date.now() + SIGNED_URL_EXPIRES_SECONDS * 1000);
+        const expiryIso = expiryDate.toISOString().slice(0, 10);
+        const validUntilStr = (window.UIFormatKit && typeof UIFormatKit.formatDate === 'function')
+            ? UIFormatKit.formatDate(expiryIso)
+            : expiryDate.toLocaleDateString('de-CH');
+
+        const fmtCurr = (window.UIFormatKit && typeof UIFormatKit.formatCurrency === 'function')
+            ? UIFormatKit.formatCurrency
+            : (v => `CHF ${Number(v || 0).toFixed(2)}`);
+
+        // HTML-Einzelberechnung + 180-Tage-Links (nie als Datei-Anhang!)
+        const rowsHtml = shooterItems.map(it => {
+            const rangStr = it.rang ? ` · ${it.rang}. Rang` : '';
+            const grpPtsStr = it.gruppeTotalPunkte ? `${it.gruppeTotalPunkte} Pkt.` : '–';
+            const myPtsStr = it.schuetzePunkte ? `<strong>${it.schuetzePunkte} Pkt.</strong>` : '–';
+            const linksHtml = it.links.length > 0
+                ? it.links.map(lk => `<a href="${escapeHtml(lk.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block; padding:3px 8px; margin:2px 0; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; border-radius:4px; text-decoration:none; font-weight:600; font-size:11.5px;">📄 ${escapeHtml(lk.label)} öffnen</a>`).join('<br>')
+                : `<span style="color:#94a3b8; font-size:11px;">–</span>`;
+
+            return `
+                <tr>
+                    <td style="padding:8px 10px; border-bottom:1px solid #e2e8f0; vertical-align:top;">
+                        <div style="font-weight:700; color:#0f172a;">${escapeHtml(it.anlassName)}</div>
+                        <div style="font-size:11.5px; color:#475569; margin-top:2px;">Gruppe «${escapeHtml(it.gruppeName)}»${escapeHtml(rangStr)} · Total: ${escapeHtml(grpPtsStr)}</div>
+                        <div style="font-size:11px; color:#64748b; margin-top:3px;">Gruppe: ${it.teamHtml}</div>
+                    </td>
+                    <td style="padding:8px 8px; border-bottom:1px solid #e2e8f0; text-align:center; vertical-align:top; white-space:nowrap;">${myPtsStr}</td>
+                    <td style="padding:8px 8px; border-bottom:1px solid #e2e8f0; text-align:right; vertical-align:top; white-space:nowrap; font-size:12px; color:#334155;">
+                        <div>Brutto: ${escapeHtml(fmtCurr(it.gewinnBrutto))}</div>
+                        <div style="color:#64748b; font-size:11px;">./. Doppel: ${escapeHtml(fmtCurr(it.abzugDoppel))}</div>
+                        <div style="font-weight:600; color:#0f172a; margin-top:2px;">Netto: ${escapeHtml(fmtCurr(it.nettoUeberschuss))}</div>
+                    </td>
+                    <td style="padding:8px 10px; border-bottom:1px solid #e2e8f0; text-align:right; vertical-align:top; white-space:nowrap; font-weight:700; color:#15803d; font-size:13px;">
+                        - ${escapeHtml(fmtCurr(it.schuetzeAnteil))}
+                        <div style="font-size:10.5px; font-weight:400; color:#64748b;">(1/${it.anzahlSchuetzen} Anteil)</div>
+                    </td>
+                    <td style="padding:8px 10px; border-bottom:1px solid #e2e8f0; text-align:center; vertical-align:top;">
+                        ${linksHtml}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        const htmlBlock = `
+            <div style="margin:22px 0 18px 0; border:1px solid #cbd5e1; border-radius:8px; overflow:hidden; background:#ffffff; font-family:Arial, sans-serif;">
+                <div style="background:#f8fafc; padding:10px 14px; border-bottom:1px solid #cbd5e1;">
+                    <div style="font-weight:700; font-size:14px; color:#0f172a;">🏆 Deine persönliche Einzelberechnung Gruppengewinne ${yr} (Konto 1301)</div>
+                    <div style="font-size:12px; color:#475569; margin-top:2px;">Aufstellung deiner gutgeschriebenen Gewinnanteile aus auswärtigen Gruppenschiessen inkl. direktem Zugriff auf die kompletten Ranglisten:</div>
+                </div>
+                <table style="width:100%; border-collapse:collapse; font-size:12.5px;">
+                    <thead>
+                        <tr style="background:#f1f5f9; color:#334155; font-size:11.5px; text-transform:uppercase;">
+                            <th style="padding:7px 10px; text-align:left; border-bottom:1px solid #cbd5e1;">Anlass / Gruppe & Team</th>
+                            <th style="padding:7px 8px; text-align:center; border-bottom:1px solid #cbd5e1;">Deine Pkt.</th>
+                            <th style="padding:7px 8px; text-align:right; border-bottom:1px solid #cbd5e1;">Gruppenabrechnung</th>
+                            <th style="padding:7px 10px; text-align:right; border-bottom:1px solid #cbd5e1;">Deine Gutschrift</th>
+                            <th style="padding:7px 10px; text-align:center; border-bottom:1px solid #cbd5e1;">Rangliste (Link)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rowsHtml}
+                    </tbody>
+                    <tfoot>
+                        <tr style="background:#f0fdf4; font-weight:700; color:#14532d;">
+                            <td colspan="3" style="padding:9px 10px; text-align:right; border-top:2px solid #bbf7d0;">Total Gutschrift Gruppengewinne ${yr} (auf deiner Rechnung abgezogen):</td>
+                            <td style="padding:9px 10px; text-align:right; border-top:2px solid #bbf7d0; font-size:13.5px; white-space:nowrap;">- ${escapeHtml(fmtCurr(totalShare))}</td>
+                            <td style="padding:9px 10px; border-top:2px solid #bbf7d0;"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+                <div style="background:#eff6ff; padding:9px 14px; border-top:1px solid #bfdbfe; font-size:11.5px; color:#1e3a8a; line-height:1.45;">
+                    🔒 <strong>Hinweis zu den Ranglisten-Links:</strong> Um dein E-Mail-Postfach zu schonen, werden die vollständigen Ranglisten nicht als Datei angehängt, sondern über geschützte Direktlinks bereitgestellt. Die Links sind ab Versand während <strong>180 Tagen (bis am ${escapeHtml(validUntilStr)})</strong> gültig.
+                </div>
+            </div>
+        `;
+
+        // Plain-Text-Block für E-Mail-Text-Fallback und Vorschau-Textarea
+        const textLines = [
+            `------------------------------------------------------------------------`,
+            `DEINE EINZELBERECHNUNG GRUPPENGEWINNE ${yr} (KONTO 1301)`,
+            `------------------------------------------------------------------------`
+        ];
+        shooterItems.forEach((it, idx) => {
+            const rangTxt = it.rang ? `, ${it.rang}. Rang` : '';
+            const totTxt = it.gruppeTotalPunkte ? `, Total ${it.gruppeTotalPunkte} Pkt.` : '';
+            const myPtsTxt = it.schuetzePunkte ? `${it.schuetzePunkte} Pkt.` : '-';
+            textLines.push(
+                `${idx + 1}. ${it.anlassName} – Gruppe «${it.gruppeName}» (${ myPtsTxt } von dir${rangTxt}${totTxt})`,
+                `   Gruppengewinn Brutto: ${fmtCurr(it.gewinnBrutto)} | Abzug Doppel Verein: -${fmtCurr(it.abzugDoppel)} | Überschuss: ${fmtCurr(it.nettoUeberschuss)}`,
+                `   -> Dein gutgeschriebener Anteil (1/${it.anzahlSchuetzen}): -${fmtCurr(it.schuetzeAnteil)}`,
+                `   -> Gruppe: ${it.teamPlain}`
+            );
+            if (it.links && it.links.length > 0) {
+                it.links.forEach(lk => {
+                    textLines.push(`   -> ${lk.label} (Link 180 Tage gültig bis ${validUntilStr}): ${lk.url}`);
+                });
+            }
+            textLines.push('');
+        });
+        textLines.push(
+            `TOTAL GUTSCHRIFT GRUPPENGEWINNE ${yr}: -${fmtCurr(totalShare)}`,
+            `Hinweis: Die Direktlinks auf die kompletten Ranglisten sind während 180 Tagen (bis ${validUntilStr}) gültig.`,
+            `------------------------------------------------------------------------`
+        );
+
+        return {
+            hasCredits: true,
+            shooterName: shooterName,
+            year: yr,
+            totalShare: totalShare,
+            items: shooterItems,
+            validUntilStr: validUntilStr,
+            htmlBlock: htmlBlock,
+            textBlock: textLines.join('\n')
+        };
+    }
+
+    /**
+     * Öffnet ein übersichtliches Vorschau-Modal mit der persönlichen Einzelberechnung je Schütze
+     * und den 180-Tage-Links auf die Ranglisten (z. B. aus dem Jahresbeitrags-Inspektor).
+     */
+    async function jmOpenShooterGruppengewinnePreviewModal(personNumber, year) {
+        const supp = await jmBuildShooterGruppengewinneMailSupplement(personNumber, year);
+        if (!supp.hasCredits) {
+            if (window.UIConfirmKit) {
+                await UIConfirmKit.alert({
+                    title: 'Keine Gruppengewinne gefunden',
+                    message: `Für dieses Mitglied sind im Jahr ${year || getActiveYear()} keine Gruppengewinn-Gutschriften (Konto 1301) hinterlegt.`,
+                    type: 'info'
+                });
+            }
+            return;
+        }
+
+        let modalEl = document.getElementById('jmShooterGgSupplementModal');
+        if (modalEl) modalEl.remove();
+
+        modalEl = document.createElement('div');
+        modalEl.id = 'jmShooterGgSupplementModal';
+        modalEl.className = 'modal fade';
+        modalEl.tabIndex = -1;
+        modalEl.innerHTML = `
+            <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+                <div class="modal-content shadow-lg border-0">
+                    <div class="modal-header bg-dark text-white py-2.5 px-3">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-warning text-dark"><i class="fas fa-trophy"></i></span>
+                            <div>
+                                <h6 class="modal-title fw-bold mb-0">Einzelberechnung & 180-Tage Ranglisten-Links · ${escapeHtml(supp.shooterName || String(personNumber))}</h6>
+                                <div class="small text-white-50">Wird beim E-Mail-Versand des Jahresbeitrags ${supp.year} automatisch in die E-Mail eingefügt (ohne Datei-Anhang)</div>
+                            </div>
+                        </div>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+                    </div>
+                    <div class="modal-body p-3 bg-light">
+                        ${supp.htmlBlock}
+                    </div>
+                    <div class="modal-footer py-2 px-3 bg-white">
+                        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Schliessen</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modalEl);
+        const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        bsModal.show();
+    }
+
     // Globale Exports am window-Objekt
+    window.jmBuildCleanRanglisteFilename = jmBuildCleanRanglisteFilename;
+    window.jmOptimizeAndConvertToPdfBlob = jmOptimizeAndConvertToPdfBlob;
+    window.jmUploadRanglisteToStorage = jmUploadRanglisteToStorage;
+    window.jmGetSignedRanglisteUrl = jmGetSignedRanglisteUrl;
+    window.jmOpenRanglisteFile = jmOpenRanglisteFile;
+    window.jmHandleEditorRanglisteUpload = jmHandleEditorRanglisteUpload;
+    window.jmTriggerQuickRanglisteUpload = jmTriggerQuickRanglisteUpload;
+    window.jmBuildShooterGruppengewinneMailSupplement = jmBuildShooterGruppengewinneMailSupplement;
+    window.jmOpenShooterGruppengewinnePreviewModal = jmOpenShooterGruppengewinnePreviewModal;
     window.jmOnAnlassSelectChange = jmOnAnlassSelectChange;
     window.jmOnAnlassInputChange = jmOnAnlassInputChange;
     window.jmClearAnlassInput = jmClearAnlassInput;

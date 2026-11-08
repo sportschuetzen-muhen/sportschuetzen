@@ -194,8 +194,11 @@ Das Endschiessen (Saisonabschluss KK 50m) bildet einen zählenden Wertungswettka
 
 ---
 
-## 9. Gruppengewinne auswärtige Schiessen (Konto 1301) & Jahresbeitrag
+## 9. Gruppengewinne auswärtige Schiessen (Konto 1301), Ranglisten-Archiv & Jahresbeitrag
 Bei auswärtigen Schiessen (Gruppenwettkämpfe) übernimmt der Verein reglementarisch das Gruppendoppel (standardmässig CHF 30.00). Darüber hinaus erzielte Gewinne bilden den Schützen-Überschuss und werden über das Bilanz-Transitkonto **1301** geführt (`jahresmeisterschaft-gruppengewinne.js`). Über die Schnittstelle zum Jahresbeitrag (`jmTransferCurrentCompToJahresbeitrag`) werden die Gewinnanteile der Schützen direkt als Abzugsposition im Jahresbeitrag verrechnet und revisionssicher auf der QR-Rechnung ausgewiesen. Die PostgreSQL-Berechnung `calculate_member_contributions` bezieht die Gewinne aus `group_competition_members` dynamisch und idempotent ein, sodass Neuberechnungen oder Rücksetzungen im Jahresbeitrag die Gewinne stets konsistent erhalten.
+
+Hochgeladene Ranglisten (PDFs oder via `Strg+V` eingefügte Snips) werden beim Import mit einem standardisierten Dateinamen (`jmBuildCleanRanglisteFilename`) einmalig im privaten Supabase-Storage-Bucket `jm-ranglisten` abgelegt (`public.jm_competition_files` & `group_competitions.ranglisten_files`), wobei PDF-Ranglisten stets zu 100 % vollständig mit allen Seiten erhalten bleiben und nur dann verlustarm komprimiert werden, wenn die Dateigrösse dadurch effektiv sinkt. Beim E-Mail-Versand des Jahresbeitrags (Einzel- und Sammelversand) wird für Schützen mit Konto-1301-Gutschriften automatisch eine persönliche Einzelberechnung (`jmBuildShooterGruppengewinneMailSupplement`) samt kryptografisch signierten Direktlinks (`createSignedUrl`, 180 Tage gültig, ohne E-Mail-Dateianhang) und explizitem Gültigkeitshinweis in die E-Mail eingebettet.
+
 
 
 

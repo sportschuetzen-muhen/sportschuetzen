@@ -958,7 +958,16 @@ window.rnExecuteSendMail = async function(invoiceId) {
       }
     }
 
-    // 3. Mail-HTML mit Vereins-CI
+    // 3. Mail-HTML mit Vereins-CI (inkl. automatischer Einzelberechnung & 180-Tage Ranglisten-Links bei Jahresbeitrag mit Konto 1301)
+    let ggSupp = null;
+    if (String(inv.type || '').toLowerCase().includes('jahresbeitrag') && inv.person_number && typeof window.jmBuildShooterGruppengewinneMailSupplement === 'function') {
+      try {
+        ggSupp = await window.jmBuildShooterGruppengewinneMailSupplement(inv.person_number, inv.year || new Date().getFullYear());
+      } catch (ggErr) {
+        console.warn('[Rechnungen-Mail] Konnte Gruppengewinn-Einzelberechnung nicht erstellen:', ggErr);
+      }
+    }
+
     let finalBodyHtml = '';
     if (/<[a-z][\s\S]*>/i.test(customLayout.mail_body || '')) {
       finalBodyHtml = customLayout.mail_body;
@@ -966,6 +975,10 @@ window.rnExecuteSendMail = async function(invoiceId) {
       finalBodyHtml = (customLayout.mail_body || '').split(/\n\s*\n/).map(p => 
         `<p style="margin:0 0 12px 0; line-height: 1.55;">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`
       ).join('');
+    }
+
+    if (ggSupp && ggSupp.hasCredits && !finalBodyHtml.includes('Einzelberechnung Gruppengewinne')) {
+      finalBodyHtml += ggSupp.htmlBlock;
     }
 
     const emailHtml = (typeof window.renderClubEmailHtml === 'function')
@@ -979,7 +992,10 @@ window.rnExecuteSendMail = async function(invoiceId) {
     const toPlain = (window.ClubWysiwyg && typeof window.ClubWysiwyg.htmlToPlainText === 'function')
       ? window.ClubWysiwyg.htmlToPlainText
       : (window.clubHtmlToPlainText || (s => s.replace(/<[^>]+>/g, '')));
-    const plainTextFallback = toPlain(customLayout.mail_body || `Rechnung ${invoiceId}`);
+    let plainTextFallback = toPlain(customLayout.mail_body || `Rechnung ${invoiceId}`);
+    if (ggSupp && ggSupp.hasCredits && !plainTextFallback.includes('EINZELBERECHNUNG GRUPPENGEWINNE')) {
+      plainTextFallback += `\n\n${ggSupp.textBlock}`;
+    }
 
     // 4. Versand über zentrale Supabase Mail-Engine (Edge Function send-email)
     if (typeof window.sendMailViaEngine !== 'function') {
@@ -5496,6 +5512,16 @@ window.rnExecuteMassSend = async function() {
         .replace(/Rechnung\s+RE[-_]/gi, 'Rechnung ')
         .replace(/\bRE-(\d)/gi, '$1');
 
+      // Falls Jahresbeitrag und Schütze hat Gruppengewinne (Konto 1301): Einzelberechnung + 180-Tage Ranglisten-Links einbetten (nie als Anhang!)
+      let ggMassSupp = null;
+      if (String(inv.type || '').toLowerCase().includes('jahresbeitrag') && inv.person_number && typeof window.jmBuildShooterGruppengewinneMailSupplement === 'function') {
+        try {
+          ggMassSupp = await window.jmBuildShooterGruppengewinneMailSupplement(inv.person_number, inv.year || new Date().getFullYear());
+        } catch (ggErr) {
+          console.warn('[Massenversand] Konnte Gruppengewinn-Einzelberechnung nicht laden:', ggErr);
+        }
+      }
+
       let bodyContentHtml = '';
       if (/<[a-z][\s\S]*>/i.test(bodyText)) {
         bodyContentHtml = bodyText;
@@ -5503,6 +5529,10 @@ window.rnExecuteMassSend = async function() {
         bodyContentHtml = bodyText.split(/\n\s*\n/).map(p => 
           `<p style="margin:0 0 12px 0; line-height: 1.55;">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`
         ).join('');
+      }
+
+      if (ggMassSupp && ggMassSupp.hasCredits && !bodyContentHtml.includes('Einzelberechnung Gruppengewinne')) {
+        bodyContentHtml += ggMassSupp.htmlBlock;
       }
 
       const emailHtml = (typeof window.renderClubEmailHtml === 'function')
@@ -5516,7 +5546,10 @@ window.rnExecuteMassSend = async function() {
       const toPlain = (window.ClubWysiwyg && typeof window.ClubWysiwyg.htmlToPlainText === 'function')
         ? window.ClubWysiwyg.htmlToPlainText
         : (window.clubHtmlToPlainText || (s => s.replace(/<[^>]+>/g, '')));
-      const plainTextFallback = toPlain(bodyText);
+      let plainTextFallback = toPlain(bodyText);
+      if (ggMassSupp && ggMassSupp.hasCredits && !plainTextFallback.includes('EINZELBERECHNUNG GRUPPENGEWINNE')) {
+        plainTextFallback += `\n\n${ggMassSupp.textBlock}`;
+      }
 
       if (typeof window.sendMailViaEngine !== 'function') {
         throw new Error("Mail-Engine nicht verfügbar");

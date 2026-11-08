@@ -1904,10 +1904,26 @@ async function jmSetupAuswaertigPreview(detectedTitle, forecastMax, forecastReas
 /**
  * Öffnet den Gruppeneditor aus der erkannten Import-Gruppe.
  */
-window.jmOpenGroupEditorFromImport = function () {
+window.jmOpenGroupEditorFromImport = async function () {
     if (!_jmImportState?.detectedGroup) return;
     const dg = _jmImportState.detectedGroup;
     const targetTitle = document.getElementById('jm-import-target-title')?.value || dg.anlass_name || _jmImportState.targetTitle;
+    const yr = (window.jmCurrentJahr && window.jmCurrentJahr !== 'current') ? parseInt(window.jmCurrentJahr, 10) : new Date().getFullYear();
+
+    // Falls eine hochgeladene Rangliste oder ein Snip vorliegt, direkt mit sauberem Titel in Supabase Storage sichern
+    let uploadedRanglisten = [];
+    if (_jmImportState.lastUploadedFile && typeof window.jmUploadRanglisteToStorage === 'function') {
+        try {
+            const meta = await window.jmUploadRanglisteToStorage(_jmImportState.lastUploadedFile, {
+                jahr: yr,
+                anlassName: targetTitle,
+                isGroupRanking: !dg.isSingleRankingOnly
+            });
+            if (meta) uploadedRanglisten.push(meta);
+        } catch (upErr) {
+            console.warn('[JM-Import] Automatisches Speichern der Rangliste fehlgeschlagen:', upErr);
+        }
+    }
 
     let shooters = dg.shooters || [];
     if (shooters.length === 0) {
@@ -1950,7 +1966,7 @@ window.jmOpenGroupEditorFromImport = function () {
 
     const groupPayload = {
         id: null,
-        jahr: (window.jmCurrentJahr && window.jmCurrentJahr !== 'current') ? parseInt(window.jmCurrentJahr, 10) : new Date().getFullYear(),
+        jahr: yr,
         anlass_name: targetTitle,
         gruppe_name: dg.gruppe_name || 'Strohaus',
         rang: dg.rang || null,
@@ -1958,6 +1974,7 @@ window.jmOpenGroupEditorFromImport = function () {
         gruppendoppel: Number(dg.gruppendoppel || 30.00),
         gruppengewinn: Number(dg.gruppengewinn || 0.00),
         anzahl_schuetzen: membersList.length || 5,
+        ranglisten_files: uploadedRanglisten,
         members: membersList
     };
 
@@ -2848,6 +2865,21 @@ async function jmCommitImport() {
         // 4. Strukturierte Ranglisten synchronisieren (public.jm_shooters)
         if (typeof syncJMShootersToSupabase === 'function') {
             await syncJMShootersToSupabase(sb, jmCurrentJahr, grid);
+        }
+
+        // 5. Bei Auswärtsschiessen: Hochgeladene Rangliste / Snip mit sauberem Titel in Supabase Storage sichern
+        if (_jmImportState.type === 'auswaertig' && _jmImportState.lastUploadedFile && typeof window.jmUploadRanglisteToStorage === 'function') {
+            const finalCompTitle = (grid[2] && grid[2][targetCol]) || _jmImportState.targetTitle || 'Auswärtiges Schiessen';
+            const seasonYr = (jmCurrentJahr && jmCurrentJahr !== 'current') ? parseInt(jmCurrentJahr, 10) : new Date().getFullYear();
+            try {
+                await window.jmUploadRanglisteToStorage(_jmImportState.lastUploadedFile, {
+                    jahr: seasonYr,
+                    anlassName: finalCompTitle,
+                    isGroupRanking: Boolean(_jmImportState.detectedGroup && !_jmImportState.detectedGroup.isSingleRankingOnly)
+                });
+            } catch (rlErr) {
+                console.warn('[JM-Import] Konnte Ranglisten-Beleg nicht automatisch archivieren:', rlErr);
+            }
         }
 
         // Modal schliessen

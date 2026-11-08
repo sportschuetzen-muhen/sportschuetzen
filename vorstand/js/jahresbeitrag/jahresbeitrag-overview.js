@@ -751,7 +751,12 @@ function jbRenderModalContent(header, pos, m, name) {
       <td class="fw-semibold text-dark tk-col-desc">
         ${isGroupWin ? '<i class="fas fa-trophy text-warning me-1.5" title="Gruppengewinn auswärtiges Schiessen (Konto 1301)"></i>' : ''}
         ${p.beschreibung || p.name || '–'}
-        ${isGroupWin ? '<div class="text-muted small fw-normal" style="font-size: 10px;"><i class="fas fa-info-circle me-1 text-primary"></i>Auswärtiges Schiessen · Verrechnung via Transitkonto 1301</div>' : ''}
+        ${isGroupWin ? `<div class="text-muted small fw-normal d-flex align-items-center flex-wrap gap-2 mt-1" style="font-size: 10px;">
+          <span><i class="fas fa-info-circle me-1 text-primary"></i>Auswärtiges Schiessen · Verrechnung via Transitkonto 1301</span>
+          <button type="button" class="btn btn-xs btn-outline-primary py-0 px-1.5" style="font-size: 10px;" onclick="if(window.jmOpenShooterGruppengewinnePreviewModal) window.jmOpenShooterGruppengewinnePreviewModal('${header.PersonNumber}', ${header.year || new Date().getFullYear()})">
+            <i class="fas fa-link me-1"></i>Einzelberechnung & Ranglisten-Links (180 Tage)
+          </button>
+        </div>` : ''}
       </td>
       <td class="tk-col-typ">
         <span class="badge ${isCredit ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-primary-subtle text-primary border border-primary-subtle'}">
@@ -1604,7 +1609,21 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
     const totalBetrag = Number(r.total_amount || r.betrag || r.Gesamt || 0);
     const senderDisplayName = sender ? [sender.vorname, sender.nachname].filter(Boolean).join(' ') : 'Daniel Hunziker';
     const senderRole = sender?.funktion || 'Kassier';
-    const bodyHtml = `<p>Guten Tag ${name},</p><p>anbei senden wir dir die Rechnung für den Jahresbeitrag ${r.year || new Date().getFullYear()} mit der Rechnungsnummer <strong>${invoiceId}</strong> über CHF ${totalBetrag.toFixed(2)} inkl. beiliegender QR-Rechnung.</p><p>Vielen Dank für deine wertvolle Unterstützung als Mitglied!</p><p>Freundliche Grüsse<br><strong>Sportschützen Muhen</strong><br>${senderDisplayName}<br>${senderRole}</p>`;
+
+    // Persönliche Einzelberechnung Gruppengewinne (Konto 1301) inkl. 180-Tage-Links (nie als Datei-Anhang!) ermitteln
+    let ggSupp = null;
+    if (typeof window.jmBuildShooterGruppengewinneMailSupplement === 'function') {
+      try {
+        ggSupp = await window.jmBuildShooterGruppengewinneMailSupplement(pn, r.year || new Date().getFullYear());
+      } catch (ggErr) {
+        console.warn('[Jahresbeitrag-Mail] Konnte Gruppengewinn-Einzelberechnung nicht laden:', ggErr);
+      }
+    }
+
+    const ggHtml = (ggSupp && ggSupp.hasCredits) ? ggSupp.htmlBlock : '';
+    const ggText = (ggSupp && ggSupp.hasCredits) ? `\n\n${ggSupp.textBlock}\n` : '';
+
+    const bodyHtml = `<p>Guten Tag ${name},</p><p>anbei senden wir dir die Rechnung für den Jahresbeitrag ${r.year || new Date().getFullYear()} mit der Rechnungsnummer <strong>${invoiceId}</strong> über CHF ${totalBetrag.toFixed(2)} inkl. beiliegender QR-Rechnung.</p>${ggHtml}<p>Vielen Dank für deine wertvolle Unterstützung als Mitglied!</p><p>Freundliche Grüsse<br><strong>Sportschützen Muhen</strong><br>${senderDisplayName}<br>${senderRole}</p>`;
 
     const emailHtml = (typeof window.renderClubEmailHtml === 'function')
       ? window.renderClubEmailHtml({
@@ -1618,7 +1637,7 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
       to: email,
       subject: `Rechnung Jahresbeitrag ${r.year || new Date().getFullYear()} – ${invoiceId} | Sportschützen Muhen`,
       html: emailHtml,
-      text: `Guten Tag ${name},\n\nanbei die Rechnung für den Jahresbeitrag ${r.year || new Date().getFullYear()} (${invoiceId}).\n\nVielen Dank für deine wertvolle Unterstützung als Mitglied!\n\nFreundliche Grüsse\nSportschützen Muhen\n${senderDisplayName}\n${senderRole}`,
+      text: `Guten Tag ${name},\n\nanbei die Rechnung für den Jahresbeitrag ${r.year || new Date().getFullYear()} (${invoiceId}).${ggText}\nVielen Dank für deine wertvolle Unterstützung als Mitglied!\n\nFreundliche Grüsse\nSportschützen Muhen\n${senderDisplayName}\n${senderRole}`,
       senderName: sender?.name || 'Sportschützen Muhen',
       senderEmail: sender?.email || 'sportschuetzen.muhen@gmail.com',
       attachments: attachments,
