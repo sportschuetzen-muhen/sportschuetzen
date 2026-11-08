@@ -30,6 +30,57 @@ function updateJMSupabaseBadge(isSupabase) {
 }
 window.updateJMSupabaseBadge = updateJMSupabaseBadge;
 
+/**
+ * Formatiert den Wettkampftitel für Auswärtsschiessen im Format:
+ * «Anlass (Ortschaft) Jahr» (Variante A)
+ * Vermeidet Dopplungen, falls der Ort bereits im Anlassnamen vorkommt.
+ * 
+ * @param {string} anlass - Name des Schützenfestes / Anlasses
+ * @param {string} [ort=''] - Ortschaft des Anlasses
+ * @param {string|number} [jahr] - Kalenderjahr (Standard: aktuelles JM-Jahr)
+ * @returns {string} - Formatierter Titel
+ */
+function jmFormatCompetitionTitle(anlass, ort = '', jahr = null) {
+    let cleanAnlass = String(anlass || '').trim();
+    if (!cleanAnlass) cleanAnlass = 'Auswärtiges Schiessen';
+
+    let resolvedYear = jahr;
+    if (!resolvedYear || resolvedYear === 'current') {
+        resolvedYear = (typeof jmCurrentJahr !== 'undefined' && jmCurrentJahr && jmCurrentJahr !== 'current')
+            ? jmCurrentJahr
+            : new Date().getFullYear();
+    }
+    const yearStr = String(resolvedYear).trim();
+
+    // Falls das Jahr bereits am Ende des Anlassnamens steht, entfernen wir es vorübergehend zur Vereinheitlichung
+    const yearPattern = new RegExp(`\\s+${yearStr}$`, 'i');
+    if (yearPattern.test(cleanAnlass)) {
+        cleanAnlass = cleanAnlass.replace(yearPattern, '').trim();
+    }
+
+    const cleanOrt = String(ort || '').trim();
+    let includeOrt = false;
+    if (cleanOrt) {
+        const normAnlass = cleanAnlass.toLowerCase().replace(/[^a-z0-9äöü]/gi, '');
+        const normOrt = cleanOrt.toLowerCase().replace(/[^a-z0-9äöü]/gi, '');
+        const primaryOrtWord = normOrt.split(/[^a-z0-9äöü]/)[0] || normOrt;
+        const shortOrt = primaryOrtWord.length >= 4 ? primaryOrtWord.substring(0, 5) : primaryOrtWord;
+
+        const alreadyContainsOrt = normAnlass.includes(normOrt) || (shortOrt.length >= 4 && normAnlass.includes(shortOrt));
+        const hasParenthesesOrt = new RegExp(`\\(${cleanOrt}\\)`, 'i').test(cleanAnlass);
+
+        if (!alreadyContainsOrt && !hasParenthesesOrt) {
+            includeOrt = true;
+        }
+    }
+
+    if (includeOrt) {
+        return `${cleanAnlass} (${cleanOrt}) ${yearStr}`;
+    }
+    return `${cleanAnlass} ${yearStr}`;
+}
+window.jmFormatCompetitionTitle = jmFormatCompetitionTitle;
+
 // Zentrale Laderoutine
 async function loadJahresmeisterschaftData(force = false, silent = false) {
     const historySelect = document.getElementById('jm-history-select');

@@ -535,8 +535,18 @@ async function addNewAuswaertigesSchiessen() {
     });
     if (!res) return;
 
-    const name = res.name.trim();
+    let name = res.name.trim();
     const maxPunkte = parseInt(res.maxPunkte, 10);
+
+    // Formatierung gemäss Standard «Anlass (Ortschaft) Jahr» (Variante A) anwenden
+    if (typeof jmFormatCompetitionTitle === 'function') {
+        const catItem = (catalog || []).find(c => c.anlass.toLowerCase() === name.toLowerCase());
+        if (catItem) {
+            name = jmFormatCompetitionTitle(catItem.anlass, catItem.ort, jmCurrentJahr);
+        } else {
+            name = jmFormatCompetitionTitle(name, '', jmCurrentJahr);
+        }
+    }
 
     const sb = getJMSupabaseClient();
     if (!sb || !jmRawGrid || jmRawGrid.length < 5) {

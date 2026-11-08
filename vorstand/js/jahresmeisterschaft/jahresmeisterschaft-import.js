@@ -191,7 +191,11 @@ async function jmPopulateTargetCompetitions(selectedCol = -1, detectedName = '',
         } else if (selectElem.value.startsWith('cat_')) {
             const opt = selectElem.selectedOptions[0];
             const jmYear = (typeof jmCurrentJahr !== 'undefined' && jmCurrentJahr && jmCurrentJahr !== 'current') ? jmCurrentJahr : new Date().getFullYear();
-            titleInput.value = `${opt.getAttribute('data-anlass')} ${jmYear}`;
+            const catAnlass = opt.getAttribute('data-anlass') || 'Auswärtiges Schiessen';
+            const catOrt = opt.getAttribute('data-ort') || '';
+            titleInput.value = (typeof jmFormatCompetitionTitle === 'function')
+                ? jmFormatCompetitionTitle(catAnlass, catOrt, jmYear)
+                : `${catAnlass} ${jmYear}`;
         } else if (selectElem.value !== 'new') {
             const colIdx = parseInt(selectElem.value);
             titleInput.value = String(grid[2][colIdx] || '').trim();
@@ -214,12 +218,15 @@ function jmOnTargetCompetitionChange() {
     if (val.startsWith('cat_')) {
         const opt = selectElem.selectedOptions[0];
         const catAnlass = opt?.getAttribute('data-anlass') || 'Auswärtiges Schiessen';
+        const catOrt = opt?.getAttribute('data-ort') || '';
         const catMax = parseFloat(opt?.getAttribute('data-max')) || 100;
 
         const jmYear = (typeof jmCurrentJahr !== 'undefined' && jmCurrentJahr && jmCurrentJahr !== 'current') ? jmCurrentJahr : new Date().getFullYear();
         _jmImportState.isNewComp = true;
         _jmImportState.targetCol = -1;
-        _jmImportState.targetTitle = `${catAnlass} ${jmYear}`;
+        _jmImportState.targetTitle = (typeof jmFormatCompetitionTitle === 'function')
+            ? jmFormatCompetitionTitle(catAnlass, catOrt, jmYear)
+            : `${catAnlass} ${jmYear}`;
         _jmImportState.maxPoints = catMax;
 
         if (titleInput) titleInput.value = _jmImportState.targetTitle;
@@ -229,7 +236,7 @@ function jmOnTargetCompetitionChange() {
         if (sourceBadge) sourceBadge.innerText = "Katalog";
 
         const hint = document.getElementById('jm-import-prognose-hint');
-        if (hint) hint.innerText = `💡 Katalog: ${catAnlass} (Max: ${catMax})`;
+        if (hint) hint.innerText = `💡 Katalog: ${catAnlass}${catOrt ? ` (${catOrt})` : ''} (Max: ${catMax})`;
 
     } else if (val === 'new') {
         _jmImportState.isNewComp = true;
@@ -862,8 +869,10 @@ async function jmProcessAuswaertigFromText(linesOrText, fileName) {
         catalogMatch = await jmMatchCompetitionFromCatalog(fullText, fileName);
         if (catalogMatch) {
             const jmYear = (typeof jmCurrentJahr !== 'undefined' && jmCurrentJahr && jmCurrentJahr !== 'current') ? jmCurrentJahr : new Date().getFullYear();
-            detectedTitle = `${catalogMatch.anlass} ${jmYear}`;
-            catalogReason = `Katalog: ${catalogMatch.anlass} (Erkannt: "${catalogMatch.matchedKeyword}")`;
+            detectedTitle = (typeof jmFormatCompetitionTitle === 'function')
+                ? jmFormatCompetitionTitle(catalogMatch.anlass, catalogMatch.ort, jmYear)
+                : `${catalogMatch.anlass} ${jmYear}`;
+            catalogReason = `Katalog: ${catalogMatch.anlass}${catalogMatch.ort ? ` (${catalogMatch.ort})` : ''} (Erkannt: "${catalogMatch.matchedKeyword}")`;
         }
     }
 

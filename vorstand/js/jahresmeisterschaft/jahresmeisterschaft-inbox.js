@@ -886,7 +886,26 @@ async function jmImportStandblatt(logId) {
             if (!grid[3]) grid[3] = [];
 
             grid[0][targetCol] = 'TRUE';
-            grid[2][targetCol] = anlass;
+            let colTitle = anlass;
+            if (typeof loadJMSchuetzenfesteCatalog === 'function' && typeof jmFormatCompetitionTitle === 'function') {
+                try {
+                    const catalog = await loadJMSchuetzenfesteCatalog();
+                    const catItem = (catalog || []).find(c => {
+                        const cNorm = c.anlass.toLowerCase().replace(/[^a-z0-9äöü]/gi, '');
+                        return cNorm === cleanAnlass || (cNorm.length >= 5 && (cleanAnlass.includes(cNorm) || cNorm.includes(cleanAnlass)));
+                    });
+                    if (catItem) {
+                        colTitle = jmFormatCompetitionTitle(catItem.anlass, catItem.ort, jmCurrentJahr);
+                    } else {
+                        colTitle = jmFormatCompetitionTitle(anlass, '', jmCurrentJahr);
+                    }
+                } catch (_) {
+                    colTitle = jmFormatCompetitionTitle(anlass, '', jmCurrentJahr);
+                }
+            } else if (typeof jmFormatCompetitionTitle === 'function') {
+                colTitle = jmFormatCompetitionTitle(anlass, '', jmCurrentJahr);
+            }
+            grid[2][targetCol] = colTitle;
             grid[3][targetCol] = maximal;
 
             for (let r = 5; r < grid.length; r++) {
