@@ -79,6 +79,7 @@ Das Rechnungswesen bildet das zentrale kaufmännische Nervenzentrum des Vereins 
 ### 2.9 Warum automatische PDF-Neugenerierung, Server-Side Vorlagen-Vorrang & Cache-Busting?
 * Jede Mutation an einer Rechnung (Erstellung, Statusänderung, Zahlungseingang, Storno) sowie der manuelle Button «PDF neu generieren» (`rnGeneratePDFOnly`) und das Speichern einer Rechnungsvorlage in `templates-ui.js` (für offene Entwürfe des betroffenen Vorlagentyps) rufen `RechnungsCore.renderPdf(invoiceId, { forceRecreate: true })` auf, um den WORM-Archiv-Kurzschluss gezielt zu übersteuern.
 * In der Edge Function `generate-pdf` (`generateInvoicePdf`) hat für reguläre Rechnungen zwingend der frisch aus `public.document_templates` geladene Datenbank-Vorlagentext Vorrang vor etwaigen clientseitigen `layout`-Payloads; überlange Dokumententitel (`finalTitle`) werden bei `13.5 pt` automatisch auf maximal `170 mm` Breite mehrzeilig umgebrochen.
+* Beim Einzelversand einer Rechnung per E-Mail (`rnOpenSendMailModal` / `rnExecuteSendMail`) können neben der automatisch angehängten QR-Rechnung beliebig viele zusätzliche Dokumente (z. B. Belege, Abrechnungen, PDFs bis 15 MB Gesamtgrösse) angehängt werden, die via `send-email` im selben MIME-Multipart-Versand ausgeliefert und in `public.mail_logs` protokolliert werden.
 * Da Browser und Proxies PDF-URLs aggressiv cachen, müssen alle Frontend-Aufrufe mit Zeitstempel aufgerufen werden (`?t=${Date.now()}`).
 
 ---

@@ -374,6 +374,7 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
   window._rnmCurrentRecipient = recipient;
   window._rnmBodyUserModified = false;
   window._rnmSubjectUserModified = false;
+  window._rnmExtraAttachments = [];
 
   let modalEl = document.getElementById('rnModalSendInvoiceMail');
   if (modalEl) modalEl.remove();
@@ -519,23 +520,33 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
 
               </div>
 
-              <!-- Anhang Badge -->
+              <!-- Anhang Badge & Zusatz-Anhänge -->
               <div class="col-12">
-                <div class="p-3 bg-light rounded-3 border d-flex align-items-center justify-content-between">
-                  <div class="d-flex align-items-center">
-                    <div class="me-3 p-2 bg-white rounded border text-danger">
-                      <i class="fas fa-file-pdf fa-2x"></i>
+                <div class="p-3 bg-light rounded-3 border">
+                  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                    <div class="d-flex align-items-center">
+                      <div class="me-3 p-2 bg-white rounded border text-danger">
+                        <i class="fas fa-file-pdf fa-2x"></i>
+                      </div>
+                      <div>
+                        <strong class="d-block text-dark small">${pdfFilename}</strong>
+                        <span class="text-muted" style="font-size: 11px;">
+                          <i class="fas fa-qrcode text-dark me-1"></i>Offizielle Schweizer QR-Rechnung mit QR-Zahlteil und Einzahlungsschein
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <strong class="d-block text-dark small">${pdfFilename}</strong>
-                      <span class="text-muted" style="font-size: 11px;">
-                        <i class="fas fa-qrcode text-dark me-1"></i>Offizielle Schweizer QR-Rechnung mit QR-Zahlteil und Einzahlungsschein
+                    <div class="d-flex align-items-center gap-2">
+                      <span class="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1.5 rounded-pill">
+                        <i class="fas fa-paperclip me-1"></i>Wird automatisch angehängt
                       </span>
+                      <button type="button" class="btn btn-xs btn-outline-primary fw-semibold px-2.5 py-1 rounded-pill" onclick="document.getElementById('rnm-extra-files-input')?.click()" title="Ein oder mehrere zusätzliche Dokumente (z.B. Belege, Abrechnungen, PDFs) anhängen">
+                        <i class="fas fa-plus me-1"></i>Weitere Datei(en) anhängen
+                      </button>
+                      <input type="file" id="rnm-extra-files-input" class="d-none" multiple accept=".pdf,.png,.jpg,.jpeg,.xlsx,.xls,.csv,.doc,.docx,.txt,.zip" onchange="rnmHandleExtraFilesSelected(this)">
                     </div>
                   </div>
-                  <span class="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1.5 rounded-pill">
-                    <i class="fas fa-paperclip me-1"></i>Wird automatisch angehängt
-                  </span>
+                  <!-- Liste zusätzlicher Anhänge -->
+                  <div id="rnm-extra-attachments-list" class="mt-2 d-none border-top pt-2"></div>
                 </div>
               </div>
 
@@ -676,6 +687,111 @@ window.rnmResetTemplate = async function() {
     }
   }
   window.rnmSwitchTab('edit');
+};
+
+// Zusatz-Anhänge für den Rechnungs-Mailversand verwalten
+window.rnmHandleExtraFilesSelected = async function(inputEl) {
+  if (!inputEl || !inputEl.files || inputEl.files.length === 0) return;
+  if (!Array.isArray(window._rnmExtraAttachments)) window._rnmExtraAttachments = [];
+
+  const MAX_TOTAL_BYTES = 15 * 1024 * 1024; // 15 MB Gesamtlimit für Zusatz-Anhänge
+  let currentTotal = window._rnmExtraAttachments.reduce((sum, a) => sum + (a.size || 0), 0);
+
+  const readFileAsBase64 = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const res = String(reader.result || '');
+      const base64 = res.includes(',') ? res.split(',')[1] : res;
+      resolve(base64);
+    };
+    reader.onerror = () => reject(new Error(`Datei '${file.name}' konnte nicht gelesen werden.`));
+    reader.readAsDataURL(file);
+  });
+
+  for (const file of Array.from(inputEl.files)) {
+    if (currentTotal + file.size > MAX_TOTAL_BYTES) {
+      if (window.UIConfirmKit) {
+        await UIConfirmKit.alert({
+          title: 'Maximale Anhanggrösse überschritten',
+          message: `Die Datei «${file.name}» überschreitet das Limit von 15 MB für zusätzliche E-Mail-Anhänge und wurde nicht hinzugefügt.`,
+          type: 'warning'
+        });
+      }
+      continue;
+    }
+
+    try {
+      const base64 = await readFileAsBase64(file);
+      // Falls gleicher Dateiname schon existiert, ersetzen
+      const existingIdx = window._rnmExtraAttachments.findIndex(x => x.filename === file.name);
+      const entry = {
+        filename: file.name,
+        contentType: file.type || 'application/octet-stream',
+        contentBase64: base64,
+        size: file.size
+      };
+      if (existingIdx >= 0) {
+        currentTotal -= (window._rnmExtraAttachments[existingIdx].size || 0);
+        window._rnmExtraAttachments[existingIdx] = entry;
+      } else {
+        window._rnmExtraAttachments.push(entry);
+      }
+      currentTotal += file.size;
+    } catch (err) {
+      console.warn('[Mail-Anhang] Fehler beim Einlesen:', err);
+    }
+  }
+
+  inputEl.value = '';
+  window.rnmRenderExtraAttachmentsList();
+};
+
+window.rnmRemoveExtraAttachment = function(index) {
+  if (!Array.isArray(window._rnmExtraAttachments)) return;
+  window._rnmExtraAttachments.splice(index, 1);
+  window.rnmRenderExtraAttachmentsList();
+};
+
+window.rnmRenderExtraAttachmentsList = function() {
+  const listEl = document.getElementById('rnm-extra-attachments-list');
+  if (!listEl) return;
+  const items = window._rnmExtraAttachments || [];
+  if (items.length === 0) {
+    listEl.classList.add('d-none');
+    listEl.innerHTML = '';
+    return;
+  }
+
+  const formatBytes = (bytes) => {
+    if (!bytes || bytes < 1024) return `${bytes || 0} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  };
+
+  listEl.classList.remove('d-none');
+  listEl.innerHTML = `
+    <div class="small fw-semibold text-muted mb-1" style="font-size: 11px;">
+      <i class="fas fa-paperclip me-1 text-primary"></i>Zusätzliche Anhänge (${items.length}):
+    </div>
+    <div class="d-flex flex-column gap-1">
+      ${items.map((att, idx) => {
+        const isPdf = (att.contentType || '').includes('pdf') || (att.filename || '').toLowerCase().endsWith('.pdf');
+        const iconClass = isPdf ? 'fa-file-pdf text-danger' : 'fa-file-alt text-primary';
+        return `
+          <div class="d-flex align-items-center justify-content-between bg-white px-2.5 py-1.5 rounded border">
+            <div class="d-flex align-items-center text-truncate pe-2">
+              <i class="fas ${iconClass} me-2"></i>
+              <span class="small fw-semibold text-dark text-truncate" title="${escapeHtml(att.filename)}">${escapeHtml(att.filename)}</span>
+              <span class="text-muted ms-2" style="font-size: 11px;">(${formatBytes(att.size)})</span>
+            </div>
+            <button type="button" class="btn btn-xs btn-outline-danger border-0 py-0 px-1.5" onclick="rnmRemoveExtraAttachment(${idx})" title="Anhang entfernen">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
 };
 
 window.rnExecuteSendMail = async function(invoiceId) {
@@ -826,6 +942,19 @@ window.rnExecuteSendMail = async function(invoiceId) {
           storagePath: decodeURIComponent(parts[1].split('?')[0]),
           contentType: 'application/pdf'
         });
+      }
+    }
+
+    // 2b. Zusätzliche vom Benutzer ausgewählte Dokumente anhängen
+    if (Array.isArray(window._rnmExtraAttachments) && window._rnmExtraAttachments.length > 0) {
+      for (const extra of window._rnmExtraAttachments) {
+        if (extra && extra.contentBase64 && extra.filename) {
+          attachments.push({
+            filename: extra.filename,
+            contentBase64: extra.contentBase64,
+            contentType: extra.contentType || 'application/octet-stream'
+          });
+        }
       }
     }
 

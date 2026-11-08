@@ -234,10 +234,11 @@ Deno.serve(async (req) => {
   if (payload.attachments && payload.attachments.length > 0) {
     for (const att of payload.attachments) {
       if (att.contentBase64) {
+        const cleanBase64 = att.contentBase64.replace(/^data:[^;]+;base64,/i, "").trim();
         preparedAttachments.push({
           filename: att.filename,
           contentType: att.contentType || "application/octet-stream",
-          base64: att.contentBase64,
+          base64: cleanBase64,
         });
       } else {
         // storagePath oder path ermitteln
