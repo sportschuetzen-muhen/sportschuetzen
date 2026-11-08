@@ -183,6 +183,13 @@ function jbCalculateLiveTotal(m, settings) {
     if (keyClean === 'RA001' || keyClean === 'RA002' || keyClean === 'RA003') return;
 
     const feeObj = (window._jbGebuehren || []).find(f => String(f.key || '').trim().toUpperCase() === keyClean);
+    // Variable Zusatzpositionen (Z001, Z002, Z003 / ui_typ='amount' / kategorie='variabel')
+    // dürfen hier NICHT mit dem Standardbetrag aus gebuehren_config eingerechnet werden,
+    // sondern werden ausschliesslich in Schritt 4 mit dem individuellen Betrag verarbeitet.
+    const feeUiTyp = feeObj ? String(feeObj.ui_typ || '').trim().toLowerCase() : '';
+    const feeKatCheck = feeObj ? String(feeObj.kategorie || '').trim().toLowerCase() : '';
+    if (keyClean.startsWith('Z') || feeUiTyp === 'amount' || feeKatCheck === 'variabel') return;
+
     const rawUnitPrice = feeObj ? Number(feeObj.betrag || 0) : getFee(keyClean);
     const unitPrice = rawUnitPrice !== null ? rawUnitPrice : 0;
     
@@ -307,6 +314,25 @@ function jbCalculateLiveTotal(m, settings) {
       customBetrag = settings.z2_betrag;
       customKonto = settings.z2_konto;
       isLocked = settings.z2_unlocked === false;
+    } else if (typeof _jbPositionsCache !== 'undefined' && _jbPositionsCache && m && m.PersonNumber) {
+      // Fallback auf bereits gespeicherte Position im Cache (z.B. bei partiellem Bulk-Update)
+      const pnCleanVar = String(m.PersonNumber || '').trim();
+      const yrVar = typeof _jbYear !== 'undefined' ? _jbYear : new Date().getFullYear();
+      const candidateKeysVar = [`CH-${yrVar}-${pnCleanVar}`, `${yrVar}-${pnCleanVar}`, pnCleanVar];
+      for (const ck of candidateKeysVar) {
+        const list = _jbPositionsCache[ck];
+        if (Array.isArray(list) && list.length > 0) {
+          const matches = list.filter(ep => String(ep.source_field || ep.sourcefield || ep.key || '').trim().toUpperCase() === key);
+          const matchedPos = matches.find(ep => Number(ep.betrag || 0) !== Number(f.betrag || 0)) || matches[matches.length - 1];
+          if (matchedPos) {
+            isActive = true;
+            customText = matchedPos.beschreibung || matchedPos.name;
+            customBetrag = Number(matchedPos.betrag || 0);
+            customKonto = matchedPos.konto;
+          }
+          break;
+        }
+      }
     }
 
     if (isActive) {

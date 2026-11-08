@@ -150,14 +150,6 @@ async function jbEntrySelectMember(pn) {
     const m = _jbMembers.find(x => String(x.PersonNumber || '').trim() === pnClean);
     if (!m) throw new Error("Schütze nicht gefunden");
 
-    // Falls ungespeicherte Bulk-Änderungen vorhanden sind, diese direkt laden!
-    if (_jbLocalBulkChanges[pnClean]) {
-      _jbParticipationsState = { ..._jbLocalBulkChanges[pnClean] };
-      if (!_jbParticipationsState.events) _jbParticipationsState.events = {};
-      jbRenderEntryForm(m);
-      return;
-    }
-
     // Initialisiere lokalen State für Radio-Buttons / Checkboxen
     const age = m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
     const isJunior = age > 0 && age <= 20;
@@ -202,6 +194,15 @@ async function jbEntrySelectMember(pn) {
       _jbParticipationsState.lizenz = 'keine';
     }
 
+    const varFees = (window._jbGebuehren || []).filter(f => {
+      if (f.aktiv === false || f.aktiv === 'false' || f.aktiv === 0 || f.aktiv === '0') return false;
+      const kat = String(f.kategorie || '').toLowerCase();
+      const uiTyp = String(f.ui_typ || '').toLowerCase();
+      const key = String(f.key || '').toUpperCase();
+      return uiTyp === 'amount' || kat === 'variabel' || key.startsWith('Z');
+    });
+    const varFeeKeys = new Set(varFees.map(f => String(f.key || '').trim().toUpperCase()));
+
     // Teilnahmen in den State einpflegen
     const memberParts = _jbParticipationsCache[pnClean] || [];
     let hasKK002 = false;
@@ -212,7 +213,8 @@ async function jbEntrySelectMember(pn) {
     memberParts.forEach(p => {
       const val = Number(p.teilgenommen || 0);
       const k = String(p.eventkey || '').trim().toUpperCase();
-      if (k) {
+      // Variable Zusatzpositionen (Z001, Z002, Z003 etc.) gehören ausschliesslich in extras, nicht in events
+      if (k && !varFeeKeys.has(k) && !k.startsWith('Z')) {
         _jbParticipationsState.events[k] = val;
       }
       if (k === 'GE001') {
@@ -263,23 +265,31 @@ async function jbEntrySelectMember(pn) {
 
     // 4. Variable Zusatzpositionen dynamisch aus gebuehren_config & _jbPositionsCache initialisieren
     _jbParticipationsState.extras = {};
-    const headId = `${_jbYear}-${pnClean}`;
-    const existingPositions = (_jbPositionsCache && _jbPositionsCache[headId]) ? _jbPositionsCache[headId] : [];
-
-    const varFees = (window._jbGebuehren || []).filter(f => {
-      if (f.aktiv === false || f.aktiv === 'false' || f.aktiv === 0 || f.aktiv === '0') return false;
-      const kat = String(f.kategorie || '').toLowerCase();
-      const uiTyp = String(f.ui_typ || '').toLowerCase();
-      const key = String(f.key || '').toUpperCase();
-      return uiTyp === 'amount' || kat === 'variabel' || key.startsWith('Z');
-    });
+    let existingPositions = [];
+    if (_jbPositionsCache) {
+      const candidateKeys = [`CH-${_jbYear}-${pnClean}`, `${_jbYear}-${pnClean}`, pnClean];
+      for (const ck of candidateKeys) {
+        if (Array.isArray(_jbPositionsCache[ck]) && _jbPositionsCache[ck].length > 0) {
+          existingPositions = _jbPositionsCache[ck];
+          break;
+        }
+      }
+    }
+    if (existingPositions.length === 0 && Array.isArray(window._jbAllPositions)) {
+      existingPositions = window._jbAllPositions.filter(p =>
+        String(p.PersonNumber || p.person_number || '').trim() === pnClean &&
+        Number(p.year) === Number(_jbYear)
+      );
+    }
 
     varFees.forEach(f => {
       const key = String(f.key).toUpperCase();
-      const matchedPos = existingPositions.find(p => {
-        const sf = String(p.source_field || p.sourcefield || p.key || '').toUpperCase();
+      const matchingPosList = existingPositions.filter(p => {
+        const sf = String(p.source_field || p.sourcefield || p.key || '').trim().toUpperCase();
         return sf === key;
       });
+      // Bevorzuge den vom Standardbetrag abweichenden oder letzten gespeicherten Positionseintrag
+      const matchedPos = matchingPosList.find(p => Number(p.betrag || 0) !== Number(f.betrag || 0)) || matchingPosList[matchingPosList.length - 1] || null;
       const matchedPart = memberParts.find(p => String(p.eventkey || '').toUpperCase() === key);
 
       const isActive = Boolean(matchedPos || (matchedPart && Number(matchedPart.teilgenommen || 0) > 0));
@@ -304,6 +314,36 @@ async function jbEntrySelectMember(pn) {
         _jbParticipationsState.z2_konto = _jbParticipationsState.extras[key].konto;
       }
     });
+
+    // Falls lokale Änderungen in dieser Session vorhanden sind, sauber über den initialisierten State mergen
+    if (_jbLocalBulkChanges[pnClean]) {
+      const local = _jbLocalBulkChanges[pnClean];
+      ['lizenz', 'kk_volksschiessen', 'ssv_dez', 'kk_grenzland', 'kk_verband', 'kk_verein',
+       'lg_ag_dez', 'lg_ag_dez_auflage', 'lg_ch_dez', 'lg_ch_dez_auflage', 'lg_verband', 'lg_verein', 'lg_ch_kniend',
+       'schuetzenhaus', 'hausmeister', 'z1_active', 'z1_text', 'z1_betrag', 'z1_konto', 'z2_active', 'z2_text', 'z2_betrag', 'z2_konto'
+      ].forEach(fld => {
+        if (local[fld] !== undefined) _jbParticipationsState[fld] = local[fld];
+      });
+      if (local.events && typeof local.events === 'object') {
+        Object.entries(local.events).forEach(([ek, ev]) => {
+          const ekUp = String(ek).trim().toUpperCase();
+          if (!varFeeKeys.has(ekUp) && !ekUp.startsWith('Z')) {
+            _jbParticipationsState.events[ekUp] = ev;
+          }
+        });
+      }
+      if (local.extras && typeof local.extras === 'object') {
+        Object.entries(local.extras).forEach(([ek, exObj]) => {
+          const ekUp = String(ek).trim().toUpperCase();
+          if (exObj && typeof exObj === 'object') {
+            _jbParticipationsState.extras[ekUp] = {
+              ...(_jbParticipationsState.extras[ekUp] || {}),
+              ...exObj
+            };
+          }
+        });
+      }
+    }
 
     jbRenderEntryForm(m);
   } catch(e) {
@@ -619,6 +659,7 @@ window.jbUpdateEventState = function(key, val, pn) {
     _jbLocalBulkChanges[pnClean] = { ..._jbParticipationsState };
   }
   _jbLocalBulkChanges[pnClean].events = { ..._jbParticipationsState.events };
+  _jbLocalBulkChanges[pnClean].extras = JSON.parse(JSON.stringify(_jbParticipationsState.extras || {}));
   _jbLocalBulkChanges[pnClean][key] = val;
 
   if (typeof jbSyncMemberToCache === 'function') {
@@ -668,6 +709,7 @@ window.jbSelectSingleSelectOption = function(activeKey, allKeysStr, pn) {
     _jbLocalBulkChanges[pnClean] = { ..._jbParticipationsState };
   }
   _jbLocalBulkChanges[pnClean].events = { ..._jbParticipationsState.events };
+  _jbLocalBulkChanges[pnClean].extras = JSON.parse(JSON.stringify(_jbParticipationsState.extras || {}));
   if (_jbParticipationsState.ssv_dez) _jbLocalBulkChanges[pnClean].ssv_dez = _jbParticipationsState.ssv_dez;
 
   if (typeof jbSyncMemberToCache === 'function') {
@@ -1081,11 +1123,28 @@ async function jbSaveSingleMemberDirect(pnClean) {
     }
   }
 
-  // Lokale Caches updaten
-  _jbPositionsCache[headId] = newPos;
-  _jbPositionsCache[String(pn)] = newPos;
+  // Lokale Caches updaten (inkl. kompatibler Felder für alle Reader & _jbAllPositions)
+  const cachedNewPos = newPos.map(np => ({
+    ...np,
+    headerid: np.header_id,
+    PersonNumber: np.person_number,
+    name: np.beschreibung,
+    sourcefield: np.source_field,
+    key: np.source_field
+  }));
+  _jbPositionsCache[headId] = cachedNewPos;
+  _jbPositionsCache[`${_jbYear}-${pn}`] = cachedNewPos;
+  _jbPositionsCache[String(pn)] = cachedNewPos;
   if (existingHeader?.id) {
-    _jbPositionsCache[existingHeader.id] = newPos;
+    _jbPositionsCache[existingHeader.id] = cachedNewPos;
+  }
+  if (Array.isArray(window._jbAllPositions)) {
+    window._jbAllPositions = window._jbAllPositions.filter(p =>
+      !(String(p.headerid || p.header_id || '').trim() === headId ||
+        (String(p.PersonNumber || p.person_number || '').trim() === pn && Number(p.year) === Number(_jbYear)))
+    );
+    window._jbAllPositions.push(...cachedNewPos);
+    _jbAllPositions = window._jbAllPositions;
   }
   if (existingHeader) {
     existingHeader.Gesamt = calc.total;
@@ -1216,6 +1275,7 @@ function jbApplyPreset(presetType, pn) {
 
   _jbLocalBulkChanges[pnClean] = { ..._jbParticipationsState };
   _jbLocalBulkChanges[pnClean].events = { ..._jbParticipationsState.events };
+  _jbLocalBulkChanges[pnClean].extras = JSON.parse(JSON.stringify(_jbParticipationsState.extras || {}));
 
   if (typeof jbSyncMemberToCache === 'function') {
     jbSyncMemberToCache(pnClean, _jbParticipationsState);
@@ -1282,6 +1342,7 @@ function jbUpdateState(key, val, pn) {
   }
   _jbLocalBulkChanges[pnClean][key] = val;
   _jbLocalBulkChanges[pnClean].events = { ..._jbParticipationsState.events };
+  _jbLocalBulkChanges[pnClean].extras = JSON.parse(JSON.stringify(_jbParticipationsState.extras || {}));
 
   if (typeof jbSyncMemberToCache === 'function') {
     jbSyncMemberToCache(pnClean, _jbParticipationsState);
@@ -1820,15 +1881,23 @@ window.jbUpdateExtraState = function(key, field, val, pn) {
 
   _jbParticipationsState.extras[key][field] = val;
 
+  // Wenn ein individueller Betrag (!== 0) eingetippt wird, die Position automatisch aktivieren,
+  // damit der erfasste Betrag garantiert gespeichert wird und nicht verloren geht.
+  if (field === 'betrag' && Number(val) !== 0 && !_jbParticipationsState.extras[key].active) {
+    _jbParticipationsState.extras[key].active = true;
+    const chkEl = document.getElementById(`extra_active_${key}_${pnClean}`);
+    if (chkEl) chkEl.checked = true;
+  }
+
   // Abwärtskompatible Brücke für historische z1 und z2
   if (key === 'Z001') {
-    if (field === 'active') _jbParticipationsState.z1_active = val;
+    _jbParticipationsState.z1_active = _jbParticipationsState.extras[key].active;
     if (field === 'text') _jbParticipationsState.z1_text = val;
     if (field === 'betrag') _jbParticipationsState.z1_betrag = val;
     if (field === 'konto') _jbParticipationsState.z1_konto = val;
     if (field === 'unlocked') _jbParticipationsState.z1_unlocked = val;
   } else if (key === 'Z002') {
-    if (field === 'active') _jbParticipationsState.z2_active = val;
+    _jbParticipationsState.z2_active = _jbParticipationsState.extras[key].active;
     if (field === 'text') _jbParticipationsState.z2_text = val;
     if (field === 'betrag') _jbParticipationsState.z2_betrag = val;
     if (field === 'konto') _jbParticipationsState.z2_konto = val;
@@ -1836,7 +1905,11 @@ window.jbUpdateExtraState = function(key, field, val, pn) {
   }
 
   if (!_jbLocalBulkChanges[pnClean]) {
-    _jbLocalBulkChanges[pnClean] = { ..._jbParticipationsState };
+    _jbLocalBulkChanges[pnClean] = {
+      ..._jbParticipationsState,
+      events: { ...(_jbParticipationsState.events || {}) },
+      extras: JSON.parse(JSON.stringify(_jbParticipationsState.extras || {}))
+    };
   }
   if (!_jbLocalBulkChanges[pnClean].extras) {
     _jbLocalBulkChanges[pnClean].extras = {};

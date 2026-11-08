@@ -371,6 +371,12 @@ Wird eine Jahresbeitrags-Rechnung (`JB-26-XXXX`) im Rechnungsmodul gelöscht –
 * **Verhinderung falscher Fallbacks:** Durch Migration 117 und die Härtung der Import-Engine (`extractAllLicenses`) werden aktive Muhen-Lizenzen bei Mitgliedern mit Mehrfachmitgliedschaften (z. B. Rolf Denzler mit beendeter Lizenz in Balsthal-Klus und aktiver Lizenz in Muhen) nicht mehr durch inaktive Fremdvereinszeilen überschrieben.
 * **Ergebnis:** Das System weist Mitgliedern mit Aktiv-B-Lizenzen verlässlich `JB002 Aktiv-B G50m` (CHF 70.00) plus Verbandskosten `LI001` (CHF 18.00) zu, anstatt auf die Standard-A-Fallback-Gebühr `JB001` (CHF 100.00) zurückzufallen.
 
+### 8.11 Variable Zusatzpositionen (`Z001`–`Z003`) & Bewahrung individueller Beträge (Migration 122)
+* **Vorschlagswert vs. individueller Betrag:** Für variable Zusatzpositionen (`kategorie = 'variabel'` / `ui_typ = 'amount'` / Schlüssel `Z%`, z. B. `Z002` Beitrag Eidg. Schützenfest, `Z003` Übernachtung Eidgenössisches) dient `gebuehren_config.betrag` ausschliesslich als initialer Vorschlagswert. Sobald ein individueller Betrag, Text oder ein Haben-Konto für ein Mitglied erfasst wurde, ist `public.contributions_positions` die führende Quelle.
+* **Saubere Trennung in Schnellerfassung & Live-Kalkulation:** `jbEntrySelectMember` löst bestehende Positionen über den kanonischen Schlüssel `CH-${_jbYear}-${pn}` (sowie Fallbacks) auf und schliesst `Z%`-Einträge aus `_jbParticipationsState.events` aus; `jbCalculateLiveTotal` verarbeitet variable Positionen ausschliesslich in Schritt 4 (`varFees`), sodass keine Doppelerfassung mit dem Standardtarif aus Schritt 3 entstehen kann.
+* **Backend-Persistenz (`calculate_member_contributions`):** Bei einer Neuberechnung über die PostgreSQL-RPC bewahrt Schritt 4 für aktive `Z%`-Teilnahmen den bereits in `public.contributions_positions` gespeicherten individuellen `betrag`, `beschreibung` und `konto`, bevor die Positionen in Schritt 6 atomar neu geschrieben werden.
+
+
 
 
 

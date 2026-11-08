@@ -770,16 +770,36 @@ window.jbSyncMemberToCache = function(pn, settings) {
     if (allHeader) allHeader.Gesamt = calc.total;
   }
 
-  // 2. Positions-Cache updaten
-  if (header && header.id && _jbPositionsCache) {
-    _jbPositionsCache[header.id] = calc.positions.map((p, idx) => ({
-      headerid: header.id,
-      position_nr: idx + 1,
-      name: p.name,
-      betrag: p.betrag,
-      typ: p.typ,
-      sourcefield: p.key || '',
-      konto: p.konto || (typeof window.jbResolveAccountForPosition === 'function' ? window.jbResolveAccountForPosition(p.key, p.name) : '')
-    }));
+  // 2. Positions-Cache & _jbAllPositions updaten
+  const hid = (header && header.id) ? String(header.id).trim() : `CH-${_jbYear}-${pn}`;
+  const mappedPos = calc.positions.map((p, idx) => ({
+    id: `${hid}-${idx + 1}`,
+    headerid: hid,
+    header_id: hid,
+    PersonNumber: pn,
+    person_number: pn,
+    year: Number(_jbYear),
+    position_nr: idx + 1,
+    beschreibung: p.name,
+    name: p.name,
+    betrag: p.betrag,
+    typ: p.typ,
+    source_field: p.key || '',
+    sourcefield: p.key || '',
+    key: p.key || '',
+    konto: p.konto || (typeof window.jbResolveAccountForPosition === 'function' ? window.jbResolveAccountForPosition(p.key, p.name) : '')
+  }));
+  if (_jbPositionsCache) {
+    _jbPositionsCache[hid] = mappedPos;
+    _jbPositionsCache[`${_jbYear}-${pn}`] = mappedPos;
+    _jbPositionsCache[pn] = mappedPos;
+  }
+  if (Array.isArray(window._jbAllPositions)) {
+    window._jbAllPositions = window._jbAllPositions.filter(p =>
+      !(String(p.headerid || p.header_id || '').trim() === hid ||
+        (String(p.PersonNumber || p.person_number || '').trim() === pn && Number(p.year) === Number(_jbYear)))
+    );
+    window._jbAllPositions.push(...mappedPos);
+    _jbAllPositions = window._jbAllPositions;
   }
 };
