@@ -211,6 +211,13 @@ Dies erleichtert dem Vorstand und den Schützenmeistern die sofortige Einordnung
 * **Historisches Vereinsarchiv & Verstorbene:** 130 historische Personen (105 reguläre Austritte mit Austrittsdaten, 25 Verstorbene inklusive Ehrenpräsidenten und Kurt Lüscher, Gerhard Künzli, Robert Künzli) wurden mit `is_active = false` im reservierten Nummernkreis `9000000 + Access_ID` in `public.members` eingepflegt. Sie belasten weder den SSV-Import (wird ignoriert, da inaktiv) noch den Jahresbeitrag (`calculate_member_contributions` schliesst Inaktive und Verstorbene aus).
 * **Snapshot & Rollback:** Vor der Einspielung wurde ein atomarer Snapshot `public.members_backup_pre_access_20261107` erstellt. Das Skript `supabase/migrations/rollback_access_import.sql` erlaubt jederzeit eine 1-Klick-Rückabwicklung auf den Ausgangszustand in < 100 ms.
 
+### 7.10 Historischer Abgleich aus 102 Generalversammlungs-Protokollen (1919–2024, Migration 119)
+* **Zweck & Workflow:** Vollständiger Abgleich aller digitalisierten GV-Protokolle des Vereinsarchivs gegen den PostgreSQL-Mitgliederstamm (`public.members`) zur lückenlosen Rekonstruktion historischer Ein-, Aus- und Wiedereintritte, Totenehrungen und Ehrenmitgliedschaften.
+* **Human-in-the-Loop & Datenbereinigung:** Durchführung via Round-Trip Excel-Arbeitsmappe (`GV_Protokoll_Abgleich_Sportschuetzen_Muhen.xlsx`). Manuelle Datumsangaben (exakt auf den Tag oder auf Jahresbasis `YYYY-12-31` bzw. `YYYY-01-01`) wurden geprüft und eingelesen. Fehlalarme aus vereinsinternen Jahresmeisterschafts-Auf-/Abstiegen (z. B. Daniel Berchtold, Olivia Rossi 2024) wurden identifiziert und geschützt, sodass amtierende Vorstandsmitglieder und aktive Schützen unberührt blieben.
+* **Revisionssichere Historie (`public.member_history`):** Alle verifizierten Mutationen wurden in `public.members` eingepflegt (`club_entry_date_source = 'GV-Protokoll'`, `honorary_member_since_source = 'GV-Protokoll'`, `deceased = true`, `death_date`) und mit 59 Ereignissen in `public.member_history` (`source = 'GV-Protokoll-Abgleich'`) archiviert.
+* **Mehrfach-Stationen & Aktiv-Schutz:** Bei Personen mit zeitweiligen Eintritten/Austritten (z. B. Thomas Hochuli: Eintritt 1989, Austritt 2003, Wiedereintritt) bleibt der aktuelle Status `is_active = true` mit Eintritt `1989` geschützt, während der historische Austritt von 2003 als Zwischenstation im Audit-Log archiviert ist.
+
+
 
 
 
