@@ -57,11 +57,12 @@ Die **Festkasse** ist eine eigenständige Progressive Web App (PWA) für das Sch
 
 ---
 
-## 5. Bondruck & 2-Bon-System für Festbetrieb (Epson LAN ePOS-Print)
+## 5. Bondruck & 2-Bon-System für Festbetrieb (ESC/POS LAN Port 9100)
 
-### 5.1 Autarke Festzelt-Architektur (iPad & Epson am Router)
-* **Kein Druckermenü mehr:** Standardmässig erzeugt `window.print()` auf iPads ein blockierendes AirPrint-Dialogfenster. Die Direktansteuerung über das Modul `kasse/epos-print.js` sendet Belege als standardisiertes **ePOS-Print XML** direkt via HTTP-POST an den Epson LAN-Drucker (z.B. TM-T20, TM-T88, TM-m30) am selben Zelt-Router.
-* **100% Offline im Festzelt:** Das iPad und der Drucker kommunizieren rein über das lokale Netzwerk (WLAN / LAN des Routers). Weder Cloud noch Internetverbindung sind erforderlich.
+### 5.1 Druck-Architektur & Epson TM-T20II Integration
+* **ESC/POS Port 9100 statt HTTP-XML:** Standard-POS-Thermodrucker wie der im Vereinsheim eingesetzte **Epson TM-T20II** (UB-E03/UB-E04 Interface) besitzen keine ePOS-Print-XML-Engine (Port 80 liefert 404), sondern erwarten rohe ESC/POS-Binärbefehle auf **TCP-Port 9100 (Raw JetDirect)**.
+* **Mixed-Content-Entkopplung via Gateway:** Da moderne Browser (Safari auf iPadOS, Chrome) aus HTTPS heraus weder unsicheres HTTP ins lokale Netz noch rohe TCP-Sockets öffnen dürfen, leitet die Kasse Druckaufträge über die Supabase Edge Function `pos-print` an CT 117 (`192.168.68.117`) weiter. Diese verbindet sich per TCP direkt mit dem Drucker (z.B. `192.168.68.200:9100`) und sendet den binären ESC/POS-Stream mit CP437-Umlautkodierung, Papierschnitt und Kassenladen-Impuls.
+* **100% Offline-Analyse:** Für den autarken Zeltbetrieb ohne CT 117/Supabase kann die Kasse entweder über einen Mini-Print-Proxy (z.B. auf einem Router/Raspberry Pi) oder via iOS-AirPrint angesteuert werden.
 
 ### 5.2 2-Bon-Splittung (Kunde & Küche/Grill)
 * **Fortlaufende Bestellnummer:** Vergabe einer grossen, gut lesbaren Abhol-Nummer (`#01` bis `#999`), die bei Schichtbeginn im Einstellungsmenü jederzeit auf `#01` zurückgesetzt werden kann.

@@ -278,67 +278,54 @@ ${bodyXml}
     return buildGuestReceiptXml(mockOrder, { openDrawer: false });
   }
 
-  // HTTP-POST AN EPSON LAN-DRUCKER SENDEN
-  async function sendToEpson(printerIp, xmlPayload, timeoutMs = 6000) {
-    if (!printerIp || !printerIp.trim()) {
-      throw new Error('Keine Drucker-IP angegeben. Bitte im Menü eintragen.');
-    }
+  const SUPABASE_PRINT_URL = 'https://supabase-muhen.danfamily.uk/functions/v1/pos-print';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
 
-    const cleanIp = printerIp.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-    const url = `http://${cleanIp}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`;
-
+  // HTTP-POST AN DAS LAN-PRINT-GATEWAY (Supabase Edge Function / Port 9100 ESC/POS)
+  async function sendPrintRequest(payload, timeoutMs = 6000) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      // 1. Primärer Versuch: Direct Fetch
-      const response = await fetch(url, {
+      const response = await fetch(SUPABASE_PRINT_URL, {
         method: 'POST',
         headers: {
-          'Content-Type': 'text/xml; charset=utf-8',
-          'SOAPAction': '""'
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
         },
-        body: xmlPayload,
-        signal: controller.signal,
-        mode: 'no-cors' // Erlaubt das Absenden im lokalen Subnetz auch ohne CORS-Header des Druckers
+        body: JSON.stringify(payload),
+        signal: controller.signal
       });
-
       clearTimeout(timer);
-      return { success: true, message: 'Druckauftrag an Drucker übermittelt' };
+
+      const result = await response.json();
+      if (!response.ok || result.success === false) {
+        throw new Error(result.error || `HTTP ${response.status}`);
+      }
+      return result;
     } catch (err) {
       clearTimeout(timer);
-      console.warn('[EposPrint] Fehler bei fetch (no-cors), versuche Fallback:', err);
-
-      // 2. Fallback via XMLHttpRequest
-      return new Promise((resolve, reject) => {
-        try {
-          const xhr = new XMLHttpRequest();
-          xhr.open('POST', url, true);
-          xhr.timeout = timeoutMs;
-          xhr.setRequestHeader('Content-Type', 'text/xml; charset=utf-8');
-          xhr.setRequestHeader('SOAPAction', '""');
-
-          xhr.onload = function () {
-            resolve({ success: true, message: 'Druckauftrag via XHR erfolgreich übermittelt' });
-          };
-          xhr.onerror = function () {
-            // Hinweis: Im lokalen Netz feuert XHR bei no-cors manchmal onerror, obwohl der Drucker druckt.
-            resolve({ success: true, message: 'Druckauftrag gesendet (Netzwerk-Bestätigung erhalten)' });
-          };
-          xhr.ontimeout = function () {
-            reject(new Error(`Timeout (${timeoutMs / 1000}s) beim Verbinden mit Drucker ${cleanIp}`));
-          };
-          xhr.send(xmlPayload);
-        } catch (xhrErr) {
-          reject(new Error(`Drucker ${cleanIp} nicht erreichbar: ${xhrErr.message || xhrErr}`));
-        }
-      });
+      console.warn('[EposPrint] Fehler beim Senden an Print-Gateway:', err);
+      throw err;
     }
+  }
+
+  // Abwärtskompatible sendToEpson-Funktion
+  async function sendToEpson(printerIp, payload, timeoutMs = 6000) {
+    if (!printerIp || !printerIp.trim()) {
+      throw new Error('Keine Drucker-IP angegeben. Bitte im Menü eintragen.');
+    }
+    const cleanIp = printerIp.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    return await sendPrintRequest({
+      type: 'test_guest',
+      printerIp: cleanIp
+    }, timeoutMs);
   }
 
   // HAUPTFUNKTION: BESTELLUNG DRUCKEN (MULTI-BON)
   async function printOrder(order, settings = {}) {
-    const printerIp = settings.printerIp;
+    const printerIp = settings.printerIp || '192.168.68.200';
     if (!printerIp) {
       console.warn('[EposPrint] Keine Drucker-IP konfiguriert.');
       return { success: false, reason: 'NO_IP' };
@@ -353,43 +340,44 @@ ${bodyXml}
 
     // 1. Gastquittung drucken
     if (printGuest) {
-      const guestXml = buildGuestReceiptXml(order, settings);
-      if (guestXml) {
-        try {
-          await sendToEpson(printerIp, guestXml);
-          printedCount++;
-        } catch (e) {
-          errors.push('Gastbeleg: ' + e.message);
-        }
+      try {
+        await sendPrintRequest({
+          type: 'guest_order',
+          printerIp,
+          order,
+          options: { openDrawer: settings.openDrawer }
+        });
+        printedCount++;
+      } catch (e) {
+        errors.push('Gastbeleg: ' + e.message);
       }
     }
 
     // 2. Küchen-/Grillbon drucken
     if (printKitchen) {
-      const kitchenXml = buildKitchenReceiptXml(order, settings);
-      if (kitchenXml) {
-        // Kurze Pause (250ms), damit der Drucker den zweiten Schnitt sauber verarbeitet
-        await new Promise(r => setTimeout(r, 250));
-        try {
-          await sendToEpson(printerIp, kitchenXml);
-          printedCount++;
-        } catch (e) {
-          errors.push('Küchenbon: ' + e.message);
-        }
+      try {
+        const res = await sendPrintRequest({
+          type: 'kitchen_order',
+          printerIp,
+          order
+        });
+        if (!res.skipped) printedCount++;
+      } catch (e) {
+        errors.push('Küchenbon: ' + e.message);
       }
     }
 
     // 3. Getränkebon drucken (falls separat gewünscht)
     if (printDrinks) {
-      const drinksXml = buildDrinksReceiptXml(order, settings);
-      if (drinksXml) {
-        await new Promise(r => setTimeout(r, 250));
-        try {
-          await sendToEpson(printerIp, drinksXml);
-          printedCount++;
-        } catch (e) {
-          errors.push('Getränkebon: ' + e.message);
-        }
+      try {
+        const res = await sendPrintRequest({
+          type: 'drinks_order',
+          printerIp,
+          order
+        });
+        if (!res.skipped) printedCount++;
+      } catch (e) {
+        errors.push('Getränkebon: ' + e.message);
       }
     }
 
@@ -400,10 +388,21 @@ ${bodyXml}
     };
   }
 
+  // Z-BERICHT DRUCKEN
+  async function printZReport(report, printerIp) {
+    return await sendPrintRequest({
+      type: 'z_report',
+      printerIp: printerIp || '192.168.68.200',
+      report
+    }, 6000);
+  }
+
   // TESTDRUCK
   async function testPrint(printerIp, type = 'guest') {
-    const xml = buildTestReceiptXml(type);
-    return await sendToEpson(printerIp, xml, 5000);
+    return await sendPrintRequest({
+      type: type === 'kitchen' ? 'test_kitchen' : 'test_guest',
+      printerIp: printerIp || '192.168.68.200'
+    }, 5000);
   }
 
   return {
@@ -412,8 +411,10 @@ ${bodyXml}
     buildDrinksReceiptXml,
     buildZReportXml,
     buildTestReceiptXml,
+    sendPrintRequest,
     sendToEpson,
     printOrder,
+    printZReport,
     testPrint
   };
 })();

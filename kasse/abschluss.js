@@ -507,9 +507,14 @@ const KassenAbschluss = (function () {
     }
 
     try {
-      const xml = EposPrint.buildZReportXml(activeZReport);
-      const res = await EposPrint.sendToEpson(printerIp, xml, 6000);
-      if (res.success) {
+      let res;
+      if (typeof EposPrint.printZReport === 'function') {
+        res = await EposPrint.printZReport(activeZReport, printerIp);
+      } else {
+        const xml = EposPrint.buildZReportXml(activeZReport);
+        res = await EposPrint.sendToEpson(printerIp, xml, 6000);
+      }
+      if (res && res.success) {
         if (typeof KasseModule !== 'undefined' && KasseModule.showToast) {
           KasseModule.showToast('✓ Z-Bericht erfolgreich auf Epson-Drucker ausgegeben');
         }

@@ -19,7 +19,7 @@ const KasseModule = (function () {
 
   // Drucker & Festbetrieb-Einstellungen
   let printerSettings = {
-    printerIp: '192.168.1.200',
+    printerIp: '192.168.68.200',
     printMode: 'manual', // 'manual' | 'auto' | 'browser'
     printGuestReceipt: true,
     printKitchenReceipt: true,
