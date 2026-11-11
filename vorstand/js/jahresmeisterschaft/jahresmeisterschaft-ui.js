@@ -320,8 +320,8 @@ function renderJahresmeisterschaft(grid) {
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
-                    <button class="nav-link ${isGruppengewinneActive ? 'active' : ''} fw-bold text-dark px-4 py-2 border-0 position-relative" id="gruppengewinne-tab" data-bs-toggle="tab" data-bs-target="#gruppengewinne-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: rgba(255,193,7,0.12);" title="Auswärtige Gruppengewinne (Konto 1301), Schützen-Zuweisung, Übertrag in Jahresbeitrag & Jahresbericht-Export" onclick="jmSetActiveTab('gruppengewinne')">
-                        <i class="fas fa-trophy me-2 text-warning"></i>Gruppengewinne (1301)
+                    <button class="nav-link ${isGruppengewinneActive ? 'active' : ''} fw-bold text-dark px-4 py-2 border-0 position-relative" id="gruppengewinne-tab" data-bs-toggle="tab" data-bs-target="#gruppengewinne-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: rgba(255,193,7,0.12);" title="Auswärtige Schützengewinne Gruppen &amp; Einzel (Konto 1301), Schützen-Zuweisung, Übertrag in Jahresbeitrag &amp; Jahresbericht-Export" onclick="jmSetActiveTab('gruppengewinne')">
+                        <i class="fas fa-trophy me-2 text-warning"></i>Schützengewinne (1301)
                         <span id="jm-gg-tab-badge" class="badge rounded-pill bg-warning text-dark ms-1 d-none" style="font-size: 0.7rem;"></span>
                     </button>
                 </li>

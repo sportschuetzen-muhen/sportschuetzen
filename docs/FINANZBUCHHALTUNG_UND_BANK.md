@@ -91,12 +91,16 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
 ### 2.9 Strukturierte 20er-Block Transitkonten für Stiche & Weiterverrechnungen (13xx)
 * **Problemstellung:** Laufen sämtliche Meisterschaftsstiche, Verbandsschiessen und Sonderbeiträge über ein einziges Sammelkonto `1300`, ist die rechnerische Detailkontrolle bei Jahresend-Differenzen extrem zeitaufwendig.
 * **Architektur & Block-Standard:** Der 13xx-Bereich ist in feste 20er-Nummernblöcke gegliedert, deren Endziffern exakt mit den Gebühren-Codes korrespondieren:
-  - `1300–1309`: Meisterschafts-Sammel- & Klärungskonto (`1300`), Gruppengewinne (`1301`).
+  - `1300–1309`: Meisterschafts-Sammel- & Klärungskonto (`1300`), Transit Schützengewinne Gruppen & Einzel (`1301`).
   - `1310–1329`: 50m Kleinkaliber (`1310` Sammel; `1311` Grenzland KK001 bis `1318` Volksschiessen KK008; `1319–1329` Reserve).
   - `1330–1349`: 10m Luftgewehr (`1330` Sammel; `1331` AG DEZ LG001 bis `1337` Kniend LG007; `1338–1349` Reserve/Nachwuchs).
   - `1350–1369`: Zusatzpositionen & Feste (`1350` Sammel; `1351` Bekleidung Z001; `1352` Schützenfest Stiche Z002; `1353` Fest-Logis Z003; `1354–1369` Reserve).
 * **Vorteil:** Die Bilanz saldiert jeden einzelnen Anlass transparent gegen die Verbandsrechnungen des Ausrichters (Soll = Verbandsrechnung, Haben = Beitragsanteile Mitglieder -> Saldo CHF 0.00).
-* **Gruppengewinne auswärtige Schiessen (Konto 1301):** Der Verein übernimmt bei auswärtigen Schiessen das Gruppendoppel (standardmässig CHF 30.00, frei übersteuerbar). Gewinne darüber hinaus werden zu gleichen Teilen auf die beteiligten Schützen aufgeteilt (`public.group_competitions`, `public.group_competition_members`). Die Abwicklung erfolgt primär durch automatische Gutschrift in der Jahresbeitragsrechnung (Haben-Konto `1301`, Abzug vom Rechnungsbetrag) oder via Banküberweisung (`accounting_payment_orders` via pain.001 mit Soll `1301` an Haben `1020`). Für die Dokumentation und zum Anhängen an Rechnungen steht ein druckbarer DIN-A4 Abrechnungsbeleg mit Revisionsvermerk zur Verfügung. Saldo Konto `1301` saldiert nach Abwicklung auf exakt CHF 0.00.
+* **Schützengewinne auswärtige Schiessen (Konto 1301 - Gruppen & Einzel):** Das Transitkonto `1301` («Transit Schützengewinne (Gruppen & Einzel)») führt sämtliche Auszahlungen an Vereinsmitglieder aus auswärtigen Schiessen. Es deckt drei Szenarien ab:
+  1. *Gruppengewinne (`gruppe`)*: Der Verein übernimmt das Gruppendoppel (standardmässig CHF 30.00 auf `4410`), der Netto-Überschuss wird aufgeteilt.
+  2. *Einzelgewinne (`einzel`)*: Reine persönliche Stich- und Festgewinne (Auszahler, Gabenstich, Kategoriensieg).
+  3. *Kombiniert (`kombiniert`)*: Sammelüberweisungen von Veranstaltern, die Gruppenpreis und Auszahler gemeinsam auf das Vereinskonto überweisen (Abstimmung Geldeingang Bank `1020` an `1301` auf den Rappen genau).
+  Die Abwicklung erfolgt wahlweise per automatischer Verrechnung im Jahresbeitrag (`contributions_positions` mit Haben `1301`) oder via Banküberweisung (`accounting_payment_orders` via pain.001 mit Soll `1301` an Haben `1020`). Nach Verrechnung bzw. Auszahlung saldiert Konto `1301` auf exakt CHF 0.00.
 
 ### 2.10 Automatische Buchungstyp-Ermittlung & Trigger-Sicherung (accounting_journal.buchungstyp)
 * **Problemstellung:** Da CAMT-Importe den Spaltenwert `buchungstyp` historisch nicht explizit mitgaben, belegte die Datenbank alle importierten Datensätze mit dem Tabellen-Default `'TRANSIT'`. Dadurch wurden Ertrags- und Aufwandsbuchungen im Journal starr als «TRANSIT» ausgewiesen und in gefilterten Revisorenberichten verborgen, bis sie manuell geöffnet und gespeichert wurden.
