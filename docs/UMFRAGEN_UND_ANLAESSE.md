@@ -212,7 +212,7 @@ Die optimale Lösung ist ein **gestuftes 3-Ebenen-Modell**:
 2. **Ebene 2 – Schützenspezifische Fach-Vorlagen (Domänen-Workflows):**
    * **Auswärtiges Gruppenschiessen:** Terminauswahl mit Mehrfachauswahl (Poll-Slots) und automatischer 5er-Teambildung.
    * **Generalversammlung (GV):** Abmeldefristen, Menüauswahl (Fleisch / Vegi) für den Wirt und Verknüpfung zu Traktanden & Stimmberechtigung.
-   * *(Hinweis: Helfer- & Festwirtschaftsplanung wird getrennt über das Modul **«Anlässe & Controlling»** via `events`, `event_shifts` und `event_items` gelöst. Ein separates Feedback-/Umfrage-Template entfällt, da Meinungsbilder bei Bedarf direkt über Ebene 3 abgebildet werden).*
+   * *(Hinweis: Helfer- & Festwirtschaftsplanung wird getrennt über das Modul **«Anlässe & Controlling»** via `events`, `event_shifts` und `event_items` gelöst. `event_items` dient dabei als verbindliche Single Source of Truth für das Verkaufssortiment, die Preise und das Becherpfand/Depot der mobilen Festkasse via `depot_amount` und Kategorie `Depot`).*
 
 3. **Ebene 3 – Freie Zusatzfragen (Der Formularbaukasten via JSONB `questions_schema`):**
    * Über das JSONB-Feld `questions_schema` kann der Vorstand zu jedem Event **beliebig viele individuelle Zusatzfragen** konfigurieren (z. B. «Bringst du einen Salat oder Kuchen mit?», «T-Shirt-Grösse», «Fahrgemeinschaft»).

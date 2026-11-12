@@ -549,7 +549,7 @@ window.AnlaesseModule = (function () {
             return `<div class="alert alert-warning">Bitte wähle zuerst einen Anlass aus.</div>`;
         }
 
-        const categories = ['Alle', 'Festwirtschaft', 'Grill', 'Getränke', 'Bar', 'Munition', 'Infrastruktur'];
+        const categories = ['Alle', 'Festwirtschaft', 'Grill', 'Getränke', 'Bar', 'Depot', 'Munition', 'Infrastruktur'];
 
         let filteredItems = state.items;
         if (state.filterCategory !== 'all' && state.filterCategory !== 'Alle') {
@@ -668,7 +668,8 @@ window.AnlaesseModule = (function () {
                                     <tr>
                                         <td>
                                             <div class="fw-bold text-dark">${escapeHtml(item.item_name)}</div>
-                                            <span class="badge bg-light text-secondary border small">${escapeHtml(item.category)}</span>
+                                            <span class="badge ${item.category === 'Depot' ? 'bg-warning-subtle text-dark border-warning-subtle' : 'bg-light text-secondary'} border small">${escapeHtml(item.category)}</span>
+                                            ${parseFloat(item.depot_amount) > 0 ? `<span class="badge bg-success-subtle text-success border border-success-subtle small ms-1" title="Automatisches Becherpfand beim Kassieren"><i class="fas fa-recycle me-1"></i>+${parseFloat(item.depot_amount).toFixed(2)} Depot</span>` : ''}
                                         </td>
                                         <td class="text-center">
                                             <span class="badge bg-light text-dark font-monospace">${escapeHtml(item.unit)}</span>
@@ -1489,7 +1490,7 @@ window.AnlaesseModule = (function () {
                             </tr>
                         </thead>
                         <tbody>
-                            ${['Festwirtschaft', 'Grill', 'Getränke', 'Bar', 'Munition', 'Infrastruktur'].map(cat => {
+                            ${['Festwirtschaft', 'Grill', 'Getränke', 'Bar', 'Depot', 'Munition', 'Infrastruktur'].map(cat => {
                                 const catItems = state.items.filter(i => i.category === cat);
                                 if (catItems.length === 0) return '';
                                 const cost = catItems.reduce((acc, i) => acc + ((parseFloat(i.order_qty) || 0) * (parseFloat(i.cost_price) || 0)), 0);
@@ -1984,6 +1985,7 @@ window.AnlaesseModule = (function () {
                                             <option value="Grill" ${editItem && editItem.category === 'Grill' ? 'selected' : (!editItem ? 'selected' : '')}>Grill</option>
                                             <option value="Getränke" ${editItem && editItem.category === 'Getränke' ? 'selected' : ''}>Getränke</option>
                                             <option value="Bar" ${editItem && editItem.category === 'Bar' ? 'selected' : ''}>Bar</option>
+                                            <option value="Depot" ${editItem && editItem.category === 'Depot' ? 'selected' : ''}>Depot &amp; Kaution</option>
                                             <option value="Munition" ${editItem && editItem.category === 'Munition' ? 'selected' : ''}>Munition</option>
                                             <option value="Infrastruktur" ${editItem && editItem.category === 'Infrastruktur' ? 'selected' : ''}>Infrastruktur</option>
                                         </select>
@@ -2005,6 +2007,11 @@ window.AnlaesseModule = (function () {
                                     <div class="col-md-4">
                                         <label class="form-label small fw-bold">Verkaufspreis (CHF)</label>
                                         <input type="number" step="0.05" class="form-control text-end" id="itm-sales" value="${editItem ? editItem.sales_price : '6.00'}">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label small fw-bold">Depot / Kaution (CHF)</label>
+                                        <input type="number" step="0.05" class="form-control text-end" id="itm-depot" value="${editItem ? (editItem.depot_amount || '0.00') : '0.00'}" placeholder="0.00">
+                                        <div class="form-text small" style="font-size: 0.72rem;">Autom. Becherpfand an Kasse</div>
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label small fw-bold">Menge pro Besucher (Faktor)</label>
@@ -2046,6 +2053,7 @@ window.AnlaesseModule = (function () {
 
         const cost = parseFloat(document.getElementById('itm-cost').value) || 0;
         const sales = parseFloat(document.getElementById('itm-sales').value) || 0;
+        const depot = parseFloat(document.getElementById('itm-depot') ? document.getElementById('itm-depot').value : 0) || 0;
         const qtyPerVis = parseFloat(document.getElementById('itm-qty-vis').value) || 0;
         const safety = parseFloat(document.getElementById('itm-safety').value) || 1.10;
         const recQty = Math.round((visitors * qtyPerVis * safety) * 10) / 10;
@@ -2057,6 +2065,7 @@ window.AnlaesseModule = (function () {
             unit: document.getElementById('itm-unit').value,
             cost_price: cost,
             sales_price: sales,
+            depot_amount: depot,
             qty_per_visitor: qtyPerVis,
             safety_factor: safety,
             recommended_qty: recQty

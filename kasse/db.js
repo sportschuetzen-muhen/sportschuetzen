@@ -346,7 +346,7 @@ const FestkasseDB = (function () {
     await put('settings', { key: 'stationName', value: 'Kasse 1' });
     await put('settings', { key: 'openingCash', value: 300.00 });
     await put('settings', { key: 'activeDate', value: todayStr });
-    await put('settings', { key: 'printerIp', value: '192.168.1.200' });
+    await put('settings', { key: 'printerIp', value: '192.168.68.200' });
     await put('settings', { key: 'printMode', value: 'manual' }); // 'manual' | 'auto' | 'browser'
     await put('settings', { key: 'printGuestReceipt', value: true });
     await put('settings', { key: 'printKitchenReceipt', value: true });
@@ -357,6 +357,162 @@ const FestkasseDB = (function () {
     console.log('[FestkasseDB] Erfolgreich initialisiert!');
   }
 
+  /**
+   * Wendet synchronisierte Artikel & Depots aus dem Modul Anlässe (event_items) an.
+   * Spiegelt diese in die lokalen IndexedDB Object Stores 'products' und 'categories'.
+   */
+  async function applySyncedEventItems(eventData, rawItems) {
+    if (!eventData || !Array.isArray(rawItems)) {
+      throw new Error('Ungültige Eventdaten oder Artikelliste für Kassen-Sync');
+    }
+
+    const catDefinitions = {
+      cat_grill: { id: 'cat_grill', name: 'Grill & Küche', icon: '🥩', color: '#ef4444', sortOrder: 1 },
+      cat_getraenke: { id: 'cat_getraenke', name: 'Alkoholfrei', icon: '🥤', color: '#0ea5e9', sortOrder: 2 },
+      cat_bier_wein: { id: 'cat_bier_wein', name: 'Bier & Wein', icon: '🍺', color: '#f59e0b', sortOrder: 3 },
+      cat_kaffee: { id: 'cat_kaffee', name: 'Kaffee & Kuchen', icon: '☕', color: '#8b5cf6', sortOrder: 4 },
+      cat_bar: { id: 'cat_bar', name: 'Bar & Spirituosen', icon: '🍸', color: '#ec4899', sortOrder: 5 },
+      cat_depot: { id: 'cat_depot', name: 'Depot & Kaution', icon: '🔄', color: '#10b981', sortOrder: 6 }
+    };
+
+    function guessIcon(name, category) {
+      const lower = (name || '').toLowerCase();
+      if (lower.includes('mineral') || lower.includes('wasser')) return '💧';
+      if (lower.includes('cola')) return '🥤';
+      if (lower.includes('tea') || lower.includes('tee')) return '🍋';
+      if (lower.includes('rivella')) return '🥛';
+      if (lower.includes('schorle') || lower.includes('apfel')) return '🍏';
+      if (lower.includes('red bull') || lower.includes('energy')) return '⚡';
+      if (lower.includes('bier') || lower.includes('feldschlösschen') || lower.includes('quöllfrisch') || lower.includes('eichhof')) return '🍺';
+      if (lower.includes('panaché') || lower.includes('panache')) return '🍻';
+      if (lower.includes('rotwein') || lower.includes('wein rot')) return '🍷';
+      if (lower.includes('weisswein') || lower.includes('wein weiss') || lower.includes('gespritzt')) return '🥂';
+      if (lower.includes('bratwurst') || lower.includes('cervelat') || lower.includes('hot dog')) return '🌭';
+      if (lower.includes('steak') || lower.includes('fleisch') || lower.includes('kotelett')) return '🥩';
+      if (lower.includes('pommes') || lower.includes('frites')) return '🍟';
+      if (lower.includes('schnitzel') || lower.includes('burger')) return '🍔';
+      if (lower.includes('chnobli') || lower.includes('brot') || lower.includes('bürli')) return '🥖';
+      if (lower.includes('salat')) return '🥗';
+      if (lower.includes('kaffee') || lower.includes('espresso') || lower.includes('luz') || lower.includes('fertig')) return '☕';
+      if (lower.includes('kuchen') || lower.includes('torte') || lower.includes('cremeschnitte')) return '🍰';
+      if (lower.includes('aperol') || lower.includes('spritz') || lower.includes('hugo')) return '🍹';
+      if (lower.includes('gin') || lower.includes('tonic') || lower.includes('vodka') || lower.includes('whisky')) return '🍸';
+      if (lower.includes('shot') || lower.includes('appenzeller') || lower.includes('jäger')) return '🍶';
+      if (category === 'Grill') return '🥩';
+      if (category === 'Getränke') return '🥤';
+      if (category === 'Bar') return '🍸';
+      if (category === 'Depot') return '🔄';
+      return '🍴';
+    }
+
+    function mapCategory(name, dbCat) {
+      if (dbCat === 'Depot') return 'cat_depot';
+      if (dbCat === 'Grill') return 'cat_grill';
+      if (dbCat === 'Bar') return 'cat_bar';
+      const lower = (name || '').toLowerCase();
+      if (lower.includes('kaffee') || lower.includes('espresso') || lower.includes('kuchen') || lower.includes('torte') || lower.includes('luz') || lower.includes('fertig')) {
+        return 'cat_kaffee';
+      }
+      if (lower.includes('bier') || lower.includes('wein') || lower.includes('panaché') || lower.includes('cidre')) {
+        return 'cat_bier_wein';
+      }
+      if (dbCat === 'Festwirtschaft') {
+        if (lower.includes('wurst') || lower.includes('pommes') || lower.includes('steak') || lower.includes('brot') || lower.includes('salat') || lower.includes('schnitzel')) {
+          return 'cat_grill';
+        }
+      }
+      return 'cat_getraenke';
+    }
+
+    const transformedProducts = [];
+    const usedCategoryIds = new Set();
+
+    for (const item of rawItems) {
+      const salesPrice = parseFloat(item.sales_price) || 0;
+      if (salesPrice <= 0 && item.category !== 'Depot') continue;
+
+      if (item.category === 'Depot') {
+        const depotVal = Math.abs(salesPrice) || 2.00;
+        const cleanName = item.item_name.replace(/^(depot|\+|\-)\s*/i, '').trim();
+
+        // 1. Plus-Kachel (+ Depot)
+        transformedProducts.push({
+          id: `depot_plus_${item.id}`,
+          categoryId: 'cat_depot',
+          name: `+ Depot ${cleanName}`,
+          price: depotVal,
+          unit: item.unit || 'Stk.',
+          icon: '➕',
+          isDepot: true,
+          depotType: 'plus',
+          depotAmount: 0
+        });
+
+        // 2. Minus-Kachel (Rückgabe)
+        transformedProducts.push({
+          id: `depot_minus_${item.id}`,
+          categoryId: 'cat_depot',
+          name: `− Rückgabe ${cleanName}`,
+          price: -depotVal,
+          unit: item.unit || 'Stk.',
+          icon: '↩️',
+          isDepot: true,
+          depotType: 'minus',
+          depotAmount: 0
+        });
+
+        usedCategoryIds.add('cat_depot');
+      } else {
+        const catId = mapCategory(item.item_name, item.category);
+        const icon = guessIcon(item.item_name, item.category);
+        const autoDepot = parseFloat(item.depot_amount) || 0;
+
+        transformedProducts.push({
+          id: item.id,
+          categoryId: catId,
+          name: item.item_name,
+          price: salesPrice,
+          unit: item.unit || 'Port.',
+          icon: icon,
+          isDepot: false,
+          depotAmount: autoDepot
+        });
+
+        usedCategoryIds.add(catId);
+        if (autoDepot > 0) {
+          usedCategoryIds.add('cat_depot');
+        }
+      }
+    }
+
+    if (transformedProducts.length > 0) {
+      // Bestehende Produkte leeren und neue schreiben
+      await clear('products');
+      for (const prod of transformedProducts) {
+        await put('products', prod);
+      }
+
+      // Kategorien leeren und nur verwendete schreiben
+      await clear('categories');
+      const catsToSave = Object.values(catDefinitions).filter(c => usedCategoryIds.has(c.id));
+      catsToSave.sort((a, b) => a.sortOrder - b.sortOrder);
+      for (const cat of catsToSave) {
+        await put('categories', cat);
+      }
+
+      // Einstellungen aktualisieren
+      await put('settings', { key: 'activeEventId', value: eventData.id });
+      await put('settings', { key: 'eventTitle', value: eventData.name });
+      await put('settings', { key: 'lastSyncTimestamp', value: new Date().toISOString() });
+    }
+
+    return {
+      event: eventData,
+      productCount: transformedProducts.length,
+      categoriesCount: usedCategoryIds.size
+    };
+  }
+
   return {
     openDB,
     getAll,
@@ -364,6 +520,7 @@ const FestkasseDB = (function () {
     put,
     remove,
     clear,
-    initializeDefaults
+    initializeDefaults,
+    applySyncedEventItems
   };
 })();

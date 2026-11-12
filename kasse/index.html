@@ -291,6 +291,24 @@
       </div>
 
       <div class="modal-body d-flex flex-column gap-3">
+        <!-- ABSCHNITT 0: AKTIVER FESTANLASS & SORTIMENTS-SYNC -->
+        <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label style="font-size: 13px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 6px;">
+              <span>🎉 Aktiver Festanlass:</span>
+            </label>
+            <button type="button" class="btn-secondary" id="btn-sync-event-products" style="padding: 4px 10px; font-size: 12px; font-weight: 700; color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);" onclick="KasseModule.syncEventSortimentManually()">
+              🔄 Sortiment abgleichen
+            </button>
+          </div>
+          <div style="font-size: 14px; font-weight: 800; color: #f8fafc;" id="setting-active-event-name">
+            Wird ermittelt...
+          </div>
+          <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;" id="setting-active-event-details">
+            Verbindet sich mit Supabase (Modul «Anlässe &amp; Controlling») für Preise &amp; Becherpfand.
+          </div>
+        </div>
+
         <!-- ABSCHNITT 1: DRUCKER LAN IP -->
         <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
           <label style="font-size: 13px; font-weight: 700; color: #38bdf8; display: block; margin-bottom: 4px;">

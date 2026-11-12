@@ -90,6 +90,152 @@ async function toggleFestkasseMemberVisibility(enabled) {
     }
 }
 
+let currentFestkasseEvents = [];
+let currentFestkasseActiveEventId = null;
+
+async function loadFestkasseEventConfig() {
+    const supa = getFestkasseClient();
+    const container = document.getElementById('festkasse-event-control-area');
+    if (!container) return;
+
+    try {
+        if (!supa) {
+            container.innerHTML = '<div class="alert alert-warning py-2 mb-0 small">Keine Supabase-Verbindung vorhanden.</div>';
+            return;
+        }
+
+        const [resEvents, resConfig] = await Promise.all([
+            supa.from('events').select('id, name, event_date, status').neq('status', 'cancelled').order('event_date', { ascending: false }),
+            supa.from('system_app_configs').select('value').eq('key', 'active_festkasse_event_id').maybeSingle()
+        ]);
+
+        currentFestkasseEvents = resEvents.data || [];
+        const activeId = (resConfig.data && resConfig.data.value) 
+            ? resConfig.data.value 
+            : (currentFestkasseEvents[0] ? currentFestkasseEvents[0].id : null);
+        currentFestkasseActiveEventId = activeId;
+
+        await renderFestkasseEventDetails(activeId);
+    } catch (e) {
+        console.warn('Fehler beim Laden der Festkassen-Eventkonfiguration:', e);
+        if (container) {
+            container.innerHTML = `<div class="text-danger small">Fehler beim Laden: ${escapeHtml(e.message || e)}</div>`;
+        }
+    }
+}
+
+async function renderFestkasseEventDetails(selectedEventId) {
+    const supa = getFestkasseClient();
+    const container = document.getElementById('festkasse-event-control-area');
+    if (!container) return;
+
+    let activeItems = [];
+    if (supa && selectedEventId) {
+        const { data: items } = await supa.from('event_items').select('*').eq('event_id', selectedEventId).order('category');
+        activeItems = items || [];
+    }
+
+    const activeEvent = currentFestkasseEvents.find(e => e.id === selectedEventId);
+    const depotItems = activeItems.filter(i => i.category === 'Depot');
+    const salesItems = activeItems.filter(i => i.category !== 'Depot' && parseFloat(i.sales_price) > 0);
+    const autoDepotCount = salesItems.filter(i => parseFloat(i.depot_amount) > 0).length;
+    const isCurrentlyActive = selectedEventId === currentFestkasseActiveEventId;
+
+    container.innerHTML = `
+        <div class="row g-3 align-items-center">
+            <div class="col-lg-6">
+                <label class="form-label small fw-bold text-dark mb-1">
+                    📅 Aktiver Anlass (steuert Sortiment, Preise &amp; Becherpfand):
+                </label>
+                <div class="input-group">
+                    <select class="form-select fw-semibold" id="select-festkasse-active-event" onchange="renderFestkasseEventDetails(this.value)">
+                        ${currentFestkasseEvents.map(ev => {
+                            const dateStr = (window.UIFormatKit && typeof window.UIFormatKit.formatDate === 'function')
+                                ? window.UIFormatKit.formatDate(ev.event_date)
+                                : ev.event_date;
+                            return `
+                                <option value="${ev.id}" ${ev.id === selectedEventId ? 'selected' : ''}>
+                                    ${escapeHtml(ev.name)} (${dateStr})
+                                </option>
+                            `;
+                        }).join('')}
+                    </select>
+                    <button class="btn ${isCurrentlyActive ? 'btn-success' : 'btn-primary'} fw-bold px-3" type="button" id="btn-save-festkasse-event" onclick="saveFestkasseActiveEvent()">
+                        <i class="fas ${isCurrentlyActive ? 'fa-check' : 'fa-save'} me-1"></i>${isCurrentlyActive ? 'Aktiv' : 'Aktivieren'}
+                    </button>
+                </div>
+                <div class="form-text small text-muted mt-1">
+                    ${isCurrentlyActive 
+                        ? '🟢 Dieser Anlass ist live für alle Kassen-iPads & iPhones geschaltet.' 
+                        : '⚠️ Klicke auf «Aktivieren», um diesen Anlass auf die Festkassen zu übertragen.'}
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="p-2.5 rounded-3 border bg-light">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span class="small fw-bold text-dark">
+                            Sortiment: <strong class="text-primary">${activeEvent ? escapeHtml(activeEvent.name) : 'Kein Anlass gewählt'}</strong>
+                        </span>
+                        <button class="btn btn-sm btn-outline-secondary py-0 px-2 small" onclick="if (typeof navTo === 'function') navTo('anlaesse');" title="Mengenrechner in Anlässe öffnen">
+                            Mengenrechner ↗
+                        </button>
+                    </div>
+                    <div class="d-flex gap-2 flex-wrap small">
+                        <span class="badge bg-success text-white rounded-pill px-2.5 py-1">
+                            <i class="fas fa-utensils me-1"></i>${salesItems.length} Verkaufsartikel
+                        </span>
+                        <span class="badge ${depotItems.length > 0 ? 'bg-warning text-dark' : 'bg-light text-muted border'} rounded-pill px-2.5 py-1">
+                            <i class="fas fa-recycle me-1"></i>${depotItems.length > 0 ? `${depotItems.length} Depot-Artikel aktiv` : 'Kein Depot / Kaution'}
+                        </span>
+                        ${autoDepotCount > 0 ? `
+                            <span class="badge bg-info text-white rounded-pill px-2.5 py-1">
+                                <i class="fas fa-beer-mug-empty me-1"></i>${autoDepotCount} mit autom. Becherpfand
+                            </span>
+                        ` : ''}
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+async function saveFestkasseActiveEvent() {
+    const sel = document.getElementById('select-festkasse-active-event');
+    if (!sel) return;
+    const eventId = sel.value;
+    const supa = getFestkasseClient();
+    if (!supa) return;
+
+    const btn = document.getElementById('btn-save-festkasse-event');
+    if (btn) btn.disabled = true;
+
+    try {
+        const { error } = await supa
+            .from('system_app_configs')
+            .upsert({
+                key: 'active_festkasse_event_id',
+                value: eventId,
+                description: 'Aktuell aktiver Anlass für die Festkassen-PWA und fliegende Kellner-iPhones (steuert Sortiment, Preise und Depot)',
+                category: 'festkasse'
+            }, { onConflict: 'key' });
+
+        if (error) throw error;
+        currentFestkasseActiveEventId = eventId;
+        if (typeof showToast === 'function') {
+            showToast('Aktiver Festanlass gespeichert! Alle Kassen & iPhones übernehmen nun dieses Sortiment.', 'success');
+        }
+        await renderFestkasseEventDetails(eventId);
+    } catch (err) {
+        console.error('Fehler:', err);
+        if (typeof showToast === 'function') {
+            showToast('Fehler beim Speichern: ' + (err.message || err), 'danger');
+        }
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
 async function loadFestkasseCertStatus() {
     const supa = getFestkasseClient();
     const container = document.getElementById('festkasse-cert-status-area');
@@ -335,6 +481,26 @@ function renderFestkasseView() {
             </div>
         </div>
 
+        <!-- AKTIVER FESTANLASS & SORTIMENTS-STEUERUNG (MENGENRECHNER) -->
+        <div class="card p-3 shadow-sm border-0 rounded-4 mb-3" style="background: white;" id="card-festkasse-event">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-2">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="rounded-circle d-flex align-items-center justify-content-center" style="width: 44px; height: 44px; font-size: 1.3rem; background: rgba(14, 165, 233, 0.1); color: #0284c7;">
+                        🎉
+                    </div>
+                    <div>
+                        <div class="fw-bold text-dark">Aktiver Festanlass &amp; Sortiment (Mengenrechner Anbindung)</div>
+                        <div class="small text-muted">
+                            Bestimmt, welche Artikel, Verkaufspreise und Depot-Regeln auf den Kassen-iPads und Handhelds geladen werden.
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="festkasse-event-control-area">
+                <div class="text-muted small">Anlassdaten werden geladen...</div>
+            </div>
+        </div>
+
         <!-- FREIGABE IM MITGLIEDERBEREICH BANNER -->
         <div class="card p-3 shadow-sm border-0 rounded-4 mb-3" style="background: white;">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
@@ -469,6 +635,7 @@ function renderFestkasseView() {
 
     setTimeout(() => {
         loadFestkasseVisibility();
+        loadFestkasseEventConfig();
         loadFestkasseCertStatus();
     }, 50);
 }
@@ -476,6 +643,9 @@ function renderFestkasseView() {
 window.renderFestkasseView = renderFestkasseView;
 window.toggleFestkasseMemberVisibility = toggleFestkasseMemberVisibility;
 window.loadFestkasseVisibility = loadFestkasseVisibility;
+window.loadFestkasseEventConfig = loadFestkasseEventConfig;
+window.renderFestkasseEventDetails = renderFestkasseEventDetails;
+window.saveFestkasseActiveEvent = saveFestkasseActiveEvent;
 window.loadFestkasseCertStatus = loadFestkasseCertStatus;
 window.checkPrinterCertLive = checkPrinterCertLive;
 window.openCertRenewalModal = openCertRenewalModal;

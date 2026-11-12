@@ -155,3 +155,25 @@ Für die nahtlose iPad-Installation wird die Root CA in ein standardisiertes App
    - Menü `Security` $\rightarrow$ `SSL/TLS` $\rightarrow$ `Server Certificate` auf `CA-Signed Certificate 1` einstellen $\rightarrow$ `Send`.
    - Menü `Optional` $\rightarrow$ `Reset` anklicken (oder Drucker kurz ausschalten).
 4. **Schritt 4:** Auf den iPads/iPhones ist keine Änderung erforderlich. Testdruck in der Festkasse ausführen.
+
+---
+
+## 5.7 Sortiments-, Preis- & Depot-Steuerung via «Anlässe & Controlling»
+
+### 5.7.1 Single Source of Truth im Mengenrechner (`event_items`)
+Die Artikel und Verkaufspreise der Festkasse stammen nicht mehr aus statischen Hardcode-Werten, sondern werden direkt aus dem im Modul **«Anlässe & Controlling»** (`vorstand/js/anlaesse.js`) hinterlegten Mengenrechner bezogen:
+* **Tabelle `public.event_items`:** Enthält Artikelname, Sparte (`Grill`, `Getränke`, `Bar`, `Depot`, `Festwirtschaft`), Einkaufspreis (`cost_price`), **Verkaufspreis (`sales_price`)** und optionales **Depot-Pfand (`depot_amount`)**.
+* **Aktiver Kassen-Anlass (`system_app_configs`):** Der Schlüssel `active_festkasse_event_id` steuert zentral, welcher Vereinsanlass (z.B. *«1.-August-Feier 2026»*) für alle Kassen-iPads und Handheld-iPhones aktiv geschaltet ist.
+
+### 5.7.2 Vollständige Depot- & Kaution-Verwaltung
+Jeder Anlass steuert seine Pfandregeln individuell:
+* **Kategorie `Depot`:** Wird im Mengenrechner ein Artikel mit Kategorie `Depot` angelegt (z.B. *«Depot Becher / Glas»* mit VK CHF 2.00 oder *«Depot Geschirr / Teller»* mit VK CHF 5.00), erzeugt die Festkasse automatisch:
+  1. Grüne Plus-Kachel: `+ Depot [Name]` (+ CHF 2.00)
+  2. Rote/Blaue Minus-Kachel: `− Rückgabe [Name]` (− CHF 2.00)
+* **Automatischer Becherpfand-Vorschlag (`depot_amount`):** Bei Getränken (z.B. Offenausschank-Bier) kann ein Pfandbetrag hinterlegt werden. Beim Antippen des Artikels legt die Kasse und das Kellner-iPhone das passende Becherdepot automatisch in den Warenkorb.
+* **Kein Depot bei kleinen Anlässen:** Enthält ein Anlass keine Depot-Artikel im Mengenrechner, blendet die Festkasse die Depot-Warengruppe komplett aus.
+
+### 5.7.3 Synchronisation & 100% Offline-Schutz
+* **Automatischer Abgleich:** Beim Start prüft die Festkasse online, ob ein neuer Anlass geschaltet wurde, transformiert die Artikel und speichert sie in die lokale `FestkasseDB` (Stores `products` und `categories`).
+* **Manueller Abgleich:** Im Einstellungsdialog (`⚙️`) kann das Sortiment jederzeit über «🔄 Sortiment abgleichen» aktualisiert werden.
+* **Netzausfall-Sicherheit:** Im Festzelt läuft die Kasse vollkommen unabhängig von Internet oder Server – alle Artikel, Preise und Pfandregeln verbleiben stabil im lokalen IndexedDB-Speicher.

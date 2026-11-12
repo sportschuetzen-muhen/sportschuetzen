@@ -44,10 +44,16 @@ const KasseModule = (function () {
 
     // 2. IndexedDB initialisieren & Seeds laden
     await FestkasseDB.initializeDefaults();
+
+    // 2b. Sortiment & Preise aus aktivem Anlass (Supabase) synchronisieren falls online
+    await syncSortimentFromEventIfAvailable();
     
     // 3. Daten einlesen
     categories = await FestkasseDB.getAll('categories');
     products = await FestkasseDB.getAll('products');
+
+    const eventTitleSetting = await FestkasseDB.get('settings', 'eventTitle');
+    updateEventBadgeUI(eventTitleSetting ? eventTitleSetting.value : 'Festwirtschaft');
 
     const cashierSetting = await FestkasseDB.get('settings', 'cashierName');
     if (cashierSetting && cashierSetting.value) activeCashierName = cashierSetting.value;
@@ -161,6 +167,103 @@ const KasseModule = (function () {
       }
     } catch (e) {
       console.warn('[KasseModule] Konnte Drucker-Einstellungen nicht laden:', e);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // SORTIMENTS-SYNCHRONISATION MIT MODUL ANLÄSSE (SUPABASE)
+  // ─────────────────────────────────────────────────────────────
+  const SUPABASE_REST_URL = 'https://supabase-muhen.danfamily.uk/rest/v1';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
+
+  function updateEventBadgeUI(eventName) {
+    const el = document.querySelector('.event-title-text');
+    if (el && eventName) {
+      el.textContent = eventName;
+    }
+  }
+
+  async function syncSortimentFromEventIfAvailable(force = false) {
+    try {
+      if (!navigator.onLine && !force) return false;
+
+      // 1. Aktiven Event aus system_app_configs ermitteln
+      const confResp = await fetch(`${SUPABASE_REST_URL}/system_app_configs?key=eq.active_festkasse_event_id&select=value`, {
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+        }
+      });
+      if (!confResp.ok) return false;
+      const confData = await confResp.json();
+      const activeEventId = (confData && confData[0]) ? confData[0].value : null;
+      if (!activeEventId) return false;
+
+      const currentStoredEvent = await FestkasseDB.get('settings', 'activeEventId');
+      if (!force && currentStoredEvent && currentStoredEvent.value === activeEventId) {
+        return false;
+      }
+
+      // 2. Event-Metadaten und Sortiments-Items laden
+      const [evResp, itmResp] = await Promise.all([
+        fetch(`${SUPABASE_REST_URL}/events?id=eq.${activeEventId}&select=id,name,event_date`, {
+          headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+        }),
+        fetch(`${SUPABASE_REST_URL}/event_items?event_id=eq.${activeEventId}&select=*&order=category.asc`, {
+          headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+        })
+      ]);
+
+      if (!evResp.ok || !itmResp.ok) return false;
+      const events = await evResp.json();
+      const items = await itmResp.json();
+      if (!events || events.length === 0) return false;
+
+      const eventData = events[0];
+      const result = await FestkasseDB.applySyncedEventItems(eventData, items);
+      console.log(`[Festkasse] Sortiment erfolgreich mit Anlass "${eventData.name}" synchronisiert (${result.productCount} Artikel).`);
+
+      // Lokale Caches aktualisieren
+      categories = await FestkasseDB.getAll('categories');
+      products = await FestkasseDB.getAll('products');
+      updateEventBadgeUI(eventData.name);
+      return true;
+    } catch (e) {
+      console.warn('[Festkasse] Sortimentsabgleich übersprungen oder offline:', e);
+      return false;
+    }
+  }
+
+  async function syncEventSortimentManually() {
+    const btn = document.getElementById('btn-sync-event-products');
+    const details = document.getElementById('setting-active-event-details');
+    if (btn) btn.disabled = true;
+    if (details) details.innerHTML = '<span style="color: #38bdf8;">⏳ Synchronisiere mit Anlässe &amp; Controlling...</span>';
+
+    try {
+      await syncSortimentFromEventIfAvailable(true);
+      const titleSetting = await FestkasseDB.get('settings', 'eventTitle');
+      const eventName = titleSetting ? titleSetting.value : 'Festwirtschaft';
+
+      renderCategories();
+      renderProducts();
+      renderCart();
+      updateEventBadgeUI(eventName);
+
+      const nameEl = document.getElementById('setting-active-event-name');
+      if (nameEl) nameEl.textContent = eventName;
+
+      if (details) {
+        details.innerHTML = `<span style="color: #10b981; font-weight: bold;">🟢 Erfolgreich synchronisiert! (${products.length} Artikel &amp; Depots aktiv)</span>`;
+      }
+      showToast(`Sortiment für «${eventName}» aktualisiert!`);
+    } catch (e) {
+      console.error('Sync Fehler:', e);
+      if (details) {
+        details.innerHTML = `<span style="color: #ef4444;">Fehler: ${escapeHtml(e.message || e)}</span>`;
+      }
+    } finally {
+      if (btn) btn.disabled = false;
     }
   }
 
@@ -341,9 +444,11 @@ const KasseModule = (function () {
     }
 
     // Wenn ein Artikel mit Becher/Glas-Depot gewählt wird (z.B. Bier Offenausschank),
-    // automatisch das Glasdepot (CHF 2.00) als Vorschlag beifügen
+    // automatisch das passende Depot (CHF 2.00) als Vorschlag beifügen
     if (prod.depotAmount && prod.depotAmount > 0 && !prod.isDepot) {
-      const depotProd = products.find(p => p.id === 'p_depot_glas_plus');
+      const depotProd = products.find(p => p.isDepot && p.depotType === 'plus' && Math.abs(p.price - prod.depotAmount) < 0.01)
+        || products.find(p => p.isDepot && p.depotType === 'plus')
+        || products.find(p => p.id === 'p_depot_glas_plus');
       if (depotProd) {
         const existingDepot = cart.find(i => i.id === depotProd.id);
         if (existingDepot) {
@@ -738,6 +843,18 @@ const KasseModule = (function () {
     const statusEl = document.getElementById('printer-test-status');
     if (statusEl) statusEl.innerHTML = '';
 
+    FestkasseDB.get('settings', 'eventTitle').then(titleSetting => {
+      const nameEl = document.getElementById('setting-active-event-name');
+      if (nameEl) nameEl.textContent = titleSetting ? titleSetting.value : 'Festwirtschaft Sportschützen Muhen';
+    });
+    FestkasseDB.get('settings', 'lastSyncTimestamp').then(syncSetting => {
+      const detailsEl = document.getElementById('setting-active-event-details');
+      if (detailsEl) {
+        const timeStr = syncSetting && syncSetting.value ? new Date(syncSetting.value).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' }) : null;
+        detailsEl.innerHTML = `${products.length} Artikel &amp; Depots aktiv` + (timeStr ? ` · Zuletzt synchronisiert: ${timeStr} Uhr` : '');
+      }
+    });
+
     updateCertStatusBadge();
 
     modal.classList.add('active');
@@ -1032,6 +1149,7 @@ const KasseModule = (function () {
     getPrinterSettings: () => ({ ...printerSettings }),
     loadIncomingOrderToCart,
     showCertHelp,
+    syncEventSortimentManually,
     updateLiveSalesBadge
   };
 })();

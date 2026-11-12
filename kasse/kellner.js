@@ -74,6 +74,16 @@ const KellnerHandheld = (function () {
                 </div>
               </div>
             `).join('')}
+
+            ${products.some(p => p.isDepot) ? `
+              <div style="grid-column: 1 / -1; display: flex; gap: 6px; padding: 6px 0; border-top: 1px dashed var(--border-color); margin-top: 4px; flex-wrap: wrap;">
+                ${products.filter(p => p.isDepot).map(dp => `
+                  <button type="button" class="btn-secondary" style="flex: 1; min-width: 130px; padding: 8px 6px; font-size: 11px; font-weight: 700; ${dp.depotType === 'minus' ? 'color: #f87171; border-color: rgba(239,68,68,0.4); background: rgba(239,68,68,0.1);' : 'color: #34d399; border-color: rgba(16,185,129,0.4); background: rgba(16,185,129,0.1);'}" onclick="KellnerHandheld.addToCart('${dp.id}')">
+                    ${escapeHtml(dp.name)} (${formatCHF(dp.price)})
+                  </button>
+                `).join('')}
+              </div>
+            ` : ''}
           </div>
 
           <!-- BON-LEISTE UNTEN (MOBILE DOCK) -->
@@ -144,8 +154,32 @@ const KellnerHandheld = (function () {
         id: prod.id,
         name: prod.name,
         price: prod.price,
-        qty: 1
+        qty: 1,
+        isDepot: prod.isDepot || false,
+        depotType: prod.depotType || null
       });
+    }
+
+    // Automatisches Becher-/Glasdepot bei Getränken beifügen
+    if (prod.depotAmount && prod.depotAmount > 0 && !prod.isDepot) {
+      const depotProd = products.find(p => p.isDepot && p.depotType === 'plus' && Math.abs(p.price - prod.depotAmount) < 0.01)
+        || products.find(p => p.isDepot && p.depotType === 'plus')
+        || products.find(p => p.id === 'p_depot_glas_plus');
+      if (depotProd) {
+        const existingDepot = cart.find(i => i.id === depotProd.id);
+        if (existingDepot) {
+          existingDepot.qty++;
+        } else {
+          cart.push({
+            id: depotProd.id,
+            name: depotProd.name,
+            price: depotProd.price,
+            qty: 1,
+            isDepot: true,
+            depotType: 'plus'
+          });
+        }
+      }
     }
 
     if (navigator.vibrate) navigator.vibrate(30);
