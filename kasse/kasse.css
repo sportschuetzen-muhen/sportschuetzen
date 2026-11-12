@@ -102,6 +102,29 @@ html, body {
   flex-shrink: 0;
 }
 
+/* In Standalone PWA Modus (Home-Screen App auf iPad & iPhone):
+   Mindestabstand von 34px für die Apple-Statusleiste & das 3-Punkte-Multitasking-Menü.
+   Beseitigt den systemseitigen iPadOS-Unschärfeschleier vollständig: Alle Schriften,
+   Tabs und Buttons sitzen unterhalb der Systemleiste und sind 100% gestochen scharf. */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .top-header {
+    height: calc(60px + max(34px, env(safe-area-inset-top))) !important;
+    min-height: calc(60px + max(34px, env(safe-area-inset-top))) !important;
+    padding-top: max(34px, env(safe-area-inset-top)) !important;
+  }
+  .kellner-header {
+    padding-top: calc(8px + max(28px, env(safe-area-inset-top))) !important;
+  }
+}
+.pwa-standalone .top-header {
+  height: calc(60px + max(34px, env(safe-area-inset-top))) !important;
+  min-height: calc(60px + max(34px, env(safe-area-inset-top))) !important;
+  padding-top: max(34px, env(safe-area-inset-top)) !important;
+}
+.pwa-standalone .kellner-header {
+  padding-top: calc(8px + max(28px, env(safe-area-inset-top))) !important;
+}
+
 .header-left {
   display: flex;
   align-items: center;

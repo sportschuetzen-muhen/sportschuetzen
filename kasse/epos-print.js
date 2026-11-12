@@ -5,8 +5,7 @@
  * Unterstützt:
  * 1. ⚡ LAN-Gateway (CT 117 / Supabase): Nahtloser ESC/POS-Sofortdruck via Port 9100
  * 2. 🌐 Direkter ePOS-Print: 100% autarker Druck rein aus dem Browser via HTTP/HTTPS SOAP (ohne Supabase)
- * 3. 📱 Epson TM Print Assistant: Druck aus iPadOS/iOS via tmprintassistant:// URI-Scheme
- * 4. 📄 AirPrint / Browser-Druckmenü Fallback
+ * 3. 📄 AirPrint / Browser-Druckmenü Fallback
  * 
  * Belegarten:
  * - Gastbeleg (Quittung) mit Preisen, Zahlart & Abholnummer
@@ -331,23 +330,7 @@ ${bodyXml}
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // TREIBER 1: EPSON TM PRINT ASSISTANT (iPad/iOS 100% Offline via URI Scheme)
-  // ───────────────────────────────────────────────────────────────────────────
-  function printViaTmAssistant(eposXml) {
-    if (!eposXml || !eposXml.trim()) {
-      throw new Error('Kein Druckinhalt vorhanden');
-    }
-    const returnUrl = encodeURIComponent(window.location.href);
-    const encodedData = encodeURIComponent(eposXml);
-    const uri = `tmprintassistant://x-callback-url/print?ver=1&data-type=eposprintxml&data=${encodedData}&success=${returnUrl}&error-dialog=yes`;
-    
-    // Leite an installierte iPad-App weiter
-    window.location.href = uri;
-    return { success: true, via: 'tm_assistant', message: 'Druckauftrag an Epson TM Print Assistant übergeben' };
-  }
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // TREIBER 2: DIREKTER EPOS-PRINT (100% autark / ohne Supabase / rein Browser)
+  // TREIBER: DIREKTER EPOS-PRINT (100% autark / ohne Supabase / rein Browser)
   // ───────────────────────────────────────────────────────────────────────────
   function sendDirectToEpson(printerIp, soapXml, timeoutMs = 6000, useSsl = false) {
     if (!printerIp || !printerIp.trim()) {
@@ -451,17 +434,7 @@ ${bodyXml}
     const printerIp = settings.printerIp || '192.168.68.200';
     const useSsl = !!settings.useSsl;
 
-    // 1. Modus: Epson TM Print Assistant (iPad-App)
-    if (driver === 'tm_assistant') {
-      const combinedXml = buildCombinedOrderXml(order, settings);
-      if (!combinedXml) {
-        return { success: true, skipped: true, message: 'Keine druckbaren Positionen vorhanden.' };
-      }
-      printViaTmAssistant(combinedXml);
-      return { success: true, printedCount: 1, errors: [] };
-    }
-
-    // 2. Modus: Direkter ePOS-Druck (100% autark / ohne Supabase / rein Browser)
+    // 1. Modus: Direkter ePOS-Druck (100% autark / ohne Supabase / rein Browser)
     if (driver === 'epos_direct') {
       if (!printerIp) {
         console.warn('[EposPrint] Keine Drucker-IP konfiguriert.');
@@ -589,10 +562,6 @@ ${bodyXml}
   // Z-BERICHT DRUCKEN
   // ───────────────────────────────────────────────────────────────────────────
   async function printZReport(report, printerIp, driver = 'gateway', options = {}) {
-    if (driver === 'tm_assistant') {
-      const inner = buildZReportInnerXml(report);
-      return printViaTmAssistant(wrapEposXml(inner));
-    }
     if (driver === 'epos_direct') {
       const inner = buildZReportInnerXml(report);
       const soapXml = wrapSoapEnvelope(inner);
@@ -609,10 +578,6 @@ ${bodyXml}
   // TESTDRUCK
   // ───────────────────────────────────────────────────────────────────────────
   async function testPrint(printerIp, type = 'guest', driver = 'gateway', options = {}) {
-    if (driver === 'tm_assistant') {
-      const xml = buildTestReceiptXml(type);
-      return printViaTmAssistant(xml);
-    }
     if (driver === 'epos_direct') {
       const mockOrder = {
         orderNumber: 'TEST-01',
@@ -652,7 +617,6 @@ ${bodyXml}
     buildZReportXml,
     buildTestReceiptXml,
     buildCombinedOrderXml,
-    printViaTmAssistant,
     sendPrintRequest,
     sendToEpson,
     printOrder,

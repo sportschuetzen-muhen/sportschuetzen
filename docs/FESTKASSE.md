@@ -4,7 +4,7 @@
 > **Stand:** November 2026  
 > **URL:** `https://sps-b55.pages.dev/kasse/`  
 > **Komponenten:** `kasse/index.html`, `kasse/kasse.js`, `kasse/epos-print.js`, `kasse/abschluss.js`, `kasse/kellner.js`, `kasse/db.js`, `kasse/sw.js`  
-> **Architektur:** 100% Offline-First via IndexedDB (`FestkasseDB`) & Service Worker (`festkasse-v10`). Direktansteuerung von Epson LAN-Bondruckern via ePOS-Print (XML/HTTP). Keine dauerhafte Abhängigkeit zu Cloud, GAS oder Internet. WebKit/Safari-Härtung mit Redirect-Bereinigung und solider Statusleiste (kein Schleier/Blur).
+> **Architektur:** 100% Offline-First via IndexedDB (`FestkasseDB`) & Service Worker (`festkasse-v11`). Direktansteuerung von Epson LAN-Bondruckern via ePOS-Print (XML/HTTP) oder LAN-Gateway (ESC/POS Port 9100). Keine dauerhafte Abhängigkeit zu Cloud, GAS oder Internet. WebKit/Safari-Härtung mit Redirect-Bereinigung und solider Statusleiste (kein Schleier/Blur).
 
 ---
 
@@ -64,8 +64,7 @@ Die **Festkasse** ist eine eigenständige Progressive Web App (PWA) für das Sch
 * **Multi-Treiber-Modell (Schützenhaus vs. Autarkes Festzelt):**
   - **Treiber 1: ⚡ LAN-Gateway (CT 117 / Supabase Edge Function):** Standard im Vereinsheim/Schützenhaus. Druckaufträge werden als JSON an die Edge Function `pos-print` gesendet, welche rohe ESC/POS-Binärbefehle über TCP-Port 9100 an den Drucker streamt. Dies erlaubt nahtlosen Hintergrunddruck ohne jeden App-Wechsel auf dem iPad, PC oder Android-Gerät.
   - **Treiber 2: 🌐 Direkter ePOS-Print (100% ohne Supabase / rein Browser):** Autarke Direktanbindung des Epson ePOS-Print Webservers via Port 80 (HTTP) oder 443 (HTTPS). Der Browser sendet standardisiertes SOAP/XML direkt an `http://<ip>/cgi-bin/epos/service.cgi`. Ideal für den autarken Festbetrieb über lokalen HTTP-Webserver ohne jede Server- oder Cloud-Abhängigkeit.
-  - **Treiber 3: 📱 Epson TM Print Assistant (Offizielle iPadOS-App):** Weiterleitung via URI-Scheme `tmprintassistant://x-callback-url/print?ver=1...`.
-  - **Treiber 4: 📄 Browser-Druckdialog (AirPrint):** Fallback via nativer Druckausgabe.
+  - **Treiber 3: 📄 Browser-Druckdialog (AirPrint):** Fallback via nativer Druckausgabe.
 
 ### 5.2 2-Bon-Splittung (Kunde & Küche/Grill)
 * **Fortlaufende Bestellnummer:** Vergabe einer grossen, gut lesbaren Abhol-Nummer (`#01` bis `#999`), die bei Schichtbeginn im Einstellungsmenü jederzeit auf `#01` zurückgesetzt werden kann.

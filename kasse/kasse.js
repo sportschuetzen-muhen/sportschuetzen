@@ -20,7 +20,7 @@ const KasseModule = (function () {
   // Drucker & Festbetrieb-Einstellungen
   let printerSettings = {
     printerIp: '192.168.68.200',
-    printDriver: 'gateway', // 'gateway' (CT 117 / Supabase) | 'epos_direct' (100% autark Browser) | 'tm_assistant' | 'browser'
+    printDriver: 'gateway', // 'gateway' (CT 117 / Supabase) | 'epos_direct' (100% autark Browser) | 'browser'
     useSsl: false,
     printMode: 'manual', // 'manual' | 'auto' | 'browser'
     printGuestReceipt: true,
@@ -86,6 +86,10 @@ const KasseModule = (function () {
 
       const driver = await FestkasseDB.get('settings', 'printDriver');
       if (driver && driver.value) printerSettings.printDriver = driver.value;
+      if (printerSettings.printDriver === 'tm_assistant') {
+        printerSettings.printDriver = 'gateway';
+        await FestkasseDB.put('settings', { key: 'printDriver', value: 'gateway' });
+      }
 
       const ssl = await FestkasseDB.get('settings', 'useSsl');
       if (ssl !== undefined && ssl.value !== undefined) printerSettings.useSsl = !!ssl.value;
@@ -756,13 +760,13 @@ const KasseModule = (function () {
     const selectedDriver = document.querySelector('input[name="setting-print-driver"]:checked');
     const driver = selectedDriver ? selectedDriver.value : (printerSettings.printDriver || 'gateway');
 
-    if (!ip && driver !== 'tm_assistant') {
+    if (!ip) {
       if (statusEl) statusEl.innerHTML = '<span style="color: #ef4444;">⚠️ Bitte zuerst eine Drucker-IP eingeben.</span>';
       return;
     }
 
     if (statusEl) {
-      statusEl.innerHTML = `<span style="color: #38bdf8;">⏳ Sende ${type === 'kitchen' ? 'Küchenbon' : 'Gastbeleg'} via ${driver === 'tm_assistant' ? 'TM Print Assistant' : ip}...</span>`;
+      statusEl.innerHTML = `<span style="color: #38bdf8;">⏳ Sende ${type === 'kitchen' ? 'Küchenbon' : 'Gastbeleg'} an ${ip}...</span>`;
     }
 
     const sslCheck = document.getElementById('setting-print-ssl');
@@ -771,9 +775,7 @@ const KasseModule = (function () {
     try {
       await EposPrint.testPrint(ip, type, driver, { useSsl });
       if (statusEl) {
-        if (driver === 'tm_assistant') {
-          statusEl.innerHTML = '<span style="color: #10b981; font-weight: bold;">🟢 An Epson TM Print Assistant übergeben!</span>';
-        } else if (driver === 'epos_direct') {
+        if (driver === 'epos_direct') {
           statusEl.innerHTML = `<span style="color: #10b981; font-weight: bold;">🟢 Erfolgreich! ePOS-Testbon direkt an ${ip} gesendet (ohne Supabase).</span>`;
         } else {
           statusEl.innerHTML = `<span style="color: #10b981; font-weight: bold;">🟢 Erfolgreich! Testbon via LAN-Gateway an ${ip} gesendet.</span>`;
@@ -937,6 +939,11 @@ const KasseModule = (function () {
 })();
 
 window.addEventListener('DOMContentLoaded', () => {
+  // PWA Standalone Modus erkennen (iOS Home Screen WebClip / Desktop PWA)
+  if (window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches) {
+    document.documentElement.classList.add('pwa-standalone');
+  }
+
   KasseModule.init();
 
   // Schutz vor versehentlichem Pull-to-Refresh auf iOS/iPadOS Safari
