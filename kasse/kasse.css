@@ -1236,7 +1236,6 @@ html, body {
   width: 90%;
   max-width: 520px;
   max-height: 90vh;
-  overflow-y: auto;
   box-shadow: var(--shadow-lg);
   padding: 24px;
 }
@@ -1261,11 +1260,55 @@ html, body {
   cursor: pointer;
 }
 
+.modal-body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .modal-footer {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+/* Spezifische Härtung für das Drucker- & Einstellungsmodal:
+   Feste, stabile Höhe (kein Hüpfen beim Optionswechsel) & Sticky Footer (Speichern immer sichtbar) */
+.settings-modal-dialog {
+  max-width: 500px !important;
+  width: 94% !important;
+  height: 84vh !important;
+  max-height: 640px !important;
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.settings-modal-dialog .modal-header {
+  padding: 16px 20px;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+
+.settings-modal-dialog .modal-body {
+  flex: 1;
+  padding: 16px 20px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.settings-modal-dialog .modal-footer {
+  padding: 12px 20px;
+  margin-top: 0;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-card);
+  flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .btn-secondary {
@@ -1527,5 +1570,19 @@ html, body {
     max-width: 95vw !important;
     max-height: 92vh !important;
     padding: 16px !important;
+  }
+
+  .settings-modal-dialog {
+    width: 96vw !important;
+    max-width: 96vw !important;
+    height: 92vh !important;
+    max-height: 92vh !important;
+    padding: 0 !important;
+  }
+
+  .settings-modal-dialog .modal-header,
+  .settings-modal-dialog .modal-body,
+  .settings-modal-dialog .modal-footer {
+    padding: 12px 14px !important;
   }
 }
