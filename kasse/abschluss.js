@@ -514,7 +514,7 @@ const KassenAbschluss = (function () {
 
       let res;
       if (typeof EposPrint.printZReport === 'function') {
-        res = await EposPrint.printZReport(activeZReport, printerIp, driver);
+        res = await EposPrint.printZReport(activeZReport, printerIp, driver, settings);
       } else {
         const xml = EposPrint.buildZReportXml(activeZReport);
         res = await EposPrint.sendToEpson(printerIp, xml, 6000);

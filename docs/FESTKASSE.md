@@ -59,11 +59,12 @@ Die **Festkasse** ist eine eigenständige Progressive Web App (PWA) für das Sch
 
 ## 5. Bondruck & 2-Bon-System für Festbetrieb (ESC/POS LAN Port 9100)
 
-### 5.1 Druck-Architektur & Epson TM-T20II Dual-Treiber
-* **Dual-Treiber-Modell (Schützenhaus vs. Autarkes Festzelt):**
+### 5.1 Druck-Architektur & Epson TM-T20II Multi-Treiber
+* **Multi-Treiber-Modell (Schützenhaus vs. Autarkes Festzelt):**
   - **Treiber 1: ⚡ LAN-Gateway (CT 117 / Supabase Edge Function):** Standard im Vereinsheim/Schützenhaus. Druckaufträge werden als JSON an die Edge Function `pos-print` gesendet, welche rohe ESC/POS-Binärbefehle über TCP-Port 9100 an den Drucker streamt. Dies erlaubt nahtlosen Hintergrunddruck ohne jeden App-Wechsel auf dem iPad, PC oder Android-Gerät.
-  - **Treiber 2: 📱 Epson TM Print Assistant (Offizielle iPadOS-App / 100% Offline):** Speziell für das autarke Festzelt ohne Server/Internet. Die Festkasse generiert standardisiertes `<epos-print>`-XML und ruft die installierte App per URI-Scheme `tmprintassistant://x-callback-url/print?ver=1&data-type=eposprintxml...` auf. Die App übernimmt den Port-9100-Druck und springt via `success`-URL automatisch zurück in die Festkasse. Multi-Bons (Gast + Küche) werden in einem einzigen kombinierten XML übergeben, sodass nur ein einziger App-Wechsel nötig ist.
-  - **Treiber 3: 📄 Browser-Druckdialog (AirPrint):** Fallback via nativer Druckausgabe.
+  - **Treiber 2: 🌐 Direkter ePOS-Print (100% ohne Supabase / rein Browser):** Autarke Direktanbindung des Epson ePOS-Print Webservers via Port 80 (HTTP) oder 443 (HTTPS). Der Browser sendet standardisiertes SOAP/XML direkt an `http://<ip>/cgi-bin/epos/service.cgi`. Ideal für den autarken Festbetrieb über lokalen HTTP-Webserver ohne jede Server- oder Cloud-Abhängigkeit.
+  - **Treiber 3: 📱 Epson TM Print Assistant (Offizielle iPadOS-App):** Weiterleitung via URI-Scheme `tmprintassistant://x-callback-url/print?ver=1...`.
+  - **Treiber 4: 📄 Browser-Druckdialog (AirPrint):** Fallback via nativer Druckausgabe.
 
 ### 5.2 2-Bon-Splittung (Kunde & Küche/Grill)
 * **Fortlaufende Bestellnummer:** Vergabe einer grossen, gut lesbaren Abhol-Nummer (`#01` bis `#999`), die bei Schichtbeginn im Einstellungsmenü jederzeit auf `#01` zurückgesetzt werden kann.

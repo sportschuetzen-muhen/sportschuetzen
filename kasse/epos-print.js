@@ -4,8 +4,9 @@
  * 
  * Unterstützt:
  * 1. ⚡ LAN-Gateway (CT 117 / Supabase): Nahtloser ESC/POS-Sofortdruck via Port 9100
- * 2. 📱 Epson TM Print Assistant: 100% autarker Druck aus iPadOS/iOS via tmprintassistant:// URI-Scheme
- * 3. 📄 AirPrint / Browser-Druckmenü Fallback
+ * 2. 🌐 Direkter ePOS-Print: 100% autarker Druck rein aus dem Browser via HTTP/HTTPS SOAP (ohne Supabase)
+ * 3. 📱 Epson TM Print Assistant: Druck aus iPadOS/iOS via tmprintassistant:// URI-Scheme
+ * 4. 📄 AirPrint / Browser-Druckmenü Fallback
  * 
  * Belegarten:
  * - Gastbeleg (Quittung) mit Preisen, Zahlart & Abholnummer
@@ -41,9 +42,21 @@ const EposPrint = (function () {
     return l + ' '.repeat(spaces) + r;
   }
 
-  // Erzeugt das standardisierte ePOS-Print XML Wurzelelement
+  // Erzeugt das standardisierte ePOS-Print XML Wurzelelement (für URI-Scheme & Apps)
   function wrapEposXml(bodyXml) {
     return `<?xml version="1.0" encoding="utf-8"?>\n<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">\n${bodyXml}\n</epos-print>`;
+  }
+
+  // Erzeugt den offiziellen SOAP-Envelope für Epson ePOS-Print Web-Server (Port 80/443 Direktdruck)
+  function wrapSoapEnvelope(bodyXml) {
+    return `<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">
+${bodyXml}
+    </epos-print>
+  </s:Body>
+</s:Envelope>`;
   }
 
   // 1. GASTBELEG XML-KORPUS
@@ -328,7 +341,60 @@ const EposPrint = (function () {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // TREIBER 2: LAN-PRINT-GATEWAY (Supabase Edge Function / Port 9100 ESC/POS)
+  // TREIBER 2: DIREKTER EPOS-PRINT (100% autark / ohne Supabase / rein Browser)
+  // ───────────────────────────────────────────────────────────────────────────
+  function sendDirectToEpson(printerIp, soapXml, timeoutMs = 6000, useSsl = false) {
+    if (!printerIp || !printerIp.trim()) {
+      throw new Error('Keine Drucker-IP angegeben. Bitte im Menü eintragen.');
+    }
+    const cleanIp = printerIp.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    const protocol = useSsl ? 'https:' : (window.location.protocol === 'https:' ? 'https:' : 'http:');
+    const port = useSsl ? 443 : 80;
+    const url = `${protocol}//${cleanIp}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=${timeoutMs}`;
+
+    return new Promise((resolve, reject) => {
+      try {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', url, true);
+        xhr.timeout = timeoutMs;
+        xhr.setRequestHeader('Content-Type', 'text/xml; charset=utf-8');
+        xhr.setRequestHeader('SOAPAction', '""');
+
+        xhr.onload = function () {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            const respText = xhr.responseText || '';
+            if (respText.includes('success="false"')) {
+              reject(new Error('Drucker meldet Fehler: ' + respText));
+            } else {
+              resolve({ success: true, message: `Druckauftrag direkt an ${cleanIp} übermittelt.` });
+            }
+          } else {
+            reject(new Error(`Drucker meldet HTTP ${xhr.status}: ${xhr.statusText}`));
+          }
+        };
+
+        xhr.onerror = function () {
+          const isHttpsPage = window.location.protocol === 'https:';
+          if (isHttpsPage && !useSsl) {
+            reject(new Error(`Mixed-Content blockiert: Kasse läuft auf HTTPS, Drucker auf HTTP. Starte Kasse über HTTP oder aktiviere SSL auf dem Drucker.`));
+          } else {
+            reject(new Error(`Verbindung zu Drucker ${cleanIp} fehlgeschlagen. Prüfe IP-Adresse, WLAN und ob ePOS-Print aktiviert ist.`));
+          }
+        };
+
+        xhr.ontimeout = function () {
+          reject(new Error(`Timeout (${timeoutMs / 1000}s) beim Verbinden mit Drucker ${cleanIp}`));
+        };
+
+        xhr.send(soapXml);
+      } catch (xhrErr) {
+        reject(new Error(`Drucker ${cleanIp} nicht erreichbar: ${xhrErr.message || xhrErr}`));
+      }
+    });
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // TREIBER 3: LAN-PRINT-GATEWAY (Supabase Edge Function / Port 9100 ESC/POS)
   // ───────────────────────────────────────────────────────────────────────────
   async function sendPrintRequest(payload, timeoutMs = 6000) {
     const controller = new AbortController();
@@ -377,6 +443,7 @@ const EposPrint = (function () {
   async function printOrder(order, settings = {}) {
     const driver = settings.printDriver || 'gateway';
     const printerIp = settings.printerIp || '192.168.68.200';
+    const useSsl = !!settings.useSsl;
 
     // 1. Modus: Epson TM Print Assistant (iPad-App)
     if (driver === 'tm_assistant') {
@@ -388,7 +455,71 @@ const EposPrint = (function () {
       return { success: true, printedCount: 1, errors: [] };
     }
 
-    // 2. Modus: LAN-Gateway (CT 117 / Supabase Edge Function)
+    // 2. Modus: Direkter ePOS-Druck (100% autark / ohne Supabase / rein Browser)
+    if (driver === 'epos_direct') {
+      if (!printerIp) {
+        console.warn('[EposPrint] Keine Drucker-IP konfiguriert.');
+        return { success: false, reason: 'NO_IP' };
+      }
+
+      const printGuest = settings.printGuestReceipt !== false;
+      const printKitchen = settings.printKitchenReceipt !== false;
+      const printDrinks = settings.printDrinksReceipt === true;
+
+      let printedCount = 0;
+      const errors = [];
+
+      if (printGuest) {
+        try {
+          const innerXml = buildGuestReceiptInnerXml(order, settings);
+          const soapXml = wrapSoapEnvelope(innerXml);
+          await sendDirectToEpson(printerIp, soapXml, 6000, useSsl);
+          printedCount++;
+        } catch (e) {
+          errors.push('Gastbeleg: ' + e.message);
+        }
+      }
+
+      if (printKitchen) {
+        const innerXml = buildKitchenReceiptInnerXml(order, settings);
+        if (innerXml) {
+          await new Promise(r => setTimeout(r, 250));
+          try {
+            const soapXml = wrapSoapEnvelope(innerXml);
+            await sendDirectToEpson(printerIp, soapXml, 6000, useSsl);
+            printedCount++;
+          } catch (e) {
+            errors.push('Küchenbon: ' + e.message);
+          }
+        }
+      }
+
+      if (printDrinks) {
+        const innerXml = buildDrinksReceiptInnerXml(order, settings);
+        if (innerXml) {
+          await new Promise(r => setTimeout(r, 250));
+          try {
+            const soapXml = wrapSoapEnvelope(innerXml);
+            await sendDirectToEpson(printerIp, soapXml, 6000, useSsl);
+            printedCount++;
+          } catch (e) {
+            errors.push('Getränkebon: ' + e.message);
+          }
+        }
+      }
+
+      if (errors.length > 0 && printedCount === 0) {
+        throw new Error(errors.join(' | '));
+      }
+
+      return {
+        success: printedCount > 0,
+        printedCount,
+        errors
+      };
+    }
+
+    // 3. Modus: LAN-Gateway (CT 117 / Supabase Edge Function)
     if (!printerIp) {
       console.warn('[EposPrint] Keine Drucker-IP konfiguriert.');
       return { success: false, reason: 'NO_IP' };
@@ -451,10 +582,15 @@ const EposPrint = (function () {
   // ───────────────────────────────────────────────────────────────────────────
   // Z-BERICHT DRUCKEN
   // ───────────────────────────────────────────────────────────────────────────
-  async function printZReport(report, printerIp, driver = 'gateway') {
+  async function printZReport(report, printerIp, driver = 'gateway', options = {}) {
     if (driver === 'tm_assistant') {
       const inner = buildZReportInnerXml(report);
       return printViaTmAssistant(wrapEposXml(inner));
+    }
+    if (driver === 'epos_direct') {
+      const inner = buildZReportInnerXml(report);
+      const soapXml = wrapSoapEnvelope(inner);
+      return await sendDirectToEpson(printerIp || '192.168.68.200', soapXml, 6000, !!options.useSsl);
     }
     return await sendPrintRequest({
       type: 'z_report',
@@ -466,10 +602,36 @@ const EposPrint = (function () {
   // ───────────────────────────────────────────────────────────────────────────
   // TESTDRUCK
   // ───────────────────────────────────────────────────────────────────────────
-  async function testPrint(printerIp, type = 'guest', driver = 'gateway') {
+  async function testPrint(printerIp, type = 'guest', driver = 'gateway', options = {}) {
     if (driver === 'tm_assistant') {
       const xml = buildTestReceiptXml(type);
       return printViaTmAssistant(xml);
+    }
+    if (driver === 'epos_direct') {
+      const mockOrder = {
+        orderNumber: 'TEST-01',
+        displayOrderNumber: '#TEST',
+        timestamp: new Date().toISOString(),
+        cashierName: 'Testbediener',
+        stationName: 'Kasse 1',
+        items: [
+          { qty: 2, name: 'Bratwurst mit Brot', price: 7.50, categoryId: 'cat_grill' },
+          { qty: 1, name: 'Portion Pommes', price: 5.50, categoryId: 'cat_grill' },
+          { qty: 2, name: 'Bier Offenausschank 0.5l', price: 5.50, categoryId: 'cat_bier_wein' }
+        ],
+        totalAmount: 31.00,
+        paymentMethod: 'bar',
+        cashReceived: 50.00,
+        changeGiven: 19.00
+      };
+      let inner;
+      if (type === 'kitchen') {
+        inner = buildKitchenReceiptInnerXml(mockOrder, {});
+      } else {
+        inner = buildGuestReceiptInnerXml(mockOrder, { openDrawer: false });
+      }
+      const soapXml = wrapSoapEnvelope(inner || '');
+      return await sendDirectToEpson(printerIp || '192.168.68.200', soapXml, 5000, !!options.useSsl);
     }
     return await sendPrintRequest({
       type: type === 'kitchen' ? 'test_kitchen' : 'test_guest',

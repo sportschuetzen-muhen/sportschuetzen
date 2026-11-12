@@ -294,14 +294,27 @@
           </label>
           <div style="display: flex; flex-direction: column; gap: 8px;">
             <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer;">
-              <input type="radio" name="setting-print-driver" value="gateway" id="driver-gateway" checked style="margin-top: 2px;">
+              <input type="radio" name="setting-print-driver" value="gateway" id="driver-gateway" checked style="margin-top: 2px;" onchange="KasseModule.toggleDriverOptions()">
               <div>
                 <strong>⚡ LAN-Gateway (CT 117 / Supabase)</strong>
                 <div style="font-size: 11px; color: var(--text-muted);">Nahtloser Sofortdruck im Hintergrund via Port 9100. Kein App-Wechsel auf dem iPad (Standard im Schützenhaus).</div>
               </div>
             </label>
             <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer;">
-              <input type="radio" name="setting-print-driver" value="tm_assistant" id="driver-tm-assistant" style="margin-top: 2px;">
+              <input type="radio" name="setting-print-driver" value="epos_direct" id="driver-epos-direct" style="margin-top: 2px;" onchange="KasseModule.toggleDriverOptions()">
+              <div>
+                <strong>🌐 Direkter ePOS-Print (100% ohne Supabase / rein aus dem Browser)</strong>
+                <div style="font-size: 11px; color: var(--text-muted);">Sendet ePOS-Print XML direkt an die Drucker-IP via Port 80 (HTTP) oder 443 (HTTPS). Kein Server und keine App nötig.</div>
+              </div>
+            </label>
+            <div id="epos-direct-options" style="margin-left: 24px; display: none; margin-top: 2px; padding: 6px 10px; background: rgba(0,0,0,0.25); border-radius: 4px; border-left: 2px solid #a855f7;">
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer;">
+                <input type="checkbox" id="setting-print-ssl">
+                <span><strong>HTTPS / SSL nutzen</strong> (nur aktivieren, falls SSL auf Drucker aktiv ist; sonst unverschlüsseltes HTTP)</span>
+              </label>
+            </div>
+            <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer;">
+              <input type="radio" name="setting-print-driver" value="tm_assistant" id="driver-tm-assistant" style="margin-top: 2px;" onchange="KasseModule.toggleDriverOptions()">
               <div>
                 <strong>📱 Epson TM Print Assistant (iPad-App / 100% Offline)</strong>
                 <div style="font-size: 11px; color: var(--text-muted);">Öffnet die installierte Epson-Brücken-App via URI-Scheme (tmprintassistant://). Ideal im autarken Festzelt.</div>

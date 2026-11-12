@@ -20,7 +20,8 @@ const KasseModule = (function () {
   // Drucker & Festbetrieb-Einstellungen
   let printerSettings = {
     printerIp: '192.168.68.200',
-    printDriver: 'gateway', // 'gateway' (CT 117 / Supabase) | 'tm_assistant' (Epson iPad App) | 'browser'
+    printDriver: 'gateway', // 'gateway' (CT 117 / Supabase) | 'epos_direct' (100% autark Browser) | 'tm_assistant' | 'browser'
+    useSsl: false,
     printMode: 'manual', // 'manual' | 'auto' | 'browser'
     printGuestReceipt: true,
     printKitchenReceipt: true,
@@ -85,6 +86,9 @@ const KasseModule = (function () {
 
       const driver = await FestkasseDB.get('settings', 'printDriver');
       if (driver && driver.value) printerSettings.printDriver = driver.value;
+
+      const ssl = await FestkasseDB.get('settings', 'useSsl');
+      if (ssl !== undefined && ssl.value !== undefined) printerSettings.useSsl = !!ssl.value;
 
       const mode = await FestkasseDB.get('settings', 'printMode');
       if (mode && mode.value) printerSettings.printMode = mode.value;
@@ -648,6 +652,11 @@ const KasseModule = (function () {
     const driverRadio = document.querySelector(`input[name="setting-print-driver"][value="${driver}"]`);
     if (driverRadio) driverRadio.checked = true;
 
+    // SSL Checkbox
+    const sslCheck = document.getElementById('setting-print-ssl');
+    if (sslCheck) sslCheck.checked = !!printerSettings.useSsl;
+    toggleDriverOptions();
+
     // Druckmodus Radio
     const mode = printerSettings.printMode || 'manual';
     const radio = document.querySelector(`input[name="setting-print-mode"][value="${mode}"]`);
@@ -678,6 +687,15 @@ const KasseModule = (function () {
     modal.classList.add('active');
   }
 
+  function toggleDriverOptions() {
+    const selectedDriver = document.querySelector('input[name="setting-print-driver"]:checked');
+    const driver = selectedDriver ? selectedDriver.value : (printerSettings.printDriver || 'gateway');
+    const sslDiv = document.getElementById('epos-direct-options');
+    if (sslDiv) {
+      sslDiv.style.display = (driver === 'epos_direct') ? 'block' : 'none';
+    }
+  }
+
   async function saveSettings() {
     const ipInput = document.getElementById('setting-printer-ip');
     const newIp = ipInput ? ipInput.value.trim() : '';
@@ -688,6 +706,9 @@ const KasseModule = (function () {
     const selectedMode = document.querySelector('input[name="setting-print-mode"]:checked');
     const newMode = selectedMode ? selectedMode.value : 'manual';
 
+    const sslCheck = document.getElementById('setting-print-ssl');
+    const newSsl = sslCheck ? sslCheck.checked : false;
+
     const guestCheck = document.getElementById('setting-print-guest');
     const kitchenCheck = document.getElementById('setting-print-kitchen');
     const drinksCheck = document.getElementById('setting-print-drinks');
@@ -695,6 +716,7 @@ const KasseModule = (function () {
 
     printerSettings.printerIp = newIp;
     printerSettings.printDriver = newDriver;
+    printerSettings.useSsl = newSsl;
     printerSettings.printMode = newMode;
     printerSettings.printGuestReceipt = guestCheck ? guestCheck.checked : true;
     printerSettings.printKitchenReceipt = kitchenCheck ? kitchenCheck.checked : true;
@@ -704,6 +726,7 @@ const KasseModule = (function () {
     // In IndexedDB sichern
     await FestkasseDB.put('settings', { key: 'printerIp', value: printerSettings.printerIp });
     await FestkasseDB.put('settings', { key: 'printDriver', value: printerSettings.printDriver });
+    await FestkasseDB.put('settings', { key: 'useSsl', value: printerSettings.useSsl });
     await FestkasseDB.put('settings', { key: 'printMode', value: printerSettings.printMode });
     await FestkasseDB.put('settings', { key: 'printGuestReceipt', value: printerSettings.printGuestReceipt });
     await FestkasseDB.put('settings', { key: 'printKitchenReceipt', value: printerSettings.printKitchenReceipt });
@@ -741,12 +764,19 @@ const KasseModule = (function () {
       statusEl.innerHTML = `<span style="color: #38bdf8;">⏳ Sende ${type === 'kitchen' ? 'Küchenbon' : 'Gastbeleg'} via ${driver === 'tm_assistant' ? 'TM Print Assistant' : ip}...</span>`;
     }
 
+    const sslCheck = document.getElementById('setting-print-ssl');
+    const useSsl = sslCheck ? sslCheck.checked : !!printerSettings.useSsl;
+
     try {
-      await EposPrint.testPrint(ip, type, driver);
+      await EposPrint.testPrint(ip, type, driver, { useSsl });
       if (statusEl) {
-        statusEl.innerHTML = driver === 'tm_assistant'
-          ? '<span style="color: #10b981; font-weight: bold;">🟢 An Epson TM Print Assistant übergeben!</span>'
-          : `<span style="color: #10b981; font-weight: bold;">🟢 Erfolgreich! Testbon an ${ip} gesendet.</span>`;
+        if (driver === 'tm_assistant') {
+          statusEl.innerHTML = '<span style="color: #10b981; font-weight: bold;">🟢 An Epson TM Print Assistant übergeben!</span>';
+        } else if (driver === 'epos_direct') {
+          statusEl.innerHTML = `<span style="color: #10b981; font-weight: bold;">🟢 Erfolgreich! ePOS-Testbon direkt an ${ip} gesendet (ohne Supabase).</span>`;
+        } else {
+          statusEl.innerHTML = `<span style="color: #10b981; font-weight: bold;">🟢 Erfolgreich! Testbon via LAN-Gateway an ${ip} gesendet.</span>`;
+        }
       }
       showToast(`✓ Testdruck (${type}) übermittelt`);
     } catch (err) {
@@ -892,6 +922,7 @@ const KasseModule = (function () {
     printLastOrder,
     openSettingsModal,
     saveSettings,
+    toggleDriverOptions,
     resetOrderSequence,
     runPrinterTest,
     switchView,
