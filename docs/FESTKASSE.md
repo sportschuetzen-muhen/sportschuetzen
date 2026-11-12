@@ -12,9 +12,9 @@
 
 Die **Festkasse** ist eine eigenständige Progressive Web App (PWA) für das Schützenhaus, Festzelte und Vereinsanlässe der Sportschützen Muhen. Sie wurde entwickelt, um auch bei völligem Netzausfall im Festzelt eine blitzschnelle, intuitive Kassenführung zu gewährleisten:
 
-* **WaiterOne-Bedienlayout (iPad-optimiert):** Horizontale Kategorien-Pills, Produktkacheln mit grossen Touch-Zielen ($\ge 52\text{px}$), rechter Bon-Bereich mit Mengen-Steppern und Schweizer Notenrechner (10, 20, 50, 100, 200 CHF) mit automatischer Rückgeldanzeige.
+* **WaiterOne-Bedienlayout (iPad- & iPhone-optimiert):** Horizontale Kategorien-Pills, adaptive Produktkacheln mit grossen Touch-Zielen ($\ge 52\text{px}$), flexibler Bon-Bereich im Hoch- und Querformat sowie Schweizer Notenrechner (10, 20, 50, 100, 200 CHF) mit automatischer Rückgeldanzeige.
 * **Kassensturz & Z-Abschluss:** Interaktives Münzen- und Noten-Zählprotokoll (5 Rappen bis 1000 Fr), Soll/Ist-Vergleich mit Diskrepanz-Berechnung, Barauslagen-Erfassung und Z-Bericht-Quittung (80mm Thermo-Druck).
-* **Multi-Device Kellneransicht:** Handheld-Modus für Smartphones (iPhone) zur Tischerfassung mit Übermittlung an die Hauptkasse.
+* **Multi-Device Kellneransicht & Sofortdruck:** Nativer Fullscreen-Handheld-Modus für Smartphones (iPhone) zur blitzschnellen Tischerfassung. Bei Klick auf «Bestellung senden» wird der Bon (Küchen- und Gastbeleg mit Tischnummer) sofort physisch auf dem Bondrucker ausgeworfen und in der lokalen DB verbucht.
 * **Entkopplung Schichtplaner:** Der Schichtplaner wurde bewusst aus der Kassen-App herausgelöst und in ein eigenes, cloud-synchronisiertes System überführt (siehe [SCHICHTPLANER.md](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/docs/SCHICHTPLANER.md)). Kassenbediener wechseln ihren Namen direkt über den schnellen Bediener-Dialog im Kassen-Header.
 
 ---

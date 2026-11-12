@@ -46,9 +46,14 @@ const KellnerHandheld = (function () {
               <div style="font-size: 11px; color: var(--text-dim); font-weight: 700;">KELLNER-MODUS</div>
               <div style="font-size: 14px; font-weight: 800;">Sportschützen Fest</div>
             </div>
-            <button class="table-selector-pill" onclick="KellnerHandheld.openTableModal()">
-              <span>📍 ${escapeHtml(selectedTable)} ▾</span>
-            </button>
+            <div style="display: flex; gap: 6px; align-items: center;">
+              <button class="table-selector-pill" onclick="KellnerHandheld.openTableModal()">
+                <span>📍 ${escapeHtml(selectedTable)} ▾</span>
+              </button>
+              <button class="nav-tab-btn" onclick="KasseModule.openSettingsModal()" style="height: 36px; padding: 0 10px; border: 1px solid var(--border-color); background: var(--bg-card); border-radius: var(--radius-sm); color: var(--text-main); font-weight: 700; display: inline-flex; align-items: center; cursor: pointer;" title="Drucker-Einstellungen">
+                <span>⚙️</span>
+              </button>
+            </div>
           </div>
 
           <!-- ARTIKEL SCHNELLAUSWAHL -->
@@ -130,7 +135,7 @@ const KellnerHandheld = (function () {
     renderUI();
   }
 
-  // Sendet Bestellung an die zentrale iPad Kasse
+  // Sendet Bestellung und druckt Bon sofort aus
   async function sendOrderToKasse() {
     if (cart.length === 0) return;
 
@@ -138,30 +143,98 @@ const KellnerHandheld = (function () {
     const orderData = {
       id: 'kellner_' + Date.now(),
       orderNumber: 'T-' + Math.floor(100 + Math.random() * 900),
+      displayOrderNumber: selectedTable,
       timestamp: new Date().toISOString(),
       tableNumber: selectedTable,
+      cashierName: (typeof KasseModule !== 'undefined' && KasseModule.getActiveCashierName) ? KasseModule.getActiveCashierName() : 'Kellner (iPhone)',
+      stationName: 'Handheld',
       items: [...cart],
       totalAmount: total,
+      paymentMethod: 'bar',
       status: 'pending_payment',
       source: 'handheld_iphone'
     };
 
-    // Im BroadcastChannel publizieren
+    // 1. In lokaler Datenbank sichern
+    try {
+      await FestkasseDB.put('orders', orderData);
+    } catch (dbErr) {
+      console.warn('[Kellner] Fehler beim Speichern in DB:', dbErr);
+    }
+
+    // 2. Drucker-Settings ermitteln
+    let printerSettings = {
+      printerIp: '192.168.68.200',
+      printDriver: 'gateway',
+      useSsl: false,
+      printGuestReceipt: true,
+      printKitchenReceipt: true,
+      printDrinksReceipt: false
+    };
+
+    if (typeof KasseModule !== 'undefined' && KasseModule.getPrinterSettings) {
+      printerSettings = KasseModule.getPrinterSettings();
+    } else {
+      try {
+        const ip = await FestkasseDB.get('settings', 'printerIp');
+        if (ip && ip.value) printerSettings.printerIp = ip.value;
+        const drv = await FestkasseDB.get('settings', 'printDriver');
+        if (drv && drv.value) printerSettings.printDriver = drv.value;
+        const ssl = await FestkasseDB.get('settings', 'useSsl');
+        if (ssl && ssl.value !== undefined) printerSettings.useSsl = !!ssl.value;
+        const kg = await FestkasseDB.get('settings', 'printGuestReceipt');
+        if (kg && kg.value !== undefined) printerSettings.printGuestReceipt = !!kg.value;
+        const kk = await FestkasseDB.get('settings', 'printKitchenReceipt');
+        if (kk && kk.value !== undefined) printerSettings.printKitchenReceipt = !!kk.value;
+      } catch (e) {}
+    }
+
+    // 3. Sofortigen Druck auslösen (Küchenbon / Tischbeleg)
+    let printSuccess = false;
+    let printError = null;
+    if (typeof EposPrint !== 'undefined' && typeof EposPrint.printOrder === 'function') {
+      try {
+        const res = await EposPrint.printOrder(orderData, printerSettings);
+        printSuccess = res && res.success;
+      } catch (printErr) {
+        printError = printErr.message || String(printErr);
+        console.warn('[Kellner] Sofortdruck fehlgeschlagen:', printErr);
+      }
+    }
+
+    // 4. Im BroadcastChannel publizieren (falls Tabs/Kassen auf demselben Host offen sind)
     if (broadcastChannel) {
       broadcastChannel.postMessage({
         type: 'NEW_KELLNER_ORDER',
-        order: orderData
+        order: orderData,
+        alreadyPrinted: printSuccess
       });
     }
 
-    // Lokalen Bon leeren
+    // 5. Lokalen Bon leeren & UI aktualisieren
+    const prevTable = selectedTable;
     cart = [];
     renderUI();
 
-    if (typeof KasseModule !== 'undefined' && KasseModule.showToast) {
-      KasseModule.showToast(`Bestellung für ${selectedTable} an Kasse gesendet!`);
+    // 6. Feedback & Haptik
+    if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+
+    if (printSuccess) {
+      if (typeof KasseModule !== 'undefined' && KasseModule.showToast) {
+        KasseModule.showToast(`✓ Bon für ${prevTable} gedruckt!`);
+      } else {
+        alert(`✓ Bon für ${prevTable} erfolgreich gedruckt!`);
+      }
+    } else if (printError) {
+      if (typeof KasseModule !== 'undefined' && KasseModule.showToast) {
+        KasseModule.showToast(`⚠️ ${prevTable} verbucht, aber Druckfehler: ${printError}`);
+      } else {
+        alert(`Bestellung für ${prevTable} erfasst, aber Druckfehler: ${printError}`);
+      }
     } else {
-      alert(`Bestellung für ${selectedTable} erfolgreich an Kasse gesendet!`);
+      if (typeof KasseModule !== 'undefined' && KasseModule.showToast) {
+        KasseModule.showToast(`Bestellung für ${prevTable} erfasst!`);
+      }
     }
   }
 

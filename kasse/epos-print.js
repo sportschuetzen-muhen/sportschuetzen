@@ -76,6 +76,9 @@ ${bodyXml}
     xml += `      <text font="font_a" em="true">SPORTSCHÜTZEN MUHEN&#10;</text>\n`;
     xml += `      <text font="font_a" em="false">Festwirtschaft &amp; Kasse&#10;</text>\n`;
     xml += `      <text font="font_a" em="false">${escapeXml(dateStr)}&#10;</text>\n`;
+    if (order.tableNumber) {
+      xml += `      <text font="font_a" em="true">📍 ${escapeXml(order.tableNumber)}&#10;</text>\n`;
+    }
     xml += `      <text font="font_a" em="false">Bediener: ${escapeXml(order.cashierName || 'Kasse')} (${escapeXml(order.stationName || 'Station')})&#10;&#10;</text>\n`;
 
     // Grosse Bestell-Nummer
@@ -145,6 +148,9 @@ ${bodyXml}
     let xml = '';
     xml += `      <text align="center"/>\n`;
     xml += `      <text font="font_a" em="true" width="2" height="1">*** KÜCHE / GRILL ***&#10;</text>\n`;
+    if (order.tableNumber) {
+      xml += `      <text font="font_a" em="true" width="2" height="2">📍 ${escapeXml(order.tableNumber)}&#10;</text>\n`;
+    }
     xml += `      <text font="font_a" em="false" width="1" height="1">&#10;</text>\n`;
 
     xml += `      <text align="center"/>\n`;

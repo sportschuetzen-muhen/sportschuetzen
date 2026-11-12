@@ -25,24 +25,24 @@
       <div class="header-left">
         <div class="brand-badge">
           <span>🎯</span>
-          <span>SPORTSCHÜTZEN MUHEN</span>
+          <span class="brand-badge-name">SPORTSCHÜTZEN MUHEN</span>
         </div>
-        <div class="event-title">Festwirtschaft</div>
+        <div class="event-title"><span class="event-title-text">Festwirtschaft</span></div>
       </div>
 
       <!-- ZENTRALE MODUS-TABS -->
       <nav class="header-nav">
         <button id="tab-btn-kasse" class="nav-tab-btn active" onclick="KasseModule.switchView('kasse')">
           <span>🛒</span>
-          <span>Kasse</span>
+          <span class="tab-label">Kasse</span>
         </button>
         <button id="tab-btn-abschluss" class="nav-tab-btn" onclick="KasseModule.switchView('abschluss')">
           <span>📊</span>
-          <span>Kassensturz & Z-Bericht</span>
+          <span class="tab-label">Kassensturz &amp; Z-Bericht</span>
         </button>
         <button id="tab-btn-kellner" class="nav-tab-btn" onclick="KasseModule.switchView('kellner')">
           <span>📱</span>
-          <span>Kellner (iPhone)</span>
+          <span class="tab-label">Kellner (iPhone)</span>
         </button>
       </nav>
 
@@ -57,14 +57,14 @@
         </div>
 
         <!-- EINSTELLUNGEN & DRUCKER -->
-        <button class="nav-tab-btn" onclick="KasseModule.openSettingsModal()" title="Kassen- & Drucker-Einstellungen (Epson LAN)" style="height: 42px; padding: 0 14px; border: 1px solid var(--border-color); background: var(--bg-card); border-radius: var(--radius-sm); color: var(--text-main); font-weight: 700; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+        <button class="nav-tab-btn btn-printer-settings" onclick="KasseModule.openSettingsModal()" title="Kassen- &amp; Drucker-Einstellungen (Epson LAN)">
           <span>⚙️</span>
-          <span>Drucker</span>
+          <span class="btn-printer-label">Drucker</span>
         </button>
 
         <div class="offline-pill" title="App ist 100% offline-fähig">
           <div class="offline-dot"></div>
-          <span>Offline Bereit</span>
+          <span class="offline-pill-text">Offline Bereit</span>
         </div>
       </div>
     </header>

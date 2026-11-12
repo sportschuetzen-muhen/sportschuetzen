@@ -145,8 +145,13 @@ function buildGuestReceipt(order: any, options: { openDrawer?: boolean } = {}): 
     .line("SPORTSCHÜTZEN MUHEN")
     .bold(false)
     .line("Festwirtschaft & Kasse")
-    .line(dateStr)
-    .line(`Bediener: ${order.cashierName || "Kasse"} (${order.stationName || "Station"})`)
+    .line(dateStr);
+
+  if (order.tableNumber) {
+    b.bold(true).line(`TISCH: ${order.tableNumber}`).bold(false);
+  }
+
+  b.line(`Bediener: ${order.cashierName || "Kasse"} (${order.stationName || "Station"})`)
     .line();
 
   // Bestellnummer (Gross)
@@ -222,8 +227,13 @@ function buildKitchenReceipt(order: any): Uint8Array | null {
   b.align("center")
     .size(2, 1)
     .bold(true)
-    .line("*** KÜCHE / GRILL ***")
-    .size(1, 1)
+    .line("*** KÜCHE / GRILL ***");
+
+  if (order.tableNumber) {
+    b.size(2, 2).line(`TISCH: ${order.tableNumber}`);
+  }
+
+  b.size(1, 1)
     .bold(false)
     .line();
 

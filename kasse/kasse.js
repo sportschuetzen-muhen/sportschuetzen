@@ -133,7 +133,8 @@ const KasseModule = (function () {
     playNotificationSound();
     if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
 
-    showToast(`🔔 Neue Bestellung von ${escapeHtml(order.tableNumber)}: ${order.items ? order.items.length : 0} Artikel (${formatCHF(order.totalAmount)})`);
+    const printedNote = order.alreadyPrinted ? ' (Bon bereits gedruckt)' : '';
+    showToast(`🔔 Neue Bestellung von ${escapeHtml(order.tableNumber)}: ${order.items ? order.items.length : 0} Artikel (${formatCHF(order.totalAmount)})${printedNote}`);
 
     const orderId = order.id || ('ord_' + Date.now());
     order.id = orderId;
@@ -928,6 +929,7 @@ const KasseModule = (function () {
     switchView,
     openCashierModal,
     saveCashier,
+    getActiveCashierName: () => activeCashierName,
     showToast,
     getPrinterSettings: () => ({ ...printerSettings }),
     loadIncomingOrderToCart
