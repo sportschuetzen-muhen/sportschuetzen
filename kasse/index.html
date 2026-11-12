@@ -47,6 +47,21 @@
       </nav>
 
       <div class="header-right">
+        <!-- LIVE-UMSATZ QUICK-BADGE (WÄHREND VERKAUF) -->
+        <div class="live-sales-badge" id="live-sales-badge" onclick="KasseModule.switchView('abschluss')" title="Live-Umsatz heute (Klicke für Kassensturz &amp; Details)">
+          <div class="live-sales-item">
+            <span class="live-sales-icon">💵</span>
+            <span class="live-sales-label">Bar:</span>
+            <strong id="live-sales-bar" class="live-sales-val">CHF 0.00</strong>
+          </div>
+          <div class="live-sales-sep">|</div>
+          <div class="live-sales-item">
+            <span class="live-sales-icon">📱</span>
+            <span class="live-sales-label">Twint:</span>
+            <strong id="live-sales-twint" class="live-sales-val">CHF 0.00</strong>
+          </div>
+        </div>
+
         <!-- AKTIVER BEDIENER -->
         <div class="active-operator-badge" onclick="KasseModule.openCashierModal()" title="Klicke hier, um den Bediener zu wechseln">
           <div class="operator-avatar" id="active-operator-avatar">BM</div>
@@ -281,7 +296,7 @@
           <label style="font-size: 13px; font-weight: 700; color: #38bdf8; display: block; margin-bottom: 4px;">
             🖨️ Epson LAN-Drucker IP-Adresse:
           </label>
-          <input type="text" id="setting-printer-ip" class="search-input" style="padding: 0 12px; font-size: 16px; font-family: monospace;" placeholder="z.B. 192.168.68.200">
+          <input type="text" id="setting-printer-ip" class="search-input" style="padding: 0 12px; font-size: 16px; font-family: monospace;" value="192.168.68.200" placeholder="192.168.68.200">
           <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
             iPad &amp; Epson-Drucker müssen am gleichen Router (WLAN/LAN) im Festzelt angeschlossen sein.
           </div>
@@ -294,29 +309,29 @@
           </label>
           <div style="display: flex; flex-direction: column; gap: 8px;">
             <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer;">
-              <input type="radio" name="setting-print-driver" value="gateway" id="driver-gateway" checked style="margin-top: 2px;" onchange="KasseModule.toggleDriverOptions()">
-              <div>
-                <strong>⚡ LAN-Gateway (CT 117 / Supabase)</strong>
-                <div style="font-size: 11px; color: var(--text-muted);">Nahtloser Sofortdruck im Hintergrund via Port 9100. Kein App-Wechsel auf dem iPad (Standard im Schützenhaus).</div>
-              </div>
-            </label>
-            <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer;">
-              <input type="radio" name="setting-print-driver" value="epos_direct" id="driver-epos-direct" style="margin-top: 2px;" onchange="KasseModule.toggleDriverOptions()">
+              <input type="radio" name="setting-print-driver" value="epos_direct" id="driver-epos-direct" checked style="margin-top: 2px;" onchange="KasseModule.toggleDriverOptions()">
               <div>
                 <strong>🌐 Direkter ePOS-Print (100% ohne Supabase / rein aus dem Browser)</strong>
-                <div style="font-size: 11px; color: var(--text-muted);">Sendet ePOS-Print XML direkt an die Drucker-IP via Port 80 (HTTP) oder 443 (HTTPS). Kein Server und keine App nötig.</div>
+                <div style="font-size: 11px; color: var(--text-muted);">Sendet ePOS-Print XML direkt an die Drucker-IP via Port 80 (HTTP) oder 443 (HTTPS). Standard für Festbetrieb &amp; iPads.</div>
               </div>
             </label>
-            <div id="epos-direct-options" style="margin-left: 24px; display: none; margin-top: 2px; padding: 8px 10px; background: rgba(0,0,0,0.25); border-radius: 4px; border-left: 2px solid #a855f7;">
+            <div id="epos-direct-options" style="margin-left: 24px; display: block; margin-top: 2px; padding: 8px 10px; background: rgba(0,0,0,0.25); border-radius: 4px; border-left: 2px solid #a855f7;">
               <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; margin-bottom: 6px;">
-                <input type="checkbox" id="setting-print-ssl">
-                <span><strong>HTTPS / SSL nutzen</strong> (nur aktivieren, falls SSL auf Drucker aktiv ist)</span>
+                <input type="checkbox" id="setting-print-ssl" checked>
+                <span><strong>HTTPS / SSL nutzen</strong> (aktiv für Epson ePOS mit Vereins-Zertifikat)</span>
               </label>
               <div id="setting-cert-status-container" style="font-size: 11px; margin-top: 4px; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap;">
                 <span id="setting-cert-status-badge">Zertifikat wird geprüft...</span>
                 <button type="button" class="btn-secondary" style="padding: 2px 8px; font-size: 10px;" onclick="KasseModule.showCertHelp()">ℹ️ Erneuerung</button>
               </div>
             </div>
+            <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer;">
+              <input type="radio" name="setting-print-driver" value="gateway" id="driver-gateway" style="margin-top: 2px;" onchange="KasseModule.toggleDriverOptions()">
+              <div>
+                <strong>⚡ LAN-Gateway (CT 117 / Supabase)</strong>
+                <div style="font-size: 11px; color: var(--text-muted);">Sofortdruck im Hintergrund via Port 9100. Erfordert Verbindung zu CT 117.</div>
+              </div>
+            </label>
           </div>
         </div>
 
@@ -444,6 +459,40 @@
         <button class="modal-close-btn" onclick="document.getElementById('kellner-table-modal').classList.remove('active')">✕</button>
       </div>
       <div id="kellner-table-list" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;"></div>
+    </div>
+  </div>
+
+  <!-- KELLNER: BAR KASSIEREN MODAL (AM TISCH) -->
+  <div id="kellner-cash-modal" class="modal-overlay">
+    <div class="modal-dialog" style="max-width: 420px;">
+      <div class="modal-header">
+        <div class="modal-title">💵 Bar kassieren (<span id="kellner-cash-table-name">Tisch</span>)</div>
+        <button class="modal-close-btn" onclick="KellnerHandheld.closeCashModal()">✕</button>
+      </div>
+      <div class="modal-body d-flex flex-column gap-3">
+        <div style="background: rgba(15, 23, 42, 0.7); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); text-align: center;">
+          <div style="font-size: 12px; color: var(--text-muted); font-weight: 700;">ZU BEZAHLENDER BETRAG:</div>
+          <div id="kellner-cash-total-display" style="font-size: 32px; font-weight: 900; color: #38bdf8; font-family: monospace;">CHF 0.00</div>
+        </div>
+
+        <div>
+          <div style="font-size: 12px; color: var(--text-muted); font-weight: 700; margin-bottom: 6px;">ERHALTENER BETRAG (NOTEN):</div>
+          <div id="kellner-quick-notes-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;">
+            <!-- Noten-Buttons werden dynamisch gefüllt -->
+          </div>
+        </div>
+
+        <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); padding: 10px 14px; border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: baseline;">
+          <span style="font-size: 14px; font-weight: 700; color: #10b981;">Rückgeld:</span>
+          <span id="kellner-cash-change-display" style="font-size: 26px; font-weight: 900; color: #34d399; font-family: monospace;">CHF 0.00</span>
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content: space-between; gap: 8px;">
+        <button class="btn-secondary" onclick="KellnerHandheld.closeCashModal()">Abbrechen</button>
+        <button class="btn-primary" id="kellner-btn-confirm-cash" onclick="KellnerHandheld.confirmCashPayment()" style="background: #10b981; border-color: #10b981; font-weight: 800; min-height: 42px; padding: 0 16px;">
+          ✓ Bar kassiert &amp; Bon drucken
+        </button>
+      </div>
     </div>
   </div>
 

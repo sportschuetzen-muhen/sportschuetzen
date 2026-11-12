@@ -48,3 +48,4 @@ ON CONFLICT (key) DO UPDATE SET
 SQLEOF
 
 echo "✓ Datenbank-Eintrag in system_app_configs aktualisiert."
+

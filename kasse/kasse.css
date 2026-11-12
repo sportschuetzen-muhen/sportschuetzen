@@ -193,6 +193,49 @@ html, body {
   flex-shrink: 0;
 }
 
+/* Live-Umsatz Quick-Badge im Header */
+.live-sales-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.live-sales-badge:hover {
+  background: rgba(30, 41, 59, 0.9);
+  border-color: #38bdf8;
+}
+.live-sales-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+.live-sales-label {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.live-sales-val {
+  font-family: monospace;
+  font-weight: 800;
+}
+#live-sales-bar {
+  color: #34d399;
+}
+#live-sales-twint {
+  color: #009b77;
+}
+.live-sales-sep {
+  color: var(--text-dim);
+  font-size: 12px;
+  opacity: 0.5;
+}
+
 /* Drucker-Settings Button im Header */
 .btn-printer-settings {
   height: 42px;
@@ -1555,6 +1598,14 @@ html, body {
     min-height: calc(52px + env(safe-area-inset-top));
     padding: env(safe-area-inset-top) max(8px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left));
     gap: 6px;
+  }
+  .live-sales-badge {
+    padding: 3px 6px;
+    font-size: 11px;
+    gap: 4px;
+  }
+  .live-sales-label {
+    display: none;
   }
   .view-container {
     flex: 1;

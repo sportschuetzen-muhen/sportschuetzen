@@ -20,3 +20,4 @@ ON CONFLICT (key) DO UPDATE SET
     description = EXCLUDED.description,
     category = EXCLUDED.category,
     updated_at = NOW();
+

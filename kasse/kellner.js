@@ -9,6 +9,7 @@ const KellnerHandheld = (function () {
   let cart = [];
   let products = [];
   let broadcastChannel = null;
+  let cashModalReceived = 0;
 
   async function init() {
     products = await FestkasseDB.getAll('products');
@@ -95,14 +96,35 @@ const KellnerHandheld = (function () {
               `).join('')}
             </div>
 
-            <!-- SENDEN BUTTON -->
+            <!-- DIREKT AM TISCH KASSIEREN (FLIEGENDER KELLNER) -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px;">
+              <button 
+                class="btn-pay-cash" 
+                style="height: 44px; font-size: 13px; background: linear-gradient(135deg, #10b981, #059669); border: none; font-weight: 800; border-radius: var(--radius-sm); color: white; display: flex; align-items: center; justify-content: center; gap: 4px; cursor: pointer;"
+                onclick="KellnerHandheld.checkoutAtTable('bar')"
+                ${cart.length === 0 ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}
+              >
+                <span>💵 BAR KASSIEREN</span>
+              </button>
+              <button 
+                class="btn-pay-twint" 
+                style="height: 44px; font-size: 13px; background: linear-gradient(135deg, #009b77, #007a5e); border: none; font-weight: 800; border-radius: var(--radius-sm); color: white; display: flex; align-items: center; justify-content: center; gap: 4px; cursor: pointer;"
+                onclick="KellnerHandheld.checkoutAtTable('twint')"
+                ${cart.length === 0 ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}
+              >
+                <span>📱 TWINT KASSIEREN</span>
+              </button>
+            </div>
+
+            <!-- OFFEN AN KÜCHE SENDEN (FALLS SPÄTER BEZAHLT WIRD) -->
             <button 
-              class="btn-pay-cash" 
-              style="height: 48px; font-size: 15px; margin-top: 4px; background: linear-gradient(135deg, #0284c7, #0369a1);"
+              class="btn-secondary" 
+              style="width: 100%; height: 34px; font-size: 11px; margin-top: 4px; font-weight: 700; color: var(--text-muted); border: 1px dashed var(--border-color); border-radius: var(--radius-sm); cursor: pointer;"
               onclick="KellnerHandheld.sendOrderToKasse()"
-              ${cart.length === 0 ? 'disabled style="opacity: 0.5;"' : ''}
+              ${cart.length === 0 ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}
+              title="Bestellung noch nicht kassiert, offen an Hauptkasse übermitteln"
             >
-              <span>🚀 BESTELLUNG AN KASSE SENDEN</span>
+              <span>🚀 Nur an Küche senden (Zahlung offen)</span>
             </button>
           </div>
         </div>
@@ -165,8 +187,8 @@ const KellnerHandheld = (function () {
     // 2. Drucker-Settings ermitteln
     let printerSettings = {
       printerIp: '192.168.68.200',
-      printDriver: 'gateway',
-      useSsl: false,
+      printDriver: 'epos_direct',
+      useSsl: true,
       printGuestReceipt: true,
       printKitchenReceipt: true,
       printDrinksReceipt: false
@@ -238,6 +260,185 @@ const KellnerHandheld = (function () {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // FLIEGENDER KELLNER: DIREKT AM TISCH KASSIEREN (BAR / TWINT)
+  // ─────────────────────────────────────────────────────────────
+  function checkoutAtTable(method) {
+    if (cart.length === 0) return;
+    const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+
+    if (method === 'bar') {
+      openCashModal(total);
+      return;
+    }
+
+    if (method === 'twint') {
+      executeCheckout('twint', total, 0);
+    }
+  }
+
+  function openCashModal(total) {
+    const modal = document.getElementById('kellner-cash-modal');
+    if (!modal) {
+      executeCheckout('bar', total, 0);
+      return;
+    }
+
+    const tableNameEl = document.getElementById('kellner-cash-table-name');
+    if (tableNameEl) tableNameEl.textContent = selectedTable;
+
+    const totalEl = document.getElementById('kellner-cash-total-display');
+    if (totalEl) totalEl.textContent = formatCHF(total);
+
+    cashModalReceived = total;
+    updateCashModalChange(total, total);
+
+    // Noten-Buttons: Passend, und Stückelungen >= total
+    const notes = [
+      { label: `Passend (${formatCHF(total)})`, val: total, isPrimary: true },
+      { label: '10 CHF', val: 10 },
+      { label: '20 CHF', val: 20 },
+      { label: '50 CHF', val: 50 },
+      { label: '100 CHF', val: 100 },
+      { label: '200 CHF', val: 200 }
+    ].filter(n => n.isPrimary || n.val >= total);
+
+    const notesGrid = document.getElementById('kellner-quick-notes-grid');
+    if (notesGrid) {
+      notesGrid.innerHTML = notes.map(n => `
+        <button 
+          class="cat-btn" 
+          style="width: 100%; justify-content: center; height: 38px; font-size: 13px; font-weight: 700; ${n.isPrimary ? 'background: #0284c7; color: white;' : ''}"
+          onclick="KellnerHandheld.selectQuickCash(${n.val})"
+        >
+          ${n.label}
+        </button>
+      `).join('');
+    }
+
+    modal.classList.add('active');
+  }
+
+  function selectQuickCash(amount) {
+    const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+    cashModalReceived = amount;
+    updateCashModalChange(total, amount);
+  }
+
+  function updateCashModalChange(total, received) {
+    const change = Math.max(0, received - total);
+    const changeEl = document.getElementById('kellner-cash-change-display');
+    if (changeEl) changeEl.textContent = formatCHF(change);
+  }
+
+  function closeCashModal() {
+    const modal = document.getElementById('kellner-cash-modal');
+    if (modal) modal.classList.remove('active');
+  }
+
+  function confirmCashPayment() {
+    const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+    const received = Math.max(cashModalReceived, total);
+    const change = Math.max(0, received - total);
+    closeCashModal();
+    executeCheckout('bar', received, change);
+  }
+
+  async function executeCheckout(method, cashReceived, changeGiven) {
+    if (cart.length === 0) return;
+    const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+    const prevTable = selectedTable;
+
+    const orderData = {
+      id: 'ord_mob_' + Date.now(),
+      orderNumber: 'T-' + Math.floor(100 + Math.random() * 900),
+      displayOrderNumber: selectedTable,
+      timestamp: new Date().toISOString(),
+      tableNumber: selectedTable,
+      cashierName: (typeof KasseModule !== 'undefined' && KasseModule.getActiveCashierName) ? KasseModule.getActiveCashierName() : 'Kellner (iPhone)',
+      stationName: 'Handheld (iPhone)',
+      items: [...cart],
+      totalAmount: total,
+      paymentMethod: method,
+      cashReceived: cashReceived,
+      changeGiven: changeGiven,
+      status: 'completed',
+      source: 'handheld_iphone'
+    };
+
+    // 1. In IndexedDB speichern
+    try {
+      await FestkasseDB.put('orders', orderData);
+    } catch (e) {
+      console.warn('[Kellner] Fehler beim Speichern des Bons:', e);
+    }
+
+    // 2. Drucker-Settings ermitteln (Standard: 192.168.68.200 / epos_direct / SSL)
+    let printerSettings = {
+      printerIp: '192.168.68.200',
+      printDriver: 'epos_direct',
+      useSsl: true,
+      printGuestReceipt: true,
+      printKitchenReceipt: true,
+      printDrinksReceipt: false
+    };
+
+    if (typeof KasseModule !== 'undefined' && KasseModule.getPrinterSettings) {
+      printerSettings = KasseModule.getPrinterSettings();
+    } else {
+      try {
+        const ip = await FestkasseDB.get('settings', 'printerIp');
+        if (ip && ip.value) printerSettings.printerIp = ip.value;
+        const drv = await FestkasseDB.get('settings', 'printDriver');
+        if (drv && drv.value) printerSettings.printDriver = drv.value;
+        const ssl = await FestkasseDB.get('settings', 'useSsl');
+        if (ssl && ssl.value !== undefined) printerSettings.useSsl = !!ssl.value;
+      } catch (e) {}
+    }
+
+    // 3. Belege drucken (Gastbeleg + Küchenbon)
+    let printSuccess = false;
+    let printError = null;
+    if (typeof EposPrint !== 'undefined' && typeof EposPrint.printOrder === 'function') {
+      try {
+        const res = await EposPrint.printOrder(orderData, printerSettings);
+        printSuccess = res && res.success;
+      } catch (err) {
+        printError = err.message || String(err);
+        console.warn('[Kellner] Fehler beim Drucken:', err);
+      }
+    }
+
+    // 4. Live-Umsatz & Kassensturz aktualisieren
+    if (typeof KasseModule !== 'undefined' && KasseModule.updateLiveSalesBadge) {
+      KasseModule.updateLiveSalesBadge();
+    }
+    if (typeof KassenAbschluss !== 'undefined' && KassenAbschluss.init) {
+      KassenAbschluss.init();
+    }
+
+    // 5. Broadcast senden
+    if (broadcastChannel) {
+      broadcastChannel.postMessage({ type: 'ORDER_COMPLETED', orderId: orderData.id });
+    }
+
+    // 6. Warenkorb leeren & UI neu rendern
+    cart = [];
+    renderUI();
+
+    // 7. Feedback
+    if (navigator.vibrate) navigator.vibrate([40, 30, 80]);
+
+    const changeNote = changeGiven > 0 ? ` (Rückgeld: ${formatCHF(changeGiven)})` : '';
+    const printNote = printSuccess ? '✓ Beleg gedruckt' : (printError ? `⚠️ Druckfehler: ${printError}` : '');
+
+    if (typeof KasseModule !== 'undefined' && KasseModule.showToast) {
+      KasseModule.showToast(`✓ ${prevTable} bezahlt (${method.toUpperCase()}${changeNote}) ${printNote}`);
+    } else {
+      alert(`✓ ${prevTable} bezahlt (${method.toUpperCase()}${changeNote})`);
+    }
+  }
+
   // Tischwechsel Modal
   function openTableModal() {
     const tables = [
@@ -286,6 +487,11 @@ const KellnerHandheld = (function () {
     addToCart,
     removeItem,
     sendOrderToKasse,
+    checkoutAtTable,
+    openCashModal,
+    selectQuickCash,
+    closeCashModal,
+    confirmCashPayment,
     openTableModal,
     selectTable
   };

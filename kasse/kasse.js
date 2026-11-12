@@ -17,11 +17,11 @@ const KasseModule = (function () {
   let activeStationName = 'Kasse 1';
   let broadcastChannel = null;
 
-  // Drucker & Festbetrieb-Einstellungen
+  // Drucker & Festbetrieb-Einstellungen (Standard: ePOS-Direct via Port 443 mit SSL)
   let printerSettings = {
     printerIp: '192.168.68.200',
-    printDriver: 'gateway', // 'gateway' (CT 117 / Supabase) | 'epos_direct' (100% autark Browser) | 'browser'
-    useSsl: false,
+    printDriver: 'epos_direct', // 'epos_direct' (100% autark Browser) | 'gateway' (CT 117) | 'browser'
+    useSsl: true,
     printMode: 'manual', // 'manual' | 'auto' | 'browser'
     printGuestReceipt: true,
     printKitchenReceipt: true,
@@ -74,6 +74,7 @@ const KasseModule = (function () {
     renderCategories();
     renderProducts();
     renderCart();
+    updateLiveSalesBadge();
 
     // 7. Sub-Module initialisieren
     KassenAbschluss.init();
@@ -83,17 +84,32 @@ const KasseModule = (function () {
   async function loadPrinterSettings() {
     try {
       const ip = await FestkasseDB.get('settings', 'printerIp');
-      if (ip && ip.value) printerSettings.printerIp = ip.value;
+      if (ip && ip.value) {
+        printerSettings.printerIp = ip.value;
+      } else {
+        printerSettings.printerIp = '192.168.68.200';
+        await FestkasseDB.put('settings', { key: 'printerIp', value: '192.168.68.200' });
+      }
 
       const driver = await FestkasseDB.get('settings', 'printDriver');
-      if (driver && driver.value) printerSettings.printDriver = driver.value;
+      if (driver && driver.value) {
+        printerSettings.printDriver = driver.value;
+      } else {
+        printerSettings.printDriver = 'epos_direct';
+        await FestkasseDB.put('settings', { key: 'printDriver', value: 'epos_direct' });
+      }
       if (printerSettings.printDriver === 'tm_assistant') {
-        printerSettings.printDriver = 'gateway';
-        await FestkasseDB.put('settings', { key: 'printDriver', value: 'gateway' });
+        printerSettings.printDriver = 'epos_direct';
+        await FestkasseDB.put('settings', { key: 'printDriver', value: 'epos_direct' });
       }
 
       const ssl = await FestkasseDB.get('settings', 'useSsl');
-      if (ssl !== undefined && ssl.value !== undefined) printerSettings.useSsl = !!ssl.value;
+      if (ssl !== undefined && ssl.value !== undefined) {
+        printerSettings.useSsl = !!ssl.value;
+      } else {
+        printerSettings.useSsl = true;
+        await FestkasseDB.put('settings', { key: 'useSsl', value: true });
+      }
 
       const mode = await FestkasseDB.get('settings', 'printMode');
       if (mode && mode.value) printerSettings.printMode = mode.value;
@@ -519,8 +535,9 @@ const KasseModule = (function () {
     if (navigator.vibrate) navigator.vibrate([40, 30, 80]);
     playSuccessSound();
 
-    // 5. Kassensturz-Daten live aktualisieren
+    // 5. Kassensturz-Daten & Live-Umsatz aktualisieren
     KassenAbschluss.init();
+    updateLiveSalesBadge();
 
     // 6. Rückgeld für 6 Sekunden einblenden
     if (method === 'bar' && orderData.changeGiven > 0) {
@@ -966,6 +983,29 @@ const KasseModule = (function () {
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
+  async function updateLiveSalesBadge() {
+    try {
+      const orders = await FestkasseDB.getAll('orders');
+      let barTotal = 0;
+      let twintTotal = 0;
+      (orders || []).forEach(o => {
+        if (o.status === 'completed' || !o.status) {
+          if (o.paymentMethod === 'bar') {
+            barTotal += (o.totalAmount || 0);
+          } else if (o.paymentMethod === 'twint') {
+            twintTotal += (o.totalAmount || 0);
+          }
+        }
+      });
+      const barEl = document.getElementById('live-sales-bar');
+      const twintEl = document.getElementById('live-sales-twint');
+      if (barEl) barEl.textContent = formatCHF(barTotal);
+      if (twintEl) twintEl.textContent = formatCHF(twintTotal);
+    } catch (e) {
+      console.warn('[KasseModule] Fehler beim Aktualisieren des Live-Umsatzes:', e);
+    }
+  }
+
   return {
     init,
     filterCategory,
@@ -991,7 +1031,8 @@ const KasseModule = (function () {
     showToast,
     getPrinterSettings: () => ({ ...printerSettings }),
     loadIncomingOrderToCart,
-    showCertHelp
+    showCertHelp,
+    updateLiveSalesBadge
   };
 })();
 

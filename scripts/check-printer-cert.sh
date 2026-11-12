@@ -64,3 +64,4 @@ cat << JSONEOF
   "checked_at": "$CHECKED_AT"
 }
 JSONEOF
+
