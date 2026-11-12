@@ -307,11 +307,15 @@
                 <div style="font-size: 11px; color: var(--text-muted);">Sendet ePOS-Print XML direkt an die Drucker-IP via Port 80 (HTTP) oder 443 (HTTPS). Kein Server und keine App nötig.</div>
               </div>
             </label>
-            <div id="epos-direct-options" style="margin-left: 24px; display: none; margin-top: 2px; padding: 6px 10px; background: rgba(0,0,0,0.25); border-radius: 4px; border-left: 2px solid #a855f7;">
-              <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer;">
+            <div id="epos-direct-options" style="margin-left: 24px; display: none; margin-top: 2px; padding: 8px 10px; background: rgba(0,0,0,0.25); border-radius: 4px; border-left: 2px solid #a855f7;">
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; margin-bottom: 6px;">
                 <input type="checkbox" id="setting-print-ssl">
-                <span><strong>HTTPS / SSL nutzen</strong> (nur aktivieren, falls SSL auf Drucker aktiv ist; sonst unverschlüsseltes HTTP)</span>
+                <span><strong>HTTPS / SSL nutzen</strong> (nur aktivieren, falls SSL auf Drucker aktiv ist)</span>
               </label>
+              <div id="setting-cert-status-container" style="font-size: 11px; margin-top: 4px; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap;">
+                <span id="setting-cert-status-badge">Zertifikat wird geprüft...</span>
+                <button type="button" class="btn-secondary" style="padding: 2px 8px; font-size: 10px;" onclick="KasseModule.showCertHelp()">ℹ️ Erneuerung</button>
+              </div>
             </div>
           </div>
         </div>
@@ -402,6 +406,32 @@
       <div class="modal-footer" style="justify-content: space-between;">
         <button class="btn-secondary" onclick="document.getElementById('settings-modal').classList.remove('active')">Abbrechen</button>
         <button class="btn-primary" onclick="KasseModule.saveSettings()" style="background: #0284c7; border-color: #0284c7; font-weight: 800; min-height: 42px; padding: 0 18px;">💾 Einstellungen speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ZERTIFIKAT-ERNEUERUNG HILFE MODAL -->
+  <div id="cert-help-modal" class="modal-overlay">
+    <div class="modal-dialog" style="max-width: 500px;">
+      <div class="modal-header">
+        <div class="modal-title">🔐 Epson Drucker-Zertifikat erneuern</div>
+        <button class="modal-close-btn" onclick="document.getElementById('cert-help-modal').classList.remove('active')">✕</button>
+      </div>
+      <div class="modal-body" style="font-size: 13px; line-height: 1.5; color: var(--text-main);">
+        <div style="background: rgba(2, 132, 199, 0.15); border-left: 3px solid #0284c7; padding: 8px 12px; border-radius: 4px; margin-bottom: 12px;">
+          <strong>Keine Aktion auf dem iPad nötig!</strong><br>
+          Die Stamm-CA ist für 10 Jahre (bis 2036) gültig und bleibt auf den iPads unverändert. Nur das Serverzertifikat auf dem Drucker wird jährlich erneuert.
+        </div>
+        <strong>Ablauf (ca. 2 Minuten):</strong>
+        <ol style="margin-top: 6px; padding-left: 18px; color: var(--text-muted); line-height: 1.6;">
+          <li>Auf CT 117 per SSH das Skript ausführen:<br><code style="background: rgba(0,0,0,0.4); padding: 2px 6px; border-radius: 3px; color: #38bdf8; font-size: 11px;">ssh root@192.168.68.117 "/opt/muhen-ca/renew-printer-cert.sh"</code></li>
+          <li>Die Datei <code style="color: #38bdf8;">epson_printer.pfx</code> (Passwort: <code>epson</code>) herunterladen.</li>
+          <li>Im Drucker-Webmenü (<a href="https://192.168.68.200" target="_blank" style="color: #38bdf8;">https://192.168.68.200</a>) unter <em>Authentication &gt; Certificate Import</em> hochladen.</li>
+          <li>Unter <em>Security &gt; SSL/TLS</em> auf <em>CA-Signed Certificate 1</em> stellen und speichern.</li>
+        </ol>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-primary" onclick="document.getElementById('cert-help-modal').classList.remove('active')">Schliessen</button>
       </div>
     </div>
   </div>

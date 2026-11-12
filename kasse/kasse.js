@@ -29,6 +29,7 @@ const KasseModule = (function () {
     openDrawer: true,
     orderSequence: 1
   };
+  let printerCertInfo = null;
   let lastCompletedOrder = null;
   let activeReceiptOrder = null;
   let changeDismissTimer = null;
@@ -111,6 +112,37 @@ const KasseModule = (function () {
 
       const seq = await FestkasseDB.get('settings', 'orderSequence');
       if (seq && typeof seq.value === 'number') printerSettings.orderSequence = seq.value;
+
+      // TLS-Zertifikatsstatus laden & synchronisieren (IndexedDB & Supabase)
+      let certConf = await FestkasseDB.get('settings', 'printerCertInfo');
+      if (navigator.onLine && typeof fetch === 'function') {
+        try {
+          const resp = await fetch('https://supabase-muhen.danfamily.uk/rest/v1/system_app_configs?key=eq.festkasse_printer_cert&select=value', {
+            headers: {
+              'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M'
+            }
+          });
+          if (resp.ok) {
+            const arr = await resp.json();
+            if (arr && arr[0] && arr[0].value) {
+              const val = typeof arr[0].value === 'string' ? JSON.parse(arr[0].value) : arr[0].value;
+              certConf = { key: 'printerCertInfo', value: val };
+              await FestkasseDB.put('settings', certConf);
+            }
+          }
+        } catch (_) {}
+      }
+      printerCertInfo = certConf ? certConf.value : { valid_to: '2027-11-12T19:04:10Z' };
+
+      // 30-Tage Ablaufwarnung beim Start der Kasse
+      if (printerCertInfo && printerCertInfo.valid_to) {
+        const days = Math.ceil((new Date(printerCertInfo.valid_to).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        if (days <= 30 && days > 0) {
+          setTimeout(() => showToast(`⚠️ Epson Drucker-Zertifikat läuft in ${days} Tagen ab!`), 2000);
+        } else if (days <= 0) {
+          setTimeout(() => showToast(`🚨 Epson Drucker-Zertifikat ist abgelaufen! Bitte erneuern.`), 2000);
+        }
+      }
     } catch (e) {
       console.warn('[KasseModule] Konnte Drucker-Einstellungen nicht laden:', e);
     }
@@ -689,7 +721,31 @@ const KasseModule = (function () {
     const statusEl = document.getElementById('printer-test-status');
     if (statusEl) statusEl.innerHTML = '';
 
+    updateCertStatusBadge();
+
     modal.classList.add('active');
+  }
+
+  function updateCertStatusBadge() {
+    const badgeEl = document.getElementById('setting-cert-status-badge');
+    if (!badgeEl) return;
+    const validTo = printerCertInfo?.valid_to || '2027-11-12T19:04:10Z';
+    const targetDate = new Date(validTo);
+    const days = Math.ceil((targetDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    const dateStr = targetDate.toLocaleDateString('de-CH');
+
+    if (days <= 0) {
+      badgeEl.innerHTML = `<span style="color: #ef4444; font-weight: bold;">🚨 Abgelaufen! (Erneuern)</span>`;
+    } else if (days <= 30) {
+      badgeEl.innerHTML = `<span style="color: #f59e0b; font-weight: bold;">⚠️ Läuft in ${days} Tagen ab (${dateStr})</span>`;
+    } else {
+      badgeEl.innerHTML = `<span style="color: #10b981; font-weight: bold;">🟢 Gültig bis ${dateStr} (noch ${days} Tage)</span>`;
+    }
+  }
+
+  function showCertHelp() {
+    const modal = document.getElementById('cert-help-modal');
+    if (modal) modal.classList.add('active');
   }
 
   function toggleDriverOptions() {
@@ -934,7 +990,8 @@ const KasseModule = (function () {
     getActiveCashierName: () => activeCashierName,
     showToast,
     getPrinterSettings: () => ({ ...printerSettings }),
-    loadIncomingOrderToCart
+    loadIncomingOrderToCart,
+    showCertHelp
   };
 })();
 

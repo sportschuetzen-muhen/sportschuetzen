@@ -89,3 +89,67 @@ Die **Festkasse** ist eine eigenständige Progressive Web App (PWA) für das Sch
 * **Single Source of Truth (`system_app_configs`):** Über den Schlüssel `member_festkasse_enabled` steuert der Vorstand, ob die Festkasse im Mitgliederbereich (`intern.html`) als Tab/Kachel sichtbar ist.
 * **Vorstands-Schalter:** Im Vorstandsportal (`vorstand/js/festkasse.js`) kann die Kasse mit 1 Klick aktiviert oder deaktiviert werden. Die Anbindung nutzt die globale Client-Auflösung `getFestkasseClient()` und sichert Benutzerhinweise über `UIConfirmKit.alert()` ab.
 * **Strikte Sichtbarkeitssteuerung:** Bei Status `inaktiv` wird die Festkasse in `intern.html` sowie im Schichtplan für alle Benutzer ausnahmslos ausgeblendet.
+
+---
+
+### 5.6 TLS/HTTPS-Zertifikatskette & ePOS-Print (Epson TM-T20II & iPadOS)
+
+#### 5.6.1 Problemstellung & Apple WebKit Sicherheitsvorgaben
+Da die Festkasse als moderne Progressive Web App über HTTPS (`https://sps-b55.pages.dev/kasse/` oder PWA-Homescreen) betrieben wird, blockiert Safari jegliche unverschlüsselte HTTP-Anfrage an eine lokale LAN-IP (`192.168.68.200`) als **Mixed-Content**. Der autarke ePOS-Direktdruck aus dem Browser erfordert daher zwingend HTTPS auf Port 443 des Druckers.
+
+Apple setzt in iOS/iPadOS strikte Vorgaben für TLS-Serverzertifikate durch:
+1. **Gültigkeitsdauer:** Server-Zertifikate dürfen seit iOS 13 maximal 398 Tage gültig sein (wir setzen 365 Tage ein).
+2. **Subject Alternative Name (SAN):** Die IP des Druckers (`IP:192.168.68.200`) und optionale Hostnames müssen zwingend als SAN im Zertifikat eingetragen sein (reines `CN` reicht Apple nicht mehr).
+3. **Extended Key Usage:** Muss `serverAuth` enthalten.
+4. **Schalter für Stammzertifikate:** Damit in iPadOS unter *Einstellungen $\rightarrow$ Allgemein $\rightarrow$ Info $\rightarrow$ Zertifikatsvertrauenseinstellungen* der Schalter für volles Vertrauen erscheint, **muss** das installierte Profil eine echte Certificate Authority (Root CA) mit `basicConstraints = critical, CA:true` enthalten. Ein direktes End-Entity-Zertifikat wird von iOS als Server-Zertifikat, nicht als CA eingestuft und schaltet die Vertrauenseinstellung nicht frei.
+
+#### 5.6.2 Architektur der 2-stufigen Zertifikatskette (`/opt/muhen-ca`)
+Auf dem Proxmox Container **CT 117** (`192.168.68.117`) ist die vereinsinterne Zertifizierungsstelle eingerichtet:
+
+| Ebene | Zertifikat | Gültigkeit | Speicherort CT 117 | Verwendungszweck |
+| :--- | :--- | :--- | :--- | :--- |
+| **Ebene 1** | **Sportschützen Muhen Root CA** (`ca.crt`) | **10 Jahre (bis Nov 2036)** | `/opt/muhen-ca/ca.crt` | Stammzertifizierungsstelle (`CA:TRUE`). Wird einmalig via `.mobileconfig`-Profil auf den Schützenhaus-Tablets installiert. |
+| **Ebene 2** | **Epson POS Server-Zertifikat** (`server.crt` / `.pfx`) | **1 Jahr (365 Tage)** | `/opt/muhen-ca/epson_printer.pfx` | End-Entity Server-Zertifikat für `192.168.68.200`. Wird in den Epson-Drucker importiert. |
+
+> [!IMPORTANT]
+> **Riesiger Wartungsvorteil:** Da die Root CA 10 Jahre gültig ist und bereits im Truststore der iPads liegt, muss bei der jährlichen Erneuerung des Serverzertifikats **kein neues Profil auf den iPads installiert werden**! Sobald das neue Serverzertifikat auf dem Drucker aktiv ist, vertrauen alle iPads dem Drucker sofort wieder nahtlos.
+
+#### 5.6.3 Technische OpenSSL-Parameter & Epson Firmware Kompatibilität
+Die Epson TM-T20II Firmware benötigt für den PKCS#12-Import Legacy-Verschlüsselungsalgorithmen (3DES/RC2-40 via PKCS#12 PBES1). OpenSSL 3 nutzt standardmässig PBES2/AES-256, was von älteren Epson-Geräten abgelehnt wird. Der Export muss daher zwingend mit dem `-legacy`-Flag erfolgen:
+```bash
+openssl pkcs12 -export -out epson_printer.pfx \
+  -inkey server.key -in server.crt -certfile ca.crt \
+  -passout pass:epson -legacy
+```
+
+#### 5.6.4 Apple Konfigurationsprofil (`.mobileconfig`)
+Für die nahtlose iPad-Installation wird die Root CA in ein standardisiertes Apple-Konfigurationsprofil mit `PayloadType = com.apple.security.root` verpackt (`Sportschuetzen-Festkasse-CA.mobileconfig`). Dadurch erkennt iPadOS die CA beim Öffnen per AirDrop oder Download sofort als Profil und leitet direkt zur Installation in die iOS-Einstellungen.
+
+#### 5.6.5 Automatisches Monitoring & 30-Tage Ablaufwarnung
+* **Single Source of Truth (`system_app_configs`):** Unter dem Schlüssel `festkasse_printer_cert` werden `valid_from`, `valid_to`, `days_remaining`, `issuer` und `printer_ip` in Supabase PostgreSQL vorgehalten.
+* **Täglicher CT 117 Cronjob (03:00 Uhr):** Das Skript `/opt/muhen-ca/check-printer-cert.sh` fragt den Drucker im lokalen LAN via OpenSSL TLS-Handshake ab, berechnet die Resttage und aktualisiert die Datenbank.
+* **Vorstandsportal Cockpit (`vorstand/js/festkasse.js`):**
+  - Zeigt Live-Status (`🟢 Gültig bis DD.MM.YYYY (noch X Tage)`).
+  - Warnt bei $\le 30$ Tagen automatisch mit auffälligem gelbem Banner (`⚠️ Läuft in X Tagen ab – Erneuerung vor dem nächsten Festanlass empfohlen`).
+  - Warnt bei Ablauf mit rotem Alarm (`🚨 Abgelaufen! HTTPS-Druckaufträge blockiert`).
+  - Bietet Buttons für «Status prüfen» (Live-TCP-Check via Edge Function) und «Anleitung Erneuerung» (Modal mit Schritt-für-Schritt-Anleitung).
+* **Festkasse PWA (`kasse/kasse.js` & IndexedDB):**
+  - Synchronisiert die Zertifikatsdaten in den lokalen IndexedDB-Speicher `FestkasseDB`.
+  - Zeigt im Einstellungs-Menü unter «🌐 Direkter ePOS-Print» den Zertifikatsstatus und bietet den Info-Button «ℹ️ Erneuerung».
+  - Wirft beim Start der Kasse automatisch einen Warn-Toast, falls das Zertifikat in $\le 30$ Tagen abläuft.
+
+#### 5.6.6 Schritt-für-Schritt-Anleitung zur Erneuerung (bei Ablauf)
+1. **Schritt 1 (CT 117):** Erneuerungsskript aufrufen:
+   ```bash
+   ssh root@192.168.68.117 "/opt/muhen-ca/renew-printer-cert.sh"
+   ```
+2. **Schritt 2 (Download):** Die erzeugte Datei auf den PC kopieren:
+   ```bash
+   scp root@192.168.68.117:/opt/muhen-ca/epson_printer.pfx ~/Downloads/
+   ```
+3. **Schritt 3 (Drucker-Import):**
+   - Im Browser auf `https://192.168.68.200` einloggen.
+   - Menü `Authentication` $\rightarrow$ `Certificate Import` $\rightarrow$ `Password Protected PKCS#12 Certificate` wählen $\rightarrow$ `epson_printer.pfx` auswählen, Passwort `epson` eingeben $\rightarrow$ `Import`.
+   - Menü `Security` $\rightarrow$ `SSL/TLS` $\rightarrow$ `Server Certificate` auf `CA-Signed Certificate 1` einstellen $\rightarrow$ `Send`.
+   - Menü `Optional` $\rightarrow$ `Reset` anklicken (oder Drucker kurz ausschalten).
+4. **Schritt 4:** Auf den iPads/iPhones ist keine Änderung erforderlich. Testdruck in der Festkasse ausführen.

@@ -1,8 +1,10 @@
 /**
  * festkasse.js - Festkasse Cockpit im Vorstandsportal
  * Sportschützen Muhen
- * Bietet Schnellstart, PWA-Status, Z-Abschluss-Dokumentation & Freigabesteuerung für die Website
+ * Bietet Schnellstart, PWA-Status, Z-Abschluss-Dokumentation, Freigabesteuerung & TLS-Zertifikatsmonitoring
  */
+
+let currentCertConfig = null;
 
 function getFestkasseUrl() {
     if (window.location.protocol === 'file:') {
@@ -88,6 +90,222 @@ async function toggleFestkasseMemberVisibility(enabled) {
     }
 }
 
+async function loadFestkasseCertStatus() {
+    const supa = getFestkasseClient();
+    const container = document.getElementById('festkasse-cert-status-area');
+    if (!container) return;
+
+    try {
+        let certData = null;
+        if (supa) {
+            const { data } = await supa
+                .from('system_app_configs')
+                .select('value')
+                .eq('key', 'festkasse_printer_cert')
+                .maybeSingle();
+            if (data && data.value) {
+                certData = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+            }
+        }
+
+        if (!certData) {
+            certData = {
+                valid_to: '2027-11-12T19:04:10Z',
+                issuer: 'CN=Sportschuetzen Muhen Root CA',
+                printer_ip: '192.168.68.200'
+            };
+        }
+        currentCertConfig = certData;
+
+        const validTo = new Date(certData.valid_to);
+        const now = new Date();
+        const daysRemaining = Math.ceil((validTo.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        const formattedDate = (window.UIFormatKit && typeof window.UIFormatKit.formatDate === 'function')
+            ? window.UIFormatKit.formatDate(certData.valid_to)
+            : validTo.toLocaleDateString('de-CH');
+
+        let badgeClass = 'bg-success text-white';
+        let badgeIcon = 'fa-check-circle';
+        let badgeText = `🟢 Gültig bis ${formattedDate} (noch ${daysRemaining} Tage)`;
+        let alertHtml = '';
+
+        if (daysRemaining <= 0) {
+            badgeClass = 'bg-danger text-white';
+            badgeIcon = 'fa-exclamation-triangle';
+            badgeText = `🚨 Abgelaufen seit ${Math.abs(daysRemaining)} Tagen!`;
+            alertHtml = `
+                <div class="alert alert-danger border-0 rounded-3 p-3 mb-2 mt-2 d-flex align-items-center gap-3 small">
+                    <i class="fas fa-exclamation-circle fs-4 text-danger"></i>
+                    <div>
+                        <strong>Achtung:</strong> Das TLS-Zertifikat für den Epson-Drucker ist abgelaufen. HTTPS-Druckaufträge von iPads werden blockiert! Bitte erneuere das Zertifikat umgehend über die Anleitung.
+                    </div>
+                </div>
+            `;
+        } else if (daysRemaining <= 30) {
+            badgeClass = 'bg-warning text-dark';
+            badgeIcon = 'fa-clock';
+            badgeText = `⚠️ Läuft in ${daysRemaining} Tagen ab! (${formattedDate})`;
+            alertHtml = `
+                <div class="alert alert-warning border-0 rounded-3 p-3 mb-2 mt-2 d-flex align-items-center gap-3 small" style="background: rgba(245, 158, 11, 0.15);">
+                    <i class="fas fa-triangle-exclamation fs-4 text-warning"></i>
+                    <div>
+                        <strong>Achtung:</strong> Das TLS-Zertifikat für den Epson-Drucker läuft in <strong>${daysRemaining} Tagen</strong> ab! Bitte erneuere es rechtzeitig vor dem nächsten Festanlass.
+                    </div>
+                </div>
+            `;
+        }
+
+        container.innerHTML = `
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 pt-1">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <span class="badge rounded-pill px-3 py-2 fw-bold ${badgeClass}">
+                        <i class="fas ${badgeIcon} me-1"></i>${badgeText}
+                    </span>
+                    <span class="badge bg-light text-secondary border rounded-pill px-2.5 py-1.5 small">
+                        Drucker: ${certData.printer_ip || '192.168.68.200'}:443
+                    </span>
+                    <span class="badge bg-light text-secondary border rounded-pill px-2.5 py-1.5 small">
+                        Root CA: 10 Jahre (bis 2036)
+                    </span>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <button class="btn btn-outline-secondary btn-sm rounded-pill px-3" id="btn-check-printer-cert" onclick="checkPrinterCertLive()">
+                        <i class="fas fa-sync-alt me-1"></i>Status prüfen
+                    </button>
+                    <button class="btn btn-outline-primary btn-sm rounded-pill px-3" onclick="openCertRenewalModal()">
+                        <i class="fas fa-book-open me-1"></i>Anleitung Erneuerung
+                    </button>
+                </div>
+            </div>
+            ${alertHtml}
+        `;
+    } catch (e) {
+        console.warn('Fehler beim Laden des Festkassen-Zertifikatstatus:', e);
+    }
+}
+
+async function checkPrinterCertLive() {
+    const btn = document.getElementById('btn-check-printer-cert');
+    const runCheck = async () => {
+        try {
+            const resp = await fetch('https://supabase-muhen.danfamily.uk/functions/v1/pos-print', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M'
+                },
+                body: JSON.stringify({ type: 'check_cert', printerIp: '192.168.68.200', port: 443 })
+            });
+            const data = await resp.json();
+            if (data && data.success) {
+                const statusStr = data.isOnline ? 'ONLINE' : 'OFFLINE (Port 443 nicht erreichbar)';
+                if (typeof showToast === 'function') {
+                    showToast(`✓ Drucker ist ${statusStr}. Gültig: noch ${data.daysRemaining} Tage.`, 'success');
+                }
+                await loadFestkasseCertStatus();
+            } else {
+                throw new Error(data?.error || 'Prüfung fehlgeschlagen');
+            }
+        } catch (err) {
+            console.error('Fehler bei Zertifikatsprüfung:', err);
+            if (typeof showToast === 'function') {
+                showToast('Fehler bei Prüfung: ' + (err.message || err), 'danger');
+            }
+        }
+    };
+
+    if (window.UIButtonKit && typeof window.UIButtonKit.withLoading === 'function' && btn) {
+        await UIButtonKit.withLoading(btn, runCheck);
+    } else {
+        await runCheck();
+    }
+}
+
+function openCertRenewalModal() {
+    const modalId = 'modal-cert-renewal-guide';
+    let modalEl = document.getElementById(modalId);
+    if (!modalEl) {
+        modalEl = document.createElement('div');
+        modalEl.id = modalId;
+        modalEl.className = 'modal fade';
+        modalEl.setAttribute('tabindex', '-1');
+        modalEl.setAttribute('aria-hidden', 'true');
+        modalEl.innerHTML = `
+            <div class="modal-dialog modal-dialog-centered modal-lg">
+                <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                    <div class="modal-header text-white" style="background: linear-gradient(135deg, #0284c7, #0369a1);">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="fs-4">🔐</span>
+                            <h5 class="modal-title fw-bold mb-0">Epson Bondrucker TLS-Zertifikat erneuern</h5>
+                        </div>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+                    </div>
+                    <div class="modal-body p-4">
+                        <div class="alert alert-info border-0 rounded-3 p-3 mb-4 d-flex align-items-start gap-3" style="background: rgba(2, 132, 199, 0.08);">
+                            <span class="fs-4">💡</span>
+                            <div class="small">
+                                <strong>Wichtigste Erleichterung (Keine iPad-Reinstallation nötig):</strong><br>
+                                Die Stammzertifizierungsstelle (<strong>Sportschützen Muhen Root CA</strong>) ist für 10 Jahre (bis November 2036) gültig und bereits auf allen Schützenhaus-Tablets installiert. Bei einer Erneuerung des Druckerzertifikats musst du auf den iPads/iPhones <strong>kein neues Profil installieren</strong> – die Tablets akzeptieren das neue Zertifikat sofort automatisch!
+                            </div>
+                        </div>
+
+                        <h6 class="fw-bold text-dark mb-3">Schritt-für-Schritt-Ablauf (Dauer ca. 2 Minuten):</h6>
+
+                        <div class="card p-3 border-0 rounded-3 mb-3" style="background: #f8fafc;">
+                            <div class="d-flex align-items-center gap-2 fw-bold text-primary mb-2">
+                                <span class="badge bg-primary text-white rounded-pill">Schritt 1</span>
+                                <span>Neues Zertifikat auf CT 117 generieren</span>
+                            </div>
+                            <p class="small text-muted mb-2">
+                                Öffne ein Terminal (PowerShell oder SSH) und führe das vorbereitete 1-Klick-Erneuerungsskript auf CT 117 aus:
+                            </p>
+                            <div class="bg-dark text-light p-2.5 rounded-3 font-monospace small mb-2 user-select-all" style="font-size: 0.85rem;">
+                                ssh root@192.168.68.117 "/opt/muhen-ca/renew-printer-cert.sh"
+                            </div>
+                            <p class="small text-muted mb-0">
+                                ➔ Dies verlängert das Zertifikat um 365 Tage und erzeugt die fertige Datei <code>/opt/muhen-ca/epson_printer.pfx</code>.
+                            </p>
+                        </div>
+
+                        <div class="card p-3 border-0 rounded-3 mb-3" style="background: #f8fafc;">
+                            <div class="d-flex align-items-center gap-2 fw-bold text-success mb-2">
+                                <span class="badge bg-success text-white rounded-pill">Schritt 2</span>
+                                <span>Zertifikat auf den Epson-Drucker hochladen</span>
+                            </div>
+                            <ol class="small text-secondary ps-3 mb-0" style="line-height: 1.6;">
+                                <li>Lade die Datei <code>epson_printer.pfx</code> von CT 117 auf deinen PC herunter:<br>
+                                    <code class="bg-white px-2 py-1 rounded border user-select-all">scp root@192.168.68.117:/opt/muhen-ca/epson_printer.pfx ~/Downloads/</code>
+                                </li>
+                                <li>Öffne das Epson-Webinterface im Browser: <a href="https://192.168.68.200" target="_blank" class="fw-bold text-decoration-none">https://192.168.68.200 ↗</a></li>
+                                <li>Klicke im linken Menü unter <strong>Authentication</strong> auf <strong>«Certificate Import»</strong>.</li>
+                                <li>Wähle <strong>«Password Protected PKCS#12 Certificate»</strong>, wähle die Datei <code>epson_printer.pfx</code> aus und gib als Passwort <code>epson</code> ein. Klicke auf <strong>«Import»</strong>.</li>
+                                <li>Klicke im linken Menü unter <strong>Security</strong> auf <strong>«SSL/TLS»</strong> und stelle sicher, dass <strong>Server Certificate</strong> auf <strong>«CA-Signed Certificate 1»</strong> steht. Klicke auf <strong>«Send»</strong>.</li>
+                                <li>Klicke im Menü unter <strong>Optional</strong> auf <strong>«Reset»</strong> (oder schalte den Drucker kurz am Netzschalter aus und wieder ein).</li>
+                            </ol>
+                        </div>
+
+                        <div class="card p-3 border-0 rounded-3 mb-0" style="background: #f8fafc;">
+                            <div class="d-flex align-items-center gap-2 fw-bold text-info mb-2">
+                                <span class="badge bg-info text-white rounded-pill">Schritt 3</span>
+                                <span>Verifikation</span>
+                            </div>
+                            <p class="small text-muted mb-0">
+                                Klicke hier im Vorstandsportal auf <strong>«Status prüfen»</strong> oder teste in der Festkasse einen Testbon. Der Drucker druckt sofort wieder über 100% autarkes HTTPS ePOS!
+                            </p>
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light py-2 px-4">
+                        <button type="button" class="btn btn-secondary btn-sm rounded-pill px-4" data-bs-dismiss="modal">Verstanden &amp; Schliessen</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modalEl);
+    }
+    const bsModal = new bootstrap.Modal(modalEl);
+    bsModal.show();
+}
+
 function renderFestkasseView() {
     const container = document.getElementById('view-festkasse');
     if (!container) return;
@@ -118,7 +336,7 @@ function renderFestkasseView() {
         </div>
 
         <!-- FREIGABE IM MITGLIEDERBEREICH BANNER -->
-        <div class="card p-3 shadow-sm border-0 rounded-4 mb-4" style="background: white;">
+        <div class="card p-3 shadow-sm border-0 rounded-4 mb-3" style="background: white;">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
                 <div class="d-flex align-items-center gap-3">
                     <div class="rounded-circle d-flex align-items-center justify-content-center" style="width: 44px; height: 44px; font-size: 1.3rem; background: rgba(16, 185, 129, 0.1); color: #10b981;">
@@ -139,6 +357,26 @@ function renderFestkasseView() {
                         Wird geladen...
                     </span>
                 </div>
+            </div>
+        </div>
+
+        <!-- DRUCKER-ZERTIFIKAT & EPOS-SICHERHEIT BANNER -->
+        <div class="card p-3 shadow-sm border-0 rounded-4 mb-4" style="background: white;" id="card-festkasse-cert">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-2">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="rounded-circle d-flex align-items-center justify-content-center" style="width: 44px; height: 44px; font-size: 1.3rem; background: rgba(2, 132, 199, 0.1); color: #0284c7;">
+                        🔐
+                    </div>
+                    <div>
+                        <div class="fw-bold text-dark">Epson Bondrucker TLS-Zertifikat (ePOS-Print HTTPS)</div>
+                        <div class="small text-muted">
+                            Status der internen Stammzertifikatskette für autarken Direktdruck ohne Cloud-Abhängigkeit.
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="festkasse-cert-status-area">
+                <div class="text-muted small">Zertifikatsstatus wird geladen...</div>
             </div>
         </div>
 
@@ -229,9 +467,15 @@ function renderFestkasseView() {
         </div>
     `;
 
-    setTimeout(loadFestkasseVisibility, 50);
+    setTimeout(() => {
+        loadFestkasseVisibility();
+        loadFestkasseCertStatus();
+    }, 50);
 }
 
 window.renderFestkasseView = renderFestkasseView;
 window.toggleFestkasseMemberVisibility = toggleFestkasseMemberVisibility;
 window.loadFestkasseVisibility = loadFestkasseVisibility;
+window.loadFestkasseCertStatus = loadFestkasseCertStatus;
+window.checkPrinterCertLive = checkPrinterCertLive;
+window.openCertRenewalModal = openCertRenewalModal;

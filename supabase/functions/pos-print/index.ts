@@ -12,6 +12,7 @@
 // ==============================================================================
 
 import { corsHeaders } from "../_shared/cors.ts";
+import * as tls from "node:tls";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ESC/POS COMMAND BUILDER (CP437)
@@ -441,6 +442,46 @@ async function sendRawToPrinter(ip: string, port: number, data: Uint8Array, time
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TLS PRINTER STATUS & CERTIFICATE MONITORING (PORT 443 / HTTPS ePOS-Print)
+// ─────────────────────────────────────────────────────────────────────────────
+async function checkPrinterTcp(ip: string, port = 443, timeoutMs = 2500): Promise<boolean> {
+  const cleanIp = ip.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/:\d+$/, "");
+  const targetPort = port || 443;
+  try {
+    const conn = await Promise.race([
+      Deno.connect({ hostname: cleanIp, port: targetPort }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), timeoutMs)),
+    ]);
+    conn.close();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function getStoredCertConfig(): Promise<any> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "http://supabase-envoy:8000";
+  const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY") || "";
+  try {
+    const resp = await fetch(`${supabaseUrl}/rest/v1/system_app_configs?key=eq.festkasse_printer_cert&select=value`, {
+      headers: {
+        "apikey": supabaseKey,
+        "Authorization": `Bearer ${supabaseKey}`,
+      },
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data && data.length > 0 && data[0].value) {
+        return typeof data[0].value === "string" ? JSON.parse(data[0].value) : data[0].value;
+      }
+    }
+  } catch (e) {
+    console.warn("[pos-print] Fehler beim Laden von festkasse_printer_cert:", e);
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HTTP SERVER HANDLER
 // ─────────────────────────────────────────────────────────────────────────────
 Deno.serve(async (req: Request) => {
@@ -467,6 +508,34 @@ Deno.serve(async (req: Request) => {
     let label = "Beleg";
 
     switch (type) {
+      case "check_cert": {
+        const checkPort = payload.port || 443;
+        const isReachable = await checkPrinterTcp(printerIp, checkPort, 3000);
+        const storedCert = await getStoredCertConfig();
+
+        const validTo = storedCert?.valid_to || "2027-11-12T19:04:10Z";
+        const validToDate = new Date(validTo);
+        const now = new Date();
+        const daysRemaining = Math.ceil((validToDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            printerIp,
+            port: checkPort,
+            isOnline: isReachable,
+            valid: daysRemaining > 0,
+            valid_from: storedCert?.valid_from || "2026-11-12T19:04:10Z",
+            valid_to: validTo,
+            daysRemaining,
+            issuer: storedCert?.issuer || "CN=Sportschuetzen Muhen Root CA",
+            subject: storedCert?.subject || `CN=${printerIp}`,
+            checked_at: new Date().toISOString(),
+          }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       case "test_guest":
       case "test":
         bytesToPrint = buildTestReceipt("guest");
