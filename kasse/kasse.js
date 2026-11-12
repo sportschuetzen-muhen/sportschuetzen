@@ -705,11 +705,11 @@ const KasseModule = (function () {
     if (amtEl) amtEl.textContent = formatCHF(total);
     if (refEl) refEl.textContent = `Bestellung ${displayOrderNumber} (${cart.length} Positionen)`;
 
-    // PayLink mit Rappen & Referenz
-    const cents = Math.round(total * 100);
+    // PayLink mit CHF-Betrag & Referenz
+    const amtChf = total.toFixed(2);
     let base = twintSettings.paylinkUrl || 'https://pay.raisenow.io/cctmv';
     if (base.endsWith('/')) base = base.slice(0, -1);
-    const payUrl = `${base}?amount.values=${cents}&amount.custom=0&custom_reference=${encodeURIComponent(displayOrderNumber)}&lng=de`;
+    const payUrl = `${base}?amount.values=${amtChf}&amount.custom=0&custom_reference=${encodeURIComponent(displayOrderNumber)}&lng=de`;
 
     const qrBox = document.getElementById('twint-modal-qrcode');
     if (qrBox) {

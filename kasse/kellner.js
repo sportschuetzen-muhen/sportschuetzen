@@ -324,8 +324,8 @@ const KellnerHandheld = (function () {
     const totalEl = document.getElementById('kellner-twint-total-display');
     if (totalEl) totalEl.textContent = formatCHF(total);
 
-    const cents = Math.round(total * 100);
-    const payUrl = `https://pay.raisenow.io/cctmv?amount.values=${cents}&amount.custom=0&custom_reference=${encodeURIComponent(selectedTable)}&lng=de`;
+    const amtChf = total.toFixed(2);
+    const payUrl = `https://pay.raisenow.io/cctmv?amount.values=${amtChf}&amount.custom=0&custom_reference=${encodeURIComponent(selectedTable)}&lng=de`;
 
     const qrBox = document.getElementById('kellner-twint-qrcode');
     if (qrBox) {
