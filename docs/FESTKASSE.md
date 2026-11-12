@@ -4,7 +4,7 @@
 > **Stand:** November 2026  
 > **URL:** `https://sps-b55.pages.dev/kasse/`  
 > **Komponenten:** `kasse/index.html`, `kasse/kasse.js`, `kasse/epos-print.js`, `kasse/abschluss.js`, `kasse/kellner.js`, `kasse/db.js`, `kasse/sw.js`  
-> **Architektur:** 100% Offline-First via IndexedDB (`FestkasseDB`) & Service Worker (`festkasse-v3`). Direktansteuerung von Epson LAN-Bondruckern via ePOS-Print (XML/HTTP). Keine dauerhafte Abhängigkeit zu Cloud, GAS oder Internet.
+> **Architektur:** 100% Offline-First via IndexedDB (`FestkasseDB`) & Service Worker (`festkasse-v8`). Direktansteuerung von Epson LAN-Bondruckern via ePOS-Print (XML/HTTP). Keine dauerhafte Abhängigkeit zu Cloud, GAS oder Internet.
 
 ---
 
@@ -13,6 +13,7 @@
 Die **Festkasse** ist eine eigenständige Progressive Web App (PWA) für das Schützenhaus, Festzelte und Vereinsanlässe der Sportschützen Muhen. Sie wurde entwickelt, um auch bei völligem Netzausfall im Festzelt eine blitzschnelle, intuitive Kassenführung zu gewährleisten:
 
 * **WaiterOne-Bedienlayout (iPad- & iPhone-optimiert):** Horizontale Kategorien-Pills, adaptive Produktkacheln mit grossen Touch-Zielen ($\ge 52\text{px}$), flexibler Bon-Bereich im Hoch- und Querformat sowie Schweizer Notenrechner (10, 20, 50, 100, 200 CHF) mit automatischer Rückgeldanzeige.
+* **iOS-/iPadOS-Ergonomie & Gestenschutz:** Striktes Unterbinden von versehentlichem Pull-to-Refresh (`overscroll-behavior: none` & `touchmove`-Guard) zum Schutz vor unbedachtem Neuladen offener Bons. Dynamische Viewport-Anpassung via `100dvh` und Safe-Area-Insets (`env(safe-area-inset-*)`) verhindern Überlagerungen durch iOS-Home-Balken und Systemleisten. Alle Eingabefelder sind auf $\ge 16\text{px}$ genormt, um den störenden Safari-Autozoom zu blockieren.
 * **Kassensturz & Z-Abschluss:** Interaktives Münzen- und Noten-Zählprotokoll (5 Rappen bis 1000 Fr), Soll/Ist-Vergleich mit Diskrepanz-Berechnung, Barauslagen-Erfassung und Z-Bericht-Quittung (80mm Thermo-Druck).
 * **Multi-Device Kellneransicht & Sofortdruck:** Nativer Fullscreen-Handheld-Modus für Smartphones (iPhone) zur blitzschnellen Tischerfassung. Bei Klick auf «Bestellung senden» wird der Bon (Küchen- und Gastbeleg mit Tischnummer) sofort physisch auf dem Bondrucker ausgeworfen und in der lokalen DB verbucht.
 * **Entkopplung Schichtplaner:** Der Schichtplaner wurde bewusst aus der Kassen-App herausgelöst und in ein eigenes, cloud-synchronisiertes System überführt (siehe [SCHICHTPLANER.md](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/docs/SCHICHTPLANER.md)). Kassenbediener wechseln ihren Namen direkt über den schnellen Bediener-Dialog im Kassen-Header.

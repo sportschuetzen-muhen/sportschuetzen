@@ -938,4 +938,22 @@ const KasseModule = (function () {
 
 window.addEventListener('DOMContentLoaded', () => {
   KasseModule.init();
+
+  // Schutz vor versehentlichem Pull-to-Refresh auf iOS/iPadOS Safari
+  window.addEventListener('touchmove', (e) => {
+    let target = e.target;
+    let scrollable = null;
+    while (target && target !== document.body && target !== document.documentElement) {
+      const style = window.getComputedStyle(target);
+      const overflowY = style.overflowY;
+      if ((overflowY === 'auto' || overflowY === 'scroll') && target.scrollHeight > target.clientHeight) {
+        scrollable = target;
+        break;
+      }
+      target = target.parentElement;
+    }
+    if (!scrollable && e.touches && e.touches.length === 1) {
+      e.preventDefault();
+    }
+  }, { passive: false });
 });

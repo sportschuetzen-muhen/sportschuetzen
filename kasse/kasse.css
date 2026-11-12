@@ -65,7 +65,10 @@
 html, body {
   width: 100%;
   height: 100%;
+  height: 100dvh;
   overflow: hidden;
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
   font-family: var(--font-family);
   background-color: var(--bg-primary);
   color: var(--text-main);
@@ -78,19 +81,23 @@ html, body {
   flex-direction: column;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
 }
 
 /* ─────────────────────────────────────────────────────────────
    TOP HEADER BAR
    ───────────────────────────────────────────────────────────── */
 .top-header {
-  height: 60px;
+  height: calc(60px + env(safe-area-inset-top));
+  min-height: calc(60px + env(safe-area-inset-top));
   background-color: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  padding: env(safe-area-inset-top) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
   z-index: 100;
   flex-shrink: 0;
 }
@@ -261,7 +268,7 @@ html, body {
    ───────────────────────────────────────────────────────────── */
 .view-container {
   flex: 1;
-  height: calc(100vh - 60px);
+  min-height: 0;
   position: relative;
   overflow: hidden;
 }
@@ -372,7 +379,7 @@ html, body {
   border-radius: var(--radius-sm);
   padding: 0 12px 0 38px;
   color: var(--text-main);
-  font-size: 15px;
+  font-size: 16px; /* 16px verhindert iOS Safari Auto-Zoom */
   outline: none;
 }
 
@@ -393,6 +400,8 @@ html, body {
   flex: 1;
   padding: 14px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   grid-auto-rows: 110px;
@@ -538,6 +547,8 @@ html, body {
 .ticket-items-list {
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 10px;
   display: flex;
   flex-direction: column;
@@ -656,9 +667,25 @@ html, body {
   background-color: var(--bg-card);
   border-top: 1px solid var(--border-color);
   padding: 14px;
+  padding-bottom: max(14px, calc(10px + env(safe-area-inset-bottom)));
+  padding-left: max(14px, env(safe-area-inset-left));
+  padding-right: max(14px, env(safe-area-inset-right));
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+/* Kellner Handheld Mobile Dock (iPhone) */
+.kellner-bottom-dock {
+  background-color: var(--bg-card);
+  border-top: 1px solid var(--border-color);
+  padding: 12px;
+  padding-bottom: max(12px, calc(8px + env(safe-area-inset-bottom)));
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .ticket-summary-row {
@@ -1501,12 +1528,14 @@ html, body {
 /* 3. Smartphones & iPhone (<= 640px) */
 @media screen and (max-width: 640px) {
   .top-header {
-    height: 52px;
-    padding: 0 8px;
+    height: calc(52px + env(safe-area-inset-top));
+    min-height: calc(52px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) max(8px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left));
     gap: 6px;
   }
   .view-container {
-    height: calc(100vh - 52px);
+    flex: 1;
+    min-height: 0;
   }
   .pos-layout {
     flex-direction: column;
@@ -1515,13 +1544,20 @@ html, body {
     height: 52%;
     border-right: none;
     border-bottom: 2px solid var(--border-color);
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
   .pos-ticket-panel {
     width: 100%;
     height: 48%;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
   .ticket-footer {
     padding: 8px 12px;
+    padding-bottom: max(10px, calc(6px + env(safe-area-inset-bottom)));
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
   }
   .cash-quick-buttons {
     display: none; /* Auf kleinen Smartphones Notenrechner ausblenden für mehr Platz */
@@ -1550,6 +1586,7 @@ html, body {
     width: 100% !important;
     height: 100% !important;
     max-height: 100vh !important;
+    max-height: 100dvh !important;
     border: none !important;
     border-radius: 0 !important;
     box-shadow: none !important;
@@ -1559,7 +1596,7 @@ html, body {
     display: none !important;
   }
   .kellner-header {
-    padding: 10px 12px;
+    padding: calc(8px + env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
     background-color: var(--bg-secondary);
     border-bottom: 1px solid var(--border-color);
   }

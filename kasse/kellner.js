@@ -76,7 +76,7 @@ const KellnerHandheld = (function () {
           </div>
 
           <!-- BON-LEISTE UNTEN (MOBILE DOCK) -->
-          <div style="background-color: var(--bg-card); border-top: 1px solid var(--border-color); padding: 12px; display: flex; flex-direction: column; gap: 8px;">
+          <div class="kellner-bottom-dock">
             <div style="display: flex; justify-content: space-between; align-items: baseline;">
               <span style="font-size: 13px; color: var(--text-muted); font-weight: 700;">${itemCount} Artikel im Bon</span>
               <span style="font-size: 22px; font-weight: 900; color: #38bdf8; font-family: monospace;">${formatCHF(total)}</span>
