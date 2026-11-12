@@ -29,6 +29,9 @@ const KasseModule = (function () {
     openDrawer: true,
     orderSequence: 1
   };
+  let twintSettings = {
+    paylinkUrl: 'https://pay.raisenow.io/cctmv'
+  };
   let printerCertInfo = null;
   let lastCompletedOrder = null;
   let activeReceiptOrder = null;
@@ -134,6 +137,15 @@ const KasseModule = (function () {
 
       const seq = await FestkasseDB.get('settings', 'orderSequence');
       if (seq && typeof seq.value === 'number') printerSettings.orderSequence = seq.value;
+
+      // TWINT PayLink laden (Standard: cctmv)
+      const twLink = await FestkasseDB.get('settings', 'twintPaylink');
+      if (twLink && twLink.value) {
+        twintSettings.paylinkUrl = twLink.value;
+      } else {
+        twintSettings.paylinkUrl = 'https://pay.raisenow.io/cctmv';
+        await FestkasseDB.put('settings', { key: 'twintPaylink', value: 'https://pay.raisenow.io/cctmv' });
+      }
 
       // TLS-Zertifikatsstatus laden & synchronisieren (IndexedDB & Supabase)
       let certConf = await FestkasseDB.get('settings', 'printerCertInfo');
@@ -656,15 +668,17 @@ const KasseModule = (function () {
 
     // 8. DRUCK-LOGIK (Je nach Konfiguration)
     if (printerSettings.printMode === 'auto') {
-      showToast(`Bon ${displayOrderNumber} bezahlt (${method.toUpperCase()}) – Drucke Belege...`);
+      showToast(`Bon ${displayOrderNumber} verbucht (${method.toUpperCase()}) – Beleg wird gedruckt...`);
       EposPrint.printOrder(orderData, printerSettings).then(res => {
         if (res.success) {
           showToast(`✓ ${displayOrderNumber} an Drucker übermittelt (${res.printedCount} Bons)`);
         } else if (res.errors && res.errors.length) {
-          showToast(`⚠️ Druckfehler: ${res.errors[0]}`);
+          console.warn('Epson Druckfehler:', res.errors);
+          showToast(`✓ ${displayOrderNumber} verbucht (Drucker ${printerSettings.printerIp} offline)`, 4000);
         }
       }).catch(err => {
-        showToast(`⚠️ Druckerfehler: ${err.message || err}`);
+        console.warn('Epson Ausnahme:', err);
+        showToast(`✓ ${displayOrderNumber} verbucht (Drucker ${printerSettings.printerIp} offline)`, 4000);
       });
     } else if (printerSettings.printMode === 'browser') {
       // Fallback: Quittungs-Modal anzeigen für AirPrint
@@ -673,6 +687,59 @@ const KasseModule = (function () {
       // 'manual' (Empfohlen für Festbetrieb): Kasse sofort frei, kein Modal!
       showToast(`Bestellung ${displayOrderNumber} bezahlt (${formatCHF(total)}) – Kasse bereit`);
     }
+  }
+
+  // ── TWINT BEZAHLUNG MIT DYNAMISCHEM QR-CODE ──────────────────
+  function startTwintPayment() {
+    const total = cart.reduce((sum, it) => sum + (it.price * it.qty), 0);
+    if (total <= 0) {
+      showToast('Der Bon ist leer.');
+      return;
+    }
+
+    const seq = printerSettings.orderSequence || 1;
+    const displayOrderNumber = '#' + String(seq).padStart(2, '0');
+
+    const amtEl = document.getElementById('twint-modal-amount');
+    const refEl = document.getElementById('twint-modal-bon-ref');
+    if (amtEl) amtEl.textContent = formatCHF(total);
+    if (refEl) refEl.textContent = `Bestellung ${displayOrderNumber} (${cart.length} Positionen)`;
+
+    // PayLink mit Rappen & Referenz
+    const cents = Math.round(total * 100);
+    let base = twintSettings.paylinkUrl || 'https://pay.raisenow.io/cctmv';
+    if (base.endsWith('/')) base = base.slice(0, -1);
+    const payUrl = `${base}?amount.values=${cents}&amount.custom=0&custom_reference=${encodeURIComponent(displayOrderNumber)}&lng=de`;
+
+    const qrBox = document.getElementById('twint-modal-qrcode');
+    if (qrBox) {
+      qrBox.innerHTML = '';
+      if (typeof QRCode !== 'undefined') {
+        new QRCode(qrBox, {
+          text: payUrl,
+          width: 200,
+          height: 200,
+          colorDark: '#0f172a',
+          colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.M
+        });
+      } else {
+        qrBox.innerHTML = `<div style="color: #ef4444; font-size: 12px; padding: 20px;">QRCode-Bibliothek wird geladen...</div>`;
+      }
+    }
+
+    const modal = document.getElementById('twint-payment-modal');
+    if (modal) modal.classList.add('active');
+  }
+
+  function closeTwintModal() {
+    const modal = document.getElementById('twint-payment-modal');
+    if (modal) modal.classList.remove('active');
+  }
+
+  async function confirmTwintPayment() {
+    closeTwintModal();
+    await completePayment('twint');
   }
 
   // 1-Klick-Ausdruck des letzten getätigten Bons
@@ -843,6 +910,9 @@ const KasseModule = (function () {
     const statusEl = document.getElementById('printer-test-status');
     if (statusEl) statusEl.innerHTML = '';
 
+    const twintInput = document.getElementById('setting-twint-paylink');
+    if (twintInput) twintInput.value = twintSettings.paylinkUrl || 'https://pay.raisenow.io/cctmv';
+
     FestkasseDB.get('settings', 'eventTitle').then(titleSetting => {
       const nameEl = document.getElementById('setting-active-event-name');
       if (nameEl) nameEl.textContent = titleSetting ? titleSetting.value : 'Festwirtschaft Sportschützen Muhen';
@@ -927,6 +997,12 @@ const KasseModule = (function () {
     await FestkasseDB.put('settings', { key: 'printKitchenReceipt', value: printerSettings.printKitchenReceipt });
     await FestkasseDB.put('settings', { key: 'printDrinksReceipt', value: printerSettings.printDrinksReceipt });
     await FestkasseDB.put('settings', { key: 'openDrawer', value: printerSettings.openDrawer });
+
+    const twintInput = document.getElementById('setting-twint-paylink');
+    if (twintInput) {
+      twintSettings.paylinkUrl = twintInput.value.trim() || 'https://pay.raisenow.io/cctmv';
+      await FestkasseDB.put('settings', { key: 'twintPaylink', value: twintSettings.paylinkUrl });
+    }
 
     const modal = document.getElementById('settings-modal');
     if (modal) modal.classList.remove('active');
@@ -1150,7 +1226,10 @@ const KasseModule = (function () {
     loadIncomingOrderToCart,
     showCertHelp,
     syncEventSortimentManually,
-    updateLiveSalesBadge
+    updateLiveSalesBadge,
+    startTwintPayment,
+    closeTwintModal,
+    confirmTwintPayment
   };
 })();
 

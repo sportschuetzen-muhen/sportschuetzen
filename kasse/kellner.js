@@ -307,8 +307,53 @@ const KellnerHandheld = (function () {
     }
 
     if (method === 'twint') {
-      executeCheckout('twint', total, 0);
+      openTwintModal(total);
     }
+  }
+
+  function openTwintModal(total) {
+    const modal = document.getElementById('kellner-twint-modal');
+    if (!modal) {
+      executeCheckout('twint', total, 0);
+      return;
+    }
+
+    const tableNameEl = document.getElementById('kellner-twint-table-name');
+    if (tableNameEl) tableNameEl.textContent = selectedTable;
+
+    const totalEl = document.getElementById('kellner-twint-total-display');
+    if (totalEl) totalEl.textContent = formatCHF(total);
+
+    const cents = Math.round(total * 100);
+    const payUrl = `https://pay.raisenow.io/cctmv?amount.values=${cents}&amount.custom=0&custom_reference=${encodeURIComponent(selectedTable)}&lng=de`;
+
+    const qrBox = document.getElementById('kellner-twint-qrcode');
+    if (qrBox) {
+      qrBox.innerHTML = '';
+      if (typeof QRCode !== 'undefined') {
+        new QRCode(qrBox, {
+          text: payUrl,
+          width: 170,
+          height: 170,
+          colorDark: '#0f172a',
+          colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.M
+        });
+      }
+    }
+
+    modal.classList.add('active');
+  }
+
+  function closeTwintModal() {
+    const modal = document.getElementById('kellner-twint-modal');
+    if (modal) modal.classList.remove('active');
+  }
+
+  function confirmTwintPayment() {
+    closeTwintModal();
+    const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+    executeCheckout('twint', total, 0);
   }
 
   function openCashModal(total) {
@@ -464,7 +509,7 @@ const KellnerHandheld = (function () {
     if (navigator.vibrate) navigator.vibrate([40, 30, 80]);
 
     const changeNote = changeGiven > 0 ? ` (Rückgeld: ${formatCHF(changeGiven)})` : '';
-    const printNote = printSuccess ? '✓ Beleg gedruckt' : (printError ? `⚠️ Druckfehler: ${printError}` : '');
+    const printNote = printSuccess ? ' · ✓ Bon gedruckt' : (printError ? ' · (Drucker offline)' : '');
 
     if (typeof KasseModule !== 'undefined' && KasseModule.showToast) {
       KasseModule.showToast(`✓ ${prevTable} bezahlt (${method.toUpperCase()}${changeNote}) ${printNote}`);
@@ -526,6 +571,9 @@ const KellnerHandheld = (function () {
     selectQuickCash,
     closeCashModal,
     confirmCashPayment,
+    openTwintModal,
+    closeTwintModal,
+    confirmTwintPayment,
     openTableModal,
     selectTable
   };

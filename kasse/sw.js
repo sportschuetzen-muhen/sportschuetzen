@@ -4,12 +4,13 @@
  * WebKit / Safari Härtung: Verhindert "response served by service worker has redirections"
  */
 
-const CACHE_NAME = 'festkasse-v14';
+const CACHE_NAME = 'festkasse-v15';
 const ASSETS_TO_CACHE = [
   './index.html',
   './kasse.css',
   './kasse.js',
   './epos-print.js',
+  './qrcode.min.js',
   './db.js',
   './abschluss.js',
   './kellner.js',

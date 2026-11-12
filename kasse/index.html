@@ -169,7 +169,7 @@
                   <span>💵</span>
                   <span>BAR BEZAHLEN</span>
                 </button>
-                <button class="btn-pay-twint" onclick="KasseModule.completePayment('twint')">
+                <button class="btn-pay-twint" onclick="KasseModule.startTwintPayment()">
                   <span>📱</span>
                   <span>TWINT</span>
                 </button>
@@ -196,6 +196,48 @@
   <!-- ─────────────────────────────────────────────────────────────
        MODALE & DIALOGE
        ───────────────────────────────────────────────────────────── -->
+
+  <!-- TWINT ZAHLUNGS-MODAL (DYNAMISCHER QR-CODE & BESTÄTIGUNG) -->
+  <div id="twint-payment-modal" class="modal-overlay">
+    <div class="modal-dialog" style="max-width: 420px; text-align: center;">
+      <div class="modal-header" style="background: linear-gradient(135deg, #009b77, #007a5e); color: white;">
+        <div class="modal-title" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;">
+          <span>📱 TWINT Bezahlung</span>
+        </div>
+        <button class="modal-close-btn" style="color: white;" onclick="KasseModule.closeTwintModal()">✕</button>
+      </div>
+
+      <div class="modal-body d-flex flex-column gap-3" style="align-items: center; padding: 20px;">
+        <div style="font-size: 13px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
+          Zu bezahlender Betrag:
+        </div>
+        <div id="twint-modal-amount" style="font-size: 38px; font-weight: 900; color: #00bf63; font-family: monospace; letter-spacing: -0.5px;">
+          CHF 0.00
+        </div>
+        <div id="twint-modal-bon-ref" style="font-size: 14px; font-weight: 700; color: #60a5fa; margin-top: -6px;">
+          Bestellung #01
+        </div>
+
+        <!-- Dynamischer QR Code Container -->
+        <div style="background: white; padding: 16px; border-radius: 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); margin: 8px 0; display: inline-flex; justify-content: center; align-items: center; min-width: 232px; min-height: 232px;">
+          <div id="twint-modal-qrcode"></div>
+        </div>
+
+        <div style="font-size: 13px; color: var(--text-muted); max-width: 320px; line-height: 1.4;">
+          Gast scannt den QR-Code mit der TWINT-App oder Smartphone-Kamera.
+        </div>
+      </div>
+
+      <div class="modal-footer" style="justify-content: space-between; gap: 10px;">
+        <button type="button" class="btn-secondary" style="min-height: 48px; padding: 0 16px;" onclick="KasseModule.closeTwintModal()">
+          ✕ Abbrechen
+        </button>
+        <button type="button" class="btn-primary" id="btn-confirm-twint-payment" onclick="KasseModule.confirmTwintPayment()" style="background: #00bf63; border-color: #00bf63; color: #000; font-weight: 900; font-size: 15px; min-height: 48px; padding: 0 20px; flex: 1;">
+          ✓ Bezahlt – Bon drucken
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- QUITTUNGS-MODAL (80mm BON) -->
   <div id="receipt-modal" class="modal-overlay">
@@ -434,6 +476,17 @@
           </div>
           <div id="printer-test-status" style="margin-top: 8px; font-size: 12px; min-height: 18px;"></div>
         </div>
+
+        <!-- ABSCHNITT 6: TWINT & RAISENOW PAYLINK KONFIGURATION -->
+        <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+          <label style="font-size: 13px; font-weight: 700; color: #00bf63; display: block; margin-bottom: 4px;">
+            📱 TWINT PayLink URL (RaiseNow Hub):
+          </label>
+          <input type="text" id="setting-twint-paylink" class="search-input" style="padding: 0 12px; font-size: 14px; font-family: monospace;" value="https://pay.raisenow.io/cctmv" placeholder="https://pay.raisenow.io/cctmv">
+          <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+            Touchpoint-Lösung der Sportschützen Muhen. Betrag &amp; Bestellnummer werden dynamisch als QR-Code erzeugt.
+          </div>
+        </div>
       </div>
 
       <div class="modal-footer" style="justify-content: space-between;">
@@ -514,10 +567,43 @@
     </div>
   </div>
 
+  <!-- KELLNER: TWINT KASSIEREN MODAL (AM TISCH) -->
+  <div id="kellner-twint-modal" class="modal-overlay">
+    <div class="modal-dialog" style="max-width: 400px; text-align: center;">
+      <div class="modal-header" style="background: linear-gradient(135deg, #009b77, #007a5e); color: white;">
+        <div class="modal-title" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;">
+          <span>📱 TWINT am Tisch (<span id="kellner-twint-table-name">Tisch</span>)</span>
+        </div>
+        <button class="modal-close-btn" style="color: white;" onclick="KellnerHandheld.closeTwintModal()">✕</button>
+      </div>
+      <div class="modal-body d-flex flex-column gap-3" style="align-items: center; padding: 16px;">
+        <div style="font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
+          Betrag:
+        </div>
+        <div id="kellner-twint-total-display" style="font-size: 34px; font-weight: 900; color: #00bf63; font-family: monospace;">
+          CHF 0.00
+        </div>
+        <div style="background: white; padding: 12px; border-radius: 12px; box-shadow: 0 6px 18px rgba(0,0,0,0.3); margin: 6px 0; display: inline-flex; justify-content: center; align-items: center; min-width: 194px; min-height: 194px;">
+          <div id="kellner-twint-qrcode"></div>
+        </div>
+        <div style="font-size: 12px; color: var(--text-muted);">
+          Gast scannt direkt von deinem Smartphone.
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content: space-between; gap: 8px;">
+        <button class="btn-secondary" onclick="KellnerHandheld.closeTwintModal()">Abbrechen</button>
+        <button class="btn-primary" id="kellner-btn-confirm-twint" onclick="KellnerHandheld.confirmTwintPayment()" style="background: #00bf63; border-color: #00bf63; color: #000; font-weight: 800; min-height: 42px; padding: 0 16px; flex: 1;">
+          ✓ Bezahlt &amp; Bon drucken
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- GLOBAL TOAST NOTIFICATION -->
   <div id="global-toast" class="toast-box"></div>
 
   <!-- SCRIPTS -->
+  <script src="qrcode.min.js"></script>
   <script src="db.js"></script>
   <script src="epos-print.js"></script>
   <script src="abschluss.js"></script>

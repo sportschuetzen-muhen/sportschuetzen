@@ -180,7 +180,9 @@ Jeder Anlass steuert seine Pfandregeln individuell:
 
 ---
 
-## 5.8 TWINT PayLink & RaiseNow Hub Integration (Test-Cockpit `test-twint.html`)
+## 5.8 TWINT PayLink & RaiseNow Hub Integration (`twint-payment-modal` & `test-twint.html`)
 * **Touchpoint-Lösung (Sportschützen Muhen):** Nutzung der aktiven RaiseNow Hub Touchpoint-Lösung `cctmv` (`solution_type: twint_qr_simple`).
 * **Parameter-Kontrakt für dynamische Beträge:** Beträge werden in Rappen übergeben (`amount.values=<cents>&amount.custom=0`), optional ergänzt um die Bestellnummer (`custom_reference=BON-01`) und den Terminal-Modus (`terminal_mode=true` bzw. Domain `terminal.raisenow.io`).
+* **Integriertes TWINT-Zahlungsmodal (Kasse & Kellner-iPhone):** Beim Antippen von `[📱 TWINT]` öffnet sich ein responsives Zahlungs-Overlay mit grosser Betragsanzeige, Bestellnummer und offline gerendertem dynamischem QR-Code (`qrcode.min.js`). Der Gast scannt direkt vom Tablet oder Kellner-Handy; nach Bestätigung löst `[✓ Bezahlt – Bon drucken]` die Verbuchung und den ePOS-Ausdruck aus.
+* **Sanfter Offline-Druckerschutz:** Ist der Epson-LAN-Drucker `192.168.68.200` (z.B. beim Vorab-Testen daheim) nicht erreichbar, bricht die Festkasse nicht mit einem blockierenden Fehler ab, sondern verbucht die Zahlung verlässlich in IndexedDB und informiert den Bediener transparent per Toast-Meldung.
 * **Test- & Diagnose-Cockpit:** Unter `kasse/test-twint.html` steht ein interaktives Test-Cockpit zur Verfügung, das Iframe-Einbettung, QR-Code-Grossansicht (Kundendisplay), `window.postMessage`-Monitoring und die direkte Auslösung des Epson ePOS-Bondrucks (`192.168.68.200`) vereint.
