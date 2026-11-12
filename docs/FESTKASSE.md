@@ -177,3 +177,10 @@ Jeder Anlass steuert seine Pfandregeln individuell:
 * **Automatischer Abgleich:** Beim Start prüft die Festkasse online, ob ein neuer Anlass geschaltet wurde, transformiert die Artikel und speichert sie in die lokale `FestkasseDB` (Stores `products` und `categories`).
 * **Manueller Abgleich:** Im Einstellungsdialog (`⚙️`) kann das Sortiment jederzeit über «🔄 Sortiment abgleichen» aktualisiert werden.
 * **Netzausfall-Sicherheit:** Im Festzelt läuft die Kasse vollkommen unabhängig von Internet oder Server – alle Artikel, Preise und Pfandregeln verbleiben stabil im lokalen IndexedDB-Speicher.
+
+---
+
+## 5.8 TWINT PayLink & RaiseNow Hub Integration (Test-Cockpit `test-twint.html`)
+* **Touchpoint-Lösung (Sportschützen Muhen):** Nutzung der aktiven RaiseNow Hub Touchpoint-Lösung `cctmv` (`solution_type: twint_qr_simple`).
+* **Parameter-Kontrakt für dynamische Beträge:** Beträge werden in Rappen übergeben (`amount.values=<cents>&amount.custom=0`), optional ergänzt um die Bestellnummer (`custom_reference=BON-01`) und den Terminal-Modus (`terminal_mode=true` bzw. Domain `terminal.raisenow.io`).
+* **Test- & Diagnose-Cockpit:** Unter `kasse/test-twint.html` steht ein interaktives Test-Cockpit zur Verfügung, das Iframe-Einbettung, QR-Code-Grossansicht (Kundendisplay), `window.postMessage`-Monitoring und die direkte Auslösung des Epson ePOS-Bondrucks (`192.168.68.200`) vereint.
