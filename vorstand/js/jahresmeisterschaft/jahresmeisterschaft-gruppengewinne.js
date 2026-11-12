@@ -540,6 +540,9 @@
 
         const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
         modal.show();
+        if (window.UIModalKit && typeof window.UIModalKit.makeMovableAndResizable === 'function') {
+            window.UIModalKit.makeMovableAndResizable(modalEl);
+        }
 
         await jmRenderGruppengewinneList(yr);
     }
@@ -1273,6 +1276,9 @@
 
         const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
         modal.show();
+        if (window.UIModalKit && typeof window.UIModalKit.makeMovableAndResizable === 'function') {
+            window.UIModalKit.makeMovableAndResizable(modalEl);
+        }
     }
 
     /**
@@ -1785,30 +1791,32 @@
             const pills = _jmLastDetectedGridShooters.map((s, idx) => {
                 const isSelected = currentNames.has(s.name.toLowerCase());
                 const btnCls = isSelected
-                    ? 'btn-success text-white'
+                    ? 'btn-success text-white shadow-xs'
                     : 'btn-outline-secondary bg-white text-dark';
                 const icon = isSelected ? 'fa-check' : 'fa-plus';
                 const titleHint = isSelected
                     ? 'Ist aktuell in der Gruppe eingeteilt (Klick zum Entfernen)'
                     : 'Klicken, um diesen Schützen in die Gruppe aufzunehmen';
                 return `
-                    <button type="button" class="btn btn-xs ${btnCls} py-0 px-2" style="font-size: 11px;" onclick="window.jmToggleGridShooterInEditor(${idx})" title="${titleHint}">
+                    <button type="button" class="btn btn-xs ${btnCls} py-1 px-2.5 rounded-pill" style="font-size: 11.5px; line-height: 1.3;" onclick="window.jmToggleGridShooterInEditor(${idx})" title="${titleHint}">
                         <i class="fas ${icon} me-1"></i>${escapeHtml(s.name)} <strong>(${s.punkte})</strong>
                     </button>
                 `;
             }).join('');
 
             extraHtml = `
-                <div class="mt-2 pt-1.5 border-top border-success-subtle d-flex flex-wrap align-items-center gap-1">
-                    <span class="text-muted me-1" style="font-size: 11px;">
+                <div class="mt-2.5 pt-2 border-top border-success-subtle">
+                    <div class="text-muted mb-2 fw-semibold" style="font-size: 11.5px;">
                         <i class="fas fa-exchange-alt me-1"></i>Alle ${_jmLastDetectedGridShooters.length} Schützen dieses Schiessens (Klick zum Ein-/Austeilen):
-                    </span>
-                    ${pills}
+                    </div>
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        ${pills}
+                    </div>
                 </div>
             `;
         }
 
-        banner.className = 'alert alert-success py-2 px-3 small mb-3 shadow-xs border';
+        banner.className = 'alert alert-success py-2.5 px-3 small mb-3 shadow-xs border';
         banner.innerHTML = `
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
                 <div class="d-flex align-items-center gap-2">
@@ -1942,7 +1950,7 @@
             if (_jmCurrentEditingComp?.members && _jmCurrentEditingComp.members.length > 0) {
                 renderAdditionalShootersPills(matched.title);
             } else {
-                banner.className = 'alert alert-primary py-2 px-3 small d-flex align-items-center justify-content-between mb-3 shadow-xs border';
+                banner.className = 'alert alert-primary py-2.5 px-3 small d-flex align-items-center justify-content-between mb-3 shadow-xs border';
                 banner.innerHTML = `
                     <div class="d-flex align-items-center gap-2">
                         <i class="fas fa-medal text-primary fa-lg"></i>
@@ -2228,14 +2236,53 @@
         return true;
     }
 
+    function ensureGruppengewinnModalStyles() {
+        if (document.getElementById('jm-gruppengewinn-custom-style')) return;
+        const style = document.createElement('style');
+        style.id = 'jm-gruppengewinn-custom-style';
+        style.textContent = `
+            /* Pfeile bei Number-Inputs (Punkte, Gruppe, Einzel) komplett entfernen */
+            .jme-no-spin::-webkit-outer-spin-button,
+            .jme-no-spin::-webkit-inner-spin-button,
+            input.jme-shooter-pts::-webkit-outer-spin-button,
+            input.jme-shooter-pts::-webkit-inner-spin-button,
+            input.jme-shooter-gruppe::-webkit-outer-spin-button,
+            input.jme-shooter-gruppe::-webkit-inner-spin-button,
+            input.jme-shooter-einzel::-webkit-outer-spin-button,
+            input.jme-shooter-einzel::-webkit-inner-spin-button {
+                -webkit-appearance: none !important;
+                margin: 0 !important;
+            }
+            .jme-no-spin,
+            input.jme-shooter-pts,
+            input.jme-shooter-gruppe,
+            input.jme-shooter-einzel {
+                -moz-appearance: textfield !important;
+            }
+
+            /* Tabelle im Erfassungs-Modal: angenehmes Padding nach Portal-Standard */
+            #jme-shooters-table td {
+                padding: 0.45rem 0.4rem !important;
+                vertical-align: middle !important;
+            }
+            #jme-shooters-table thead th {
+                padding: 0.5rem 0.4rem !important;
+                font-weight: 600;
+                vertical-align: middle;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
     function createGruppengewinnEditModalDOM() {
+        ensureGruppengewinnModalStyles();
         const div = document.createElement('div');
         div.id = 'jmGruppengewinnEditModal';
         div.className = 'modal fade';
         div.tabIndex = -1;
         div.setAttribute('aria-hidden', 'true');
         div.innerHTML = `
-            <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" style="max-width: 1360px; width: 96vw;">
                 <div class="modal-content shadow-lg border-0">
                     <div class="modal-header bg-dark text-white py-2.5 px-3">
                         <div class="d-flex align-items-center gap-2">
@@ -2381,19 +2428,19 @@
                                     <option value="Tiefschuss">
                                     <option value="Meisterschaft">
                                 </datalist>
-                                <div class="table-responsive" style="max-height: 380px;">
-                                    <table class="table table-sm table-hover align-middle mb-0" id="jme-shooters-table">
-                                        <thead class="table-light small text-muted border-bottom">
+                                <div class="table-responsive" style="max-height: 420px;">
+                                    <table class="table table-hover align-middle mb-0" id="jme-shooters-table" style="table-layout: fixed; width: 100%;">
+                                        <thead class="table-light small text-secondary border-bottom">
                                             <tr id="jme-shooters-thead-tr">
-                                                <th class="ps-3" style="width: 24%;">Schütze (Name / Status)</th>
-                                                <th class="text-center" style="width: 8%;">Punkte</th>
-                                                <th style="width: 14%;" id="jme-th-stich">Stich / Gabe</th>
-                                                <th class="text-end" style="width: 12%;" id="jme-th-gruppe">Gruppe</th>
-                                                <th class="text-end" style="width: 12%;" id="jme-th-einzel">Einzel</th>
-                                                <th class="text-end" style="width: 12%;" id="jme-th-total">Total</th>
-                                                <th style="width: 15%;">Auszahlungsweg</th>
-                                                <th style="width: 18%;">IBAN (für Überweisung)</th>
-                                                <th class="text-center" style="width: 5%;"></th>
+                                                <th class="ps-3" style="width: 22%;">Schütze (Name / Status)</th>
+                                                <th class="text-center" style="width: 7%;">Punkte</th>
+                                                <th style="width: 12%;" id="jme-th-stich">Stich / Gabe</th>
+                                                <th class="text-end" style="width: 11%;" id="jme-th-gruppe">Gruppe (CHF)</th>
+                                                <th class="text-end" style="width: 11%;" id="jme-th-einzel">Einzel (CHF)</th>
+                                                <th class="text-end" style="width: 9%;" id="jme-th-total">Total</th>
+                                                <th style="width: 13%;">Auszahlungsweg</th>
+                                                <th style="width: 12%;">IBAN</th>
+                                                <th class="text-center pe-3" style="width: 3%;"></th>
                                             </tr>
                                         </thead>
                                         <tbody id="jme-shooters-body" class="small">
@@ -2626,37 +2673,37 @@
                         </div>
                     </td>
                     <td class="text-center">
-                        <input type="number" step="0.1" class="form-control form-control-sm text-center jme-shooter-pts" value="${m.punkte || ''}" placeholder="Punkte" ${isLocked ? 'disabled' : ''} onchange="window.jmOnShooterPointsChange(${idx}, this.value)">
+                        <input type="number" step="0.1" class="form-control form-control-sm text-center jme-no-spin jme-shooter-pts" value="${m.punkte || ''}" placeholder="Pkt" style="font-size: 12px;" ${isLocked ? 'disabled' : ''} onchange="window.jmOnShooterPointsChange(${idx}, this.value)">
                     </td>
                     <td style="${isGruppe ? 'display:none;' : ''}">
-                        <input type="text" class="form-control form-control-sm jme-shooter-stich" list="jme-stiche-datalist" value="${escapeHtml(m.stich_name || '')}" placeholder="z. B. Auszahler" ${isLocked ? 'disabled' : ''} onchange="window.jmOnShooterStichChange(${idx}, this.value)">
+                        <input type="text" class="form-control form-control-sm jme-shooter-stich" list="jme-stiche-datalist" value="${escapeHtml(m.stich_name || '')}" placeholder="z. B. Auszahler" style="font-size: 12px;" ${isLocked ? 'disabled' : ''} onchange="window.jmOnShooterStichChange(${idx}, this.value)">
                     </td>
                     <td class="text-end" style="${isEinzel ? 'display:none;' : ''}">
                         <div class="input-group input-group-sm">
-                            <span class="input-group-text">CHF</span>
-                            <input type="number" step="0.05" class="form-control form-control-sm text-end jme-shooter-gruppe" value="${Number(m.anteil_gruppe || 0).toFixed(2)}" ${isLocked || isGruppe ? 'disabled' : ''} onchange="window.jmOnShooterGruppeChange(${idx}, this.value)">
+                            <span class="input-group-text px-1 text-muted small">CHF</span>
+                            <input type="number" step="0.05" class="form-control form-control-sm text-end jme-no-spin px-1.5 jme-shooter-gruppe" value="${Number(m.anteil_gruppe || 0).toFixed(2)}" ${isLocked || isGruppe ? 'disabled' : ''} onchange="window.jmOnShooterGruppeChange(${idx}, this.value)">
                         </div>
                     </td>
                     <td class="text-end" style="${isGruppe ? 'display:none;' : ''}">
                         <div class="input-group input-group-sm">
-                            <span class="input-group-text">CHF</span>
-                            <input type="number" step="0.05" class="form-control form-control-sm fw-bold text-end text-success jme-shooter-einzel" value="${Number(m.anteil_einzel || 0).toFixed(2)}" ${isLocked ? 'disabled' : ''} onchange="window.jmOnShooterEinzelChange(${idx}, this.value)">
+                            <span class="input-group-text px-1 text-muted small">CHF</span>
+                            <input type="number" step="0.05" class="form-control form-control-sm fw-bold text-end text-success jme-no-spin px-1.5 jme-shooter-einzel" value="${Number(m.anteil_einzel || 0).toFixed(2)}" ${isLocked ? 'disabled' : ''} onchange="window.jmOnShooterEinzelChange(${idx}, this.value)">
                         </div>
                     </td>
                     <td class="text-end fw-bold text-dark">
                         <span class="jme-shooter-total">${fmtCurr(m.betrag || 0)}</span>
                     </td>
                     <td>
-                        <select class="form-select form-select-sm jme-shooter-method" ${isLocked ? 'disabled' : ''} onchange="window.jmOnShooterMethodChange(${idx}, this.value)">
-                            <option value="jahresbeitrag" ${payoutMethod === 'jahresbeitrag' ? 'selected' : ''}>Verrechnung Jahresbeitrag</option>
-                            <option value="bank" ${payoutMethod === 'bank' ? 'selected' : ''}>Banküberweisung (pain.001)</option>
-                            <option value="kasse" ${payoutMethod === 'kasse' ? 'selected' : ''}>Barauszahlung (Kasse 1000)</option>
+                        <select class="form-select form-select-sm jme-shooter-method" style="font-size: 11.5px;" ${isLocked ? 'disabled' : ''} onchange="window.jmOnShooterMethodChange(${idx}, this.value)">
+                            <option value="jahresbeitrag" ${payoutMethod === 'jahresbeitrag' ? 'selected' : ''}>Verrechnung JB</option>
+                            <option value="bank" ${payoutMethod === 'bank' ? 'selected' : ''}>Bank (pain.001)</option>
+                            <option value="kasse" ${payoutMethod === 'kasse' ? 'selected' : ''}>Bar (Kasse 1000)</option>
                             <option value="pendent" ${payoutMethod === 'pendent' ? 'selected' : ''}>Pendent / Unklar</option>
                         </select>
                     </td>
                     <td>
                         <div class="d-flex align-items-center gap-1">
-                            <input type="text" class="form-control form-control-sm jme-shooter-iban ${hasIban ? 'border-success' : 'border-warning'}" value="${escapeHtml(currentIban)}" placeholder="CH..." ${isLocked ? 'disabled' : ''} onchange="window.jmOnShooterIbanChange(${idx}, this.value)">
+                            <input type="text" class="form-control form-control-sm font-monospace jme-shooter-iban ${hasIban ? 'border-success' : 'border-warning'}" style="font-size: 11px;" value="${escapeHtml(currentIban)}" placeholder="CH..." ${isLocked ? 'disabled' : ''} onchange="window.jmOnShooterIbanChange(${idx}, this.value)">
                             ${hasIban ? '<i class="fas fa-check-circle text-success" title="IBAN vorhanden"></i>' : '<i class="fas fa-exclamation-triangle text-warning" title="Keine IBAN im System"></i>'}
                         </div>
                         ${!memberObj?.iban && hasIban && !isLocked ? `
