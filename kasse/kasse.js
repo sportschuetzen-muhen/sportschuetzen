@@ -20,6 +20,7 @@ const KasseModule = (function () {
   // Drucker & Festbetrieb-Einstellungen
   let printerSettings = {
     printerIp: '192.168.68.200',
+    printDriver: 'gateway', // 'gateway' (CT 117 / Supabase) | 'tm_assistant' (Epson iPad App) | 'browser'
     printMode: 'manual', // 'manual' | 'auto' | 'browser'
     printGuestReceipt: true,
     printKitchenReceipt: true,
@@ -81,6 +82,9 @@ const KasseModule = (function () {
     try {
       const ip = await FestkasseDB.get('settings', 'printerIp');
       if (ip && ip.value) printerSettings.printerIp = ip.value;
+
+      const driver = await FestkasseDB.get('settings', 'printDriver');
+      if (driver && driver.value) printerSettings.printDriver = driver.value;
 
       const mode = await FestkasseDB.get('settings', 'printMode');
       if (mode && mode.value) printerSettings.printMode = mode.value;
@@ -637,7 +641,12 @@ const KasseModule = (function () {
 
     // Felder vorbefüllen
     const ipInput = document.getElementById('setting-printer-ip');
-    if (ipInput) ipInput.value = printerSettings.printerIp || '192.168.1.200';
+    if (ipInput) ipInput.value = printerSettings.printerIp || '192.168.68.200';
+
+    // Treiber / Verbindungsmethode Radio
+    const driver = printerSettings.printDriver || 'gateway';
+    const driverRadio = document.querySelector(`input[name="setting-print-driver"][value="${driver}"]`);
+    if (driverRadio) driverRadio.checked = true;
 
     // Druckmodus Radio
     const mode = printerSettings.printMode || 'manual';
@@ -673,6 +682,9 @@ const KasseModule = (function () {
     const ipInput = document.getElementById('setting-printer-ip');
     const newIp = ipInput ? ipInput.value.trim() : '';
 
+    const selectedDriver = document.querySelector('input[name="setting-print-driver"]:checked');
+    const newDriver = selectedDriver ? selectedDriver.value : 'gateway';
+
     const selectedMode = document.querySelector('input[name="setting-print-mode"]:checked');
     const newMode = selectedMode ? selectedMode.value : 'manual';
 
@@ -682,6 +694,7 @@ const KasseModule = (function () {
     const drawerCheck = document.getElementById('setting-open-drawer');
 
     printerSettings.printerIp = newIp;
+    printerSettings.printDriver = newDriver;
     printerSettings.printMode = newMode;
     printerSettings.printGuestReceipt = guestCheck ? guestCheck.checked : true;
     printerSettings.printKitchenReceipt = kitchenCheck ? kitchenCheck.checked : true;
@@ -690,6 +703,7 @@ const KasseModule = (function () {
 
     // In IndexedDB sichern
     await FestkasseDB.put('settings', { key: 'printerIp', value: printerSettings.printerIp });
+    await FestkasseDB.put('settings', { key: 'printDriver', value: printerSettings.printDriver });
     await FestkasseDB.put('settings', { key: 'printMode', value: printerSettings.printMode });
     await FestkasseDB.put('settings', { key: 'printGuestReceipt', value: printerSettings.printGuestReceipt });
     await FestkasseDB.put('settings', { key: 'printKitchenReceipt', value: printerSettings.printKitchenReceipt });
@@ -715,21 +729,26 @@ const KasseModule = (function () {
     const ipInput = document.getElementById('setting-printer-ip');
     const ip = ipInput ? ipInput.value.trim() : printerSettings.printerIp;
 
-    if (!ip) {
+    const selectedDriver = document.querySelector('input[name="setting-print-driver"]:checked');
+    const driver = selectedDriver ? selectedDriver.value : (printerSettings.printDriver || 'gateway');
+
+    if (!ip && driver !== 'tm_assistant') {
       if (statusEl) statusEl.innerHTML = '<span style="color: #ef4444;">⚠️ Bitte zuerst eine Drucker-IP eingeben.</span>';
       return;
     }
 
     if (statusEl) {
-      statusEl.innerHTML = `<span style="color: #38bdf8;">⏳ Sende ${type === 'kitchen' ? 'Küchenbon' : 'Gastbeleg'} an ${ip}...</span>`;
+      statusEl.innerHTML = `<span style="color: #38bdf8;">⏳ Sende ${type === 'kitchen' ? 'Küchenbon' : 'Gastbeleg'} via ${driver === 'tm_assistant' ? 'TM Print Assistant' : ip}...</span>`;
     }
 
     try {
-      await EposPrint.testPrint(ip, type);
+      await EposPrint.testPrint(ip, type, driver);
       if (statusEl) {
-        statusEl.innerHTML = `<span style="color: #10b981; font-weight: bold;">🟢 Erfolgreich! Testbon an ${ip} gesendet.</span>`;
+        statusEl.innerHTML = driver === 'tm_assistant'
+          ? '<span style="color: #10b981; font-weight: bold;">🟢 An Epson TM Print Assistant übergeben!</span>'
+          : `<span style="color: #10b981; font-weight: bold;">🟢 Erfolgreich! Testbon an ${ip} gesendet.</span>`;
       }
-      showToast(`✓ Testdruck (${type}) an ${ip} übermittelt`);
+      showToast(`✓ Testdruck (${type}) übermittelt`);
     } catch (err) {
       if (statusEl) {
         statusEl.innerHTML = `<span style="color: #ef4444; font-weight: bold;">🔴 Fehler: ${err.message || err}</span>`;
@@ -879,6 +898,7 @@ const KasseModule = (function () {
     openCashierModal,
     saveCashier,
     showToast,
+    getPrinterSettings: () => ({ ...printerSettings }),
     loadIncomingOrderToCart
   };
 })();

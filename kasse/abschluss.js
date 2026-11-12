@@ -507,9 +507,14 @@ const KassenAbschluss = (function () {
     }
 
     try {
+      const settings = (typeof KasseModule !== 'undefined' && KasseModule.getPrinterSettings)
+        ? KasseModule.getPrinterSettings()
+        : {};
+      const driver = settings.printDriver || 'gateway';
+
       let res;
       if (typeof EposPrint.printZReport === 'function') {
-        res = await EposPrint.printZReport(activeZReport, printerIp);
+        res = await EposPrint.printZReport(activeZReport, printerIp, driver);
       } else {
         const xml = EposPrint.buildZReportXml(activeZReport);
         res = await EposPrint.sendToEpson(printerIp, xml, 6000);

@@ -1,15 +1,23 @@
 /**
- * epos-print.js - Direktansteuerung von Epson LAN-Bondruckern via ePOS-Print (XML/HTTP)
+ * epos-print.js - Direktansteuerung von Epson LAN-Bondruckern via ePOS-Print & Gateway
  * Sportschützen Muhen - Festkasse
  * 
  * Unterstützt:
- * - Autarken Druck im Festzelt über WLAN/LAN ohne Internet & ohne Server
- * - Sofortdruck ohne Browser-Druckdialog
- * - Mehrfach-Bons: Gastbeleg (Quittung) + Küchen-/Grillbon + Getränkebon
- * - Automatischer Papierschnitt (cut) & Kassenladen-Öffnung (pulse)
+ * 1. ⚡ LAN-Gateway (CT 117 / Supabase): Nahtloser ESC/POS-Sofortdruck via Port 9100
+ * 2. 📱 Epson TM Print Assistant: 100% autarker Druck aus iPadOS/iOS via tmprintassistant:// URI-Scheme
+ * 3. 📄 AirPrint / Browser-Druckmenü Fallback
+ * 
+ * Belegarten:
+ * - Gastbeleg (Quittung) mit Preisen, Zahlart & Abholnummer
+ * - Küchen- / Grillbon (nur Speisen, riesige Bestell-Nr., automatischer Schnitt)
+ * - Getränke- / Barbon
+ * - Z-Kassenabschluss (Münzen, Noten, Differenz)
  */
 
 const EposPrint = (function () {
+  const SUPABASE_PRINT_URL = 'https://supabase-muhen.danfamily.uk/functions/v1/pos-print';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
+
   // XML-Escaping
   function escapeXml(str) {
     if (!str) return '';
@@ -33,34 +41,26 @@ const EposPrint = (function () {
     return l + ' '.repeat(spaces) + r;
   }
 
-  // Erzeugt den SOAP-Envelope für Epson ePOS-Print
-  function wrapEnvelope(bodyXml) {
-    return `<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-  <s:Body>
-    <epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">
-${bodyXml}
-    </epos-print>
-  </s:Body>
-</s:Envelope>`;
+  // Erzeugt das standardisierte ePOS-Print XML Wurzelelement
+  function wrapEposXml(bodyXml) {
+    return `<?xml version="1.0" encoding="utf-8"?>\n<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">\n${bodyXml}\n</epos-print>`;
   }
 
-  // 1. GASTBELEG (QUITTUNG MIT BESTELLNUMMER)
-  function buildGuestReceiptXml(order, config = {}) {
-    const dateStr = new Date(order.timestamp).toLocaleString('de-CH');
+  // 1. GASTBELEG XML-KORPUS
+  function buildGuestReceiptInnerXml(order, config = {}) {
+    const dateStr = new Date(order.timestamp || Date.now()).toLocaleString('de-CH');
     const orderNum = order.displayOrderNumber || order.orderNumber || '#01';
-    const width = 42; // Standard 80mm (ca. 42-48 Zeichen in Font A)
+    const width = 42;
 
     let xml = '';
 
-    // Kassenlade öffnen (falls gewünscht und Barzahlung)
     if (config.openDrawer && order.paymentMethod === 'bar') {
       xml += `      <pulse drawer="drawer_1" time="pulse_100"/>\n`;
     }
 
     // Header
     xml += `      <text align="center" smooth="true"/>\n`;
-    xml += `      <text font="font_a" em="true" double="false">SPORTSCHÜTZEN MUHEN&#10;</text>\n`;
+    xml += `      <text font="font_a" em="true">SPORTSCHÜTZEN MUHEN&#10;</text>\n`;
     xml += `      <text font="font_a" em="false">Festwirtschaft &amp; Kasse&#10;</text>\n`;
     xml += `      <text font="font_a" em="false">${escapeXml(dateStr)}&#10;</text>\n`;
     xml += `      <text font="font_a" em="false">Bediener: ${escapeXml(order.cashierName || 'Kasse')} (${escapeXml(order.stationName || 'Station')})&#10;&#10;</text>\n`;
@@ -109,28 +109,23 @@ ${bodyXml}
     xml += `      <text font="font_a" em="false">Herzlichen Dank für deinen Besuch!&#10;</text>\n`;
     xml += `      <text font="font_a" em="false">Gut Schuss!&#10;</text>\n`;
 
-    // Papiervorschub & Abschneiden
     xml += `      <feed line="3"/>\n`;
     xml += `      <cut type="feed"/>\n`;
 
-    return wrapEnvelope(xml);
+    return xml;
   }
 
-  // 2. KÜCHEN- / GRILL-BON (NUR SPEISEN/KÜCHE)
-  function buildKitchenReceiptXml(order, config = {}) {
-    // Filter: Nur Artikel der Kategorie 'cat_grill' oder mitzubereitende Speisen
+  // 2. KÜCHEN- / GRILL-BON XML-KORPUS
+  function buildKitchenReceiptInnerXml(order, config = {}) {
     const kitchenItems = (order.items || []).filter(it => {
       if (it.categoryId === 'cat_grill') return true;
-      // Fallback Prüfung nach Namen, falls Kategorie anders hinterlegt
       const n = (it.name || '').toLowerCase();
       return n.includes('wurst') || n.includes('steak') || n.includes('pommes') || n.includes('brot') || n.includes('salat') || n.includes('cervelat');
     });
 
-    if (kitchenItems.length === 0) {
-      return null; // Kein Bon nötig, wenn keine Küchenartikel
-    }
+    if (kitchenItems.length === 0) return null;
 
-    const timeStr = new Date(order.timestamp).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
+    const timeStr = new Date(order.timestamp || Date.now()).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
     const orderNum = order.displayOrderNumber || order.orderNumber || '#01';
     const width = 42;
 
@@ -139,7 +134,6 @@ ${bodyXml}
     xml += `      <text font="font_a" em="true" width="2" height="1">*** KÜCHE / GRILL ***&#10;</text>\n`;
     xml += `      <text font="font_a" em="false" width="1" height="1">&#10;</text>\n`;
 
-    // Riesige Bestellnummer für die Küche zum Ausrufen / Bereitstellen
     xml += `      <text align="center"/>\n`;
     xml += `      <text width="3" height="3" em="true">${escapeXml(orderNum)}&#10;</text>\n`;
     xml += `      <text width="1" height="1" em="false">&#10;</text>\n`;
@@ -148,7 +142,6 @@ ${bodyXml}
     xml += `      <text font="font_a">Zeit: ${escapeXml(timeStr)} | Kasse: ${escapeXml(order.stationName || 'Kasse 1')}&#10;</text>\n`;
     xml += `      <text font="font_a">${'='.repeat(width)}&#10;</text>\n`;
 
-    // Artikel mit extra grosser Schrift (doppelte Höhe für leichte Lesbarkeit am Grill)
     for (const it of kitchenItems) {
       xml += `      <text font="font_a" width="2" height="2" em="true">${it.qty}x ${escapeXml(it.name)}&#10;</text>\n`;
       xml += `      <text width="1" height="1" em="false">&#10;</text>\n`;
@@ -158,21 +151,19 @@ ${bodyXml}
     xml += `      <feed line="3"/>\n`;
     xml += `      <cut type="feed"/>\n`;
 
-    return wrapEnvelope(xml);
+    return xml;
   }
 
-  // 3. GETRÄNKE- / AUSSCHANK-BON (OPTIONAL)
-  function buildDrinksReceiptXml(order, config = {}) {
+  // 3. GETRÄNKE- / BAR-BON XML-KORPUS
+  function buildDrinksReceiptInnerXml(order, config = {}) {
     const drinkItems = (order.items || []).filter(it => {
       const c = it.categoryId || '';
       return c === 'cat_getraenke' || c === 'cat_bier_wein' || c === 'cat_kaffee' || c === 'cat_bar';
     });
 
-    if (drinkItems.length === 0) {
-      return null;
-    }
+    if (drinkItems.length === 0) return null;
 
-    const timeStr = new Date(order.timestamp).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
+    const timeStr = new Date(order.timestamp || Date.now()).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
     const orderNum = order.displayOrderNumber || order.orderNumber || '#01';
     const width = 42;
 
@@ -198,26 +189,26 @@ ${bodyXml}
     xml += `      <feed line="3"/>\n`;
     xml += `      <cut type="feed"/>\n`;
 
-    return wrapEnvelope(xml);
+    return xml;
   }
 
-  // 4. Z-BERICHT / TAGESABSCHLUSS BON
-  function buildZReportXml(report) {
+  // 4. Z-BERICHT XML-KORPUS
+  function buildZReportInnerXml(report) {
     const width = 42;
-    const dateStr = new Date(report.timestamp).toLocaleString('de-CH');
+    const dateStr = new Date(report.timestamp || Date.now()).toLocaleString('de-CH');
     let xml = '';
 
     xml += `      <text align="center" smooth="true"/>\n`;
     xml += `      <text font="font_a" em="true" width="1" height="2">SPORTSCHÜTZEN MUHEN&#10;</text>\n`;
     xml += `      <text font="font_a" em="true">*** Z-KASSENABSCHLUSS ***&#10;</text>\n`;
     xml += `      <text font="font_a" em="false">${escapeXml(report.eventTitle || 'Festwirtschaft')}&#10;</text>\n`;
-    xml += `      <text font="font_a" em="false">Beleg-Nr: ${escapeXml(report.reportNumber)}&#10;</text>\n`;
+    xml += `      <text font="font_a" em="false">Beleg-Nr: ${escapeXml(report.reportNumber || 'Z-01')}&#10;</text>\n`;
     xml += `      <text font="font_a" em="false">Datum: ${escapeXml(dateStr)}&#10;</text>\n`;
     xml += `      <text font="font_a" em="false">Bediener: ${escapeXml(report.cashierName || 'Kasse')}&#10;&#10;</text>\n`;
 
     xml += `      <text align="left"/>\n`;
     xml += `      <text font="font_a" em="true">--- UMSATZ-ÜBERSICHT ---&#10;</text>\n`;
-    xml += `      <text font="font_a">${escapeXml(padLine('Anzahl Bons:', String(report.orderCount), width))}&#10;</text>\n`;
+    xml += `      <text font="font_a">${escapeXml(padLine('Anzahl Bons:', String(report.orderCount || 0), width))}&#10;</text>\n`;
     xml += `      <text font="font_a">${escapeXml(padLine('Umsatz BAR:', formatCHF(report.totalCash), width))}&#10;</text>\n`;
     xml += `      <text font="font_a">${escapeXml(padLine('Umsatz TWINT:', formatCHF(report.totalTwint), width))}&#10;</text>\n`;
     xml += `      <text font="font_a">${'-'.repeat(width)}&#10;</text>\n`;
@@ -231,7 +222,7 @@ ${bodyXml}
     xml += `      <text font="font_a">${'-'.repeat(width)}&#10;</text>\n`;
     xml += `      <text font="font_a" em="true">${escapeXml(padLine('SOLL-Kassenstand:', formatCHF(report.expectedCash), width))}&#10;</text>\n`;
     xml += `      <text font="font_a" em="true">${escapeXml(padLine('IST-Gezählt:', formatCHF(report.actualCash), width))}&#10;</text>\n`;
-    const diffSign = report.difference > 0 ? '+' : '';
+    const diffSign = (report.difference || 0) > 0 ? '+' : '';
     xml += `      <text font="font_a" em="true">${escapeXml(padLine('DIFFERENZ:', diffSign + formatCHF(report.difference), width))}&#10;</text>\n`;
     xml += `      <text font="font_a">${'='.repeat(width)}&#10;&#10;</text>\n`;
 
@@ -250,10 +241,51 @@ ${bodyXml}
     xml += `      <feed line="4"/>\n`;
     xml += `      <cut type="feed"/>\n`;
 
-    return wrapEnvelope(xml);
+    return xml;
   }
 
-  // TESTBON XML
+  // KOMBINIERTES XML FÜR EPSON TM PRINT ASSISTANT (Gast + Küche in einem Rutsch)
+  function buildCombinedOrderXml(order, settings = {}) {
+    const printGuest = settings.printGuestReceipt !== false;
+    const printKitchen = settings.printKitchenReceipt !== false;
+    const printDrinks = settings.printDrinksReceipt === true;
+
+    let body = '';
+    if (printGuest) {
+      body += buildGuestReceiptInnerXml(order, settings) + '\n';
+    }
+    if (printKitchen) {
+      const k = buildKitchenReceiptInnerXml(order, settings);
+      if (k) body += k + '\n';
+    }
+    if (printDrinks) {
+      const d = buildDrinksReceiptInnerXml(order, settings);
+      if (d) body += d + '\n';
+    }
+
+    if (!body.trim()) return null;
+    return wrapEposXml(body);
+  }
+
+  // XML BUILDER MIT WURZELELEMENT (FÜR EXTERNE APIS)
+  function buildGuestReceiptXml(order, config = {}) {
+    return wrapEposXml(buildGuestReceiptInnerXml(order, config));
+  }
+
+  function buildKitchenReceiptXml(order, config = {}) {
+    const inner = buildKitchenReceiptInnerXml(order, config);
+    return inner ? wrapEposXml(inner) : null;
+  }
+
+  function buildDrinksReceiptXml(order, config = {}) {
+    const inner = buildDrinksReceiptInnerXml(order, config);
+    return inner ? wrapEposXml(inner) : null;
+  }
+
+  function buildZReportXml(report) {
+    return wrapEposXml(buildZReportInnerXml(report));
+  }
+
   function buildTestReceiptXml(type = 'guest') {
     const mockOrder = {
       orderNumber: 'TEST-01',
@@ -273,15 +305,31 @@ ${bodyXml}
     };
 
     if (type === 'kitchen') {
-      return buildKitchenReceiptXml(mockOrder, {});
+      const inner = buildKitchenReceiptInnerXml(mockOrder, {});
+      return inner ? wrapEposXml(inner) : wrapEposXml('');
     }
-    return buildGuestReceiptXml(mockOrder, { openDrawer: false });
+    return wrapEposXml(buildGuestReceiptInnerXml(mockOrder, { openDrawer: false }));
   }
 
-  const SUPABASE_PRINT_URL = 'https://supabase-muhen.danfamily.uk/functions/v1/pos-print';
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
+  // ───────────────────────────────────────────────────────────────────────────
+  // TREIBER 1: EPSON TM PRINT ASSISTANT (iPad/iOS 100% Offline via URI Scheme)
+  // ───────────────────────────────────────────────────────────────────────────
+  function printViaTmAssistant(eposXml) {
+    if (!eposXml || !eposXml.trim()) {
+      throw new Error('Kein Druckinhalt vorhanden');
+    }
+    const returnUrl = encodeURIComponent(window.location.href);
+    const encodedData = encodeURIComponent(eposXml);
+    const uri = `tmprintassistant://x-callback-url/print?ver=1&data-type=eposprintxml&data=${encodedData}&success=${returnUrl}&error-dialog=yes`;
+    
+    // Leite an installierte iPad-App weiter
+    window.location.href = uri;
+    return { success: true, via: 'tm_assistant', message: 'Druckauftrag an Epson TM Print Assistant übergeben' };
+  }
 
-  // HTTP-POST AN DAS LAN-PRINT-GATEWAY (Supabase Edge Function / Port 9100 ESC/POS)
+  // ───────────────────────────────────────────────────────────────────────────
+  // TREIBER 2: LAN-PRINT-GATEWAY (Supabase Edge Function / Port 9100 ESC/POS)
+  // ───────────────────────────────────────────────────────────────────────────
   async function sendPrintRequest(payload, timeoutMs = 6000) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -311,7 +359,7 @@ ${bodyXml}
     }
   }
 
-  // Abwärtskompatible sendToEpson-Funktion
+  // Abwärtskompatible Hilfsfunktion
   async function sendToEpson(printerIp, payload, timeoutMs = 6000) {
     if (!printerIp || !printerIp.trim()) {
       throw new Error('Keine Drucker-IP angegeben. Bitte im Menü eintragen.');
@@ -323,22 +371,36 @@ ${bodyXml}
     }, timeoutMs);
   }
 
+  // ───────────────────────────────────────────────────────────────────────────
   // HAUPTFUNKTION: BESTELLUNG DRUCKEN (MULTI-BON)
+  // ───────────────────────────────────────────────────────────────────────────
   async function printOrder(order, settings = {}) {
+    const driver = settings.printDriver || 'gateway';
     const printerIp = settings.printerIp || '192.168.68.200';
+
+    // 1. Modus: Epson TM Print Assistant (iPad-App)
+    if (driver === 'tm_assistant') {
+      const combinedXml = buildCombinedOrderXml(order, settings);
+      if (!combinedXml) {
+        return { success: true, skipped: true, message: 'Keine druckbaren Positionen vorhanden.' };
+      }
+      printViaTmAssistant(combinedXml);
+      return { success: true, printedCount: 1, errors: [] };
+    }
+
+    // 2. Modus: LAN-Gateway (CT 117 / Supabase Edge Function)
     if (!printerIp) {
       console.warn('[EposPrint] Keine Drucker-IP konfiguriert.');
       return { success: false, reason: 'NO_IP' };
     }
 
-    const printGuest = settings.printGuestReceipt !== false; // Standard: true
-    const printKitchen = settings.printKitchenReceipt !== false; // Standard: true
-    const printDrinks = settings.printDrinksReceipt === true; // Standard: false
+    const printGuest = settings.printGuestReceipt !== false;
+    const printKitchen = settings.printKitchenReceipt !== false;
+    const printDrinks = settings.printDrinksReceipt === true;
 
     let printedCount = 0;
     const errors = [];
 
-    // 1. Gastquittung drucken
     if (printGuest) {
       try {
         await sendPrintRequest({
@@ -353,7 +415,6 @@ ${bodyXml}
       }
     }
 
-    // 2. Küchen-/Grillbon drucken
     if (printKitchen) {
       try {
         const res = await sendPrintRequest({
@@ -367,7 +428,6 @@ ${bodyXml}
       }
     }
 
-    // 3. Getränkebon drucken (falls separat gewünscht)
     if (printDrinks) {
       try {
         const res = await sendPrintRequest({
@@ -388,8 +448,14 @@ ${bodyXml}
     };
   }
 
+  // ───────────────────────────────────────────────────────────────────────────
   // Z-BERICHT DRUCKEN
-  async function printZReport(report, printerIp) {
+  // ───────────────────────────────────────────────────────────────────────────
+  async function printZReport(report, printerIp, driver = 'gateway') {
+    if (driver === 'tm_assistant') {
+      const inner = buildZReportInnerXml(report);
+      return printViaTmAssistant(wrapEposXml(inner));
+    }
     return await sendPrintRequest({
       type: 'z_report',
       printerIp: printerIp || '192.168.68.200',
@@ -397,8 +463,14 @@ ${bodyXml}
     }, 6000);
   }
 
+  // ───────────────────────────────────────────────────────────────────────────
   // TESTDRUCK
-  async function testPrint(printerIp, type = 'guest') {
+  // ───────────────────────────────────────────────────────────────────────────
+  async function testPrint(printerIp, type = 'guest', driver = 'gateway') {
+    if (driver === 'tm_assistant') {
+      const xml = buildTestReceiptXml(type);
+      return printViaTmAssistant(xml);
+    }
     return await sendPrintRequest({
       type: type === 'kitchen' ? 'test_kitchen' : 'test_guest',
       printerIp: printerIp || '192.168.68.200'
@@ -411,6 +483,8 @@ ${bodyXml}
     buildDrinksReceiptXml,
     buildZReportXml,
     buildTestReceiptXml,
+    buildCombinedOrderXml,
+    printViaTmAssistant,
     sendPrintRequest,
     sendToEpson,
     printOrder,
@@ -418,4 +492,3 @@ ${bodyXml}
     testPrint
   };
 })();
-

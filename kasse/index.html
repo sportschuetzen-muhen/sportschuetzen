@@ -283,7 +283,30 @@
           </label>
           <input type="text" id="setting-printer-ip" class="search-input" style="padding: 0 12px; font-size: 16px; font-family: monospace;" placeholder="z.B. 192.168.68.200">
           <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
-            iPad & Epson-Drucker müssen am gleichen Router (WLAN/LAN) im Festzelt angeschlossen sein.
+            iPad &amp; Epson-Drucker müssen am gleichen Router (WLAN/LAN) im Festzelt angeschlossen sein.
+          </div>
+        </div>
+
+        <!-- ABSCHNITT 1b: DRUCKER-VERBINDUNGSMETHODE / TREIBER -->
+        <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+          <label style="font-size: 13px; font-weight: 700; color: #a855f7; display: block; margin-bottom: 8px;">
+            🔌 Druck-Verbindungsmethode:
+          </label>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer;">
+              <input type="radio" name="setting-print-driver" value="gateway" id="driver-gateway" checked style="margin-top: 2px;">
+              <div>
+                <strong>⚡ LAN-Gateway (CT 117 / Supabase)</strong>
+                <div style="font-size: 11px; color: var(--text-muted);">Nahtloser Sofortdruck im Hintergrund via Port 9100. Kein App-Wechsel auf dem iPad (Standard im Schützenhaus).</div>
+              </div>
+            </label>
+            <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer;">
+              <input type="radio" name="setting-print-driver" value="tm_assistant" id="driver-tm-assistant" style="margin-top: 2px;">
+              <div>
+                <strong>📱 Epson TM Print Assistant (iPad-App / 100% Offline)</strong>
+                <div style="font-size: 11px; color: var(--text-muted);">Öffnet die installierte Epson-Brücken-App via URI-Scheme (tmprintassistant://). Ideal im autarken Festzelt.</div>
+              </div>
+            </label>
           </div>
         </div>
 
