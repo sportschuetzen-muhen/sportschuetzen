@@ -88,6 +88,12 @@ const KasseModule = (function () {
     // 7. Sub-Module initialisieren
     KassenAbschluss.init();
     KellnerHandheld.init();
+
+    // 8. RaiseNow Tamaro 1-Klick-Turbo im Hintergrund vorladen & alte URL-Reste bereinigen
+    cleanupTamaroUrl();
+    if (navigator.onLine) {
+      prewarmTamaro();
+    }
   }
 
   async function loadPrinterSettings() {
@@ -689,7 +695,233 @@ const KasseModule = (function () {
     }
   }
 
-  // ── TWINT BEZAHLUNG MIT DYNAMISCHEM QR-CODE ──────────────────
+  // ── TWINT BEZAHLUNG (RAISENOW 1-KLICK-TURBO & AUTO-BONDRUCK) ──
+  const tamaroConfigCache = {};
+  let turboSubmitTimer = null;
+  let activeTwintHandled = false;
+
+  function extractShortId(urlOrId) {
+    const m = String(urlOrId || '').trim().match(/([a-zA-Z0-9]{5})\/?(?:\?.*)?$/);
+    return m ? m[1].toLowerCase() : 'cctmv';
+  }
+
+  function ensureTamaroScript() {
+    if (window.rnw?.tamaro) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://terminal.raisenow.io/widget.js';
+      s.crossOrigin = 'anonymous';
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error('RaiseNow Widget konnte nicht geladen werden.'));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function fetchAndCacheTouchpoint(shortId) {
+    if (tamaroConfigCache[shortId]) return tamaroConfigCache[shortId];
+
+    const shortRes = await fetch(`https://api.raisenow.io/short-identifiers/${shortId}`);
+    if (!shortRes.ok) throw new Error(`Touchpoint "${shortId}" nicht gefunden (${shortRes.status})`);
+    const { solution_uuid, payload } = await shortRes.json();
+    const { organisation_uuid, account_uuid, profile, solution_status } = payload;
+
+    const [solRes, capRes] = await Promise.all([
+      fetch(`https://tamaro-configurations.raisenow.com/tamaro/${organisation_uuid}/${solution_uuid}.json`),
+      fetch(`https://widget-api.raisenow.com/epms/capability-profiles/${organisation_uuid}/${account_uuid}`)
+    ]);
+    const solutionConfig = await solRes.json();
+    const capabilityProfilesList = capRes.ok ? await capRes.json() : [];
+
+    const data = {
+      solution_uuid,
+      organisation_uuid,
+      account_uuid,
+      profile,
+      solution_status,
+      solutionConfig,
+      capabilityProfilesList
+    };
+    tamaroConfigCache[shortId] = data;
+    return data;
+  }
+
+  async function prewarmTamaro() {
+    try {
+      const shortId = extractShortId(twintSettings.paylinkUrl);
+      await Promise.all([
+        ensureTamaroScript().then(() => window.rnw.tamaro.loadWidget()),
+        fetchAndCacheTouchpoint(shortId)
+      ]);
+    } catch (e) {
+      console.warn('[TWINT Prewarm]', e.message || e);
+    }
+  }
+
+  function cleanupTamaroUrl() {
+    try {
+      const url = new URL(window.location.href);
+      let changed = false;
+      if (url.searchParams.has('terminal_mode')) {
+        url.searchParams.delete('terminal_mode');
+        changed = true;
+      }
+      if (url.hash && url.hash.includes('tamaro')) {
+        url.hash = '';
+        changed = true;
+      }
+      if (changed) {
+        window.history.replaceState(null, '', url.toString());
+      }
+    } catch (e) {}
+  }
+
+  function cleanupTamaroWidget() {
+    if (turboSubmitTimer) {
+      clearInterval(turboSubmitTimer);
+      turboSubmitTimer = null;
+    }
+    try {
+      if (window.rnw?.tamaro?.removeWidget) {
+        window.rnw.tamaro.removeWidget();
+      }
+    } catch (e) {}
+    document.body.classList.remove('terminal-succeeded-result-page');
+    cleanupTamaroUrl();
+  }
+
+  function autoTriggerEinkassieren(rootEl, expectedAmt) {
+    if (turboSubmitTimer) clearInterval(turboSubmitTimer);
+    const start = Date.now();
+    let amountConfirmedAt = 0;
+
+    turboSubmitTimer = setInterval(() => {
+      if (Date.now() - start > 5000) {
+        clearInterval(turboSubmitTimer);
+        turboSubmitTimer = null;
+        return;
+      }
+
+      const inst = window.rnw?.tamaro?.instance;
+      const currentAmt = Number(inst?.paymentForm?.data?.amount || 0);
+      if (Math.abs(currentAmt - expectedAmt) > 0.001) {
+        inst?.paymentForm?.setAmount(expectedAmt);
+        return;
+      }
+
+      if (!amountConfirmedAt) {
+        amountConfirmedAt = Date.now();
+        return;
+      }
+
+      if (Date.now() - amountConfirmedAt < 120) return;
+
+      const btn = rootEl.querySelector('button[type="submit"], button[data-testid="submit-button"]')
+        || Array.from(rootEl.querySelectorAll('button')).find(b => /einkassieren|bezahlen|weiter|pay|charge/i.test(b.textContent || ''));
+
+      if (btn && !btn.disabled && btn.offsetParent !== null) {
+        clearInterval(turboSubmitTimer);
+        turboSubmitTimer = null;
+        btn.click();
+      }
+    }, 60);
+  }
+
+  async function launchTamaroTwint({ rootSelector, amount, reference, onComplete }) {
+    const rootEl = document.querySelector(rootSelector);
+    if (!rootEl) return;
+
+    cleanupTamaroWidget();
+    activeTwintHandled = false;
+
+    if (!navigator.onLine) {
+      rootEl.innerHTML = `<div style="text-align:center; padding:32px 16px; color:#64748b; font-size:13px; line-height:1.5;">
+        <div style="font-size:28px; margin-bottom:8px;">📡</div>
+        <strong>Gerät ist offline</strong><br>
+        Für den dynamischen TWINT-QR-Code wird Internet benötigt.<br>
+        Falls der Gast über euer gedrucktes QR-Schild gezahlt hat, bestätige bitte unten manuell.
+      </div>`;
+      return;
+    }
+
+    rootEl.innerHTML = `<div style="text-align:center; padding:48px 16px; color:#64748b; font-size:14px;">⚡ Erzeuge TWINT QR-Code für <strong>${formatCHF(amount)}</strong>...</div>`;
+
+    try {
+      const shortId = extractShortId(twintSettings.paylinkUrl);
+      await ensureTamaroScript();
+      const cfg = await fetchAndCacheTouchpoint(shortId);
+      const {
+        solution_uuid,
+        organisation_uuid,
+        account_uuid,
+        profile,
+        solution_status,
+        solutionConfig,
+        capabilityProfilesList
+      } = cfg;
+
+      // Terminal-Modus für RaiseNow aktivieren, bevor applyConfig läuft
+      const pageUrl = new URL(window.location.href);
+      pageUrl.searchParams.set('terminal_mode', 'true');
+      window.history.replaceState(null, '', pageUrl.toString());
+
+      await window.rnw.tamaro.createWidget({ testMode: false, epmsEnv: 'prod' });
+      const instance = window.rnw.tamaro.instance;
+
+      instance.config.language = 'de';
+      instance.config.paymentFormDataCache = false;
+      instance.config.updateFormDataOnRetryPayment = false;
+      instance.config.epms = instance.config.epms || {};
+      instance.config.epms.accountUuid = account_uuid;
+      instance.config.epms.paymentMethodProfile = { twint: profile };
+
+      instance.paymentForm.data.custom_parameters = {
+        campaign_id: solutionConfig.campaign_id || '',
+        campaign_subid: solutionConfig.campaign_subid || '',
+        custom_reference: reference
+      };
+      instance.paymentForm.data.raisenow_parameters = {
+        analytics: { channel: 'terminal' },
+        solution: {
+          uuid: solution_uuid,
+          name: solutionConfig.internal_name,
+          type: solutionConfig.solution_type
+        }
+      };
+
+      await window.rnw.tamaro.applyConfig({
+        solutionConfig,
+        supporterPrefill: {},
+        hiddenFields: [],
+        solutionUuid: solution_uuid,
+        solutionStatus: solution_status,
+        accountUuid: account_uuid,
+        organisationUuid: organisation_uuid,
+        paymentMethods: undefined,
+        capabilityProfilesList,
+        featureFlags: []
+      });
+
+      // Echtzeit-Zahlungsbestätigung abonnieren
+      instance.events.paymentComplete.subscribe(() => {
+        if (activeTwintHandled) return;
+        activeTwintHandled = true;
+        if (typeof onComplete === 'function') onComplete();
+      });
+
+      rootEl.innerHTML = '';
+      await window.rnw.tamaro.renderWidget(instance, rootSelector);
+      instance.paymentForm.setAmount(amount);
+      autoTriggerEinkassieren(rootEl, amount);
+    } catch (err) {
+      console.warn('[TWINT Turbo Fehler]', err);
+      rootEl.innerHTML = `<div style="text-align:center; padding:28px 16px; color:#b91c1c; font-size:13px; line-height:1.5;">
+        <strong>TWINT QR-Code konnte nicht geladen werden:</strong><br>
+        ${escapeHtml(err.message || String(err))}<br><br>
+        <span style="color:#475569;">Du kannst den Betrag bei Bedarf über euer Reserve-Schild kassieren und unten manuell bestätigen.</span>
+      </div>`;
+    }
+  }
+
   function startTwintPayment() {
     const total = cart.reduce((sum, it) => sum + (it.price * it.qty), 0);
     if (total <= 0) {
@@ -705,39 +937,30 @@ const KasseModule = (function () {
     if (amtEl) amtEl.textContent = formatCHF(total);
     if (refEl) refEl.textContent = `Bestellung ${displayOrderNumber} (${cart.length} Positionen)`;
 
-    // PayLink mit CHF-Betrag & Referenz
-    const amtChf = total.toFixed(2);
-    let base = twintSettings.paylinkUrl || 'https://pay.raisenow.io/cctmv';
-    if (base.endsWith('/')) base = base.slice(0, -1);
-    const payUrl = `${base}?amount.values=${amtChf}&amount.custom=0&custom_reference=${encodeURIComponent(displayOrderNumber)}&lng=de`;
-
-    const qrBox = document.getElementById('twint-modal-qrcode');
-    if (qrBox) {
-      qrBox.innerHTML = '';
-      if (typeof QRCode !== 'undefined') {
-        new QRCode(qrBox, {
-          text: payUrl,
-          width: 200,
-          height: 200,
-          colorDark: '#0f172a',
-          colorLight: '#ffffff',
-          correctLevel: QRCode.CorrectLevel.M
-        });
-      } else {
-        qrBox.innerHTML = `<div style="color: #ef4444; font-size: 12px; padding: 20px;">QRCode-Bibliothek wird geladen...</div>`;
-      }
-    }
-
     const modal = document.getElementById('twint-payment-modal');
     if (modal) modal.classList.add('active');
+
+    launchTamaroTwint({
+      rootSelector: '#twint-modal-tamaro-root',
+      amount: total,
+      reference: displayOrderNumber,
+      onComplete: async () => {
+        showToast(`✓ TWINT-Zahlung bestätigt (${formatCHF(total)}) – drucke Bon...`);
+        closeTwintModal();
+        await completePayment('twint');
+      }
+    });
   }
 
   function closeTwintModal() {
     const modal = document.getElementById('twint-payment-modal');
     if (modal) modal.classList.remove('active');
+    cleanupTamaroWidget();
   }
 
   async function confirmTwintPayment() {
+    if (activeTwintHandled) return;
+    activeTwintHandled = true;
     closeTwintModal();
     await completePayment('twint');
   }
@@ -1229,7 +1452,9 @@ const KasseModule = (function () {
     updateLiveSalesBadge,
     startTwintPayment,
     closeTwintModal,
-    confirmTwintPayment
+    confirmTwintPayment,
+    launchTamaroTwint,
+    cleanupTamaroWidget
   };
 })();
 

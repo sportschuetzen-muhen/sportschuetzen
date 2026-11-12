@@ -197,43 +197,42 @@
        MODALE & DIALOGE
        ───────────────────────────────────────────────────────────── -->
 
-  <!-- TWINT ZAHLUNGS-MODAL (DYNAMISCHER QR-CODE & BESTÄTIGUNG) -->
+  <!-- TWINT ZAHLUNGS-MODAL (ECHTER RAISENOW 1-KLICK-TURBO & AUTO-BONDRUCK) -->
   <div id="twint-payment-modal" class="modal-overlay">
-    <div class="modal-dialog" style="max-width: 420px; text-align: center;">
-      <div class="modal-header" style="background: linear-gradient(135deg, #009b77, #007a5e); color: white;">
+    <div class="modal-dialog" style="max-width: 460px; max-height: 92dvh; display: flex; flex-direction: column; text-align: center; overflow: hidden;">
+      <div class="modal-header" style="background: linear-gradient(135deg, #009b77, #007a5e); color: white; padding: 14px 18px; margin-bottom: 0; flex-shrink: 0;">
         <div class="modal-title" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;">
           <span>📱 TWINT Bezahlung</span>
         </div>
         <button class="modal-close-btn" style="color: white;" onclick="KasseModule.closeTwintModal()">✕</button>
       </div>
 
-      <div class="modal-body d-flex flex-column gap-3" style="align-items: center; padding: 20px;">
-        <div style="font-size: 13px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
-          Zu bezahlender Betrag:
-        </div>
-        <div id="twint-modal-amount" style="font-size: 38px; font-weight: 900; color: #00bf63; font-family: monospace; letter-spacing: -0.5px;">
-          CHF 0.00
-        </div>
-        <div id="twint-modal-bon-ref" style="font-size: 14px; font-weight: 700; color: #60a5fa; margin-top: -6px;">
-          Bestellung #01
-        </div>
-
-        <!-- Dynamischer QR Code Container -->
-        <div style="background: white; padding: 16px; border-radius: 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); margin: 8px 0; display: inline-flex; justify-content: center; align-items: center; min-width: 232px; min-height: 232px;">
-          <div id="twint-modal-qrcode"></div>
+      <div class="modal-body d-flex flex-column gap-2" style="align-items: center; padding: 14px 16px; overflow-y: auto; flex: 1;">
+        <div style="display: flex; align-items: baseline; justify-content: center; gap: 12px; flex-wrap: wrap;">
+          <div id="twint-modal-amount" style="font-size: 32px; font-weight: 900; color: #00bf63; font-family: monospace; letter-spacing: -0.5px;">
+            CHF 0.00
+          </div>
+          <div id="twint-modal-bon-ref" style="font-size: 13px; font-weight: 700; color: #60a5fa;">
+            Bestellung #01
+          </div>
         </div>
 
-        <div style="font-size: 13px; color: var(--text-muted); max-width: 320px; line-height: 1.4;">
-          Gast scannt den QR-Code mit der TWINT-App oder Smartphone-Kamera.
+        <!-- Live RaiseNow Tamaro Widget Container (echter nativer TWINT-QR-Code) -->
+        <div style="background: #ffffff; color: #1e293b; border-radius: 12px; padding: 10px; width: 100%; min-height: 320px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); text-align: left;">
+          <div id="twint-modal-tamaro-root" class="root"></div>
+        </div>
+
+        <div id="twint-modal-status-hint" style="font-size: 12px; color: var(--text-muted); line-height: 1.35;">
+          Nach dem Scannen in der TWINT-App druckt der Bon automatisch.
         </div>
       </div>
 
-      <div class="modal-footer" style="justify-content: space-between; gap: 10px;">
-        <button type="button" class="btn-secondary" style="min-height: 48px; padding: 0 16px;" onclick="KasseModule.closeTwintModal()">
+      <div class="modal-footer" style="justify-content: space-between; gap: 10px; padding: 12px 16px; margin-top: 0; border-top: 1px solid var(--border-color); flex-shrink: 0;">
+        <button type="button" class="btn-secondary" style="min-height: 44px; padding: 0 14px;" onclick="KasseModule.closeTwintModal()">
           ✕ Abbrechen
         </button>
-        <button type="button" class="btn-primary" id="btn-confirm-twint-payment" onclick="KasseModule.confirmTwintPayment()" style="background: #00bf63; border-color: #00bf63; color: #000; font-weight: 900; font-size: 15px; min-height: 48px; padding: 0 20px; flex: 1;">
-          ✓ Bezahlt – Bon drucken
+        <button type="button" class="btn-primary" id="btn-confirm-twint-payment" onclick="KasseModule.confirmTwintPayment()" style="background: #00bf63; border-color: #00bf63; color: #000; font-weight: 900; font-size: 14px; min-height: 44px; padding: 0 16px; flex: 1;">
+          ✓ Manuell bestätigen &amp; drucken
         </button>
       </div>
     </div>
@@ -569,31 +568,28 @@
 
   <!-- KELLNER: TWINT KASSIEREN MODAL (AM TISCH) -->
   <div id="kellner-twint-modal" class="modal-overlay">
-    <div class="modal-dialog" style="max-width: 400px; text-align: center;">
-      <div class="modal-header" style="background: linear-gradient(135deg, #009b77, #007a5e); color: white;">
-        <div class="modal-title" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;">
+    <div class="modal-dialog" style="max-width: 420px; max-height: 92dvh; display: flex; flex-direction: column; text-align: center; overflow: hidden;">
+      <div class="modal-header" style="background: linear-gradient(135deg, #009b77, #007a5e); color: white; padding: 12px 16px; margin-bottom: 0; flex-shrink: 0;">
+        <div class="modal-title" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; font-size: 17px;">
           <span>📱 TWINT am Tisch (<span id="kellner-twint-table-name">Tisch</span>)</span>
         </div>
         <button class="modal-close-btn" style="color: white;" onclick="KellnerHandheld.closeTwintModal()">✕</button>
       </div>
-      <div class="modal-body d-flex flex-column gap-3" style="align-items: center; padding: 16px;">
-        <div style="font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
-          Betrag:
-        </div>
-        <div id="kellner-twint-total-display" style="font-size: 34px; font-weight: 900; color: #00bf63; font-family: monospace;">
+      <div class="modal-body d-flex flex-column gap-2" style="align-items: center; padding: 12px; overflow-y: auto; flex: 1;">
+        <div id="kellner-twint-total-display" style="font-size: 30px; font-weight: 900; color: #00bf63; font-family: monospace;">
           CHF 0.00
         </div>
-        <div style="background: white; padding: 12px; border-radius: 12px; box-shadow: 0 6px 18px rgba(0,0,0,0.3); margin: 6px 0; display: inline-flex; justify-content: center; align-items: center; min-width: 194px; min-height: 194px;">
-          <div id="kellner-twint-qrcode"></div>
+        <div style="background: #ffffff; color: #1e293b; border-radius: 12px; padding: 8px; width: 100%; min-height: 290px; box-shadow: 0 6px 18px rgba(0,0,0,0.3); text-align: left;">
+          <div id="kellner-twint-tamaro-root" class="root"></div>
         </div>
         <div style="font-size: 12px; color: var(--text-muted);">
-          Gast scannt direkt von deinem Smartphone.
+          Gast scannt direkt von deinem Smartphone – Bon druckt automatisch.
         </div>
       </div>
-      <div class="modal-footer" style="justify-content: space-between; gap: 8px;">
+      <div class="modal-footer" style="justify-content: space-between; gap: 8px; padding: 10px 14px; margin-top: 0; border-top: 1px solid var(--border-color); flex-shrink: 0;">
         <button class="btn-secondary" onclick="KellnerHandheld.closeTwintModal()">Abbrechen</button>
-        <button class="btn-primary" id="kellner-btn-confirm-twint" onclick="KellnerHandheld.confirmTwintPayment()" style="background: #00bf63; border-color: #00bf63; color: #000; font-weight: 800; min-height: 42px; padding: 0 16px; flex: 1;">
-          ✓ Bezahlt &amp; Bon drucken
+        <button class="btn-primary" id="kellner-btn-confirm-twint" onclick="KellnerHandheld.confirmTwintPayment()" style="background: #00bf63; border-color: #00bf63; color: #000; font-weight: 800; min-height: 42px; padding: 0 14px; flex: 1;">
+          ✓ Manuell bestätigen
         </button>
       </div>
     </div>

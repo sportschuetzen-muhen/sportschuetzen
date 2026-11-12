@@ -324,30 +324,27 @@ const KellnerHandheld = (function () {
     const totalEl = document.getElementById('kellner-twint-total-display');
     if (totalEl) totalEl.textContent = formatCHF(total);
 
-    const amtChf = total.toFixed(2);
-    const payUrl = `https://pay.raisenow.io/cctmv?amount.values=${amtChf}&amount.custom=0&custom_reference=${encodeURIComponent(selectedTable)}&lng=de`;
-
-    const qrBox = document.getElementById('kellner-twint-qrcode');
-    if (qrBox) {
-      qrBox.innerHTML = '';
-      if (typeof QRCode !== 'undefined') {
-        new QRCode(qrBox, {
-          text: payUrl,
-          width: 170,
-          height: 170,
-          colorDark: '#0f172a',
-          colorLight: '#ffffff',
-          correctLevel: QRCode.CorrectLevel.M
-        });
-      }
-    }
-
     modal.classList.add('active');
+
+    if (typeof KasseModule !== 'undefined' && typeof KasseModule.launchTamaroTwint === 'function') {
+      KasseModule.launchTamaroTwint({
+        rootSelector: '#kellner-twint-tamaro-root',
+        amount: total,
+        reference: selectedTable,
+        onComplete: () => {
+          closeTwintModal();
+          executeCheckout('twint', total, 0);
+        }
+      });
+    }
   }
 
   function closeTwintModal() {
     const modal = document.getElementById('kellner-twint-modal');
     if (modal) modal.classList.remove('active');
+    if (typeof KasseModule !== 'undefined' && typeof KasseModule.cleanupTamaroWidget === 'function') {
+      KasseModule.cleanupTamaroWidget();
+    }
   }
 
   function confirmTwintPayment() {
