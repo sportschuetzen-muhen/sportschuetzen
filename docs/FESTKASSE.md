@@ -4,7 +4,7 @@
 > **Stand:** November 2026  
 > **URL:** `https://sps-b55.pages.dev/kasse/`  
 > **Komponenten:** `kasse/index.html`, `kasse/kasse.js`, `kasse/epos-print.js`, `kasse/abschluss.js`, `kasse/kellner.js`, `kasse/db.js`, `kasse/sw.js`  
-> **Architektur:** 100% Offline-First via IndexedDB (`FestkasseDB`) & Service Worker (`festkasse-v9`). Direktansteuerung von Epson LAN-Bondruckern via ePOS-Print (XML/HTTP). Keine dauerhafte Abhängigkeit zu Cloud, GAS oder Internet. WebKit/Safari-Härtung mit automatischer Redirect-Bereinigung beim PWA-Kaltstart.
+> **Architektur:** 100% Offline-First via IndexedDB (`FestkasseDB`) & Service Worker (`festkasse-v10`). Direktansteuerung von Epson LAN-Bondruckern via ePOS-Print (XML/HTTP). Keine dauerhafte Abhängigkeit zu Cloud, GAS oder Internet. WebKit/Safari-Härtung mit Redirect-Bereinigung und solider Statusleiste (kein Schleier/Blur).
 
 ---
 
