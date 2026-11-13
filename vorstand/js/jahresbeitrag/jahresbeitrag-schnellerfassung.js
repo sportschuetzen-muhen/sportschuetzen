@@ -366,7 +366,7 @@ async function jbEntrySelectMember(pn) {
       _jbParticipationsState.extras[key] = {
         key: key,
         active: isActive,
-        text: matchedPos ? (matchedPos.beschreibung || matchedPos.name) : (f.ui_feld || f.bezeichnungfrontend || f.bezeichnung || key),
+        text: matchedPos ? (matchedPos.beschreibung || matchedPos.name) : (f.bezeichnung_frontend || f.bezeichnungfrontend || f.bezeichnung || f.ui_feld || key),
         betrag: matchedPos ? Number(matchedPos.betrag || 0) : Number(f.betrag || 0),
         konto: matchedPos ? (matchedPos.konto || f.konto_haben || f.konto || '8500') : (f.konto_haben || f.konto || '8500'),
         unlocked: false
@@ -1213,7 +1213,8 @@ async function jbSaveSingleMemberDirect(pnClean) {
         quantity: 1,
         unit_price: p.betrag,
         amount: p.betrag,
-        konto: p.konto || '3000'
+        konto: p.konto || '3000',
+        source_field: p.source_field || null
       }));
       await supa.from('invoice_positions').delete().eq('invoice_id', invoiceId);
       if (invPositions.length > 0) {
@@ -1795,7 +1796,7 @@ function jbRenderVariableZusatzHTML(m, state) {
       ${fees.map(f => {
         const key = f.key;
         let isActive = false;
-        let textVal = f.ui_feld || f.bezeichnungfrontend || f.bezeichnung || key;
+        let textVal = f.bezeichnung_frontend || f.bezeichnungfrontend || f.bezeichnung || f.ui_feld || key;
         let betragVal = Number(f.betrag || 0);
         let kontoVal = f.konto_haben || f.konto || '8500';
         let isUnlocked = false;
@@ -1839,7 +1840,7 @@ function jbRenderVariableZusatzHTML(m, state) {
                   <span class="input-group-text px-1">CHF</span>
                   <input type="number" step="0.05" class="form-control form-control-sm text-end" id="extra_betrag_${key}_${m.PersonNumber}"
                          placeholder="${betragVal.toFixed(2)}" 
-                         value="${betragVal}" 
+                         value="${(!isActive && betragVal === 0) ? '' : betragVal}" 
                          oninput="jbUpdateExtraState('${key}', 'betrag', parseFloat(this.value)||0, '${m.PersonNumber}')">
                 </div>
               </div>
@@ -1878,7 +1879,7 @@ window.jbUpdateExtraState = function(key, field, val, pn) {
     _jbParticipationsState.extras[key] = {
       key: key,
       active: false,
-      text: f ? (f.ui_feld || f.bezeichnungfrontend || f.bezeichnung || key) : key,
+      text: f ? (f.bezeichnung_frontend || f.bezeichnungfrontend || f.bezeichnung || f.ui_feld || key) : key,
       betrag: f ? Number(f.betrag || 0) : 0,
       konto: f ? (f.konto_haben || f.konto || '8500') : '8500',
       unlocked: false
@@ -1957,7 +1958,7 @@ window.jbToggleExtraKontoLock = function(key, pn) {
     _jbParticipationsState.extras[key] = {
       key: key,
       active: false,
-      text: f ? (f.ui_feld || f.bezeichnungfrontend || f.bezeichnung || key) : key,
+      text: f ? (f.bezeichnung_frontend || f.bezeichnungfrontend || f.bezeichnung || f.ui_feld || key) : key,
       betrag: f ? Number(f.betrag || 0) : 0,
       konto: f ? (f.konto_haben || f.konto || '8500') : '8500',
       unlocked: false
@@ -2008,7 +2009,7 @@ window.jbToggleAllAktiveZusatz = async function(activateState, currentPn) {
   });
 
   const feeKey = zFee ? zFee.key : 'Z001';
-  const feeName = zFee ? (zFee.ui_feld || zFee.bezeichnungfrontend || zFee.bezeichnung) : 'Beitrag Vereinsjacke';
+  const feeName = zFee ? (zFee.bezeichnung_frontend || zFee.bezeichnungfrontend || zFee.bezeichnung || zFee.ui_feld) : 'Beitrag Vereinsjacke';
   const feeBetrag = zFee ? Number(zFee.betrag || 0) : 60;
   const feeKonto = zFee ? (zFee.konto_haben || zFee.konto || '8500') : '8500';
 

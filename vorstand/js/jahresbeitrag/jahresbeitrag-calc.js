@@ -338,7 +338,7 @@ function jbCalculateLiveTotal(m, settings) {
     if (isActive) {
       const posName = (customText && String(customText).trim() !== '') 
         ? String(customText).trim() 
-        : (f.ui_feld || f.bezeichnungfrontend || f.bezeichnung || key);
+        : (f.bezeichnung_frontend || f.bezeichnungfrontend || f.bezeichnung || f.ui_feld || key);
       const posBetrag = (customBetrag !== null && customBetrag !== undefined && !isNaN(Number(customBetrag))) 
         ? Number(customBetrag) 
         : Number(f.betrag || 0);

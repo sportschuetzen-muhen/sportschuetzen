@@ -376,6 +376,11 @@ Wird eine Jahresbeitrags-Rechnung (`JB-26-XXXX`) im Rechnungsmodul gelöscht –
 * **Saubere Trennung in Schnellerfassung & Live-Kalkulation:** `jbEntrySelectMember` löst bestehende Positionen über den kanonischen Schlüssel `CH-${_jbYear}-${pn}` (sowie Fallbacks) auf und schliesst `Z%`-Einträge aus `_jbParticipationsState.events` aus; `jbCalculateLiveTotal` verarbeitet variable Positionen ausschliesslich in Schritt 4 (`varFees`), sodass keine Doppelerfassung mit dem Standardtarif aus Schritt 3 entstehen kann.
 * **Backend-Persistenz (`calculate_member_contributions`):** Bei einer Neuberechnung über die PostgreSQL-RPC bewahrt Schritt 4 für aktive `Z%`-Teilnahmen den bereits in `public.contributions_positions` gespeicherten individuellen `betrag`, `beschreibung` und `konto`, bevor die Positionen in Schritt 6 atomar neu geschrieben werden.
 
+### 8.12 Bezeichnungs-Priorität, offene Beträge bei variablen Gebühren & Entwurfs-Sync (Migration 124)
+* **Kanonische Text-Priorität (`bezeichnung_frontend` vor `ui_feld`):** Sowohl bei Standardgebühren als auch bei variablen Zusatzpositionen (`Z%`) gilt für Positionen und Rechnungsdruck die einheitliche Reihenfolge `bezeichnung_frontend || bezeichnung || ui_feld` (`jahresbeitrag-calc.js`, `jahresbeitrag-schnellerfassung.js`, `calculate_member_contributions`); `ui_feld` dient ausschliesslich als kurzes Steuerelement-/Spaltenlabel.
+* **Leere / offene Standardbeträge bei `ui_typ = 'amount'`:** Variable Zusatzpositionen dürfen in `gebuehren_config` leer bzw. mit `CHF 0.00` gespeichert werden (`jahresbeitrag-gebuehren.js`); Positionen mit Betrag `0.00` werden weder im Frontend noch in `calculate_member_contributions` als Nullzeile fakturiert.
+* **Automatischer Entwurfs-Abgleich & `source_field`-Vererbung:** Änderungen in der Gebührenkonfiguration gleichen automatisch unveränderte Standardtexte in offenen `contributions_positions` und noch nicht versendeten/bezahlten `entwurf`-Rechnungen ab (mit anschliessender PDF-Neugenerierung), und `ensureInvoiceCreatedRemote` sowie `jbSaveSingleMemberDirect` schreiben `source_field` durchgängig in `invoice_positions`.
+
 
 
 

@@ -182,10 +182,10 @@ function renderGebuehrenConfigModals() {
                   </select>
                 </div>
                 <div class="col-md-3">
-                  <label class="form-label small fw-bold text-muted">Betrag (CHF) *</label>
+                  <label class="form-label small fw-bold text-muted">Betrag (CHF)</label>
                   <div class="input-group input-group-sm">
                     <span class="input-group-text">CHF</span>
-                    <input type="number" step="0.05" class="form-control text-end" id="g_betrag" placeholder="0.00" required oninput="jbUpdateGebuehrLivePreview()">
+                    <input type="number" step="0.05" class="form-control text-end" id="g_betrag" placeholder="0.00 (offen/variabel)" oninput="jbUpdateGebuehrLivePreview()">
                   </div>
                 </div>
               </div>
@@ -198,7 +198,7 @@ function renderGebuehrenConfigModals() {
                 </div>
                 <div class="col-md-6">
                   <label class="form-label small fw-bold text-muted">Vollständige Bezeichnung (Rechnungsdruck)</label>
-                  <input type="text" class="form-control form-control-sm" id="g_bezeichnung" placeholder="Wird auf PDF-Rechnung gedruckt">
+                  <input type="text" class="form-control form-control-sm" id="g_bezeichnung" placeholder="Wird auf PDF-Rechnung gedruckt" oninput="this.dataset.manualEdit='1'">
                 </div>
               </div>
 
@@ -1055,9 +1055,14 @@ function jbOpenEditGebuehrModal(key) {
 
     jbPopulateModalDropdowns(initialKat, 'Variable Zusatzpositionen', '');
     document.getElementById('g_zielgruppe').value = 'Alle';
-    document.getElementById('g_bezeichnungfrontend').value = '';
-    document.getElementById('g_bezeichnung').value = '';
-    document.getElementById('g_betrag').value = '50.00';
+    const bezFrontEl = document.getElementById('g_bezeichnungfrontend');
+    const bezEl = document.getElementById('g_bezeichnung');
+    if (bezFrontEl) bezFrontEl.value = '';
+    if (bezEl) {
+      bezEl.value = '';
+      delete bezEl.dataset.manualEdit;
+    }
+    document.getElementById('g_betrag').value = '';
     jbOnGebuehrKontoChanged('8500');
     document.getElementById('g_ui_typ').value = 'amount';
     document.getElementById('g_ui_sort').value = '30';
@@ -1075,12 +1080,22 @@ function jbOpenEditGebuehrModal(key) {
     const f = (window._jbGebuehren || []).find(x => String(x.key || '').trim().toUpperCase() === String(key).toUpperCase()) || {};
     jbPopulateModalDropdowns(f.kategorie || '', f.ui_gruppe || '', f.ui_feld || '');
     document.getElementById('g_zielgruppe').value = f.zielgruppe || 'Alle';
-    document.getElementById('g_bezeichnungfrontend').value = f.bezeichnungfrontend || '';
-    document.getElementById('g_bezeichnung').value = f.bezeichnung || '';
-    document.getElementById('g_betrag').value = f.betrag !== undefined ? f.betrag : '';
+    const frontVal = f.bezeichnung_frontend || f.bezeichnungfrontend || '';
+    document.getElementById('g_bezeichnungfrontend').value = frontVal;
+    const bezEl = document.getElementById('g_bezeichnung');
+    if (bezEl) {
+      bezEl.value = f.bezeichnung || '';
+      if (f.bezeichnung && f.bezeichnung !== frontVal) {
+        bezEl.dataset.manualEdit = '1';
+      } else {
+        delete bezEl.dataset.manualEdit;
+      }
+    }
+    const uiTypVal = (f.ui_typ || 'checkbox').toLowerCase();
+    document.getElementById('g_betrag').value = (uiTypVal === 'amount' && Number(f.betrag || 0) === 0) ? '' : (f.betrag !== undefined ? f.betrag : '');
     const initialKonto = f['Haben-Konto-Jahresbeitrag-Buchhaltung'] || f.konto_haben || f.konto || '3000';
     jbOnGebuehrKontoChanged(initialKonto);
-    document.getElementById('g_ui_typ').value = (f.ui_typ || 'checkbox').toLowerCase();
+    document.getElementById('g_ui_typ').value = uiTypVal;
     document.getElementById('g_ui_sort').value = f.ui_sort !== undefined ? f.ui_sort : '10';
     document.getElementById('g_aktiv').checked = f.aktiv !== false && f.aktiv !== 'FALSE' && f.aktiv !== '0' && f.aktiv !== 0;
     document.getElementById('g_bem').value = f.bem || f.bemerkung || '';
@@ -1116,9 +1131,10 @@ async function jbSaveGebuehrFromModal() {
   const bezInput = document.getElementById('g_bezeichnung');
   const bezeichnung = (bezInput?.value || '').trim() || bezeichnungfrontend;
 
+  const ui_typ = document.getElementById('g_ui_typ')?.value || 'checkbox';
   const betragInput = document.getElementById('g_betrag');
-  const rawBetrag = betragInput?.value;
-  const betrag = parseFloat(rawBetrag);
+  const rawBetrag = (betragInput?.value || '').trim();
+  const betrag = (ui_typ === 'amount' && rawBetrag === '') ? 0 : parseFloat(rawBetrag);
 
   const kontoInput = document.getElementById('g_konto');
   const konto = (kontoInput?.value || '').trim();
@@ -1133,7 +1149,6 @@ async function jbSaveGebuehrFromModal() {
   const fldSelect = document.getElementById('g_ui_feld_select');
   const ui_feld = (fldInput?.value || fldSelect?.value || bezeichnungfrontend).trim();
 
-  const ui_typ = document.getElementById('g_ui_typ')?.value || 'checkbox';
   const ui_sort = parseInt(document.getElementById('g_ui_sort')?.value, 10) || 10;
   const aktiv = document.getElementById('g_aktiv')?.checked !== false;
   const bem = (document.getElementById('g_bem')?.value || '').trim();
@@ -1181,10 +1196,10 @@ async function jbSaveGebuehrFromModal() {
   // E) Betrag
   if (isNaN(betrag)) {
     setFieldError(betragInput, 'Bitte einen gültigen Betrag in CHF eingeben (z. B. 15.00 oder 60.00).');
-  } else if (ui_typ === 'amount' && betrag <= 0) {
-    setFieldError(betragInput, 'Bei einer variablen Zusatzposition muss der Standardbetrag grösser als 0.00 CHF sein (z. B. 60.00).');
-  } else if (betrag === 0 && !['JB004', 'JB006', 'LI002', 'LI003'].includes(key)) {
-    setFieldError(betragInput, 'Der Betrag ist CHF 0.00. Sollte diese Gebühr kostenpflichtig sein, tragen Sie bitte den Tarif ein (0.00 ist nur für befreite Kategorien wie Ehrenmitglieder oder Schüler zulässig).');
+  } else if (ui_typ === 'amount' && betrag < 0) {
+    setFieldError(betragInput, 'Bei einer variablen Zusatzposition darf der Standardbetrag nicht negativ sein (leer oder 0.00 = variabel je Schütze).');
+  } else if (ui_typ !== 'amount' && betrag === 0 && !['JB004', 'JB006', 'LI002', 'LI003'].includes(key)) {
+    setFieldError(betragInput, 'Der Betrag ist CHF 0.00. Sollte diese Gebühr kostenpflichtig sein, trage bitte den Tarif ein (0.00 ist nur für befreite Kategorien wie Ehrenmitglieder, Schüler oder variable Beträge zulässig).');
   }
 
   // F) UI-Gruppe & UI-Feld
@@ -1228,11 +1243,15 @@ async function jbSaveGebuehrFromModal() {
   }
 
   try {
+    const existingIdx = (window._jbGebuehren || []).findIndex(x => String(x.key || '').trim().toUpperCase() === key);
+    const prevFee = existingIdx >= 0 ? { ...window._jbGebuehren[existingIdx] } : null;
+
     const payload = {
       action: 'saveGebuehr',
       key,
       kategorie,
       zielgruppe,
+      bezeichnung_frontend: bezeichnungfrontend,
       bezeichnungfrontend,
       bezeichnung,
       betrag,
@@ -1304,7 +1323,6 @@ async function jbSaveGebuehrFromModal() {
       if (bsModal) bsModal.hide();
     }
 
-    const existingIdx = (window._jbGebuehren || []).findIndex(x => String(x.key || '').trim().toUpperCase() === key);
     if (existingIdx >= 0) {
       window._jbGebuehren[existingIdx] = { ...window._jbGebuehren[existingIdx], ...payload };
     } else {
@@ -1314,14 +1332,232 @@ async function jbSaveGebuehrFromModal() {
     jbPopulateFilterDropdowns();
     jbRenderGebuehrenTable();
 
+    // 3. Offene Beitragspositionen & Rechnungsentwürfe (noch nicht versendet/bezahlt) abgleichen
+    if (supa && prevFee && !_jbGebuehrIsNewModal) {
+      const syncResult = await jbSyncUpdatedFeeToOpenDrafts(supa, key, prevFee, payload);
+      if (syncResult && (syncResult.updatedPositions > 0 || syncResult.updatedInvoices > 0)) {
+        showToast(
+          `🔄 ${syncResult.updatedPositions} offene Beitragsposition(en) und ${syncResult.updatedInvoices} Rechnungsentwurf/-würfe aktualisiert.`
+        );
+      }
+    }
+
   } catch(err) {
-    alert("Fehler beim Speichern der Gebühr: " + err.message);
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Fehler beim Speichern',
+        message: 'Fehler beim Speichern der Gebühr: ' + err.message,
+        type: 'danger'
+      });
+    } else {
+      console.error('Fehler beim Speichern der Gebühr:', err);
+    }
   } finally {
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = '<i class="fas fa-save me-1"></i> Gebühr speichern';
     }
   }
+}
+
+async function jbSyncUpdatedFeeToOpenDrafts(supa, key, prevFee, nextFee) {
+  const activeYear = (typeof _jbYear !== 'undefined' && _jbYear) ? Number(_jbYear) : new Date().getFullYear();
+  const isVariable = String(nextFee.ui_typ || '').toLowerCase() === 'amount'
+    || String(nextFee.kategorie || '').toLowerCase() === 'variabel'
+    || key.startsWith('Z');
+
+  const newLabel = String(nextFee.bezeichnung_frontend || nextFee.bezeichnungfrontend || nextFee.bezeichnung || key).trim();
+  const oldLabels = new Set(
+    [prevFee.bezeichnung_frontend, prevFee.bezeichnungfrontend, prevFee.bezeichnung, prevFee.ui_feld, key]
+      .map(v => String(v || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+  const oldBetrag = Number(prevFee.betrag || 0);
+  const newBetrag = Number(nextFee.betrag || 0);
+  const oldKonto = String(prevFee.konto_haben || prevFee.konto || '').trim();
+  const newKonto = String(nextFee.konto_haben || nextFee.konto || '').trim();
+
+  const labelChanged = !oldLabels.has(newLabel.toLowerCase()) || String(prevFee.bezeichnung_frontend || prevFee.bezeichnungfrontend || '').trim() !== newLabel;
+  const betragChanged = !isVariable && oldBetrag !== newBetrag;
+  const kontoChanged = newKonto && oldKonto !== newKonto;
+
+  if (!labelChanged && !betragChanged && !kontoChanged) {
+    return { updatedPositions: 0, updatedInvoices: 0 };
+  }
+
+  const { data: posRows, error: posErr } = await supa
+    .from('contributions_positions')
+    .select('id, header_id, position_nr, beschreibung, betrag, konto, source_field')
+    .eq('year', activeYear)
+    .eq('source_field', key);
+
+  if (posErr || !Array.isArray(posRows) || posRows.length === 0) {
+    return { updatedPositions: 0, updatedInvoices: 0 };
+  }
+
+  const headerIds = Array.from(new Set(posRows.map(p => p.header_id).filter(Boolean)));
+  const { data: headers, error: hdrErr } = await supa
+    .from('contributions_header')
+    .select('id, invoice_id, status')
+    .in('id', headerIds);
+
+  if (hdrErr || !Array.isArray(headers)) {
+    return { updatedPositions: 0, updatedInvoices: 0 };
+  }
+
+  const headerMap = Object.fromEntries(headers.map(h => [h.id, h]));
+  const invoiceIds = Array.from(new Set(headers.map(h => h.invoice_id).filter(Boolean)));
+  const invoiceMap = {};
+
+  if (invoiceIds.length > 0) {
+    const { data: invRows } = await supa
+      .from('invoices')
+      .select('id, mail_status, status, total_amount, open_amount')
+      .in('id', invoiceIds);
+    (invRows || []).forEach(inv => { invoiceMap[inv.id] = inv; });
+
+    const { data: payRows } = await supa
+      .from('invoice_payments')
+      .select('invoice_id')
+      .in('invoice_id', invoiceIds);
+    const paidInvSet = new Set((payRows || []).map(p => p.invoice_id));
+    Object.values(invoiceMap).forEach(inv => {
+      inv._hasPayments = paidInvSet.has(inv.id);
+    });
+  }
+
+  let updatedPositions = 0;
+  const touchedHeaderIds = new Set();
+  const touchedDraftInvoices = new Map(); // invoiceId -> array of matched cp rows
+
+  for (const cp of posRows) {
+    const hdr = headerMap[cp.header_id];
+    if (!hdr || hdr.status === 'bezahlt') continue;
+
+    const inv = hdr.invoice_id ? invoiceMap[hdr.invoice_id] : null;
+    if (inv) {
+      const isDraftInv = (!inv.mail_status || inv.mail_status === 'entwurf')
+        && !inv._hasPayments
+        && inv.status !== 'bezahlt'
+        && inv.status !== 'teilbezahlt'
+        && inv.status !== 'storniert'
+        && Math.abs(Number(inv.open_amount ?? inv.total_amount ?? 0) - Number(inv.total_amount ?? 0)) < 0.01;
+      if (!isDraftInv) continue; // Bereits versendet/bezahlt -> Revisionssicherheit strikt wahren
+    }
+
+    const curDesc = String(cp.beschreibung || '').trim();
+    const matchesOldDefaultDesc = oldLabels.has(curDesc.toLowerCase());
+    const updateFields = {};
+
+    if (labelChanged && matchesOldDefaultDesc && curDesc !== newLabel) {
+      updateFields.beschreibung = newLabel;
+    }
+    if (betragChanged && Number(cp.betrag || 0) === oldBetrag) {
+      updateFields.betrag = newBetrag;
+    }
+    if (kontoChanged && String(cp.konto || '').trim() === oldKonto) {
+      updateFields.konto = newKonto;
+    }
+
+    if (Object.keys(updateFields).length > 0) {
+      updateFields.last_upd = new Date().toISOString();
+      const { error: updErr } = await supa
+        .from('contributions_positions')
+        .update(updateFields)
+        .eq('id', cp.id);
+      if (!updErr) {
+        updatedPositions++;
+        touchedHeaderIds.add(cp.header_id);
+        if (inv) {
+          if (!touchedDraftInvoices.has(inv.id)) touchedDraftInvoices.set(inv.id, []);
+          touchedDraftInvoices.get(inv.id).push({
+            position_nr: cp.position_nr,
+            oldDesc: curDesc,
+            newDesc: updateFields.beschreibung || curDesc,
+            newBetrag: updateFields.betrag,
+            newKonto: updateFields.konto
+          });
+        }
+      }
+    }
+  }
+
+  // Bei Betragsänderung Summen der betroffenen Beitrags-Header neu berechnen
+  const updatedHeaderTotals = {};
+  if (betragChanged && touchedHeaderIds.size > 0) {
+    for (const hid of touchedHeaderIds) {
+      const { data: allPos } = await supa
+        .from('contributions_positions')
+        .select('betrag, source_field')
+        .eq('header_id', hid);
+      if (Array.isArray(allPos)) {
+        const hasRa002 = allPos.some(x => String(x.source_field || '').toUpperCase() === 'RA002');
+        let sum = allPos.reduce((acc, x) => acc + Number(x.betrag || 0), 0);
+        if (!hasRa002 && sum < 0) sum = 0;
+        sum = Number(sum.toFixed(2));
+        updatedHeaderTotals[hid] = sum;
+        await supa.from('contributions_header').update({ gesamt: sum, updated_at: new Date().toISOString() }).eq('id', hid);
+      }
+    }
+  }
+
+  // Verknüpfte Rechnungsentwürfe synchronisieren & PDF neu rendern
+  let updatedInvoices = 0;
+  for (const [invId, changes] of touchedDraftInvoices.entries()) {
+    const { data: invPosRows } = await supa
+      .from('invoice_positions')
+      .select('id, position_nr, description, source_field')
+      .eq('invoice_id', invId);
+
+    let invModified = false;
+    for (const ch of changes) {
+      const targetIp = (invPosRows || []).find(ip =>
+        String(ip.source_field || '').trim().toUpperCase() === key
+        || (!ip.source_field && Number(ip.position_nr) === Number(ch.position_nr) && String(ip.description || '').trim().toLowerCase() === ch.oldDesc.toLowerCase())
+      );
+      if (targetIp) {
+        const ipPatch = { source_field: key };
+        if (ch.newDesc && ch.newDesc !== targetIp.description) ipPatch.description = ch.newDesc;
+        if (ch.newBetrag !== undefined) {
+          ipPatch.unit_price = ch.newBetrag;
+          ipPatch.amount = ch.newBetrag;
+        }
+        if (ch.newKonto) ipPatch.konto = ch.newKonto;
+        const { error: ipErr } = await supa.from('invoice_positions').update(ipPatch).eq('id', targetIp.id);
+        if (!ipErr) invModified = true;
+      }
+    }
+
+    if (invModified) {
+      const hdrForInv = headers.find(h => h.invoice_id === invId);
+      const invPatch = {
+        pdf_url: null,
+        pdf_storage_path: null,
+        updated_at: new Date().toISOString()
+      };
+      if (hdrForInv && updatedHeaderTotals[hdrForInv.id] !== undefined) {
+        invPatch.total_amount = updatedHeaderTotals[hdrForInv.id];
+        invPatch.open_amount = updatedHeaderTotals[hdrForInv.id];
+      }
+      await supa.from('invoices').update(invPatch).eq('id', invId);
+      if (window._invoicePositionsCache) delete window._invoicePositionsCache[String(invId).trim()];
+      if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
+        window.RechnungsCore.renderPdf(invId, { forceRecreate: true }).catch(err => {
+          console.warn(`⚠️ PDF-Neugenerierung für ${invId} Hinweis:`, err);
+        });
+      }
+      updatedInvoices++;
+    }
+  }
+
+  if (updatedPositions > 0 && typeof loadJahresbeitragData === 'function') {
+    await loadJahresbeitragData(true, false);
+  }
+  if (updatedInvoices > 0 && typeof loadRechnungenData === 'function') {
+    await loadRechnungenData(true, true);
+  }
+
+  return { updatedPositions, updatedInvoices };
 }
 
 async function jbReloadGebuehrenData() {
@@ -1334,6 +1570,7 @@ async function jbReloadGebuehrenData() {
         window._jbGebuehren = data.map(g => ({
           key: g.key,
           bezeichnung: g.bezeichnung,
+          bezeichnung_frontend: g.bezeichnung_frontend || g.bezeichnung,
           bezeichnungfrontend: g.bezeichnung_frontend || g.bezeichnung,
           betrag: Number(g.betrag || 0),
           konto: g.konto_haben || '3000',

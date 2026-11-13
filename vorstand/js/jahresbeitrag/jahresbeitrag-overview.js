@@ -1193,7 +1193,7 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
   
   const positions = cachedPos.map((p, idx) => {
     const desc = p.beschreibung || p.name || '';
-    const sf = p.sourcefield || p.key || '';
+    const sf = p.source_field || p.sourcefield || p.key || '';
     let posKonto = p.konto || '';
     if (!posKonto && typeof window.jbResolveAccountForPosition === 'function') {
       posKonto = window.jbResolveAccountForPosition(sf, desc);
@@ -1239,7 +1239,8 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
             quantity: p.quantity,
             unit_price: p.unit_price,
             amount: p.amount,
-            konto: p.konto || '3000'
+            konto: p.konto || '3000',
+            source_field: p.source_field || null
           }));
           await supa.from('invoice_positions').delete().eq('invoice_id', existingInv.id);
           await supa.from('invoice_positions').insert(sbPositions);
@@ -1253,6 +1254,16 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
       r.pdf_url = null;
       if (window._invoicePositionsCache) {
         delete window._invoicePositionsCache[String(existingInv.id).trim()];
+      }
+      if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
+        window.RechnungsCore.renderPdf(existingInv.id, { forceRecreate: true }).then(res => {
+          if (res && res.pdfUrl) {
+            existingInv.pdf_url = res.pdfUrl;
+            r.pdf_url = res.pdfUrl;
+          }
+        }).catch(err => {
+          console.warn("⚠️ [Jahresbeitrag] Hintergrund-PDF-Neugenerierung Hinweis:", err);
+        });
       }
     }
     r.invoiceId = existingInv.id;
@@ -1295,7 +1306,8 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
           amount: p.amount,
           konto: String(p.konto || '3000').trim(),
           accountHaben: String(p.konto || '3000').trim(),
-          account: String(p.konto || '3000').trim()
+          account: String(p.konto || '3000').trim(),
+          sourceField: p.source_field || null
         })),
         options: {
           dueDateDays: 30,
@@ -1350,7 +1362,8 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
           quantity: p.quantity,
           unit_price: p.unit_price,
           amount: p.amount,
-          konto: p.konto || '3000'
+          konto: p.konto || '3000',
+          source_field: p.source_field || null
         }));
         await supa.from('invoice_positions').delete().eq('invoice_id', invoiceId);
         await supa.from('invoice_positions').insert(sbPositions);

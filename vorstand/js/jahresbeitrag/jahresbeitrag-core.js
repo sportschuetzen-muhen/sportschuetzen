@@ -320,6 +320,7 @@ function mapGebuehrFromSupabase(r) {
   return {
     key: r.key,
     bezeichnung: r.bezeichnung,
+    bezeichnung_frontend: r.bezeichnung_frontend || r.bezeichnung,
     bezeichnungfrontend: r.bezeichnung_frontend || r.bezeichnung,
     betrag: Number(r.betrag || 0),
     'Haben-Konto-Jahresbeitrag-Buchhaltung': r.konto_haben,
