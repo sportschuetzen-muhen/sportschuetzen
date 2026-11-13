@@ -59,6 +59,25 @@
     );
 
     out = out.replace(
+      /<table\b([^>]*class="[^"]*vm-info-table[^"]*"[^>]*)>([\s\S]*?)<\/table>/gi,
+      (_m, attrs, inner) => {
+        const cleanAttrs = attrs.replace(/\s*margin\s*:[^;"]+;?/gi, '');
+        const styledInner = inner.replace(/<td(\s+[^>]*)?>/gi, (_tm, tdAttrs = '') => {
+          if (!tdAttrs || !/style=/i.test(tdAttrs)) {
+            return `<td${tdAttrs} style="padding:7px 12px; font-family:'Segoe UI',Arial,Helvetica,sans-serif; font-size:13.5px; line-height:1.4;">`;
+          }
+          return `<td${tdAttrs.replace(/style="([^"]*)"/i, (_sm, s) => {
+            let c = s.trim();
+            if (!/font-family/i.test(c)) c += (c && !c.endsWith(';') ? ';' : '') + "font-family:'Segoe UI',Arial,Helvetica,sans-serif;";
+            if (!/line-height/i.test(c)) c += (c && !c.endsWith(';') ? ';' : '') + 'line-height:1.4;';
+            return `style="${c}"`;
+          })}>`;
+        });
+        return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; border-collapse:collapse;"><tr><td style="padding:4px 0 14px 0;"><table${cleanAttrs}>${styledInner}</table></td></tr></table>`;
+      }
+    );
+
+    out = out.replace(
       /<table\b([^>]*style="[^"]*border-collapse:\s*separate[^"]*"[^>]*)>([\s\S]*?)<\/table>/gi,
       (_m, attrs, inner) => {
         const cleanAttrs = attrs.replace(/\s*margin\s*:[^;"]+;?/gi, '');
@@ -98,13 +117,13 @@
     const normalizedBody = normalizeRentalBodyForEmail(bodyHtml);
 
     const cardHtml = `
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#f1f5f9" style="background-color:#f1f5f9; border-collapse:collapse;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#ffffff" style="width:100%; background-color:#ffffff; border-collapse:collapse;">
       <tr>
-        <td align="center" style="padding:20px 12px;">
+        <td align="left" style="padding:12px 16px;">
           <!--[if mso]>
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="650" align="center" style="border-collapse:collapse;"><tr><td>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="800" align="left" style="border-collapse:collapse;"><tr><td>
           <![endif]-->
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#ffffff" style="width:100%; max-width:650px; margin:0 auto; border:1px solid #cbd5e1; border-radius:10px; overflow:hidden; background-color:#ffffff; border-collapse:collapse; font-family:'Segoe UI',Arial,Helvetica,sans-serif;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#ffffff" style="width:100%; max-width:800px; margin:0; border:1px solid #cbd5e1; border-radius:8px; overflow:hidden; background-color:#ffffff; border-collapse:collapse; font-family:'Segoe UI',Arial,Helvetica,sans-serif;">
             <tr>
               <td bgcolor="${bannerColor}" style="background-color:${bannerColor}; padding:18px 24px; text-align:left; vertical-align:middle;">
                 <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
@@ -148,7 +167,7 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <title>${escHtml(title)}</title>
 </head>
-<body style="margin:0; padding:0; background-color:#f1f5f9; font-family:'Segoe UI',Arial,Helvetica,sans-serif; color:#333333; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%;">
+<body bgcolor="#ffffff" style="margin:0; padding:0; background-color:#ffffff; font-family:'Segoe UI',Arial,Helvetica,sans-serif; color:#333333; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%;">
 ${cardHtml}
 </body>
 </html>`;
@@ -227,3 +246,4 @@ ${cardHtml}
     renderWebsiteRentalMail
   };
 })(window);
+
