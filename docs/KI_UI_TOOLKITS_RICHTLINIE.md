@@ -250,7 +250,7 @@ Get-ChildItem -Path vorstand/js/<modul>/ -Filter *.js | Select-String -Pattern '
 | **Vermietung** | `vorstand/js/vermietung/` | ✅ Erledigt | `UIConfirmKit`, `UIButtonKit`, `TableKit`, `UIFormatKit`, `UIExportKit` |
 | **Inventar** | `vorstand/js/inventar/` | ⏳ Bereit für Audit | Bereit für Schritt 1–6 |
 | **Mitglieder & SSV** | `vorstand/js/mitglieder/` | ⏳ Bereit für Audit | Bereit für Schritt 1–6 |
-| **Termine & Schichten** | `vorstand/js/termine/` | ⏳ Bereit für Audit | Bereit für Schritt 1–6 |
+| **Jahresprogramm (Termine)** | `vorstand/js/termine/` | ✅ Erledigt | `UIConfirmKit`, `UIButtonKit`, `TableKit`, `UIFormatKit`, `UIExportKit`, `UIHotkeyKit` |
 | **Anlässe & GV** | `vorstand/js/events/` | ⏳ Bereit für Audit | Bereit für Schritt 1–6 |
 | **Resultate** | `vorstand/js/resultate/` | ⏳ Bereit für Audit | Bereit für Schritt 1–6 |
 | **Buchhaltung & Kasse**| `vorstand/js/buchhaltung/`| ⏳ Bereit für Audit | Bereit für Schritt 1–6 |

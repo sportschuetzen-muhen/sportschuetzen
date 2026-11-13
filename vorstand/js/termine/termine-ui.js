@@ -10,7 +10,10 @@
  */
 
 let termineFilterCtrl = null;
-let termineEventsBound = false;
+
+function canWriteTermine() {
+  return (typeof hasWriteAccess === 'function') ? hasWriteAccess('termine') : false;
+}
 
 function ensureTermineStylesOnce() {
   if (document.getElementById('termine-inline-style')) return;
@@ -75,7 +78,7 @@ function showTermineOverlay(show, text) {
 
 function renderTermineUI(container) {
   if (!container || !adminState) return;
-  const canWrite = (typeof hasWriteAccess === 'function') ? hasWriteAccess('termine') : true;
+  const canWrite = canWriteTermine();
 
   container.innerHTML = `
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -100,10 +103,10 @@ function renderTermineUI(container) {
           <div class="card-body p-3">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
               <div class="d-flex align-items-center flex-wrap gap-2">
-                <button class="btn btn-sm btn-success write-protected ${!canWrite ? 'd-none' : ''}" onclick="addTerminRow()">
+                <button type="button" class="btn btn-sm btn-success write-protected ${!canWrite ? 'd-none' : ''}" onclick="addTerminRow()">
                   <i class="fas fa-plus me-1"></i> Neuer Termin
                 </button>
-                <button id="btn-save-termine" class="btn btn-sm btn-outline-secondary write-protected ${!canWrite ? 'd-none' : ''}" disabled onclick="saveTermineData()">
+                <button type="button" id="btn-save-termine" class="btn btn-sm btn-outline-secondary btn-save write-protected ${!canWrite ? 'd-none' : ''}" disabled onclick="saveTermineData()">
                   💾 Gespeichert
                 </button>
                 <div class="vr mx-1 d-none d-md-block ${!canWrite ? 'd-none' : ''}"></div>
@@ -116,13 +119,16 @@ function renderTermineUI(container) {
                   <button type="button" class="tk-pill-btn" data-filter="abgesagt">Abgesagt</button>
                 </div>
               </div>
-              <!-- Suchfeld & Spalten Toggle -->
+              <!-- Suchfeld, Spalten Toggle & Excel Export -->
               <div class="d-flex align-items-center gap-2">
                 <div class="input-group input-group-sm" style="max-width: 240px;">
                   <span class="input-group-text bg-white border-end-0"><i class="fas fa-search text-muted"></i></span>
-                  <input type="text" id="termine-search-input" class="form-control border-start-0" placeholder="Termine filtern…">
+                  <input type="search" id="termine-search-input" class="form-control border-start-0 tk-search-input" placeholder="Termine filtern…">
                 </div>
                 <div id="termine-column-toggle"></div>
+                <button type="button" class="btn btn-sm btn-outline-success py-1 fw-bold" onclick="exportTermineToExcel()" title="Jahresprogramm nach Excel exportieren">
+                  <i class="fas fa-file-excel me-1"></i>Excel
+                </button>
               </div>
             </div>
           </div>
@@ -148,7 +154,7 @@ function renderTermineUI(container) {
           </table>
         </div>
         <div class="small text-muted mt-2 d-flex justify-content-between">
-          <span><i class="fas fa-info-circle me-1"></i>Tipp: Klicke auf die Spaltenüberschriften zum <strong>Sortieren</strong> oder ziehe Zeilen an <strong>⋮⋮</strong> zum <strong>Verschieben</strong>.</span>
+          <span><i class="fas fa-info-circle me-1"></i>Tipp: Klicke auf die Spaltenüberschriften zum <strong>Sortieren</strong>${canWrite ? ' oder ziehe Zeilen an <strong>⋮⋮</strong> zum <strong>Verschieben</strong>' : ''}.</span>
           <span id="termine-filter-status" class="fw-bold"></span>
         </div>
       </div>
@@ -164,16 +170,16 @@ function renderTermineUI(container) {
                   <i class="fas fa-bullseye text-primary me-2"></i>Anlass-Typen
                 </h6>
                 <div class="d-flex gap-1">
-                  <button class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="sortAnlaesseAZ()" title="Alphabetisch sortieren (A-Z)">
+                  <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2 write-protected ${!canWrite ? 'd-none' : ''}" onclick="sortAnlaesseAZ()" title="Alphabetisch sortieren (A-Z)">
                     A–Z <i class="fas fa-sort-alpha-down"></i>
                   </button>
-                  <button class="btn btn-primary btn-sm py-0 px-2 write-protected" onclick="addAnlass()">
+                  <button type="button" class="btn btn-primary btn-sm py-0 px-2 write-protected ${!canWrite ? 'd-none' : ''}" onclick="addAnlass()">
                     + Typ
                   </button>
                 </div>
               </div>
               <div class="card-body p-3" id="content-anlaesse">
-                <p class="small text-muted mb-2">Reihenfolge bestimmt die Anordnung im Dropdown. Per <strong>⋮⋮</strong> verschiebbar.</p>
+                <p class="small text-muted mb-2">Reihenfolge bestimmt die Anordnung im Dropdown.${canWrite ? ' Per <strong>⋮⋮</strong> verschiebbar.' : ''}</p>
                 <div id="edit-anlaesse" class="d-flex flex-column gap-2"></div>
               </div>
             </div>
@@ -187,16 +193,16 @@ function renderTermineUI(container) {
                   <i class="fas fa-map-marker-alt text-danger me-2"></i>Orte & Google Maps
                 </h6>
                 <div class="d-flex gap-1">
-                  <button class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="sortOrteAZ()" title="Alphabetisch sortieren (A-Z)">
+                  <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2 write-protected ${!canWrite ? 'd-none' : ''}" onclick="sortOrteAZ()" title="Alphabetisch sortieren (A-Z)">
                     A–Z <i class="fas fa-sort-alpha-down"></i>
                   </button>
-                  <button class="btn btn-primary btn-sm py-0 px-2 write-protected" onclick="addOrt()">
+                  <button type="button" class="btn btn-primary btn-sm py-0 px-2 write-protected ${!canWrite ? 'd-none' : ''}" onclick="addOrt()">
                     + Ort
                   </button>
                 </div>
               </div>
               <div class="card-body p-3" id="content-orte">
-                <p class="small text-muted mb-2">Orte und Google Maps Links. Reihenfolge per <strong>⋮⋮</strong> frei verschiebbar.</p>
+                <p class="small text-muted mb-2">Orte und Google Maps Links.${canWrite ? ' Reihenfolge per <strong>⋮⋮</strong> frei verschiebbar.' : ''}</p>
                 <div id="edit-orte" class="d-flex flex-column gap-2"></div>
               </div>
             </div>
@@ -218,78 +224,96 @@ function renderTermineList() {
   const tbody = document.getElementById('termine-body');
   if (!tbody || !adminState?.termine) return;
 
-  const canWrite = (typeof hasWriteAccess === 'function') ? hasWriteAccess('termine') : true;
+  const canWrite = canWriteTermine();
+  const anlassList = adminState.dropdowns?.anlaesse || [];
+  const orteList = adminState.dropdowns?.orteMitMaps || [];
+  const katList = adminState.dropdowns?.kategorien || ['Jahresprogramm', 'Schiesstermine'];
 
-  tbody.innerHTML = adminState.termine.map((t, idx) => {
-    const status = String(t.status || '').toLowerCase();
-    let rowClass = '';
-    if (status === 'abgesagt') rowClass = 'row-abgesagt';
-    else if (status === 'provisorisch') rowClass = 'row-provisorisch';
-    else if (!t.datum) rowClass = 'row-warn';
-
-    const mapUrl = t.austragungsorte_map || '';
-    const mapBtn = mapUrl
-      ? `<a href="${escapeHtml(mapUrl)}" target="_blank" rel="noopener" class="termine-map-btn" title="Google Maps öffnen"><i class="fas fa-map-marked-alt"></i></a>`
-      : '';
-
-    return `
-      <tr data-id="${escapeHtml(String(t.id))}" class="tk-draggable-item ${rowClass}" draggable="true" data-index="${idx}">
-        <td class="text-center align-middle tk-col-drag" data-col-id="drag">
-          <span class="tk-drag-handle ${!canWrite ? 'd-none' : ''}" title="Zeile ziehen zum Verschieben">⋮⋮</span>
-        </td>
-        <td class="tk-col-datum" data-col-id="datum">
-          <input data-field="datum" type="date" class="form-control form-control-sm write-protected"
-            value="${isoDate(t.datum)}" ${!canWrite ? 'readonly disabled' : ''}>
-        </td>
-        <td class="tk-col-startzeit" data-col-id="startzeit">
-          <input data-field="startzeit" type="time" class="form-control form-control-sm write-protected"
-            value="${formatTime(t.startzeit)}" ${!canWrite ? 'readonly disabled' : ''}>
-        </td>
-        <td class="tk-col-endzeit" data-col-id="endzeit">
-          <input data-field="endzeit" type="time" class="form-control form-control-sm write-protected"
-            value="${formatTime(t.endzeit)}" ${!canWrite ? 'readonly disabled' : ''}>
-        </td>
-        <td class="tk-col-anlasstitel" data-col-id="anlasstitel">
-          <select data-field="anlasstitel" class="form-select form-select-sm write-protected" ${!canWrite ? 'readonly disabled' : ''}>
-            <option value="">-- Anlass --</option>
-            ${(adminState.dropdowns.anlaesse || []).map(a =>
-              `<option value="${escapeHtml(a)}" ${a === t.anlasstitel ? 'selected' : ''}>${escapeHtml(a)}</option>`
-            ).join('')}
-          </select>
-        </td>
-        <td class="tk-col-ort" data-col-id="ort">
-          <div class="d-flex align-items-center gap-1">
-            <select data-field="ort" class="form-select form-select-sm write-protected" ${!canWrite ? 'readonly disabled' : ''}>
-              <option value="">-- Ort --</option>
-              ${(adminState.dropdowns.orteMitMaps || []).map(o =>
-                `<option value="${escapeHtml(o[0])}" ${o[0] === t.ort ? 'selected' : ''}>${escapeHtml(o[0])}</option>`
-              ).join('')}
-            </select>
-            <span class="ort-map-icon">${mapBtn}</span>
-          </div>
-        </td>
-        <td class="tk-col-kategorie" data-col-id="kategorie">
-          <select data-field="kategorie" class="form-select form-select-sm write-protected" ${!canWrite ? 'readonly disabled' : ''}>
-            ${(adminState.dropdowns.kategorien || ['Jahresprogramm', 'Schiesstermine']).map(k =>
-              `<option value="${escapeHtml(k)}" ${k === t.kategorie ? 'selected' : ''}>${escapeHtml(k)}</option>`
-            ).join('')}
-          </select>
-        </td>
-        <td class="tk-col-status" data-col-id="status">
-          <select data-field="status" class="form-select form-select-sm write-protected" ${!canWrite ? 'readonly disabled' : ''}>
-            ${['fix', 'provisorisch', 'abgesagt'].map(s =>
-              `<option value="${s}" ${s === t.status ? 'selected' : ''}>${s}</option>`
-            ).join('')}
-          </select>
-        </td>
-        <td class="text-center tk-col-actions" data-col-id="actions">
-          <button type="button" class="btn btn-link text-danger p-0 write-protected ${!canWrite ? 'd-none' : ''}" data-action="remove" title="Termin löschen">
-            <i class="fas fa-trash-alt"></i>
-          </button>
+  if (adminState.termine.length === 0) {
+    tbody.innerHTML = `
+      <tr class="tk-ignore-export">
+        <td colspan="9" class="text-center text-muted py-4">
+          Noch keine Termine erfasst.${canWrite ? ' Klicke auf <strong>+ Neuer Termin</strong>, um einen Eintrag anzulegen.' : ''}
         </td>
       </tr>
     `;
-  }).join('');
+  } else {
+    tbody.innerHTML = adminState.termine.map((t, idx) => {
+      const status = String(t.status || '').toLowerCase();
+      let rowClass = '';
+      if (status === 'abgesagt') rowClass = 'row-abgesagt';
+      else if (status === 'provisorisch') rowClass = 'row-provisorisch';
+      else if (!t.datum) rowClass = 'row-warn';
+
+      const mapUrl = t.austragungsorte_map || '';
+      const mapBtn = mapUrl
+        ? `<a href="${escapeHtml(mapUrl)}" target="_blank" rel="noopener" class="termine-map-btn" title="Google Maps öffnen"><i class="fas fa-map-marked-alt"></i></a>`
+        : '';
+
+      const hasUnknownAnlass = t.anlasstitel && !anlassList.includes(t.anlasstitel);
+      const hasUnknownOrt = t.ort && !orteList.some(o => o[0] === t.ort);
+
+      return `
+        <tr data-id="${escapeHtml(String(t.id))}" class="tk-draggable-item ${rowClass}" draggable="${canWrite ? 'true' : 'false'}" data-index="${idx}">
+          <td class="text-center align-middle tk-col-drag" data-col-id="drag">
+            <span class="tk-drag-handle ${!canWrite ? 'd-none' : ''}" title="Zeile ziehen zum Verschieben">⋮⋮</span>
+          </td>
+          <td class="tk-col-datum" data-col-id="datum">
+            <input data-field="datum" type="date" class="form-control form-control-sm write-protected"
+              value="${isoDate(t.datum)}" ${!canWrite ? 'readonly disabled' : ''}>
+          </td>
+          <td class="tk-col-startzeit" data-col-id="startzeit">
+            <input data-field="startzeit" type="time" class="form-control form-control-sm write-protected"
+              value="${formatTime(t.startzeit)}" ${!canWrite ? 'readonly disabled' : ''}>
+          </td>
+          <td class="tk-col-endzeit" data-col-id="endzeit">
+            <input data-field="endzeit" type="time" class="form-control form-control-sm write-protected"
+              value="${formatTime(t.endzeit)}" ${!canWrite ? 'readonly disabled' : ''}>
+          </td>
+          <td class="tk-col-anlasstitel" data-col-id="anlasstitel">
+            <select data-field="anlasstitel" class="form-select form-select-sm write-protected" ${!canWrite ? 'readonly disabled' : ''}>
+              <option value="">-- Anlass --</option>
+              ${hasUnknownAnlass ? `<option value="${escapeHtml(t.anlasstitel)}" selected>${escapeHtml(t.anlasstitel)}</option>` : ''}
+              ${anlassList.map(a =>
+                `<option value="${escapeHtml(a)}" ${a === t.anlasstitel ? 'selected' : ''}>${escapeHtml(a)}</option>`
+              ).join('')}
+            </select>
+          </td>
+          <td class="tk-col-ort" data-col-id="ort">
+            <div class="d-flex align-items-center gap-1">
+              <select data-field="ort" class="form-select form-select-sm write-protected" ${!canWrite ? 'readonly disabled' : ''}>
+                <option value="">-- Ort --</option>
+                ${hasUnknownOrt ? `<option value="${escapeHtml(t.ort)}" selected>${escapeHtml(t.ort)}</option>` : ''}
+                ${orteList.map(o =>
+                  `<option value="${escapeHtml(o[0])}" ${o[0] === t.ort ? 'selected' : ''}>${escapeHtml(o[0])}</option>`
+                ).join('')}
+              </select>
+              <span class="ort-map-icon">${mapBtn}</span>
+            </div>
+          </td>
+          <td class="tk-col-kategorie" data-col-id="kategorie">
+            <select data-field="kategorie" class="form-select form-select-sm write-protected" ${!canWrite ? 'readonly disabled' : ''}>
+              ${katList.map(k =>
+                `<option value="${escapeHtml(k)}" ${k === t.kategorie ? 'selected' : ''}>${escapeHtml(k)}</option>`
+              ).join('')}
+            </select>
+          </td>
+          <td class="tk-col-status" data-col-id="status">
+            <select data-field="status" class="form-select form-select-sm write-protected" ${!canWrite ? 'readonly disabled' : ''}>
+              ${['fix', 'provisorisch', 'abgesagt'].map(s =>
+                `<option value="${s}" ${s === t.status ? 'selected' : ''}>${s}</option>`
+              ).join('')}
+            </select>
+          </td>
+          <td class="text-center tk-col-actions" data-col-id="actions">
+            <button type="button" class="btn btn-link text-danger p-0 write-protected ${!canWrite ? 'd-none' : ''}" data-action="remove" title="Termin löschen">
+              <i class="fas fa-trash-alt"></i>
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
 
   const countBadge = document.getElementById('termine-count-badge');
   if (countBadge) countBadge.innerText = adminState.termine.length;
@@ -300,20 +324,20 @@ function renderTermineList() {
 function renderDropdownEditor() {
   if (!adminState?.dropdowns) adminState.dropdowns = { anlaesse: [], orteMitMaps: [], kategorien: [] };
 
-  const canWrite = (typeof hasWriteAccess === 'function') ? hasWriteAccess('termine') : true;
+  const canWrite = canWriteTermine();
   const a = document.getElementById('edit-anlaesse');
   const o = document.getElementById('edit-orte');
 
   if (a) {
     const arr = adminState.dropdowns.anlaesse || [];
     a.innerHTML = arr.map((val, i) => `
-      <div class="d-flex align-items-center gap-2 tk-draggable-item p-1 bg-light rounded" data-index="${i}" data-id="anlass_${i}" draggable="true">
+      <div class="d-flex align-items-center gap-2 tk-draggable-item p-1 bg-light rounded" data-index="${i}" data-id="anlass_${i}" draggable="${canWrite ? 'true' : 'false'}">
         <span class="tk-drag-handle ${!canWrite ? 'd-none' : ''}" title="Verschieben">⋮⋮</span>
         <input type="text" class="form-control form-control-sm write-protected bg-white"
           value="${escapeHtml(val || '')}"
           placeholder="Anlass-Bezeichnung"
-          onchange="adminState.dropdowns.anlaesse[${i}]=this.value; if(window.markUnsaved) window.markUnsaved();" ${!canWrite ? 'readonly disabled' : ''}>
-        <button class="btn btn-outline-danger btn-sm write-protected ${!canWrite ? 'd-none' : ''}" onclick="removeAnlass(${i})" title="Entfernen">✕</button>
+          onchange="onAnlassInputChange(${i}, this.value)" ${!canWrite ? 'readonly disabled' : ''}>
+        <button type="button" class="btn btn-outline-danger btn-sm write-protected ${!canWrite ? 'd-none' : ''}" onclick="removeAnlass(${i})" title="Entfernen">✕</button>
       </div>
     `).join('');
   }
@@ -323,18 +347,18 @@ function renderDropdownEditor() {
     adminState.dropdowns.orteMitMaps = arr;
 
     o.innerHTML = arr.map((pair, i) => `
-      <div class="d-flex align-items-center gap-2 tk-draggable-item p-1 bg-light rounded" data-index="${i}" data-id="ort_${i}" draggable="true">
+      <div class="d-flex align-items-center gap-2 tk-draggable-item p-1 bg-light rounded" data-index="${i}" data-id="ort_${i}" draggable="${canWrite ? 'true' : 'false'}">
         <span class="tk-drag-handle ${!canWrite ? 'd-none' : ''}" title="Verschieben">⋮⋮</span>
         <input type="text" class="form-control form-control-sm write-protected bg-white"
           placeholder="Ort" value="${escapeHtml(pair[0] || '')}" style="width: 45%;"
-          onchange="adminState.dropdowns.orteMitMaps[${i}][0]=this.value; if(window.markUnsaved) window.markUnsaved();" ${!canWrite ? 'readonly disabled' : ''}>
+          onchange="onOrtInputChange(${i}, 0, this.value)" ${!canWrite ? 'readonly disabled' : ''}>
         <div class="input-group input-group-sm">
           <input type="text" class="form-control form-control-sm write-protected bg-white"
             placeholder="Google Maps Link" value="${escapeHtml(pair[1] || '')}"
-            onchange="adminState.dropdowns.orteMitMaps[${i}][1]=this.value; if(window.markUnsaved) window.markUnsaved();" ${!canWrite ? 'readonly disabled' : ''}>
+            onchange="onOrtInputChange(${i}, 1, this.value)" ${!canWrite ? 'readonly disabled' : ''}>
           ${pair[1] ? `<a href="${escapeHtml(pair[1])}" target="_blank" rel="noopener" class="btn btn-outline-secondary" title="Karte öffnen"><i class="fas fa-external-link-alt"></i></a>` : ''}
         </div>
-        <button class="btn btn-outline-danger btn-sm write-protected ${!canWrite ? 'd-none' : ''}" onclick="removeOrt(${i})" title="Entfernen">✕</button>
+        <button type="button" class="btn btn-outline-danger btn-sm write-protected ${!canWrite ? 'd-none' : ''}" onclick="removeOrt(${i})" title="Entfernen">✕</button>
       </div>
     `).join('');
   }
@@ -349,8 +373,14 @@ function initTableKitForTermine() {
     return;
   }
 
-  // 1. Spalten-Sortierung
-  window.TableKit.makeSortable(document.getElementById('termine-table'), {
+  const tableEl = document.getElementById('termine-table');
+  if (!tableEl || tableEl.dataset.tkInitialized === '1') return;
+  tableEl.dataset.tkInitialized = '1';
+
+  const canWrite = canWriteTermine();
+
+  // 1. Spalten-Sortierung (reine Ansichts-Sortierung ohne künstlichen Dirty-State)
+  window.TableKit.makeSortable(tableEl, {
     onSort: (key, dir) => {
       if (!adminState?.termine) return;
       adminState.termine.sort((a, b) => {
@@ -366,60 +396,60 @@ function initTableKitForTermine() {
         return dir === 'desc' ? valB.localeCompare(valA, 'de-CH') : valA.localeCompare(valB, 'de-CH');
       });
       renderTermineList();
-      if (window.markUnsaved) window.markUnsaved();
-      updateTermineSaveButtonState();
       if (termineFilterCtrl) termineFilterCtrl.apply();
     }
   });
 
-  // 2. Drag & Drop Reordering für Termine
-  window.TableKit.makeDraggable(document.getElementById('termine-body'), {
-    itemSelector: 'tr[data-id]',
-    onReorder: (newIds) => {
-      if (!adminState?.termine) return;
-      const termMap = new Map(adminState.termine.map(t => [String(t.id), t]));
-      const reordered = [];
-      newIds.forEach((id, idx) => {
-        const t = termMap.get(String(id));
-        if (t) {
-          t.sort_order = idx + 1;
-          reordered.push(t);
-        }
-      });
-      adminState.termine.forEach(t => {
-        if (!newIds.includes(String(t.id))) reordered.push(t);
-      });
-      adminState.termine = reordered;
-      if (window.markUnsaved) window.markUnsaved();
-      updateTermineSaveButtonState();
-      console.log('🔄 Termine neu angeordnet via Drag & Drop.');
-    }
-  });
+  // 2–4. Drag & Drop Reordering (nur mit Schreibrecht aktivieren)
+  if (canWrite) {
+    window.TableKit.makeDraggable(document.getElementById('termine-body'), {
+      itemSelector: 'tr[data-id]',
+      onReorder: (newIds) => {
+        if (!adminState?.termine || !canWriteTermine()) return;
+        const termMap = new Map(adminState.termine.map(t => [String(t.id), t]));
+        const reordered = [];
+        newIds.forEach((id, idx) => {
+          const t = termMap.get(String(id));
+          if (t) {
+            t.sort_order = idx + 1;
+            reordered.push(t);
+          }
+        });
+        adminState.termine.forEach(t => {
+          if (!newIds.includes(String(t.id))) reordered.push(t);
+        });
+        adminState.termine = reordered;
+        if (window.markUnsaved) window.markUnsaved();
+        updateTermineSaveButtonState();
+        console.log('🔄 Termine neu angeordnet via Drag & Drop.');
+      }
+    });
 
-  // 3. Drag & Drop Reordering für Anlass-Typen
-  window.TableKit.makeDraggable(document.getElementById('edit-anlaesse'), {
-    itemSelector: '.tk-draggable-item',
-    onReorder: (_, items) => {
-      const newAnlaesse = items.map(el => el.querySelector('input')?.value || '').filter(Boolean);
-      adminState.dropdowns.anlaesse = newAnlaesse;
-      if (window.markUnsaved) window.markUnsaved();
-      updateTermineSaveButtonState();
-    }
-  });
+    window.TableKit.makeDraggable(document.getElementById('edit-anlaesse'), {
+      itemSelector: '.tk-draggable-item',
+      onReorder: (_, items) => {
+        if (!canWriteTermine()) return;
+        const newAnlaesse = items.map(el => el.querySelector('input')?.value || '').filter(Boolean);
+        adminState.dropdowns.anlaesse = newAnlaesse;
+        if (window.markUnsaved) window.markUnsaved();
+        updateTermineSaveButtonState();
+      }
+    });
 
-  // 4. Drag & Drop Reordering für Orte & Maps
-  window.TableKit.makeDraggable(document.getElementById('edit-orte'), {
-    itemSelector: '.tk-draggable-item',
-    onReorder: (_, items) => {
-      const newOrte = items.map(el => {
-        const inputs = el.querySelectorAll('input');
-        return [inputs[0]?.value || '', inputs[1]?.value || ''];
-      }).filter(p => p[0]);
-      adminState.dropdowns.orteMitMaps = newOrte;
-      if (window.markUnsaved) window.markUnsaved();
-      updateTermineSaveButtonState();
-    }
-  });
+    window.TableKit.makeDraggable(document.getElementById('edit-orte'), {
+      itemSelector: '.tk-draggable-item',
+      onReorder: (_, items) => {
+        if (!canWriteTermine()) return;
+        const newOrte = items.map(el => {
+          const inputs = el.querySelectorAll('input');
+          return [inputs[0]?.value || '', inputs[1]?.value || ''];
+        }).filter(p => p[0]);
+        adminState.dropdowns.orteMitMaps = newOrte;
+        if (window.markUnsaved) window.markUnsaved();
+        updateTermineSaveButtonState();
+      }
+    });
+  }
 
   // 5. Filterung & Suche
   termineFilterCtrl = window.TableKit.setupFilter({
@@ -429,7 +459,7 @@ function initTableKitForTermine() {
     rowSelector: 'tr[data-id]',
     countBadge: '#termine-count-badge',
     getStatus: (row) => row.querySelector('[data-field="status"]')?.value || '',
-    onFilterChange: (visibleCount, filter) => {
+    onFilterChange: (visibleCount) => {
       const statusSpan = document.getElementById('termine-filter-status');
       if (statusSpan) {
         statusSpan.innerText = `${visibleCount} von ${adminState.termine.length} angezeigt`;
@@ -483,19 +513,17 @@ function initTableKitForTermine() {
 //  EVENTS & MUTATIONEN
 // =========================================================
 function bindTermineEventsOnce() {
-  if (termineEventsBound) return;
-  termineEventsBound = true;
-
   const root = document.getElementById('termine-container');
-  if (!root) return;
+  if (!root || root.dataset.eventsBound === '1') return;
+  root.dataset.eventsBound = '1';
 
   root.addEventListener('change', (e) => {
     const el = e.target;
     if (!el?.dataset?.field) return;
     if (!el.closest('#termine-body')) return;
+    if (!canWriteTermine()) return;
 
     if (window.markUnsaved) window.markUnsaved();
-    updateTermineSaveButtonState();
 
     const tr = el.closest('tr[data-id]');
     if (!tr) return;
@@ -535,18 +563,19 @@ function bindTermineEventsOnce() {
       else if (status === 'provisorisch') tr.classList.add('row-provisorisch');
       else if (!t.datum) tr.classList.add('row-warn');
     }
+
+    updateTermineSaveButtonState();
   });
 
   root.addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-action="remove"]');
     if (!btn || !btn.closest('#termine-body')) return;
+    if (!canWriteTermine()) return;
 
     const tr = btn.closest('tr[data-id]');
     if (!tr) return;
 
-    if (window.markUnsaved) window.markUnsaved();
     removeTerminById(tr.dataset.id);
-    updateTermineSaveButtonState();
   });
 }
 
@@ -563,14 +592,31 @@ function setTerminFieldById(id, field, value) {
   adminState.termine[idx][field] = value;
 }
 
-function removeTerminById(id) {
-  if (!confirm('Termin wirklich löschen?')) return;
-  adminState.termine = adminState.termine.filter(t => String(t.id) !== String(id));
+async function removeTerminById(id) {
+  if (!canWriteTermine()) return;
+  const t = adminState?.termine?.find(x => String(x.id) === String(id));
+  const titleLabel = t?.anlasstitel ? `«${escapeHtml(t.anlasstitel)}»` : 'diesen Termin';
+
+  if (window.UIConfirmKit) {
+    const ok = await UIConfirmKit.confirm({
+      title: 'Termin löschen?',
+      message: `Möchtest du ${titleLabel} wirklich aus dem Jahresprogramm entfernen?`,
+      type: 'danger',
+      confirmText: 'Löschen',
+      cancelText: 'Abbrechen'
+    });
+    if (!ok) return;
+  }
+
+  adminState.termine = adminState.termine.filter(item => String(item.id) !== String(id));
+  if (window.markUnsaved) window.markUnsaved();
   renderTermineList();
-  initTableKitForTermine();
+  if (termineFilterCtrl) termineFilterCtrl.apply();
+  updateTermineSaveButtonState();
 }
 
 function addTerminRow() {
+  if (!canWriteTermine()) return;
   if (window.markUnsaved) window.markUnsaved();
   adminState.termine.unshift({
     id: generateTerminId(),
@@ -586,67 +632,106 @@ function addTerminRow() {
     sort_order: 0
   });
   renderTermineList();
-  initTableKitForTermine();
+  if (termineFilterCtrl) termineFilterCtrl.apply();
+  updateTermineSaveButtonState();
+}
+
+function syncTermineDropdownsInTable() {
+  renderTermineList();
+  if (termineFilterCtrl) termineFilterCtrl.apply();
+}
+
+function onAnlassInputChange(index, value) {
+  if (!canWriteTermine() || !adminState?.dropdowns?.anlaesse) return;
+  adminState.dropdowns.anlaesse[index] = value;
+  if (window.markUnsaved) window.markUnsaved();
+  syncTermineDropdownsInTable();
+  updateTermineSaveButtonState();
+}
+
+function onOrtInputChange(index, pairIdx, value) {
+  if (!canWriteTermine() || !adminState?.dropdowns?.orteMitMaps?.[index]) return;
+  adminState.dropdowns.orteMitMaps[index][pairIdx] = value;
+  if (window.markUnsaved) window.markUnsaved();
+  syncTermineDropdownsInTable();
   updateTermineSaveButtonState();
 }
 
 function addAnlass() {
+  if (!canWriteTermine()) return;
   if (window.markUnsaved) window.markUnsaved();
   adminState.dropdowns.anlaesse = adminState.dropdowns.anlaesse || [];
   adminState.dropdowns.anlaesse.push('');
   renderDropdownEditor();
-  initTableKitForTermine();
+  syncTermineDropdownsInTable();
   updateTermineSaveButtonState();
 }
 
 function removeAnlass(i) {
+  if (!canWriteTermine()) return;
   if (window.markUnsaved) window.markUnsaved();
   adminState.dropdowns.anlaesse.splice(i, 1);
   renderDropdownEditor();
-  initTableKitForTermine();
+  syncTermineDropdownsInTable();
   updateTermineSaveButtonState();
 }
 
 function sortAnlaesseAZ() {
-  if (!adminState?.dropdowns?.anlaesse) return;
+  if (!canWriteTermine() || !adminState?.dropdowns?.anlaesse) return;
   if (window.markUnsaved) window.markUnsaved();
   adminState.dropdowns.anlaesse.sort((a, b) => a.localeCompare(b, 'de-CH'));
   renderDropdownEditor();
-  initTableKitForTermine();
+  syncTermineDropdownsInTable();
   updateTermineSaveButtonState();
 }
 
 function addOrt() {
+  if (!canWriteTermine()) return;
   if (window.markUnsaved) window.markUnsaved();
   adminState.dropdowns.orteMitMaps = adminState.dropdowns.orteMitMaps || [];
   adminState.dropdowns.orteMitMaps.push(['', '']);
   renderDropdownEditor();
-  initTableKitForTermine();
+  syncTermineDropdownsInTable();
   updateTermineSaveButtonState();
 }
 
 function removeOrt(i) {
+  if (!canWriteTermine()) return;
   if (window.markUnsaved) window.markUnsaved();
   adminState.dropdowns.orteMitMaps.splice(i, 1);
   renderDropdownEditor();
-  initTableKitForTermine();
+  syncTermineDropdownsInTable();
   updateTermineSaveButtonState();
 }
 
 function sortOrteAZ() {
-  if (!adminState?.dropdowns?.orteMitMaps) return;
+  if (!canWriteTermine() || !adminState?.dropdowns?.orteMitMaps) return;
   if (window.markUnsaved) window.markUnsaved();
   adminState.dropdowns.orteMitMaps.sort((a, b) => (a[0] || '').localeCompare(b[0] || '', 'de-CH'));
   renderDropdownEditor();
-  initTableKitForTermine();
+  syncTermineDropdownsInTable();
   updateTermineSaveButtonState();
+}
+
+function exportTermineToExcel() {
+  if (window.UIExportKit && typeof window.UIExportKit.exportTableToExcel === 'function') {
+    window.UIExportKit.exportTableToExcel('#termine-table', 'Jahresprogramm_Muhen.xlsx');
+  } else if (window.UIExportKit && typeof window.UIExportKit.tableToExcel === 'function') {
+    window.UIExportKit.tableToExcel('#termine-table', { filename: 'Jahresprogramm_Muhen' });
+  } else if (window.UIConfirmKit) {
+    UIConfirmKit.alert({
+      title: 'Export-Fehler',
+      message: 'Das Excel-Export-Toolkit steht derzeit nicht zur Verfügung.',
+      type: 'danger'
+    });
+  }
 }
 
 function applyWriteProtection() {
   const container = document.getElementById('termine-container');
   if (!container || typeof hasWriteAccess !== 'function') return;
 
-  const canWrite = hasWriteAccess('termine');
+  const canWrite = canWriteTermine();
   container.querySelectorAll('.write-protected').forEach(el => {
     if (!canWrite) {
       if (el.tagName === 'BUTTON' || el.classList.contains('btn')) {
@@ -692,7 +777,7 @@ function getTermineChangeCount() {
 window.getTermineChangeCount = getTermineChangeCount;
 
 function updateTermineSaveButtonState(isSaving = false) {
-  const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('termine') : true;
+  const canWrite = canWriteTermine();
   const count = getTermineChangeCount();
   if (window.SaveButtonKit) {
     SaveButtonKit.update('btn-save-termine', {
@@ -700,6 +785,8 @@ function updateTermineSaveButtonState(isSaving = false) {
       canWrite,
       isSaving
     });
+    const btn = document.getElementById('btn-save-termine');
+    if (btn) btn.classList.add('btn-save');
   }
 }
 window.updateTermineSaveButtonState = updateTermineSaveButtonState;

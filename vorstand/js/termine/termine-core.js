@@ -22,7 +22,7 @@ function getTermineSupabaseClient() {
 window.getTermineSupabaseClient = getTermineSupabaseClient;
 
 // =========================================================
-//  DATEN LADEN (Supabase First mit GAS-Fallback)
+//  DATEN LADEN (Supabase PostgreSQL - Single Source of Truth)
 // =========================================================
 async function loadTermineData(force = false) {
   const container = document.getElementById('termine-container');
@@ -31,9 +31,6 @@ async function loadTermineData(force = false) {
   if (typeof ensureTermineStylesOnce === 'function') {
     ensureTermineStylesOnce();
   }
-
-  // Flag zurücksetzen damit Events neu gebunden werden
-  window.termineEventsBound = false;
 
   // 1. RAM / AppCache Check
   if (!force) {
@@ -59,66 +56,64 @@ async function loadTermineData(force = false) {
 
   const supa = getTermineSupabaseClient();
 
-  // 2. VERSUCH: Supabase PostgreSQL direkt abfragen
-  if (supa) {
-    try {
-      const [termRes, locRes, typesRes] = await Promise.all([
-        supa.from('termine').select('*').order('datum', { ascending: true, nullsFirst: false }).order('sort_order', { ascending: true }),
-        supa.from('termine_locations').select('*').order('sort_order', { ascending: true }).order('name', { ascending: true }),
-        supa.from('termine_event_types').select('*').order('sort_order', { ascending: true }).order('name', { ascending: true })
-      ]);
-
-      const termine = termRes.data || [];
-      const locations = locRes.data || [];
-      const types = typesRes.data || [];
-
-      // Falls Supabase Daten enthält (oder wir bereits aktiv migriert haben)
-      if (!termRes.error && termine.length > 0) {
-        console.log(`✅ ${termine.length} Termine aus Supabase geladen.`);
-
-        adminState = {
-          termine: termine.map(mapTerminFromSupabase),
-          dropdowns: {
-            anlaesse: types.map(t => t.name).filter(Boolean),
-            orteMitMaps: locations.map(l => [l.name || '', l.map_link || '']).filter(p => p[0]),
-            kategorien: ['Jahresprogramm', 'Schiesstermine'],
-            status: ['fix', 'provisorisch', 'abgesagt']
-          },
-          platzhalter: [],
-          app_info: [],
-          _isSupabase: true
-        };
-
-        originalAdminState = JSON.parse(JSON.stringify(adminState));
-
-        if (window.AppCache) {
-          window.AppCache.set('termine', adminState, 120);
-        }
-
-        renderTermineUI(document.getElementById('termine-ui'));
-        updateLastSyncLabel('Zuletzt aktualisiert: ' + new Date().toLocaleTimeString());
-        showTermineOverlay(false);
-        return;
-      } else if (!termRes.error && termine.length === 0) {
-        console.warn('⚠️ Supabase Termine noch leer. Bitte Daten importieren (Sheet-Sync Button).');
-        container.innerHTML = `<div class="alert alert-warning"><i class="fas fa-exclamation-triangle me-2"></i>Keine Termine in Supabase vorhanden. Bitte über «Sheet-Sync / Import» importieren.</div>`;
-        showTermineOverlay(false);
-        return;
-      }
-    } catch (supaErr) {
-      console.error('❌ Supabase Abfrage für Termine fehlgeschlagen:', supaErr);
-      container.innerHTML = `<div class="alert alert-danger"><i class="fas fa-times-circle me-2"></i>Fehler beim Laden aus Supabase: ${supaErr.message}</div>`;
-      showTermineOverlay(false);
-      return;
-    }
+  // 2. Supabase PostgreSQL direkt abfragen
+  if (!supa) {
+    console.warn('⚠️ Supabase Client nicht verfügbar. Termine können nicht geladen werden.');
+    container.innerHTML = `<div class="alert alert-danger"><i class="fas fa-times-circle me-2"></i>Supabase Client nicht verfügbar.</div>`;
+    showTermineOverlay(false);
+    return;
   }
 
-  // Kein GAS-Fallback – Supabase ist die verbindliche Datenquelle
+  try {
+    const [termRes, locRes, typesRes] = await Promise.all([
+      supa.from('termine').select('*').order('datum', { ascending: true, nullsFirst: false }).order('sort_order', { ascending: true }),
+      supa.from('termine_locations').select('*').order('sort_order', { ascending: true }).order('name', { ascending: true }),
+      supa.from('termine_event_types').select('*').order('sort_order', { ascending: true }).order('name', { ascending: true })
+    ]);
 
-  // Kein GAS-Fallback mehr – Supabase ist einzige Datenquelle
-  console.warn('⚠️ Supabase Client nicht verfügbar. Termine können nicht geladen werden.');
-  container.innerHTML = `<div class="alert alert-danger"><i class="fas fa-times-circle me-2"></i>Supabase Client nicht verfügbar.</div>`;
-  showTermineOverlay(false);
+    if (termRes.error) throw termRes.error;
+    if (locRes.error) throw locRes.error;
+    if (typesRes.error) throw typesRes.error;
+
+    const termine = termRes.data || [];
+    const locations = locRes.data || [];
+    const types = typesRes.data || [];
+
+    console.log(`✅ ${termine.length} Termine aus Supabase geladen.`);
+
+    adminState = {
+      termine: termine.map(mapTerminFromSupabase),
+      dropdowns: {
+        anlaesse: types.map(t => t.name).filter(Boolean),
+        orteMitMaps: locations.map(l => [l.name || '', l.map_link || '']).filter(p => p[0]),
+        kategorien: ['Jahresprogramm', 'Schiesstermine'],
+        status: ['fix', 'provisorisch', 'abgesagt']
+      },
+      platzhalter: [],
+      app_info: [],
+      _isSupabase: true
+    };
+
+    originalAdminState = JSON.parse(JSON.stringify(adminState));
+
+    if (window.AppCache) {
+      window.AppCache.set('termine', adminState, 120);
+    }
+
+    renderTermineUI(document.getElementById('termine-ui'));
+    const syncTime = (window.UIFormatKit && typeof window.UIFormatKit.formatTime === 'function')
+      ? window.UIFormatKit.formatTime(new Date())
+      : new Date().toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
+    updateLastSyncLabel('Zuletzt aktualisiert: ' + syncTime);
+  } catch (supaErr) {
+    console.error('❌ Supabase Abfrage für Termine fehlgeschlagen:', supaErr);
+    const errText = (typeof escapeHtml === 'function')
+      ? escapeHtml(supaErr.message || String(supaErr))
+      : String(supaErr.message || supaErr);
+    container.innerHTML = `<div class="alert alert-danger"><i class="fas fa-times-circle me-2"></i>Fehler beim Laden aus Supabase: ${errText}</div>`;
+  } finally {
+    showTermineOverlay(false);
+  }
 }
 
 // =========================================================
@@ -161,24 +156,69 @@ function mapTerminToSupabase(t, index) {
 //  SPEICHERN (Supabase PostgreSQL - Single Source of Truth)
 // =========================================================
 async function saveTermineData() {
-  if (!confirm('Alle Änderungen im Jahresprogramm speichern?')) return;
+  if (typeof hasWriteAccess === 'function' && !hasWriteAccess('termine')) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Keine Berechtigung',
+        message: 'Du hast keine Schreibberechtigung für das Jahresprogramm.',
+        type: 'danger'
+      });
+    }
+    return;
+  }
+
+  const supa = getTermineSupabaseClient();
+  if (!supa) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Verbindungsfehler',
+        message: 'Der Supabase-Client ist aktuell nicht verfügbar.',
+        type: 'danger'
+      });
+    }
+    return;
+  }
+
+  // Pflichtfeld-Prüfung: Termine mit Datum (oder bestehende Einträge) benötigen einen Anlass-Titel (NOT NULL)
+  const origIds = new Set((originalAdminState?.termine || []).map(t => String(t.id)));
+  const missingTitle = (adminState?.termine || []).find(t => {
+    const hasTitle = Boolean(String(t.anlasstitel || '').trim());
+    const hasDate = Boolean(String(t.datum || '').trim());
+    return !hasTitle && (hasDate || origIds.has(String(t.id)));
+  });
+  if (missingTitle) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Pflichtfeld fehlt',
+        message: 'Bitte wähle bei jedem erfassten Termin einen Anlass aus, bevor du speicherst.',
+        type: 'warning'
+      });
+    }
+    return;
+  }
+
+  if (window.UIConfirmKit) {
+    const ok = await UIConfirmKit.confirm({
+      title: 'Jahresprogramm speichern?',
+      message: 'Möchtest du alle Änderungen am Jahresprogramm und den Stammdaten in Supabase speichern?',
+      type: 'primary',
+      confirmText: 'Speichern',
+      cancelText: 'Abbrechen'
+    });
+    if (!ok) return;
+  }
 
   sortTermineForSave();
   cleanupDropdownsForSave();
 
-  const user = localStorage.getItem('portal_user') || 'Admin';
-  const supa = getTermineSupabaseClient();
+  const executeSave = async () => {
+    showTermineOverlay(true, 'Speichere Jahresprogramm…');
 
-  if (window.updateTermineSaveButtonState) window.updateTermineSaveButtonState(true);
-  showTermineOverlay(true, 'Speichere Jahresprogramm…');
-
-  try {
-    // 1. In Supabase speichern (falls verfügbar)
-    if (supa) {
-      const validTermine = (adminState.termine || []).filter(t => t.anlasstitel || t.datum);
+    try {
+      const validTermine = (adminState.termine || []).filter(t => String(t.anlasstitel || '').trim());
       const terminePayload = validTermine.map((t, idx) => mapTerminToSupabase(t, idx));
 
-      // Gelöschte Termine ermitteln
+      // 1. Gelöschte Termine ermitteln und in Supabase entfernen
       if (originalAdminState && Array.isArray(originalAdminState.termine)) {
         const currentIds = new Set(validTermine.map(t => String(t.id)));
         const deletedIds = originalAdminState.termine
@@ -186,8 +226,9 @@ async function saveTermineData() {
           .filter(id => id && !currentIds.has(id));
 
         if (deletedIds.length > 0) {
-          console.log('🗑️ Lösche aus Supabase:', deletedIds);
-          await supa.from('termine').delete().in('id', deletedIds);
+          console.log('🗑️ Lösche Termine aus Supabase:', deletedIds);
+          const { error: delTermErr } = await supa.from('termine').delete().in('id', deletedIds);
+          if (delTermErr) throw delTermErr;
         }
       }
 
@@ -196,51 +237,103 @@ async function saveTermineData() {
         if (upsertErr) throw upsertErr;
       }
 
-      // Stammdaten: Anlass-Typen synchronisieren
-      if (adminState.dropdowns?.anlaesse?.length) {
-        const typesPayload = adminState.dropdowns.anlaesse
-          .filter(Boolean)
-          .map((name, idx) => ({
-            name: String(name).trim(),
+      // 2. Stammdaten: Anlass-Typen synchronisieren (inkl. Löschungen & Deduplizierung)
+      const uniqueTypesMap = new Map();
+      (adminState.dropdowns?.anlaesse || []).forEach(rawName => {
+        const name = String(rawName || '').trim();
+        if (name && !uniqueTypesMap.has(name)) {
+          uniqueTypesMap.set(name, {
+            name,
             category: 'Jahresprogramm',
-            sort_order: idx + 1,
+            sort_order: uniqueTypesMap.size + 1,
             updated_at: new Date().toISOString()
-          }));
-        await supa.from('termine_event_types').upsert(typesPayload, { onConflict: 'name' });
+          });
+        }
+      });
+
+      const deletedTypes = (originalAdminState?.dropdowns?.anlaesse || [])
+        .map(n => String(n || '').trim())
+        .filter(n => n && !uniqueTypesMap.has(n));
+      if (deletedTypes.length > 0) {
+        const { error: delTypesErr } = await supa.from('termine_event_types').delete().in('name', deletedTypes);
+        if (delTypesErr) throw delTypesErr;
       }
 
-      // Stammdaten: Orte & Maps synchronisieren
-      if (adminState.dropdowns?.orteMitMaps?.length) {
-        const locPayload = adminState.dropdowns.orteMitMaps
-          .filter(p => p[0])
-          .map((pair, idx) => ({
-            name: String(pair[0]).trim(),
-            map_link: String(pair[1] || '').trim(),
-            sort_order: idx + 1,
+      if (uniqueTypesMap.size > 0) {
+        const { error: upsertTypesErr } = await supa
+          .from('termine_event_types')
+          .upsert(Array.from(uniqueTypesMap.values()), { onConflict: 'name' });
+        if (upsertTypesErr) throw upsertTypesErr;
+      }
+
+      // 3. Stammdaten: Orte & Maps synchronisieren (inkl. Löschungen & Deduplizierung)
+      const uniqueLocsMap = new Map();
+      (adminState.dropdowns?.orteMitMaps || []).forEach(pair => {
+        const name = String(pair?.[0] || '').trim();
+        if (name && !uniqueLocsMap.has(name)) {
+          uniqueLocsMap.set(name, {
+            name,
+            map_link: String(pair?.[1] || '').trim(),
+            sort_order: uniqueLocsMap.size + 1,
             updated_at: new Date().toISOString()
-          }));
-        await supa.from('termine_locations').upsert(locPayload, { onConflict: 'name' });
+          });
+        }
+      });
+
+      const deletedLocs = (originalAdminState?.dropdowns?.orteMitMaps || [])
+        .map(p => String(p?.[0] || '').trim())
+        .filter(n => n && !uniqueLocsMap.has(n));
+      if (deletedLocs.length > 0) {
+        const { error: delLocErr } = await supa.from('termine_locations').delete().in('name', deletedLocs);
+        if (delLocErr) throw delLocErr;
+      }
+
+      if (uniqueLocsMap.size > 0) {
+        const { error: upsertLocErr } = await supa
+          .from('termine_locations')
+          .upsert(Array.from(uniqueLocsMap.values()), { onConflict: 'name' });
+        if (upsertLocErr) throw upsertLocErr;
       }
 
       adminState._isSupabase = true;
       console.log('✅ Supabase erfolgreich aktualisiert.');
+
+      if (window.clearUnsaved) window.clearUnsaved();
+      if (window.AppCache) window.AppCache.invalidate('termine');
+
+      if (typeof showToast === 'function') {
+        showToast('✅ Jahresprogramm & Stammdaten erfolgreich gespeichert!');
+      } else if (window.UIConfirmKit) {
+        await UIConfirmKit.alert({
+          title: 'Gespeichert',
+          message: 'Jahresprogramm & Stammdaten wurden erfolgreich gespeichert.',
+          type: 'info'
+        });
+      }
+
+      await loadTermineData(true);
+    } catch (err) {
+      console.error('Fehler beim Speichern:', err);
+      if (window.UIConfirmKit) {
+        await UIConfirmKit.alert({
+          title: 'Fehler beim Speichern',
+          message: 'Das Jahresprogramm konnte nicht gespeichert werden: ' + (err.message || err),
+          type: 'danger'
+        });
+      }
+    } finally {
+      showTermineOverlay(false);
     }
+  };
 
-
-
-    if (window.clearUnsaved) window.clearUnsaved();
-    if (window.AppCache) window.AppCache.invalidate('termine');
-
-    alert('✅ Jahresprogramm & Stammdaten erfolgreich gespeichert!');
-    await loadTermineData(true);
-
-  } catch (err) {
-    console.error('Fehler beim Speichern:', err);
-    alert('Fehler beim Speichern: ' + (err.message || err));
-  } finally {
-    showTermineOverlay(false);
-    if (window.updateTermineSaveButtonState) window.updateTermineSaveButtonState(false);
+  if (window.UIButtonKit && document.getElementById('btn-save-termine')) {
+    await UIButtonKit.withLoading('#btn-save-termine', executeSave, { loadingText: 'Speichere…' });
+  } else {
+    if (window.updateTermineSaveButtonState) window.updateTermineSaveButtonState(true);
+    await executeSave();
   }
+
+  if (window.updateTermineSaveButtonState) window.updateTermineSaveButtonState(false);
 }
 
 // =========================================================
@@ -316,12 +409,4 @@ function cleanupDropdownsForSave() {
   adminState.dropdowns.orteMitMaps = (adminState.dropdowns.orteMitMaps || [])
     .map(p => [String(p?.[0] || '').trim(), String(p?.[1] || '').trim()])
     .filter(p => p[0]);
-}
-
-function buildChangeLogDetails() {
-  if (!originalAdminState) return 'Daten aktualisiert';
-  const changed = [];
-  if (JSON.stringify(adminState.termine) !== JSON.stringify(originalAdminState.termine)) changed.push('Termine');
-  if (JSON.stringify(adminState.dropdowns) !== JSON.stringify(originalAdminState.dropdowns)) changed.push('Stammdaten');
-  return changed.length ? ('Geändert: ' + changed.join(', ')) : 'Speichern ohne Änderungen';
 }

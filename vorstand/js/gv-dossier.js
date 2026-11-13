@@ -1192,7 +1192,7 @@
                                             <div>
                                                 <div class="fw-bold small mb-0"><i class="fas fa-calendar-alt text-primary me-1"></i>${escapeHtml(item.title)}</div>
                                                 <div class="text-muted" style="font-size:0.75rem;">
-                                                    ${escapeHtml(item.sub)} · <a href="#termine" onclick="if(typeof window.showSection==='function'){window.showSection('termine');} return false;" class="text-decoration-none fw-semibold">Jahresprogramm bearbeiten <i class="fas fa-external-link-alt" style="font-size:10px;"></i></a>
+                                                    ${escapeHtml(item.sub)} · <a href="#termine" onclick="if(typeof navTo==='function'){navTo('termine');} return false;" class="text-decoration-none fw-semibold">Jahresprogramm bearbeiten <i class="fas fa-external-link-alt" style="font-size:10px;"></i></a>
                                                 </div>
                                             </div>
                                         </div>
