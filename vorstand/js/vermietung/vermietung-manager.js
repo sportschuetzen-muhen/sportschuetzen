@@ -178,44 +178,158 @@ function openVermietungModal(rowOrId) {
   new bootstrap.Modal(document.getElementById('vermietungModal')).show();
 }
 
-// Baut das responsive HTML-Layout für alle Vermietungs-Mails
-function buildRentalEmailHtml(title, bannerColor, bodyHtml, settings) {
-  const logoUrl = settings?.logo_url || "https://sportschuetzen-muhen.github.io/sportschuetzen/icons/icon-512.png";
-  const clubName = settings?.club_name || "Sportschützen Muhen";
-  const clubEmail = settings?.club_email || "sportschuetzen.muhen@gmail.com";
+const RENTAL_BANNER_CONFIG = {
+  vm_vertrag: { color: '#0f3c5c', title: 'Mietvertrag & QR-Rechnung' },
+  vm_anfrage: { color: '#d97706', title: 'Bestätigung Terminanfrage' },
+  vm_anfrage_intern: { color: '#d97706', title: 'Neue Vorab-Terminanfrage' },
+  vm_mahnung: { color: '#c53030', title: 'Zahlungserinnerung' },
+  vm_bestaetigung: { color: '#22543d', title: 'Zahlungseingang bestätigt' },
+  vm_schluessel: { color: '#2b6cb0', title: 'Schlüsselübergabe & Hinweise' },
+  vm_storno: { color: '#742a2a', title: 'Reservation storniert' },
+  vm_storno_verzug: { color: '#7f1d1d', title: 'Stornierung Zahlungsverzug' },
+  vm_storno_alarm: { color: '#b91c1c', title: 'Dringend: Storno-Rückmeldung' },
+  vm_info_wirtschaft: { color: '#d97706', title: 'Info Wirtschaftsteam' },
+  vm_bank_report: { color: '#1e40af', title: 'Bank-Mail-Automation' }
+};
+window.RENTAL_BANNER_CONFIG = RENTAL_BANNER_CONFIG;
 
-  return `
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:650px;margin:0 auto;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;background-color:#ffffff;border-collapse:collapse;font-family:'Segoe UI',Arial,sans-serif;">
+// Normalisiert WYSIWYG-HTML für Outlook Desktop (Word-Engine) & Webmail
+function normalizeRentalBodyForEmail(rawHtml) {
+  let out = String(rawHtml || '').trim();
+  if (!out) return '';
+
+  // 1. Callout-Banner (<div class="club-banner-callout">) in Outlook-feste 2-Zellen-Tabelle umwandeln
+  out = out.replace(
+    /<div\b[^>]*class="[^"]*club-banner-callout[^"]*"[^>]*style="([^"]*)"[^>]*>([\s\S]*?)<\/div>/gi,
+    (_m, styleStr, inner) => {
+      const bgMatch = styleStr.match(/background-color:\s*([^;]+)/i);
+      const borderMatch = styleStr.match(/border-left:\s*[^;]*?\s(#[0-9a-fA-F]{3,8}|[a-z]+)/i);
+      const colorMatch = styleStr.match(/(?:^|;)\s*color:\s*([^;]+)/i);
+      const bg = bgMatch ? bgMatch[1].trim() : '#fffbeb';
+      const borderCol = borderMatch ? borderMatch[1].trim() : '#f59e0b';
+      const textCol = colorMatch ? colorMatch[1].trim() : '#78350f';
+      return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; border-collapse:collapse;"><tr><td colspan="2" height="4" style="font-size:1px; line-height:4px;">&nbsp;</td></tr><tr><td width="4" bgcolor="${borderCol}" style="width:4px; background-color:${borderCol}; font-size:1px; line-height:1px;">&nbsp;</td><td bgcolor="${bg}" style="background-color:${bg}; padding:12px 16px; font-family:'Segoe UI',Arial,Helvetica,sans-serif; font-size:13.5px; line-height:1.55; color:${textCol};">${inner.trim()}</td></tr><tr><td colspan="2" height="12" style="font-size:1px; line-height:12px;">&nbsp;</td></tr></table>`;
+    }
+  );
+
+  // 2. ClubWysiwyg CTA-Container (<div class="club-cta-container">) in Outlook-Button-Tabelle umwandeln
+  out = out.replace(
+    /<div\b[^>]*class="[^"]*club-cta-container[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+    (_m, inner) => {
+      const aMatch = inner.match(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+      if (!aMatch) return inner;
+      const href = aMatch[1];
+      const label = aMatch[2].replace(/<[^>]*>/g, '').trim();
+      return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;"><tr><td align="center" style="padding:8px 0 16px 0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;"><tr><td align="center" bgcolor="#0f3c5c" style="background-color:#0f3c5c; border-radius:6px; padding:12px 24px;"><a href="${href}" target="_blank" rel="noopener noreferrer" style="color:#ffffff; font-family:'Segoe UI',Arial,Helvetica,sans-serif; font-size:14px; font-weight:bold; line-height:18px; text-decoration:none; display:inline-block;">${label}</a></td></tr></table></td></tr></table>`;
+    }
+  );
+
+  // 3. Bulletproof-Buttons mit margin auf <table> in Outlook-sichere Spacer-Zeile betten
+  out = out.replace(
+    /<table\b([^>]*style="[^"]*border-collapse:\s*separate[^"]*"[^>]*)>([\s\S]*?)<\/table>/gi,
+    (_m, attrs, inner) => {
+      const cleanAttrs = attrs.replace(/\s*margin\s*:[^;"]+;?/gi, '');
+      return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;"><tr><td style="padding:4px 0 16px 0;"><table${cleanAttrs}>${inner}</table></td></tr></table>`;
+    }
+  );
+
+  // 4. <p>-Tags explizit für Outlook stylen
+  out = out.replace(/<p(\s+[^>]*)?>/gi, (_m, attrs = '') => {
+    const baseStyle = "margin:0 0 12px 0; line-height:1.55; font-family:'Segoe UI',Arial,Helvetica,sans-serif; font-size:15px; color:#333333;";
+    if (!attrs || !/style=/i.test(attrs)) {
+      return `<p${attrs} style="${baseStyle}">`;
+    }
+    const updatedAttrs = attrs.replace(/style="([^"]*)"/i, (_sm, s) => {
+      let cleaned = s.replace(/background\s*:\s*white\s*;?/gi, '').trim();
+      if (!/font-family/i.test(cleaned)) cleaned += (cleaned && !cleaned.endsWith(';') ? ';' : '') + "font-family:'Segoe UI',Arial,Helvetica,sans-serif;";
+      if (!/font-size/i.test(cleaned)) cleaned += 'font-size:15px;';
+      if (!/line-height/i.test(cleaned)) cleaned += 'line-height:1.55;';
+      if (!/(?:^|;)\s*color/i.test(cleaned)) cleaned += 'color:#333333;';
+      if (!/margin/i.test(cleaned)) cleaned += 'margin:0 0 12px 0;';
+      return `style="${cleaned}"`;
+    });
+    return `<p${updatedAttrs}>`;
+  });
+
+  // 5. Listen (<ul>/<ol>) einheitlich stylen
+  out = out.replace(/<(ul|ol)(\s+[^>]*)?>/gi, (_m, tag, attrs = '') => {
+    if (/style=/i.test(attrs)) return `<${tag}${attrs}>`;
+    return `<${tag}${attrs} style="margin:0 0 14px 0; padding-left:22px; font-family:'Segoe UI',Arial,Helvetica,sans-serif; font-size:15px; line-height:1.55; color:#333333;">`;
+  });
+
+  return out;
+}
+window.normalizeRentalBodyForEmail = normalizeRentalBodyForEmail;
+
+// Baut das Outlook-/MSO-kompatible HTML-Layout für alle Vermietungs-Mails
+function buildRentalEmailHtml(title, bannerColor, bodyHtml, settings, options = {}) {
+  const logoUrl = settings?.logo_url || 'https://sps-b55.pages.dev/icons/icon-512.png';
+  const clubName = settings?.club_name || 'Sportschützen Muhen';
+  const bannerTitle = options.bannerTitle || title;
+  const esc = typeof escapeHtml === 'function' ? escapeHtml : (v) => String(v ?? '');
+  const normalizedBody = normalizeRentalBodyForEmail(bodyHtml);
+
+  const cardHtml = `
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#f1f5f9" style="background-color:#f1f5f9; border-collapse:collapse;">
       <tr>
-        <td style="background-color:${bannerColor}; padding:18px 25px; text-align:left; vertical-align:middle;">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+        <td align="center" style="padding:20px 12px;">
+          <!--[if mso]>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="650" align="center" style="border-collapse:collapse;"><tr><td>
+          <![endif]-->
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#ffffff" style="width:100%; max-width:650px; margin:0 auto; border:1px solid #cbd5e1; border-radius:10px; overflow:hidden; background-color:#ffffff; border-collapse:collapse; font-family:'Segoe UI',Arial,Helvetica,sans-serif;">
             <tr>
-              <td style="vertical-align:middle; padding-right:15px; width:44px;">
-                <img src="${logoUrl}" width="38" height="38" style="width:38px; height:38px; display:block; border-radius:6px; border:2px solid rgba(255,255,255,0.2);" border="0" alt="Logo">
+              <td bgcolor="${bannerColor}" style="background-color:${bannerColor}; padding:18px 24px; text-align:left; vertical-align:middle;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+                  <tr>
+                    <td style="vertical-align:middle; padding-right:14px; width:42px;">
+                      <img src="${logoUrl}" width="38" height="38" style="width:38px; height:38px; display:block; border-radius:6px; border:1px solid #cbd5e1;" border="0" alt="Logo">
+                    </td>
+                    <td style="vertical-align:middle; font-family:'Segoe UI',Arial,Helvetica,sans-serif;">
+                      <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif; font-size:19px; font-weight:600; color:#ffffff; line-height:1.25;">${esc(bannerTitle)}</div>
+                      <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif; font-size:12px; color:#e2e8f0; margin-top:3px; line-height:1.3;">${esc(clubName)} – Schützenstube Muhen</div>
+                    </td>
+                  </tr>
+                </table>
               </td>
-              <td style="vertical-align:middle;">
-                <div style="font-family:'Segoe UI',Arial,sans-serif; font-size:19px; font-weight:600; color:#ffffff; line-height:1.2;">${title}</div>
-                <div style="font-size:12px; color:rgba(255,255,255,0.85); margin-top:3px;">${clubName} – Schützenstube Muhen</div>
+            </tr>
+            <tr>
+              <td align="left" style="padding:24px 24px 18px 24px; background-color:#ffffff; color:#333333; line-height:1.55; font-family:'Segoe UI',Arial,Helvetica,sans-serif; font-size:15px;">
+                ${normalizedBody}
+              </td>
+            </tr>
+            <tr>
+              <td bgcolor="#f8fafc" align="center" style="background-color:#f8fafc; padding:15px 24px; border-top:1px solid #e2e8f0; font-family:'Segoe UI',Arial,Helvetica,sans-serif; font-size:11px; color:#64748b; text-align:center; line-height:1.6;">
+                <strong>Sportschützen Muhen</strong> (gegründet 1919) &bull; Schiessanlage Rüteli &bull; 5037 Muhen<br>
+                Web: <a href="https://sportschuetzen-muhen.ch" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none;">www.sportschuetzen-muhen.ch</a> &bull; E-Mail: <a href="mailto:sportschuetzen.muhen@gmail.com" style="color:#0284c7; text-decoration:none;">sportschuetzen.muhen@gmail.com</a><br>
+                <a href="https://www.instagram.com/sportschuetzen.muhen/" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none; font-weight:500;">Instagram</a> &bull; <a href="https://www.facebook.com/SportschuetzenMuhen/?locale=de_DE" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none; font-weight:500;">Facebook</a>
               </td>
             </tr>
           </table>
+          <!--[if mso]>
+          </td></tr></table>
+          <![endif]-->
         </td>
       </tr>
-      <tr>
-        <td style="padding:26px 25px 22px 25px; color:#333333; line-height:1.6; font-size:15px;">
-          ${bodyHtml}
-        </td>
-      </tr>
-      <tr>
-        <td style="background:#f8f9fa; padding:15px 25px; border-top:1px solid #eeeeee; font-size:11px; color:#64748b; text-align:center; line-height:1.6;">
-          <strong>Sportschützen Muhen</strong> (gegründet 1919) &bull; Schiessanlage Rüteli &bull; 5037 Muhen<br>
-          Web: <a href="https://sportschuetzen-muhen.ch" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none;">www.sportschuetzen-muhen.ch</a> &bull; E-Mail: <a href="mailto:sportschuetzen.muhen@gmail.com" style="color:#0284c7; text-decoration:none;">sportschuetzen.muhen@gmail.com</a><br>
-          <a href="https://www.instagram.com/sportschuetzen.muhen/" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none; font-weight:500;">Instagram</a> &bull; <a href="https://www.facebook.com/SportschuetzenMuhen/?locale=de_DE" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none; font-weight:500;">Facebook</a>
-        </td>
-      </tr>
-    </table>
-  `;
+    </table>`;
+
+  if (options.fullDocument === false) {
+    return cardHtml;
+  }
+
+  return `<!DOCTYPE html>
+<html lang="de" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>${esc(title)}</title>
+</head>
+<body style="margin:0; padding:0; background-color:#f1f5f9; font-family:'Segoe UI',Arial,Helvetica,sans-serif; color:#333333; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%;">
+${cardHtml}
+</body>
+</html>`;
 }
+window.buildRentalEmailHtml = buildRentalEmailHtml;
 
 // Sendet Workflow-Mails über die zentrale Supabase Edge Function Mail-Engine basierend auf Vorlagen aus document_templates
 async function sendRentalWorkflowEmail(action, d, settings) {
@@ -269,18 +383,9 @@ async function sendRentalWorkflowEmail(action, d, settings) {
     );
   }
 
-  // Banner-Farben je nach Workflow-Schritt
-  const bannerColors = {
-    'vm_vertrag': '#0f3c5c',
-    'vm_anfrage': '#d97706',
-    'vm_mahnung': '#c53030',
-    'vm_bestaetigung': '#22543d',
-    'vm_schluessel': '#2b6cb0',
-    'vm_storno': '#742a2a',
-    'vm_storno_verzug': '#7f1d1d',
-    'vm_info_wirtschaft': '#d97706'
-  };
-  const bannerColor = bannerColors[tplCode] || '#0f3c5c';
+  // Banner-Farben & Titel je nach Workflow-Schritt
+  const bannerCfg = RENTAL_BANNER_CONFIG[tplCode] || { color: '#0f3c5c', title: '' };
+  const bannerColor = bannerCfg.color;
 
   // 4. Platzhalter-Auflösung
   const bookingNr = d.booking_number || d.vertragsnr || d.id || '';
@@ -344,6 +449,9 @@ async function sendRentalWorkflowEmail(action, d, settings) {
     'buchungsnummer': bookingNr,
     'mietbetrag': amountStr,
     'kaution': '0.00',
+    'zahlungsfrist_tage': String(settings?.payment_due_days || 14),
+    'zahlungsfrist': String(settings?.payment_due_days || 14),
+    'mietobjekt': settings?.rental_object || 'Schützenstube Rüteli',
     'gebuehr_glas': settings?.glass_fee || '2.00',
     'gebuehr_teller': settings?.plate_fee || '5.00',
     'gebuehr_holz': settings?.wood_fee || '20.00',
@@ -393,7 +501,9 @@ async function sendRentalWorkflowEmail(action, d, settings) {
     }
   }
 
-  const fullHtml = buildRentalEmailHtml(renderedSubject, bannerColor, bodyContentHtml, s);
+  const fullHtml = buildRentalEmailHtml(renderedSubject, bannerColor, bodyContentHtml, s, {
+    bannerTitle: bannerCfg.title || renderedSubject
+  });
 
   const unifiedCc = s.rental_cc_emails || s.club_email || 'sportschuetzen.muhen@gmail.com';
 

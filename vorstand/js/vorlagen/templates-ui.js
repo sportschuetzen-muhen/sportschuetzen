@@ -107,7 +107,9 @@
       'vm_schluessel': 'Mail: Schlüsselübergabe & Hinweise',
       'vm_storno': 'Mail: Stornierungsbestätigung (Allgemein)',
       'vm_storno_verzug': 'Mail: Stornierung Zahlungsverzug',
+      'vm_storno_alarm': 'Mail: Dringend Storno-Rückmeldung (Intern)',
       'vm_anfrage': 'Mail: Bestätigung Vorab-Terminanfrage',
+      'vm_anfrage_intern': 'Mail: Vorab-Terminanfrage (Intern)',
       'vm_info_wirtschaft': 'Mail: Info Wirtschaft (Intern)',
       'vm_bank_report': 'Mail: Rapport Bank-Mail-Eingang (Intern)',
       'freier_brief': 'Freier Vorstandsbrief'
@@ -218,7 +220,7 @@
         '{mieter_strasse}', '{mieter_plz}', '{mieter_ort}', '{mieter_adresse}',
         '{vermieter_name}', '{vermieter_vorname}', '{vermieter_nachname}', '{vermieter_telefon}', '{vermieter_email}',
         '{wirtschaft_name}', '{wirtschaft_phone}', '{wirtschaft_email}',
-        '{vertragsnr}', '{mietdatum}', '{festbeginn}', '{mietbetrag}', '{bemerkung}', '{cockpit_url}', '{feedback_url}',
+        '{vertragsnr}', '{mietdatum}', '{festbeginn}', '{mietbetrag}', '{bemerkung}', '{storno_grund}', '{cockpit_url}', '{feedback_url}',
         '{zahlungsfrist_tage}', '{mietobjekt}', '{gebuehr_holz}', '{gebuehr_abfallsack}', '{gebuehr_reinigung}', '{gebuehr_storno}', '{gebuehr_glas}', '{gebuehr_teller}'
       ];
     } else if (isMietvertragPdf) {
@@ -618,7 +620,7 @@
     if (window._selectedDocCategory === 'rechnung') {
       previewContainer.innerHTML = buildInvoiceEmailPreviewHtml(subj, body, code);
     } else {
-      previewContainer.innerHTML = buildRentalEmailPreviewHtml(subj, body, code || 'vm_vertrag');
+      previewContainer.innerHTML = buildRentalEmailPreviewHtml(subj, body, code || 'vm_vertrag', { forPreview: true });
     }
   };
 
@@ -700,7 +702,7 @@
     `;
   }
 
-  function buildRentalEmailPreviewHtml(subject, bodyText, templateCode) {
+  function buildRentalEmailPreviewHtml(subject, bodyText, templateCode, options = {}) {
     const s = window._rentalSettings || {};
     const vermieterFirst = s.sender_first_name || 'Simon';
     const vermieterLast = s.sender_last_name || 'Hediger';
@@ -730,13 +732,14 @@
       vermieter_name: vermieterName,
       vermieter_telefon: vermieterPhone,
       vermieter_email: clubEmail,
-      mietdatum: '15. August 2026',
+      mietdatum: '15.08.2026',
       festbeginn: '13:00 Uhr',
       vertragsnr: 'V-2026-0102',
       buchungsnummer: 'V-2026-0102',
       mietbetrag: '300.00',
       kaution: '0.00',
       bemerkung: 'Geburtstagsfest mit ca. 30 Gästen',
+      storno_grund: 'Zahlung bereits getätigt',
       wirtschaft_name: wName,
       wirtschaft_phone: wPhone,
       wirtschaft_email: wEmail,
@@ -751,23 +754,24 @@
       mietobjekt: s.rental_object || 'Schützenstube Rüteli',
       feedback_url: 'https://sps-b55.pages.dev/sportschuetzen-website/frontend/storno_feedback?vnr=V-2026-0102',
       cockpit_url: 'https://sportschuetzen-muhen.ch/vorstand/#vermietung',
-      club_email: clubEmail
+      club_email: clubEmail,
+      bank_ergebnis: '✅ Zahlung verbucht',
+      bank_betrag: '300.00',
+      bank_sollbetrag: '300.00',
+      bank_buchungsdatum: '15.08.2026',
+      bank_hinweis: 'Zahlungsstufe 1 gesetzt und Bestätigungsmails versandt.'
     };
 
-    let bannerColor = '#0f3c5c';
-    if (templateCode === 'vm_mahnung') bannerColor = '#c53030';
-    else if (templateCode === 'vm_bestaetigung') bannerColor = '#22543d';
-    else if (templateCode === 'vm_schluessel') bannerColor = '#2b6cb0';
-    else if (templateCode === 'vm_storno') bannerColor = '#742a2a';
-    else if (templateCode === 'vm_storno_verzug') bannerColor = '#7f1d1d';
-    else if (templateCode === 'vm_info_wirtschaft') bannerColor = '#d97706';
-    else if (templateCode === 'vm_bank_report') bannerColor = '#1e40af';
+    const bannerCfg = (window.RENTAL_BANNER_CONFIG && window.RENTAL_BANNER_CONFIG[templateCode]) || {
+      color: '#0f3c5c',
+      title: ''
+    };
 
     let renderedSubject = subject || '';
     let renderedBody = bodyText || '';
 
     Object.entries(sample).forEach(([k, v]) => {
-      const rx = new RegExp(`\\{${k}\\}`, 'gi');
+      const rx = new RegExp(`\\{{1,2}${k}\\}{1,2}`, 'gi');
       renderedSubject = renderedSubject.replace(rx, v);
       renderedBody = renderedBody.replace(rx, v);
     });
@@ -776,41 +780,30 @@
     if (/<[a-z][\s\S]*>/i.test(renderedBody)) {
       finalBodyHtml = renderedBody;
     } else {
-      finalBodyHtml = renderedBody.split(/\n\s*\n/).map(p => 
-        `<p style="margin:0 0 12px 0; line-height: 1.55;">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`
+      finalBodyHtml = renderedBody.split(/\n\s*\n/).map(p =>
+        `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`
       ).join('');
     }
 
-    return `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 100%; border: 1px solid #cbd5e1; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); background:#ffffff;">
-        <!-- Header Banner mit Vereinslogo -->
-        <div style="background-color: ${bannerColor}; padding: 18px 22px; color: #ffffff;">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse; width:100%;">
-            <tr>
-              <td style="vertical-align:middle; padding-right:15px; width:44px;">
-                <img src="https://sportschuetzen-muhen.github.io/sportschuetzen/icons/icon-512.png" width="38" height="38" style="width:38px; height:38px; display:block; border-radius:6px; border:2px solid rgba(255,255,255,0.2);" border="0" alt="Logo">
-              </td>
-              <td style="vertical-align:middle; text-align:left;">
-                <div style="font-family:'Segoe UI',Arial,sans-serif; font-size:18px; font-weight:600; color:#ffffff; line-height:1.2;">${escapeHtml(renderedSubject)}</div>
-                <div style="font-size:12px; color:rgba(255,255,255,0.85); margin-top:3px;">Sportschützen Muhen – Schützenstube Muhen</div>
-              </td>
-            </tr>
-          </table>
-        </div>
+    const emailHtml = (typeof window.buildRentalEmailHtml === 'function')
+      ? window.buildRentalEmailHtml(renderedSubject, bannerCfg.color, finalBodyHtml, s, {
+          bannerTitle: bannerCfg.title || renderedSubject,
+          fullDocument: !options.forPreview
+        })
+      : finalBodyHtml;
 
-        <!-- Body Content -->
-        <div style="padding: 24px 22px 20px 22px; color: #1e293b; font-size: 14px; line-height: 1.6;">
-          ${finalBodyHtml}
+    if (options.forPreview) {
+      return `
+        <div class="border rounded-3 overflow-hidden shadow-sm">
+          <div style="background:#f8fafc; padding:10px 16px; border-bottom:1px solid #e2e8f0; font-size:12.5px; color:#334155;">
+            <strong>Betreff:</strong> <span class="text-primary fw-semibold">${escapeHtml(renderedSubject)}</span>
+          </div>
+          ${emailHtml}
         </div>
+      `;
+    }
 
-        <!-- Club Footer -->
-        <div style="background-color: #f8fafc; padding: 15px 22px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #64748b; line-height: 1.6;">
-          <strong>Sportschützen Muhen</strong> (gegründet 1919) &bull; Schiessanlage Rüteli &bull; 5037 Muhen<br>
-          Web: <a href="https://sportschuetzen-muhen.ch" target="_blank" rel="noopener noreferrer" style="color: #0284c7; text-decoration: none;">www.sportschuetzen-muhen.ch</a> &bull; E-Mail: <a href="mailto:sportschuetzen.muhen@gmail.com" style="color: #0284c7; text-decoration: none;">sportschuetzen.muhen@gmail.com</a><br>
-          <a href="https://www.instagram.com/sportschuetzen.muhen/" target="_blank" rel="noopener noreferrer" style="color: #0284c7; text-decoration: none; font-weight: 500;">Instagram</a> &bull; <a href="https://www.facebook.com/SportschuetzenMuhen/?locale=de_DE" target="_blank" rel="noopener noreferrer" style="color: #0284c7; text-decoration: none; font-weight: 500;">Facebook</a>
-        </div>
-      </div>
-    `;
+    return emailHtml;
   }
 
   window.docInsertShortcode = function(code) {
@@ -975,7 +968,15 @@
   // 6. TEST-MAIL VERSENDEN
   window.docSendTestMail = async function(templateCode) {
     const userEmail = (window.currentUser && (window.currentUser.email || window.currentUser.mail)) || 'sportschuetzen.muhen@gmail.com';
-    if (!confirm(`Test-E-Mail für '${templateCode}' an ${userEmail} senden?`)) return;
+    const confirmed = window.UIConfirmKit
+      ? await window.UIConfirmKit.confirm({
+          title: 'Test-E-Mail senden',
+          message: `Möchtest du eine Test-E-Mail für «${templateCode}» an ${userEmail} senden?`,
+          confirmText: 'Test-Mail senden',
+          type: 'primary'
+        })
+      : confirm(`Test-E-Mail für '${templateCode}' an ${userEmail} senden?`);
+    if (!confirmed) return;
 
     if (typeof showLoadingOverlay === 'function') {
       showLoadingOverlay(`Sende Test-Mail an ${userEmail}...`);
@@ -985,7 +986,7 @@
       const subj = document.getElementById('doc-f-mail-subj')?.value || 'Test E-Mail';
       const mailBodyEl = document.getElementById('doc-f-mail-body');
       const body = (mailBodyEl?._clubWysiwygInstance ? mailBodyEl._clubWysiwygInstance.getCleanHtml() : mailBodyEl?.value) || 'Test Inhalt';
-      const fullHtml = buildRentalEmailPreviewHtml(subj, body, templateCode);
+      const fullHtml = buildRentalEmailPreviewHtml(subj, body, templateCode, { forPreview: false });
 
       if (typeof window.sendMailViaEngine === 'function') {
         const res = await window.sendMailViaEngine({
