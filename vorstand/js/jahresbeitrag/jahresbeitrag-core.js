@@ -25,6 +25,28 @@ window._jbAllBeitraege = window._jbAllBeitraege || null;
 window._jbAllParticipations = window._jbAllParticipations || null;
 window._jbAllPositions = window._jbAllPositions || null;
 window._jbGebuehren = window._jbGebuehren || null;
+window._jbCacheDirty = Boolean(window._jbCacheDirty);
+window._jbInvoicesDirty = Boolean(window._jbInvoicesDirty);
+
+/**
+ * Markiert den In-Memory-Cache des Jahresbeitrags nach externen Schreibvorgängen (z. B. Konto 1301) als veraltet.
+ */
+window.jbInvalidateCache = function(opts = {}) {
+  window._jbCacheDirty = true;
+  if (opts.refreshInvoices) {
+    window._jbInvoicesDirty = true;
+  }
+  if (opts.invoiceId && window._invoicePositionsCache) {
+    delete window._invoicePositionsCache[String(opts.invoiceId).trim()];
+  }
+  if (opts.reloadIfActive) {
+    const jbView = document.getElementById('view-jahresbeitrag');
+    if (jbView && !jbView.classList.contains('d-none') && typeof loadJahresbeitragData === 'function') {
+      return loadJahresbeitragData(true, true);
+    }
+  }
+  return Promise.resolve();
+};
 
 // Event-Keys Zuordnung für Wettschiessen
 const EVENT_KEYS = {
@@ -380,9 +402,11 @@ window.jbGetKontenDatalistHtml = function(datalistId = 'jb-konten-datalist') {
 // ============================================================
 async function loadJahresbeitragData(forceReload = false, showSpinner = true) {
   const container = document.getElementById('jahresbeitrag-container');
+  const effectiveForceReload = Boolean(forceReload || window._jbCacheDirty);
+  const shouldRefreshInvoices = Boolean(window._jbInvoicesDirty);
   
   // Wenn kein forceReload und Preload läuft, darauf warten
-  if (!forceReload && !window._jbAllBeitraege && window._jbPreloadPromise) {
+  if (!effectiveForceReload && !window._jbAllBeitraege && window._jbPreloadPromise) {
     console.log("⏳ loadJahresbeitragData: Warte auf laufenden Preload im Hintergrund...");
     if (container && showSpinner) {
       container.innerHTML = `
@@ -398,9 +422,9 @@ async function loadJahresbeitragData(forceReload = false, showSpinner = true) {
     }
   }
 
-  // Wenn Caches bereits geladen sind und kein forceReload erzwungen wird,
+  // Wenn Caches bereits geladen sind und kein forceReload / Dirty-Flag vorliegt,
   // laden wir direkt und instant aus dem lokalen Speicher!
-  if (!forceReload && window._jbAllBeitraege !== null) {
+  if (!effectiveForceReload && !window._jbCacheDirty && window._jbAllBeitraege !== null) {
     console.log("⚡ loadJahresbeitragData: Lade aus lokalem Cache...");
     
     _jbData = _jbAllBeitraege.filter(h => Number(h.year) === Number(_jbYear));
@@ -446,6 +470,8 @@ async function loadJahresbeitragData(forceReload = false, showSpinner = true) {
   const supa = getJahresbeitragSupabaseClient();
   if (supa) {
     try {
+      window._jbCacheDirty = false;
+      window._jbInvoicesDirty = false;
       const [headRes, posRes, partRes, gebRes] = await Promise.all([
         supa.from('contributions_header').select('*').order('created_at', { ascending: true }),
         supa.from('contributions_positions').select('*').order('position_nr', { ascending: true }),
@@ -478,10 +504,10 @@ async function loadJahresbeitragData(forceReload = false, showSpinner = true) {
           }
         }
 
-        // Sicherstellen, dass Rechnungen da sind
-        if (!window._invoices || window._invoices.length === 0) {
+        // Sicherstellen, dass Rechnungen da sind (oder nach externer Mutation frisch laden)
+        if (shouldRefreshInvoices || !window._invoices || window._invoices.length === 0) {
           if (typeof loadRechnungenData === 'function') {
-            await loadRechnungenData(true, false);
+            await loadRechnungenData(true, shouldRefreshInvoices);
           }
         }
 

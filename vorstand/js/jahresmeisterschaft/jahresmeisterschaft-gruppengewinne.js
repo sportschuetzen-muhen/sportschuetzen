@@ -1270,10 +1270,17 @@
                                     pdf_storage_path: null,
                                     updated_at: new Date().toISOString()
                                 }).eq('id', inv.id);
+                                if (window._invoicePositionsCache) {
+                                    delete window._invoicePositionsCache[String(inv.id).trim()];
+                                }
                             }
                         }
                     }
                 }
+            }
+
+            if (verrechnete.length > 0 && typeof window.jbInvalidateCache === 'function') {
+                window.jbInvalidateCache({ refreshInvoices: true });
             }
 
             const { error } = await supa.from('group_competitions').delete().eq('id', id);
@@ -3546,6 +3553,10 @@
                         updated_at: new Date().toISOString()
                     }).eq('id', draftInv.id);
 
+                    if (window._invoicePositionsCache) {
+                        delete window._invoicePositionsCache[String(draftInv.id).trim()];
+                    }
+
                     if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
                         window.RechnungsCore.renderPdf(draftInv.id, { forceRecreate: true }).catch(err => {
                             console.warn('[Schützengewinne] Hintergrund-PDF-Neugenerierung fehlgeschlagen:', err);
@@ -3571,6 +3582,10 @@
             } catch (pErr) {
                 console.error(`Fehler bei Übertragung für Schütze ${m.schuetze_name}:`, pErr);
             }
+        }
+
+        if (successCount > 0 && typeof window.jbInvalidateCache === 'function') {
+            window.jbInvalidateCache({ refreshInvoices: true });
         }
 
         return { successCount, failedShooters, lockedInvoiceShooters };
