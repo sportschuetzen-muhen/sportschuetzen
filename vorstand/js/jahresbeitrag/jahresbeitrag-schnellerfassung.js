@@ -14,6 +14,76 @@ function jbGetDefaultAccountForExtra(key, fallback) {
   return fallback;
 }
 
+// Stellt sicher, dass bereits verrechnete Gruppen- & Einzelgewinne (Konto 1301) beim Speichern in der Schnellerfassung erhalten bleiben
+async function jbAppendPreserved1301Credits(supa, pn, year, calc) {
+  const verified1301Links = [];
+  if (!supa || !pn || !calc || !Array.isArray(calc.positions)) return verified1301Links;
+
+  try {
+    const { data: gcmRows } = await supa
+      .from('group_competition_members')
+      .select('id, betrag, anteil_gruppe, anteil_einzel, stich_name, status, payout_method, contribution_position_id, competition:group_competitions!inner(jahr, gruppe_name, anlass_name, anlass_typ)')
+      .eq('person_number', parseInt(pn, 10))
+      .eq('payout_method', 'jahresbeitrag')
+      .or('status.eq.verrechnet,contribution_position_id.not.is.null')
+      .eq('competition.jahr', Number(year));
+
+    if (Array.isArray(gcmRows) && gcmRows.length > 0) {
+      const push1301 = (gcmId, desc, rawAmt) => {
+        const amt = -Math.abs(Number(rawAmt || 0));
+        if (amt === 0) return;
+        if (!calc.positions.some(p => (p.key === '1301' || p.konto === '1301') && p.name === desc)) {
+          calc.positions.push({
+            name: desc,
+            betrag: amt,
+            typ: 'Credit',
+            key: '1301',
+            konto: '1301'
+          });
+        }
+        verified1301Links.push({ gcmId, desc });
+      };
+
+      gcmRows.forEach(gw => {
+        const comp = gw.competition || {};
+        const typ = comp.anlass_typ || 'gruppe';
+        const isFullySettled = gw.status === 'verrechnet';
+        const grpAmt = Number(gw.anteil_gruppe || 0);
+        const einzelAmt = Number(gw.anteil_einzel || 0);
+        const stichSuffix = gw.stich_name ? ` (${gw.stich_name})` : '';
+
+        if (!isFullySettled) {
+          // Nur bereits in den Jahresbeitrag übertragene Gruppenanteile erhalten, falls Einzel noch offen ist
+          if (gw.contribution_position_id && grpAmt > 0 && typ !== 'einzel') {
+            push1301(gw.id, `Gutschrift Gruppengewinn: ${comp.gruppe_name || 'Gruppe'} (${comp.anlass_name || 'Schiessen'})`, grpAmt);
+          }
+          return;
+        }
+
+        if (typ === 'kombiniert') {
+          if (grpAmt > 0) {
+            push1301(gw.id, `Gutschrift Gruppengewinn: ${comp.gruppe_name || 'Gruppe'} (${comp.anlass_name || 'Schiessen'})`, grpAmt);
+          }
+          if (einzelAmt > 0) {
+            push1301(gw.id, `Gutschrift Einzelgewinn${stichSuffix}: ${comp.anlass_name || 'Schiessen'}`, einzelAmt);
+          }
+        } else if (typ === 'einzel') {
+          push1301(gw.id, `Gutschrift Einzelgewinn${stichSuffix}: ${comp.anlass_name || 'Schiessen'}`, einzelAmt || gw.betrag);
+        } else {
+          push1301(gw.id, `Gutschrift Gruppengewinn: ${comp.gruppe_name || 'Gruppe'} (${comp.anlass_name || 'Schiessen'})`, gw.betrag);
+        }
+      });
+
+      const rawSum = calc.positions.reduce((s, p) => s + Number(p.betrag || 0), 0);
+      const hasJanitor = calc.positions.some(p => p.key === 'RA002');
+      calc.total = hasJanitor ? rawSum : Math.max(0, rawSum);
+    }
+  } catch (gwErr) {
+    console.warn('[Schnellerfassung] Hinweis beim Abgleich der Schützengewinne (1301):', gwErr);
+  }
+  return verified1301Links;
+}
+
 function renderSchnellerfassungTab() {
   return `
     <div class="row g-3 border rounded bg-white p-2" style="min-height: calc(100vh - 215px);">
@@ -1046,41 +1116,8 @@ async function jbSaveSingleMemberDirect(pnClean) {
   const calc = (typeof jbCalculateLiveTotal === 'function') ? jbCalculateLiveTotal(m, settings) : { total: 0, positions: [] };
   const headId = `CH-${_jbYear}-${pn}`;
 
-  // Sicherstellen, dass bereits verrechnete Gruppengewinne (Konto 1301) niemals verloren gehen
-  const verified1301Links = [];
-  try {
-    const { data: gcmRows } = await supa
-      .from('group_competition_members')
-      .select('id, betrag, status, payout_method, competition:group_competitions!inner(jahr, gruppe_name, anlass_name)')
-      .eq('person_number', parseInt(pn, 10))
-      .eq('payout_method', 'jahresbeitrag')
-      .eq('status', 'verrechnet')
-      .eq('competition.jahr', Number(_jbYear));
-
-    if (Array.isArray(gcmRows) && gcmRows.length > 0) {
-      gcmRows.forEach(gw => {
-        const amt = -Math.abs(Number(gw.betrag || 0));
-        if (amt === 0) return;
-        const comp = gw.competition || {};
-        const desc = `Gutschrift Gruppengewinn: ${comp.gruppe_name || 'Gruppe'} (${comp.anlass_name || 'Schiessen'})`;
-        if (!calc.positions.some(p => (p.key === '1301' || p.konto === '1301') && p.name === desc)) {
-          calc.positions.push({
-            name: desc,
-            betrag: amt,
-            typ: 'Credit',
-            key: '1301',
-            konto: '1301'
-          });
-        }
-        verified1301Links.push({ gcmId: gw.id, desc });
-      });
-      const rawSum = calc.positions.reduce((s, p) => s + Number(p.betrag || 0), 0);
-      const hasJanitor = calc.positions.some(p => p.key === 'RA002');
-      calc.total = hasJanitor ? rawSum : Math.max(0, rawSum);
-    }
-  } catch (gwErr) {
-    console.warn('[Schnellerfassung] Hinweis beim Abgleich der Gruppengewinne (1301):', gwErr);
-  }
+  // Sicherstellen, dass bereits verrechnete Gruppen- & Einzelgewinne (Konto 1301) niemals verloren gehen
+  const verified1301Links = await jbAppendPreserved1301Credits(supa, pn, _jbYear, calc);
   
   // Vorhandenen Header ermitteln
   let existingHeader = (_jbData || []).find(x => String(x.PersonNumber).trim() === pn);
@@ -1554,38 +1591,7 @@ async function jbSaveAllBulkLocalChanges() {
             const calc = jbCalculateLiveTotal(m, settings);
             const headId = `CH-${year}-${pn}`;
 
-            const verified1301Links = [];
-            try {
-              const { data: gcmRows } = await supa
-                .from('group_competition_members')
-                .select('id, betrag, status, payout_method, competition:group_competitions!inner(jahr, gruppe_name, anlass_name)')
-                .eq('person_number', parseInt(pn, 10))
-                .eq('payout_method', 'jahresbeitrag')
-                .eq('status', 'verrechnet')
-                .eq('competition.jahr', Number(year));
-
-              if (Array.isArray(gcmRows) && gcmRows.length > 0) {
-                gcmRows.forEach(gw => {
-                  const amt = -Math.abs(Number(gw.betrag || 0));
-                  if (amt === 0) return;
-                  const comp = gw.competition || {};
-                  const desc = `Gutschrift Gruppengewinn: ${comp.gruppe_name || 'Gruppe'} (${comp.anlass_name || 'Schiessen'})`;
-                  if (!calc.positions.some(p => (p.key === '1301' || p.konto === '1301') && p.name === desc)) {
-                    calc.positions.push({
-                      name: desc,
-                      betrag: amt,
-                      typ: 'Credit',
-                      key: '1301',
-                      konto: '1301'
-                    });
-                  }
-                  verified1301Links.push({ gcmId: gw.id, desc });
-                });
-                const rawSum = calc.positions.reduce((s, p) => s + Number(p.betrag || 0), 0);
-                const hasJanitor = calc.positions.some(p => p.key === 'RA002');
-                calc.total = hasJanitor ? rawSum : Math.max(0, rawSum);
-              }
-            } catch (_) {}
+            const verified1301Links = await jbAppendPreserved1301Credits(supa, pn, year, calc);
 
             let existingHeader = (_jbData || []).find(x => String(x.PersonNumber).trim() === pn);
             const statusToSet = existingHeader?.status === 'bezahlt' ? 'bezahlt' : 'offen';

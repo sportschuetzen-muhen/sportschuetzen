@@ -302,7 +302,9 @@
 
         let openCompCount = 0;
         (list || []).forEach(c => {
-            const ueb = Math.max(0, Number(c.gruppengewinn || 0) - Number(c.gruppendoppel || 30));
+            const isEinzelOnly = (c.anlass_typ || 'gruppe') === 'einzel';
+            const grpUeb = isEinzelOnly ? 0 : Math.max(0, Number(c.gruppengewinn || 0) - Number(c.gruppendoppel || 30));
+            const ueb = grpUeb + Number(c.einzel_total || 0);
             const members = Array.isArray(c.members) ? c.members : [];
             const hasOpen = ueb > 0 && members.some(m => (m.payout_method || 'jahresbeitrag') === 'jahresbeitrag' && m.status !== 'verrechnet' && m.status !== 'ausgefuehrt');
             if (hasOpen) openCompCount++;
@@ -636,8 +638,13 @@
 
             // Auszahlungsstatus der Schützen
             const allVerrechnet = members.length > 0 && ueberschuss > 0 && members.every(m => m.status === 'verrechnet' || m.status === 'ausgefuehrt');
-            const openJbMembers = members.filter(m => (m.payout_method || 'jahresbeitrag') === 'jahresbeitrag' && Number(m.betrag || (m.anteil_gruppe || 0) + (m.anteil_einzel || 0) || perShooterGruppe) > 0 && m.status !== 'verrechnet' && m.status !== 'ausgefuehrt');
-            const someVerrechnet = members.some(m => m.status === 'verrechnet' || m.status === 'ausgefuehrt');
+            const openJbMembers = members.filter(m => {
+                if ((m.payout_method || 'jahresbeitrag') !== 'jahresbeitrag') return false;
+                if (m.status === 'verrechnet' || m.status === 'ausgefuehrt') return false;
+                const amt = Number(m.betrag ?? ((Number(m.anteil_gruppe || 0) + Number(m.anteil_einzel || 0)) || (isEinzelOnly ? 0 : perShooterGruppe)) ?? 0);
+                return amt > 0;
+            });
+            const someVerrechnet = members.some(m => m.status === 'verrechnet' || m.status === 'ausgefuehrt' || Boolean(m.contribution_position_id));
 
             let statusBadge = `<span class="badge bg-secondary">Offen</span>`;
             if (ueberschuss === 0) {
@@ -689,9 +696,12 @@
                         const icon = isDone ? '<i class="fas fa-check-circle text-success me-1"></i>' : (isBank ? '<i class="fas fa-university text-info me-1"></i>' : '<i class="far fa-clock text-muted me-1"></i>');
                         const ptsStr = m.punkte ? `<strong>${m.punkte}</strong>` : '-';
                         
-                        const antGruppe = Number(m.anteil_gruppe || (isEinzelOnly ? 0 : (m.betrag || perShooterGruppe)));
+                        const hasExplicitSplit = m.anteil_gruppe !== undefined && m.anteil_gruppe !== null;
+                        const antGruppe = isEinzelOnly
+                            ? 0
+                            : (hasExplicitSplit ? Number(m.anteil_gruppe || 0) : Number(m.betrag ?? perShooterGruppe ?? 0));
                         const antEinzel = Number(m.anteil_einzel || 0);
-                        const shareVal = Number(m.betrag || (antGruppe + antEinzel) || perShooterGruppe || 0);
+                        const shareVal = Number(m.betrag ?? ((antGruppe + antEinzel) || (isEinzelOnly ? 0 : perShooterGruppe)) ?? 0);
                         
                         let detailHint = '';
                         if (antGruppe > 0 && antEinzel > 0) {
@@ -701,7 +711,14 @@
                         }
 
                         const shareStr = shareVal > 0 ? ` · ${fmtCurr(shareVal)}${detailHint}` : '';
-                        const statusHint = isDone ? 'Im Jahresbeitrag gutgeschrieben' : (isBank ? 'In Bankzahlung' : (shareVal > 0 ? 'Noch offen für Übertrag in Jahresbeitrag' : 'Kein Überschuss'));
+                        const isPartialEinzelOpen = !isDone && !isBank && Boolean(m.contribution_position_id) && antGruppe > 0 && antEinzel > 0;
+                        const statusHint = isDone
+                            ? 'Im Jahresbeitrag gutgeschrieben'
+                            : (isBank
+                                ? 'In Bankzahlung'
+                                : (isPartialEinzelOpen
+                                    ? 'Gruppenanteil verrechnet · Einzelgewinn noch offen für Übertrag in Jahresbeitrag'
+                                    : (shareVal > 0 ? 'Noch offen für Übertrag in Jahresbeitrag' : 'Kein Überschuss')));
                         return `<span class="badge ${pillCls} border fw-normal px-2 py-1" style="font-size: 11px;" title="${escapeHtml(m.schuetze_name)}: ${m.punkte || 0} Pkt.${shareStr} (${statusHint})">
                             ${icon}${escapeHtml(m.schuetze_name)} (${ptsStr})${shareVal > 0 ? `<span class="text-muted ms-1">${fmtCurr(shareVal)}</span>` : ''}
                         </span>`;
@@ -2596,12 +2613,45 @@
     }
 
     /**
+     * Erzeugt das Status-Badge für eine Schützenzeile im Editor.
+     */
+    function buildShooterStatusBadgeHtml(m) {
+        const status = m?.status || 'offen';
+        const hasSettledGroup = Boolean(m?.contribution_position_id) && Number(m?.anteil_gruppe || 0) > 0;
+        if (status === 'verrechnet') {
+            return `<span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size: 9.5px;"><i class="fas fa-check-circle me-1"></i>Verrechnet (JB)</span>`;
+        }
+        if (status === 'in_zahlung') {
+            return `<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle" style="font-size: 9.5px;"><i class="fas fa-university me-1"></i>In Zahlung</span>`;
+        }
+        if (status === 'ausgefuehrt') {
+            return `<span class="badge bg-success" style="font-size: 9.5px;"><i class="fas fa-check-double me-1"></i>Ausbezahlt</span>`;
+        }
+        if (hasSettledGroup) {
+            return `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" style="font-size: 9.5px;" title="Gruppenanteil bereits im Jahresbeitrag verrechnet – Einzelgewinn noch offen"><i class="fas fa-clock me-1"></i>Gruppe verr. · Einzel offen</span>`;
+        }
+        return `<span class="badge bg-secondary-subtle text-secondary border" style="font-size: 9.5px;">Offen</span>`;
+    }
+
+    /**
      * Befüllt die Felder des Detail-Editors
      */
     function populateEditorFields(comp) {
         const typ = comp.anlass_typ || 'gruppe';
         const typRadio = document.querySelector(`input[name="jme-anlass-typ"][value="${typ}"]`);
         if (typRadio) typRadio.checked = true;
+
+        if (Array.isArray(comp.members)) {
+            comp.members.forEach(m => {
+                m._initialStatus = m.status || 'offen';
+                m._initialEinzel = Number(m.anteil_einzel || 0);
+                m._initialStich = String(m.stich_name || '').trim();
+                // Alt-Datensätze absichern, bei denen nur betrag belegt war
+                if (typ !== 'einzel' && Number(m.anteil_gruppe || 0) === 0 && Number(m.betrag || 0) > 0 && Number(m.anteil_einzel || 0) === 0) {
+                    m.anteil_gruppe = Number(m.betrag);
+                }
+            });
+        }
 
         document.getElementById('jme-anlass').value = comp.anlass_name || '';
         document.getElementById('jme-gruppe').value = comp.gruppe_name || (typ === 'einzel' ? '' : 'Strohaus');
@@ -2627,7 +2677,6 @@
         const typ = _jmCurrentEditingComp?.anlass_typ || 'gruppe';
         const isGruppe = typ === 'gruppe';
         const isEinzel = typ === 'einzel';
-        const isKombiniert = typ === 'kombiniert';
         const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${Number(v || 0).toFixed(2)}`);
 
         if (!members || members.length === 0) {
@@ -2649,52 +2698,48 @@
             const hasIban = Boolean(currentIban && currentIban.trim().length > 10);
             const payoutMethod = m.payout_method || 'jahresbeitrag';
             const status = m.status || 'offen';
-            const isLocked = status === 'verrechnet' || status === 'in_zahlung' || status === 'ausgefuehrt';
+            const isFullyLocked = status === 'in_zahlung' || status === 'ausgefuehrt';
+            const isGroupProtected = isFullyLocked || status === 'verrechnet' || (Boolean(m.contribution_position_id) && Number(m.anteil_gruppe || 0) > 0);
+            const isMethodLocked = isFullyLocked || status === 'verrechnet';
+            const isEinzelLocked = isFullyLocked;
 
-            let statusBadge = `<span class="badge bg-secondary-subtle text-secondary border" style="font-size: 9.5px;">Offen</span>`;
-            if (status === 'verrechnet') {
-                statusBadge = `<span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size: 9.5px;"><i class="fas fa-check-circle me-1"></i>Verrechnet (JB)</span>`;
-            } else if (status === 'in_zahlung') {
-                statusBadge = `<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle" style="font-size: 9.5px;"><i class="fas fa-university me-1"></i>In Zahlung</span>`;
-            } else if (status === 'ausgefuehrt') {
-                statusBadge = `<span class="badge bg-success" style="font-size: 9.5px;"><i class="fas fa-check-double me-1"></i>Ausbezahlt</span>`;
-            }
+            const statusBadge = buildShooterStatusBadgeHtml(m);
 
             return `
-                <tr data-idx="${idx}" class="${isLocked ? 'table-light' : ''}">
+                <tr data-idx="${idx}" class="${isGroupProtected ? 'table-light' : ''}">
                     <td class="ps-3">
-                        <input type="text" class="form-control form-control-sm fw-semibold jme-shooter-name" list="jme-members-datalist" value="${escapeHtml(m.schuetze_name || '')}" placeholder="Vorname Nachname (tippen zum Suchen)" ${isLocked ? 'disabled' : ''} onchange="window.jmOnShooterNameChange(${idx}, this.value)">
+                        <input type="text" class="form-control form-control-sm fw-semibold jme-shooter-name" list="jme-members-datalist" value="${escapeHtml(m.schuetze_name || '')}" placeholder="Vorname Nachname (tippen zum Suchen)" ${isGroupProtected ? 'disabled' : ''} onchange="window.jmOnShooterNameChange(${idx}, this.value)">
                         <input type="hidden" class="jme-shooter-pn" value="${m.person_number || memberObj?.person_number || ''}">
                         <div class="d-flex align-items-center justify-content-between mt-1" style="font-size: 10px;">
                             <span class="text-muted">
                                 ${m.person_number || memberObj?.person_number ? `PN: ${m.person_number || memberObj.person_number}` : '<span class="text-warning">Nicht im Mitgliederstamm verknüpft</span>'}
                             </span>
-                            ${statusBadge}
+                            <span class="jme-status-badge-slot">${statusBadge}</span>
                         </div>
                     </td>
                     <td class="text-center">
-                        <input type="number" step="0.1" class="form-control form-control-sm text-center jme-no-spin jme-shooter-pts" value="${m.punkte || ''}" placeholder="Pkt" style="font-size: 12px;" ${isLocked ? 'disabled' : ''} onchange="window.jmOnShooterPointsChange(${idx}, this.value)">
+                        <input type="number" step="0.1" class="form-control form-control-sm text-center jme-no-spin jme-shooter-pts" value="${m.punkte || ''}" placeholder="Pkt" style="font-size: 12px;" ${isGroupProtected ? 'disabled' : ''} onchange="window.jmOnShooterPointsChange(${idx}, this.value)">
                     </td>
                     <td style="${isGruppe ? 'display:none;' : ''}">
-                        <input type="text" class="form-control form-control-sm jme-shooter-stich" list="jme-stiche-datalist" value="${escapeHtml(m.stich_name || '')}" placeholder="z. B. Auszahler" style="font-size: 12px;" ${isLocked ? 'disabled' : ''} onchange="window.jmOnShooterStichChange(${idx}, this.value)">
+                        <input type="text" class="form-control form-control-sm jme-shooter-stich" list="jme-stiche-datalist" value="${escapeHtml(m.stich_name || '')}" placeholder="z. B. Auszahler" style="font-size: 12px;" ${isEinzelLocked ? 'disabled' : ''} onchange="window.jmOnShooterStichChange(${idx}, this.value)">
                     </td>
                     <td class="text-end" style="${isEinzel ? 'display:none;' : ''}">
                         <div class="input-group input-group-sm">
                             <span class="input-group-text px-1 text-muted small">CHF</span>
-                            <input type="number" step="0.05" class="form-control form-control-sm text-end jme-no-spin px-1.5 jme-shooter-gruppe" value="${Number(m.anteil_gruppe || 0).toFixed(2)}" ${isLocked || isGruppe ? 'disabled' : ''} onchange="window.jmOnShooterGruppeChange(${idx}, this.value)">
+                            <input type="number" step="0.05" class="form-control form-control-sm text-end jme-no-spin px-1.5 jme-shooter-gruppe" value="${Number(m.anteil_gruppe || 0).toFixed(2)}" ${isGroupProtected || isGruppe ? 'disabled' : ''} onchange="window.jmOnShooterGruppeChange(${idx}, this.value)">
                         </div>
                     </td>
                     <td class="text-end" style="${isGruppe ? 'display:none;' : ''}">
                         <div class="input-group input-group-sm">
                             <span class="input-group-text px-1 text-muted small">CHF</span>
-                            <input type="number" step="0.05" class="form-control form-control-sm fw-bold text-end text-success jme-no-spin px-1.5 jme-shooter-einzel" value="${Number(m.anteil_einzel || 0).toFixed(2)}" ${isLocked ? 'disabled' : ''} onchange="window.jmOnShooterEinzelChange(${idx}, this.value)">
+                            <input type="number" step="0.05" class="form-control form-control-sm fw-bold text-end text-success jme-no-spin px-1.5 jme-shooter-einzel" value="${Number(m.anteil_einzel || 0).toFixed(2)}" ${isEinzelLocked ? 'disabled' : ''} oninput="window.jmOnShooterEinzelChange(${idx}, this.value)" onchange="window.jmOnShooterEinzelChange(${idx}, this.value)">
                         </div>
                     </td>
                     <td class="text-end fw-bold text-dark">
                         <span class="jme-shooter-total">${fmtCurr(m.betrag || 0)}</span>
                     </td>
                     <td>
-                        <select class="form-select form-select-sm jme-shooter-method" style="font-size: 11.5px;" ${isLocked ? 'disabled' : ''} onchange="window.jmOnShooterMethodChange(${idx}, this.value)">
+                        <select class="form-select form-select-sm jme-shooter-method" style="font-size: 11.5px;" ${isMethodLocked ? 'disabled' : ''} onchange="window.jmOnShooterMethodChange(${idx}, this.value)">
                             <option value="jahresbeitrag" ${payoutMethod === 'jahresbeitrag' ? 'selected' : ''}>Verrechnung JB</option>
                             <option value="bank" ${payoutMethod === 'bank' ? 'selected' : ''}>Bank (pain.001)</option>
                             <option value="kasse" ${payoutMethod === 'kasse' ? 'selected' : ''}>Bar (Kasse 1000)</option>
@@ -2703,10 +2748,10 @@
                     </td>
                     <td>
                         <div class="d-flex align-items-center gap-1">
-                            <input type="text" class="form-control form-control-sm font-monospace jme-shooter-iban ${hasIban ? 'border-success' : 'border-warning'}" style="font-size: 11px;" value="${escapeHtml(currentIban)}" placeholder="CH..." ${isLocked ? 'disabled' : ''} onchange="window.jmOnShooterIbanChange(${idx}, this.value)">
+                            <input type="text" class="form-control form-control-sm font-monospace jme-shooter-iban ${hasIban ? 'border-success' : 'border-warning'}" style="font-size: 11px;" value="${escapeHtml(currentIban)}" placeholder="CH..." ${isMethodLocked ? 'disabled' : ''} onchange="window.jmOnShooterIbanChange(${idx}, this.value)">
                             ${hasIban ? '<i class="fas fa-check-circle text-success" title="IBAN vorhanden"></i>' : '<i class="fas fa-exclamation-triangle text-warning" title="Keine IBAN im System"></i>'}
                         </div>
-                        ${!memberObj?.iban && hasIban && !isLocked ? `
+                        ${!memberObj?.iban && hasIban && !isMethodLocked ? `
                             <div class="form-check mt-1" style="font-size: 10px;">
                                 <input class="form-check-input jme-save-iban-check" type="checkbox" id="save-iban-${idx}" checked>
                                 <label class="form-check-label text-muted" for="save-iban-${idx}">Im Mitgliederstamm sichern</label>
@@ -2714,7 +2759,7 @@
                         ` : ''}
                     </td>
                     <td class="text-center pe-3">
-                        <button type="button" class="btn btn-xs btn-outline-danger" ${isLocked ? 'disabled title="Bereits abgerechneter Schütze kann nicht entfernt werden"' : 'title="Schütze entfernen"'} onclick="window.jmRemoveShooterRow(${idx})">
+                        <button type="button" class="btn btn-xs btn-outline-danger" ${isGroupProtected ? 'disabled title="Bereits abgerechneter Schütze kann nicht entfernt werden"' : 'title="Schütze entfernen"'} onclick="window.jmRemoveShooterRow(${idx})">
                             <i class="fas fa-times"></i>
                         </button>
                     </td>
@@ -2726,6 +2771,18 @@
     }
 
     /**
+     * Ermittelt den noch offenen (nicht bereits per JB/Bank abgewickelten) Betrag eines Schützen.
+     */
+    function getMemberOpenAmount(m) {
+        if (!m) return 0;
+        if (m.status === 'verrechnet' || m.status === 'ausgefuehrt' || m.status === 'in_zahlung') return 0;
+        if (Boolean(m.contribution_position_id) && Number(m.anteil_gruppe || 0) > 0) {
+            return Number(m.anteil_einzel || 0);
+        }
+        return Number(m.betrag || 0);
+    }
+
+    /**
      * Aktualisiert die Zähler und Zustände der Footer-Aktionsbuttons (Jahresbeitrag / pain.001).
      */
     function updateTransferActionButtons() {
@@ -2733,22 +2790,22 @@
         const poBtn = document.getElementById('jme-transfer-po-btn');
         const members = _jmCurrentEditingComp?.members || [];
 
-        const jbOpen = members.filter(m => (m.payout_method || 'jahresbeitrag') === 'jahresbeitrag' && Number(m.betrag || 0) > 0 && m.status !== 'verrechnet');
-        const poOpen = members.filter(m => m.payout_method === 'bank' && Number(m.betrag || 0) > 0 && m.status !== 'in_zahlung' && m.status !== 'ausgefuehrt');
+        const jbOpen = members.filter(m => (m.payout_method || 'jahresbeitrag') === 'jahresbeitrag' && getMemberOpenAmount(m) > 0 && m.status !== 'verrechnet');
+        const poOpen = members.filter(m => m.payout_method === 'bank' && getMemberOpenAmount(m) > 0 && m.status !== 'in_zahlung' && m.status !== 'ausgefuehrt');
 
         if (jbBtn) {
             jbBtn.innerHTML = `<i class="fas fa-file-invoice-dollar me-1 text-primary"></i> In Jahresbeitrag übertragen${jbOpen.length > 0 ? ` <span class="badge bg-primary ms-1">${jbOpen.length}</span>` : ''}`;
             jbBtn.disabled = jbOpen.length === 0;
             jbBtn.title = jbOpen.length > 0
                 ? `${jbOpen.length} Schütze(n) direkt speichern & im Jahresbeitrag gutschreiben`
-                : 'Zuerst einen Gruppengewinn (> Doppel) eintragen oder offene Schützen mit «Verrechnung Jahresbeitrag» zuweisen.';
+                : 'Zuerst einen Gruppengewinn (> Doppel) oder Einzelgewinn eintragen und «Verrechnung JB» wählen.';
         }
         if (poBtn) {
             poBtn.innerHTML = `<i class="fas fa-file-export me-1"></i> Bank-Überweisung (pain.001)${poOpen.length > 0 ? ` <span class="badge bg-primary ms-1">${poOpen.length}</span>` : ''}`;
             poBtn.disabled = poOpen.length === 0;
             poBtn.title = poOpen.length > 0
                 ? `Für ${poOpen.length} Schütze(n) direkt speichern & Zahlungsauftrag (pain.001) erstellen`
-                : 'Keine offenen Schützen mit Auszahlungsweg «Banküberweisung» und Betrag > CHF 0.00.';
+                : 'Keine offenen Schützen mit Auszahlungsweg «Banküberweisung» und offenem Betrag > CHF 0.00.';
         }
     }
 
@@ -2816,7 +2873,6 @@
         const typ = _jmCurrentEditingComp.anlass_typ || 'gruppe';
         const isGruppe = typ === 'gruppe';
         const isEinzel = typ === 'einzel';
-        const isKombiniert = typ === 'kombiniert';
 
         const doppel = parseFloat(document.getElementById('jme-doppel')?.value || (isEinzel ? 0 : 30)) || 0;
         const gewinn = parseFloat(document.getElementById('jme-gewinn')?.value || 0) || 0;
@@ -2827,12 +2883,25 @@
         const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${Number(v || 0).toFixed(2)}`);
 
         const members = _jmCurrentEditingComp.members || [];
-        const count = members.length;
+        const isMemberGroupProtected = (m) => (
+            m.status === 'verrechnet' ||
+            m.status === 'in_zahlung' ||
+            m.status === 'ausgefuehrt' ||
+            (Boolean(m.contribution_position_id) && Number(m.anteil_gruppe || 0) > 0)
+        );
+
+        const protectedMembers = members.filter(isMemberGroupProtected);
+        const openGroupMembers = members.filter(m => !isMemberGroupProtected(m));
+        const settledGruppeSum = protectedMembers.reduce((acc, m) => acc + Number(m.anteil_gruppe || 0), 0);
+        const remainingUeberschuss = Math.max(0, ueberschuss - settledGruppeSum);
 
         let perShooter = 0;
-        if (!isEinzel && count > 0 && ueberschuss > 0) {
-            // Rappen-Rundung (5 Rappen)
-            perShooter = Math.round((ueberschuss / count) * 20) / 20;
+        if (!isEinzel && openGroupMembers.length > 0 && remainingUeberschuss > 0) {
+            // Rappen-Rundung (5 Rappen) für offene Gruppenmitglieder
+            perShooter = Math.round((remainingUeberschuss / openGroupMembers.length) * 20) / 20;
+        } else if (!isEinzel && members.length > 0 && ueberschuss > 0 && openGroupMembers.length === 0) {
+            // Alle Gruppenmitglieder bereits verrechnet: Anzeige des bisherigen Anteils je Schütze
+            perShooter = Math.round((ueberschuss / members.length) * 20) / 20;
         }
 
         let sumEinzel = 0;
@@ -2857,9 +2926,10 @@
         rows.forEach((r, idx) => {
             const m = members[idx];
             if (!m) return;
-            const isLocked = m.status === 'verrechnet' || m.status === 'in_zahlung' || m.status === 'ausgefuehrt';
+            const isProtected = isMemberGroupProtected(m);
+            const isFullyLocked = m.status === 'in_zahlung' || m.status === 'ausgefuehrt';
 
-            if (!isLocked) {
+            if (!isProtected) {
                 if (isGruppe) {
                     m.anteil_gruppe = perShooter;
                     m.anteil_einzel = 0;
@@ -2871,6 +2941,9 @@
                     m.anteil_gruppe = perShooter;
                     m.betrag = perShooter + Number(m.anteil_einzel || 0);
                 }
+            } else if (!isFullyLocked) {
+                // Bereits verrechneter Gruppenanteil bleibt unverändert; Gesamtsumme führt Einzelgewinn mit nach
+                m.betrag = (isEinzel ? 0 : Number(m.anteil_gruppe || 0)) + (isGruppe ? 0 : Number(m.anteil_einzel || 0));
             }
 
             const elGruppe = r.querySelector('.jme-shooter-gruppe');
@@ -2910,9 +2983,35 @@
         if (punkteInput) punkteInput.value = _jmCurrentEditingComp.punkte_total || '';
     }
 
+    function syncProtectedShooterStatusAfterEinzelEdit(idx, m) {
+        if (!m || m._initialStatus !== 'verrechnet') return;
+        const curEinzel = Number(m.anteil_einzel || 0);
+        const initEinzel = Number(m._initialEinzel || 0);
+        const curStich = String(m.stich_name || '').trim();
+        const initStich = String(m._initialStich || '').trim();
+        const hasNewOrChangedEinzel = (Math.abs(curEinzel - initEinzel) > 0.001 && curEinzel > 0)
+            || (curEinzel > 0 && initEinzel > 0 && curStich !== initStich);
+
+        m.status = hasNewOrChangedEinzel ? 'offen' : 'verrechnet';
+
+        const row = document.querySelector(`#jme-shooters-body tr[data-idx="${idx}"]`);
+        if (row) {
+            const badgeSlot = row.querySelector('.jme-status-badge-slot');
+            if (badgeSlot) badgeSlot.innerHTML = buildShooterStatusBadgeHtml(m);
+            const methodLocked = m.status === 'verrechnet';
+            const elMethod = row.querySelector('.jme-shooter-method');
+            const elIban = row.querySelector('.jme-shooter-iban');
+            if (elMethod) elMethod.disabled = methodLocked;
+            if (elIban) elIban.disabled = methodLocked;
+        }
+    }
+
     function jmOnShooterStichChange(idx, val) {
         if (!_jmCurrentEditingComp?.members?.[idx]) return;
-        _jmCurrentEditingComp.members[idx].stich_name = val.trim();
+        const m = _jmCurrentEditingComp.members[idx];
+        m.stich_name = val.trim();
+        syncProtectedShooterStatusAfterEinzelEdit(idx, m);
+        updateTransferActionButtons();
     }
 
     function jmOnShooterGruppeChange(idx, val) {
@@ -2932,8 +3031,14 @@
     function jmOnShooterEinzelChange(idx, val) {
         if (!_jmCurrentEditingComp?.members?.[idx]) return;
         const m = _jmCurrentEditingComp.members[idx];
+        const typ = _jmCurrentEditingComp.anlass_typ || 'gruppe';
+        if (typ !== 'einzel' && Number(m.anteil_gruppe || 0) === 0 && Number(m.betrag || 0) > 0 && Number(m._initialEinzel || 0) === 0) {
+            m.anteil_gruppe = Number(m.betrag);
+        }
         m.anteil_einzel = parseFloat(val) || 0;
         m.betrag = (Number(m.anteil_gruppe) || 0) + (Number(m.anteil_einzel) || 0);
+        syncProtectedShooterStatusAfterEinzelEdit(idx, m);
+
         const row = document.querySelector(`#jme-shooters-body tr[data-idx="${idx}"]`);
         if (row) {
             row.dataset.editingEinzel = '1';
@@ -3109,6 +3214,11 @@
                 if (memErr) throw memErr;
 
                 if (Array.isArray(insertedMembers) && insertedMembers.length > 0) {
+                    insertedMembers.forEach(im => {
+                        im._initialStatus = im.status || 'offen';
+                        im._initialEinzel = Number(im.anteil_einzel || 0);
+                        im._initialStich = String(im.stich_name || '').trim();
+                    });
                     _jmCurrentEditingComp.members = insertedMembers;
                 }
 
@@ -3166,7 +3276,7 @@
      */
     async function _transferCompMembersToJahresbeitragInternal(comp, yr) {
         const supa = getSupa();
-        if (!supa || !comp) return { successCount: 0, failedShooters: [] };
+        if (!supa || !comp) return { successCount: 0, failedShooters: [], lockedInvoiceShooters: [] };
 
         await ensureMembersLoaded();
 
@@ -3180,24 +3290,14 @@
 
         let successCount = 0;
         const failedShooters = [];
+        const lockedInvoiceShooters = [];
 
         for (const m of allMembers) {
-            const shareAmt = Number(m.betrag || defaultShare || 0);
+            const grpAmtRaw = Number(m.anteil_gruppe ?? (typ !== 'einzel' ? (m.betrag ?? defaultShare) : 0));
+            const anzEinzelRaw = Number(m.anteil_einzel ?? (typ === 'einzel' ? m.betrag : 0));
+            const shareAmt = Number(m.betrag ?? ((grpAmtRaw + anzEinzelRaw) || defaultShare) ?? 0);
             if ((m.payout_method || 'jahresbeitrag') !== 'jahresbeitrag' || shareAmt <= 0) continue;
-
-            // Falls bereits als verrechnet markiert, prüfen ob die Position in contributions_positions noch existiert (Self-Healing)
-            if (m.status === 'verrechnet' && m.contribution_position_id) {
-                const { data: exPos } = await supa
-                    .from('contributions_positions')
-                    .select('id, konto')
-                    .eq('id', m.contribution_position_id)
-                    .maybeSingle();
-                if (exPos && String(exPos.konto) === '1301') {
-                    continue; // Bereits sauber vorhanden
-                }
-            } else if (m.status === 'ausgefuehrt') {
-                continue;
-            }
+            if (m.status === 'ausgefuehrt' || m.status === 'in_zahlung') continue;
 
             let pn = m.person_number;
             if (!pn) {
@@ -3222,8 +3322,8 @@
 
             // Teil-Gutschriften bestimmen: Gruppenanteil und/oder Einzelanteil
             const positionsToCreate = [];
-            const grpAmt = Number(m.anteil_gruppe || (typ !== 'einzel' ? shareAmt : 0));
-            const anzEinzel = Number(m.anteil_einzel || (typ === 'einzel' ? shareAmt : 0));
+            const grpAmt = typ === 'einzel' ? 0 : (m.anteil_gruppe !== undefined && m.anteil_gruppe !== null ? Number(m.anteil_gruppe || 0) : shareAmt);
+            const anzEinzel = typ === 'gruppe' ? 0 : Number(m.anteil_einzel || (typ === 'einzel' ? shareAmt : 0));
 
             if (typ === 'kombiniert') {
                 if (grpAmt > 0) {
@@ -3243,17 +3343,33 @@
                 const stichSuffix = m.stich_name ? ` (${m.stich_name})` : '';
                 positionsToCreate.push({
                     desc: `Gutschrift Einzelgewinn${stichSuffix}: ${comp.anlass_name}`,
-                    amt: -Math.abs(shareAmt)
+                    amt: -Math.abs(anzEinzel || shareAmt)
                 });
             } else {
                 // Gruppe
                 positionsToCreate.push({
                     desc: `Gutschrift Gruppengewinn: ${comp.gruppe_name} (${comp.anlass_name})`,
-                    amt: -Math.abs(shareAmt)
+                    amt: -Math.abs(grpAmt || shareAmt)
                 });
             }
 
             if (positionsToCreate.length === 0) continue;
+
+            // Falls bereits als verrechnet markiert, prüfen ob alle Teilpositionen in contributions_positions sauber vorhanden sind
+            if (m.status === 'verrechnet' && m.contribution_position_id) {
+                const { data: ex1301Pos } = await supa
+                    .from('contributions_positions')
+                    .select('id, beschreibung, betrag, konto')
+                    .eq('header_id', headId)
+                    .eq('konto', '1301');
+
+                const allPresentAndMatching = positionsToCreate.every(posDef =>
+                    (ex1301Pos || []).some(ep => ep.beschreibung === posDef.desc && Math.abs(Number(ep.betrag) - Number(posDef.amt)) < 0.005)
+                );
+                if (allPresentAndMatching) {
+                    continue; // Bereits vollständig und betragsgenau vorhanden
+                }
+            }
 
             try {
                 // Prüfen ob Header existiert
@@ -3270,13 +3386,30 @@
                     head = newHead;
                 }
 
+                // Lebenszyklus-Sperre: Versendete oder bezahlte Rechnungen niemals nachträglich mutieren
+                let draftInv = null;
+                if (head && head.invoice_id) {
+                    const { data: inv } = await supa
+                        .from('invoices')
+                        .select('id, invoice_number, mail_status, status, total_paid')
+                        .eq('id', head.invoice_id)
+                        .maybeSingle();
+                    if (inv) {
+                        if (inv.mail_status === 'versendet' || inv.status === 'bezahlt' || Number(inv.total_paid || 0) > 0) {
+                            lockedInvoiceShooters.push(`${m.schuetze_name} (Rechnung ${inv.invoice_number || ''} bereits ${Number(inv.total_paid || 0) > 0 || inv.status === 'bezahlt' ? 'bezahlt' : 'versendet'})`);
+                            continue;
+                        }
+                        draftInv = inv;
+                    }
+                }
+
                 let lastPosId = null;
 
                 for (const posDef of positionsToCreate) {
                     // Prüfen ob identische Gutschrift bereits für diesen Header existiert (Duplikatsschutz)
                     const { data: existingSame } = await supa
                         .from('contributions_positions')
-                        .select('id, position_nr')
+                        .select('id, position_nr, betrag')
                         .eq('header_id', headId)
                         .eq('konto', '1301')
                         .eq('beschreibung', posDef.desc)
@@ -3308,27 +3441,35 @@
                             konto: '1301'
                         });
                         if (insPosErr) throw insPosErr;
+
+                        if (draftInv) {
+                            await supa.from('invoice_positions').insert({
+                                invoice_id: draftInv.id,
+                                position_nr: nextPosNr,
+                                description: posDef.desc,
+                                quantity: 1,
+                                unit_price: posDef.amt,
+                                amount: posDef.amt,
+                                konto: '1301'
+                            });
+                        }
+                    } else if (Math.abs(Number(existingSame.betrag) - Number(posDef.amt)) > 0.005) {
+                        const { error: updPosErr } = await supa
+                            .from('contributions_positions')
+                            .update({ betrag: posDef.amt, last_upd: new Date().toISOString() })
+                            .eq('id', posId);
+                        if (updPosErr) throw updPosErr;
+
+                        if (draftInv) {
+                            await supa
+                                .from('invoice_positions')
+                                .update({ unit_price: posDef.amt, amount: posDef.amt })
+                                .eq('invoice_id', draftInv.id)
+                                .eq('description', posDef.desc);
+                        }
                     }
 
                     lastPosId = posId;
-
-                    // Falls bereits ein Rechnungsentwurf im RechnungsCore existiert (und noch unversendet/unbezahlt ist):
-                    if (head && head.invoice_id) {
-                        const { data: inv } = await supa.from('invoices').select('id, mail_status, total_paid').eq('id', head.invoice_id).maybeSingle();
-                        if (inv && (!inv.mail_status || inv.mail_status === 'entwurf') && (!inv.total_paid || Number(inv.total_paid) === 0)) {
-                            if (!existingSame) {
-                                await supa.from('invoice_positions').insert({
-                                    invoice_id: inv.id,
-                                    position_nr: nextPosNr,
-                                    description: posDef.desc,
-                                    quantity: 1,
-                                    unit_price: posDef.amt,
-                                    amount: posDef.amt,
-                                    konto: '1301'
-                                });
-                            }
-                        }
-                    }
                 }
 
                 // Header Gesamtbetrag neu berechnen
@@ -3336,16 +3477,19 @@
                 const newGesamt = (allPos || []).reduce((acc, p) => acc + Number(p.betrag || 0), 0);
                 await supa.from('contributions_header').update({ gesamt: Math.max(0, newGesamt) }).eq('id', headId);
 
-                if (head && head.invoice_id) {
-                    const { data: inv } = await supa.from('invoices').select('id, mail_status, total_paid').eq('id', head.invoice_id).maybeSingle();
-                    if (inv && (!inv.mail_status || inv.mail_status === 'entwurf') && (!inv.total_paid || Number(inv.total_paid) === 0)) {
-                        await supa.from('invoices').update({
-                            total_amount: Math.max(0, newGesamt),
-                            open_amount: Math.max(0, newGesamt),
-                            pdf_url: null,
-                            pdf_storage_path: null,
-                            updated_at: new Date().toISOString()
-                        }).eq('id', inv.id);
+                if (draftInv) {
+                    await supa.from('invoices').update({
+                        total_amount: Math.max(0, newGesamt),
+                        open_amount: Math.max(0, newGesamt),
+                        pdf_url: null,
+                        pdf_storage_path: null,
+                        updated_at: new Date().toISOString()
+                    }).eq('id', draftInv.id);
+
+                    if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
+                        window.RechnungsCore.renderPdf(draftInv.id, { forceRecreate: true }).catch(err => {
+                            console.warn('[Schützengewinne] Hintergrund-PDF-Neugenerierung fehlgeschlagen:', err);
+                        });
                     }
                 }
 
@@ -3360,13 +3504,16 @@
                 m.betrag = shareAmt;
                 m.status = 'verrechnet';
                 m.contribution_position_id = lastPosId;
+                m._initialStatus = 'verrechnet';
+                m._initialEinzel = Number(m.anteil_einzel || 0);
+                m._initialStich = String(m.stich_name || '').trim();
                 successCount++;
             } catch (pErr) {
                 console.error(`Fehler bei Übertragung für Schütze ${m.schuetze_name}:`, pErr);
             }
         }
 
-        return { successCount, failedShooters };
+        return { successCount, failedShooters, lockedInvoiceShooters };
     }
 
     /**
@@ -3380,7 +3527,7 @@
             const saved = await _jmSaveCurrentCompInternal({ closeModal: false, silent: true });
             if (!saved || !_jmCurrentEditingComp.id) return;
 
-            const members = (_jmCurrentEditingComp.members || []).filter(m => (m.payout_method || 'jahresbeitrag') === 'jahresbeitrag' && m.betrag > 0 && m.status !== 'verrechnet');
+            const members = (_jmCurrentEditingComp.members || []).filter(m => (m.payout_method || 'jahresbeitrag') === 'jahresbeitrag' && getMemberOpenAmount(m) > 0 && m.status !== 'verrechnet');
             if (members.length === 0) {
                 if (window.UIConfirmKit) {
                     await UIConfirmKit.alert({ title: 'Keine offenen Positionen', message: 'Es gibt keine Schützen mit Methode «Verrechnung Jahresbeitrag» und offenem Betrag.', type: 'info' });
@@ -3388,11 +3535,12 @@
                 return;
             }
 
+            const openSum = members.reduce((a, b) => a + getMemberOpenAmount(b), 0);
             let confirmed = false;
             if (window.UIConfirmKit) {
                 confirmed = await UIConfirmKit.confirm({
                     title: 'In Jahresbeitrag verrechnen?',
-                    message: `Möchtest du für ${members.length} Schütze(n) die Gutschrift (total CHF ${members.reduce((a, b) => a + Number(b.betrag), 0).toFixed(2)}) direkt als Abzug im Jahresbeitrag ${getActiveYear()} verbuchen?`,
+                    message: `Möchtest du für ${members.length} Schütze(n) die offene Gutschrift (total CHF ${openSum.toFixed(2)}) direkt als Abzug im Jahresbeitrag ${getActiveYear()} verbuchen?`,
                     type: 'primary',
                     confirmText: 'Ja, übertragen',
                     cancelText: 'Abbrechen'
@@ -3404,7 +3552,7 @@
             if (!confirmed) return;
 
             const yr = getActiveYear();
-            const { successCount, failedShooters } = await _transferCompMembersToJahresbeitragInternal(_jmCurrentEditingComp, yr);
+            const { successCount, failedShooters, lockedInvoiceShooters } = await _transferCompMembersToJahresbeitragInternal(_jmCurrentEditingComp, yr);
 
             if (failedShooters.length > 0 && window.UIConfirmKit) {
                 await UIConfirmKit.alert({
@@ -3413,11 +3561,18 @@
                     type: 'warning'
                 });
             }
+            if (lockedInvoiceShooters.length > 0 && window.UIConfirmKit) {
+                await UIConfirmKit.alert({
+                    title: 'Rechnung bereits versendet / bezahlt',
+                    message: `Für folgende Schützen ist die Jahresbeitragsrechnung bereits versendet oder bezahlt, weshalb der Betrag dort nicht mehr automatisch gutgeschrieben werden darf:<br><br>• ${lockedInvoiceShooters.map(escapeHtml).join('<br>• ')}<br><br>Bitte stelle den Auszahlungsweg für den offenen Anteil z. B. auf <strong>Bank (pain.001)</strong> oder <strong>Bar (Kasse 1000)</strong> um.`,
+                    type: 'warning'
+                });
+            }
 
             renderShooterRows(_jmCurrentEditingComp.members);
             await jmRenderGruppengewinneList(yr);
             await populateCompetitionOptions(_jmCurrentEditingComp.anlass_name);
-            if (typeof showSuccess === 'function') {
+            if (successCount > 0 && typeof showSuccess === 'function') {
                 showSuccess(`🎉 ${successCount} Schütze(n) erfolgreich im Jahresbeitrag ${yr} gutgeschrieben!`);
             }
         };
@@ -3439,23 +3594,32 @@
         const btn = document.getElementById(`jm-gg-row-jb-btn-${compId}`);
         const run = async () => {
             const yr = comp.jahr || getActiveYear();
-            const doppel = Number(comp.gruppendoppel || 30);
-            const gewinn = Number(comp.gruppengewinn || 0);
+            const isEinzelOnly = (comp.anlass_typ || 'gruppe') === 'einzel';
+            const doppel = isEinzelOnly ? 0 : Number(comp.gruppendoppel || 30);
+            const gewinn = isEinzelOnly ? 0 : Number(comp.gruppengewinn || 0);
             const ueb = Math.max(0, gewinn - doppel);
             const members = Array.isArray(comp.members) ? comp.members : [];
             const count = members.length > 0 ? members.length : 5;
-            const perShooter = count > 0 ? (Math.round((ueb / count) * 20) / 20) : 0;
+            const perShooter = (!isEinzelOnly && count > 0) ? (Math.round((ueb / count) * 20) / 20) : 0;
 
-            const openMembers = members.filter(m => (m.payout_method || 'jahresbeitrag') === 'jahresbeitrag' && Number(m.betrag || perShooter) > 0 && m.status !== 'verrechnet' && m.status !== 'ausgefuehrt');
+            const getOpenAmt = (m) => {
+                if (Boolean(m.contribution_position_id) && Number(m.anteil_gruppe || 0) > 0) {
+                    return Number(m.anteil_einzel || 0);
+                }
+                return Number(m.betrag || perShooter);
+            };
+
+            const openMembers = members.filter(m => (m.payout_method || 'jahresbeitrag') === 'jahresbeitrag' && getOpenAmt(m) > 0 && m.status !== 'verrechnet' && m.status !== 'ausgefuehrt' && m.status !== 'in_zahlung');
             if (openMembers.length === 0) return;
 
             const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${Number(v || 0).toFixed(2)}`);
-            const totalSum = openMembers.reduce((acc, m) => acc + Number(m.betrag || perShooter), 0);
+            const totalSum = openMembers.reduce((acc, m) => acc + getOpenAmt(m), 0);
+            const avgHint = (!isEinzelOnly && comp.anlass_typ !== 'kombiniert' && perShooter > 0) ? `je ${fmtCurr(perShooter)}, ` : '';
 
             const confirmed = window.UIConfirmKit
                 ? await UIConfirmKit.confirm({
                     title: 'In Jahresbeitrag übertragen?',
-                    message: `Möchtest du für <strong>${escapeHtml(comp.anlass_name)}</strong> (${escapeHtml(comp.gruppe_name)}) die Gewinnanteile von <strong>${openMembers.length} Schützen</strong> (je ${fmtCurr(perShooter)}, Total <strong>${fmtCurr(totalSum)}</strong>) direkt als Gutschrift in den Jahresbeitrag ${yr} übertragen?`,
+                    message: `Möchtest du für <strong>${escapeHtml(comp.anlass_name)}</strong> (${escapeHtml(comp.gruppe_name || 'Einzel')}) die offenen Gewinnanteile von <strong>${openMembers.length} Schützen</strong> (${avgHint}Total <strong>${fmtCurr(totalSum)}</strong>) direkt als Gutschrift in den Jahresbeitrag ${yr} übertragen?`,
                     type: 'primary',
                     confirmText: 'Ja, in Jahresbeitrag übertragen',
                     cancelText: 'Abbrechen'
@@ -3464,7 +3628,7 @@
 
             if (!confirmed) return;
 
-            const { successCount, failedShooters } = await _transferCompMembersToJahresbeitragInternal(comp, yr);
+            const { successCount, failedShooters, lockedInvoiceShooters } = await _transferCompMembersToJahresbeitragInternal(comp, yr);
             if (failedShooters.length > 0 && window.UIConfirmKit) {
                 await UIConfirmKit.alert({
                     title: 'Hinweis zu fehlenden Mitgliedernummern',
@@ -3472,9 +3636,16 @@
                     type: 'warning'
                 });
             }
+            if (lockedInvoiceShooters.length > 0 && window.UIConfirmKit) {
+                await UIConfirmKit.alert({
+                    title: 'Rechnung bereits versendet / bezahlt',
+                    message: `Für folgende Schützen ist die Jahresbeitragsrechnung bereits versendet oder bezahlt:<br><br>• ${lockedInvoiceShooters.map(escapeHtml).join('<br>• ')}`,
+                    type: 'warning'
+                });
+            }
 
             await jmRenderGruppengewinneList(yr);
-            if (typeof showSuccess === 'function') {
+            if (successCount > 0 && typeof showSuccess === 'function') {
                 showSuccess(`🎉 ${successCount} Gewinnanteil(e) für «${comp.anlass_name}» im Jahresbeitrag ${yr} gutgeschrieben!`);
             }
         };
@@ -3504,18 +3675,27 @@
             let totalAmount = 0;
 
             (list || []).forEach(c => {
-                const doppel = Number(c.gruppendoppel || 30);
-                const gewinn = Number(c.gruppengewinn || 0);
-                const ueb = Math.max(0, gewinn - doppel);
+                const isEinzelOnly = (c.anlass_typ || 'gruppe') === 'einzel';
+                const doppel = isEinzelOnly ? 0 : Number(c.gruppendoppel || 30);
+                const gewinn = isEinzelOnly ? 0 : Number(c.gruppengewinn || 0);
+                const grpUeb = isEinzelOnly ? 0 : Math.max(0, gewinn - doppel);
+                const ueb = grpUeb + Number(c.einzel_total || 0);
                 if (ueb <= 0) return;
 
                 const members = Array.isArray(c.members) ? c.members : [];
                 const count = members.length > 0 ? members.length : 5;
-                const perShooter = count > 0 ? (Math.round((ueb / count) * 20) / 20) : 0;
+                const perShooter = (!isEinzelOnly && count > 0) ? (Math.round((grpUeb / count) * 20) / 20) : 0;
 
-                const openMems = members.filter(m => (m.payout_method || 'jahresbeitrag') === 'jahresbeitrag' && Number(m.betrag || perShooter) > 0 && m.status !== 'verrechnet' && m.status !== 'ausgefuehrt');
+                const getOpenAmt = (m) => {
+                    if (Boolean(m.contribution_position_id) && Number(m.anteil_gruppe || 0) > 0) {
+                        return Number(m.anteil_einzel || 0);
+                    }
+                    return Number(m.betrag || perShooter);
+                };
+
+                const openMems = members.filter(m => (m.payout_method || 'jahresbeitrag') === 'jahresbeitrag' && getOpenAmt(m) > 0 && m.status !== 'verrechnet' && m.status !== 'ausgefuehrt' && m.status !== 'in_zahlung');
                 if (openMems.length > 0) {
-                    const compSum = openMems.reduce((acc, m) => acc + Number(m.betrag || perShooter), 0);
+                    const compSum = openMems.reduce((acc, m) => acc + getOpenAmt(m), 0);
                     openComps.push({ comp: c, count: openMems.length, sum: compSum });
                     totalShooters += openMems.length;
                     totalAmount += compSum;
@@ -3526,7 +3706,7 @@
                 if (window.UIConfirmKit) {
                     await UIConfirmKit.alert({
                         title: 'Alles bereits übertragen',
-                        message: `Alle Gruppengewinne mit Überschuss der Saison ${yr} sind bereits im Jahresbeitrag gutgeschrieben.`,
+                        message: `Alle Schützengewinne mit Überschuss der Saison ${yr} sind bereits im Jahresbeitrag gutgeschrieben.`,
                         type: 'info'
                     });
                 }
@@ -3534,13 +3714,13 @@
             }
 
             const detailsHtml = openComps.map(oc =>
-                `<li><strong>${escapeHtml(oc.comp.anlass_name)}</strong> (${escapeHtml(oc.comp.gruppe_name)}): ${oc.count} Schützen · <strong>${fmtCurr(oc.sum)}</strong></li>`
+                `<li><strong>${escapeHtml(oc.comp.anlass_name)}</strong> (${escapeHtml(oc.comp.gruppe_name || 'Einzel')}): ${oc.count} Schützen · <strong>${fmtCurr(oc.sum)}</strong></li>`
             ).join('');
 
             const confirmed = window.UIConfirmKit
                 ? await UIConfirmKit.confirm({
-                    title: 'Alle offenen Gruppengewinne in Jahresbeitrag übertragen?',
-                    message: `Möchtest du die folgenden <strong>${openComps.length} offenen Gruppenschiessen</strong> (${totalShooters} Gutschriftspositionen, Gesamtsumme <strong>${fmtCurr(totalAmount)}</strong>) jetzt gesammelt in den Jahresbeitrag ${yr} (Konto 1301) übertragen?<ul class="mt-2 mb-0 ps-3 small">${detailsHtml}</ul>`,
+                    title: 'Alle offenen Schützengewinne in Jahresbeitrag übertragen?',
+                    message: `Möchtest du die folgenden <strong>${openComps.length} offenen Schiessen</strong> (${totalShooters} Gutschriftspositionen, Gesamtsumme <strong>${fmtCurr(totalAmount)}</strong>) jetzt gesammelt in den Jahresbeitrag ${yr} (Konto 1301) übertragen?<ul class="mt-2 mb-0 ps-3 small">${detailsHtml}</ul>`,
                     type: 'primary',
                     confirmText: `Ja, alle übertragen (${fmtCurr(totalAmount)})`,
                     cancelText: 'Abbrechen'
@@ -3551,12 +3731,14 @@
 
             let totalTransferred = 0;
             const allFailed = new Set();
+            const allLocked = new Set();
 
             // Alle Wettkämpfe (inkl. Self-Healing für bereits verrechnete) durchgehen
             for (const c of (list || [])) {
-                const { successCount, failedShooters } = await _transferCompMembersToJahresbeitragInternal(c, yr);
+                const { successCount, failedShooters, lockedInvoiceShooters } = await _transferCompMembersToJahresbeitragInternal(c, yr);
                 totalTransferred += successCount;
                 failedShooters.forEach(fn => allFailed.add(fn));
+                (lockedInvoiceShooters || []).forEach(ln => allLocked.add(ln));
             }
 
             if (allFailed.size > 0 && window.UIConfirmKit) {
@@ -3566,9 +3748,16 @@
                     type: 'warning'
                 });
             }
+            if (allLocked.size > 0 && window.UIConfirmKit) {
+                await UIConfirmKit.alert({
+                    title: 'Rechnung bereits versendet / bezahlt',
+                    message: `Für folgende Schützen ist die Jahresbeitragsrechnung bereits versendet oder bezahlt:<br><br>• ${Array.from(allLocked).map(escapeHtml).join('<br>• ')}`,
+                    type: 'warning'
+                });
+            }
 
             await jmRenderGruppengewinneList(yr);
-            if (typeof showSuccess === 'function') {
+            if (totalTransferred > 0 && typeof showSuccess === 'function') {
                 showSuccess(`🎉 ${totalTransferred} Gutschriftsposition(en) aus ${openComps.length} Schiessen erfolgreich im Jahresbeitrag ${yr} verbucht!`);
             }
         };
@@ -3597,7 +3786,7 @@
             const saved = await _jmSaveCurrentCompInternal({ closeModal: false, silent: true });
             if (!saved || !_jmCurrentEditingComp.id) return;
 
-            const members = (_jmCurrentEditingComp.members || []).filter(m => m.payout_method === 'bank' && m.betrag > 0 && m.status !== 'in_zahlung' && m.status !== 'ausgefuehrt');
+            const members = (_jmCurrentEditingComp.members || []).filter(m => m.payout_method === 'bank' && getMemberOpenAmount(m) > 0 && m.status !== 'in_zahlung' && m.status !== 'ausgefuehrt');
             if (members.length === 0) {
                 if (window.UIConfirmKit) {
                     await UIConfirmKit.alert({ title: 'Keine Positionen für Banküberweisung', message: 'Es gibt keine Schützen mit Methode «Banküberweisung» und offenem Betrag.', type: 'info' });
@@ -3621,11 +3810,12 @@
                 return;
             }
 
+            const totalBankSum = members.reduce((a, b) => a + getMemberOpenAmount(b), 0);
             let confirmed = false;
             if (window.UIConfirmKit) {
                 confirmed = await UIConfirmKit.confirm({
                     title: 'Zahlungsaufträge erstellen?',
-                    message: `Möchtest du für ${members.length} Schütze(n) Zahlungsaufträge (Konto 1301 an Bank 1020) im Gesamtbetrag von CHF ${members.reduce((a, b) => a + Number(b.betrag), 0).toFixed(2)} erstellen? Diese können anschliessend im Menü Finanzbuchhaltung als ISO 20022 pain.001 XML heruntergeladen werden.`,
+                    message: `Möchtest du für ${members.length} Schütze(n) Zahlungsaufträge (Konto 1301 an Bank 1020) im Gesamtbetrag von CHF ${totalBankSum.toFixed(2)} erstellen? Diese können anschliessend im Menü Finanzbuchhaltung als ISO 20022 pain.001 XML heruntergeladen werden.`,
                     type: 'primary',
                     confirmText: 'Ja, Zahlungsaufträge anlegen',
                     cancelText: 'Abbrechen'
@@ -3645,6 +3835,9 @@
 
             for (const m of members) {
                 try {
+                    const groupAlreadyInJb = Boolean(m.contribution_position_id) && Number(m.anteil_gruppe || 0) > 0;
+                    const openBankAmt = getMemberOpenAmount(m);
+
                     // Nächste Auftrags-Nr ZA-YYYY-xxx ermitteln
                     let nextNr = `ZA-${yr}-001`;
                     const { data: poRows } = await supa.from('accounting_payment_orders').select('order_nr').ilike('order_nr', `ZA-${yr}-%`).order('created_at', { ascending: false }).limit(1);
@@ -3657,7 +3850,7 @@
                     }
 
                     const positions = [];
-                    if (Number(m.anteil_gruppe || 0) > 0) {
+                    if (!groupAlreadyInJb && Number(m.anteil_gruppe || 0) > 0) {
                         positions.push({
                             text: `Anteil Gruppengewinn ${_jmCurrentEditingComp.gruppe_name} (${_jmCurrentEditingComp.anlass_name})`,
                             betrag: Number(m.anteil_gruppe),
@@ -3675,12 +3868,12 @@
                     if (positions.length === 0) {
                         positions.push({
                             text: `Schützengewinn ${_jmCurrentEditingComp.anlass_name}`,
-                            betrag: Number(m.betrag),
+                            betrag: openBankAmt,
                             konto_soll: '1301'
                         });
                     }
 
-                    const poDesc = _jmCurrentEditingComp.anlass_typ === 'einzel'
+                    const poDesc = (_jmCurrentEditingComp.anlass_typ === 'einzel' || groupAlreadyInJb)
                         ? `Einzelgewinn ${m.stich_name || ''} (${_jmCurrentEditingComp.anlass_name})`
                         : `Schützengewinn ${_jmCurrentEditingComp.gruppe_name} (${_jmCurrentEditingComp.anlass_name})`;
 
@@ -3692,7 +3885,7 @@
                         member_pn: m.person_number ? String(m.person_number) : null,
                         recipient_name: m.schuetze_name,
                         recipient_iban: m.iban.replace(/\s+/g, ''),
-                        betrag: Number(m.betrag),
+                        betrag: openBankAmt,
                         konto_soll: '1301',
                         konto_haben: '1020',
                         beschreibung: poDesc,
