@@ -1630,6 +1630,7 @@ window.RechnungsCore = {
         }
         await supa.from('inventory_transactions').update({ action: 'STORNO', notes: `[STORNO - Rechnung ${invoiceId} storniert]` }).eq('invoice_id', invoiceId);
         await supa.from('inventory_deposits').update({ status: 'Storniert', updated_at: nowIso }).eq('invoice_id', invoiceId);
+        window._inventarNeedsReload = true;
         if (typeof window.loadInventarData === 'function') {
           try { await window.loadInventarData(true); } catch (_) {}
         }

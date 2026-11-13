@@ -277,6 +277,11 @@ vorstand/js/inventar/
 - **Dezenter Hinweis in der Buchungsmaske:** Anstelle eines editierbaren Eingabefeldes zeigt die Ausleih-/Verkaufsmaske einen dezenten Read-Only Badge mit dem aktiven Gegenkonto sowie für berechtigte Kassiere einen Direktlink in die Einstellungen.
 - **FiBu-Schnellabsprung:** Im KMU-Kontenrahmen der Finanzbuchhaltung führt ein Button `[📦 Inventar-Konten]` sowie ein Info-Banner direkt in den Finanzen-Tab des Inventars.
 
+### 5.16 Workflow-Härtung, FiBu-RPC & Cross-Modul-Synchronisation (Migration 127)
+- **Sichere FiBu-Journal-RPC (`inventar_book_accounting_journal`):** Da Schreibzugriffe auf `public.accounting_journal` gemäss Migration 49 grundsätzlich `buchhaltung.manage` erfordern, schreibt `inventar-cart.js` bei Bar-Materialverkäufen und Kautionen nun über die `SECURITY DEFINER`-RPC `public.inventar_book_accounting_journal(...)` (freigegeben für `inventar.manage` und `buchhaltung.manage`) inklusive vollständiger Fehlerprüfung und Rollback-Absicherung im Warenkorb-Submit.
+- **Präzise Pfand- & Rechnungs-Kopplung:** Bei Rückgaben (`checkin`) wird vorab geprüft, ob ein effektiv bezahltes offenes Pfand aus `inventory_deposits` existiert (kein Fallback mehr auf `item.Depotbetrag` und kein Cash-Retour für unbezahlte `DP-*`-Rechnungen); bei gemischten Warenkörben wird `invoice_id` ausschliesslich den Positionen mit Zahlungsart `Einzahlungsschein` zugewiesen.
+- **Cross-Modul-Konsistenz:** `bhJumpToInventarKonten()` navigiert nun korrekt via `navTo('inventar')`, das Bank-Matching für `MV-*`/`DP-*` übernimmt konfigurierte Positionen/Standardkonten (`8121`/`2030`) mit `syncBookkeeping: false`, Storno/Löschung im Rechnungsmodul und Buchhaltungsmodul invalidiert `window._inventarNeedsReload`, und Dialoge in `inventar/` verwenden konsequent `UIConfirmKit` / `UIButtonKit`.
+
 
 
 

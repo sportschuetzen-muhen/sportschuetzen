@@ -494,12 +494,15 @@ function renderInventoryTable() {
     html += '<th class="text-center inv-col-sticky-action" style="font-size:12px;font-weight:700;letter-spacing:0.5px;color:#475569;white-space:normal;vertical-align:bottom;" data-col-id="col_aktionen" data-col-toggle="false">Aktionen</th></tr></thead><tbody>';
 
     html += sorted.map(row => {
-        const idCell = `<td class="font-monospace fw-bold text-primary inv-col-sticky-id" data-col-id="col_id">${row.ID || '-'}</td>`;
+        const safeRowId = invEscapeHtml(row.ID || '-');
+        const idCell = `<td class="font-monospace fw-bold text-primary inv-col-sticky-id" data-col-id="col_id">${safeRowId}</td>`;
         const cells = displayHeaders.map(key => {
             const val = row[key];
             const colAttr = `data-col-id="col_${key.toLowerCase()}"`;
-            if (key.endsWith("_ID") || key === "Aktueller_Besitzer_ID")
-                return `<td ${colAttr}>${getInventarNameFromId(val) || '<span class="text-muted">-</span>'}</td>`;
+            if (key.endsWith("_ID") || key === "Aktueller_Besitzer_ID") {
+                const resolved = getInventarNameFromId(val);
+                return `<td ${colAttr}>${resolved && resolved !== '-' ? invEscapeHtml(resolved) : '<span class="text-muted">-</span>'}</td>`;
+            }
             if (key === "Status") {
                 if (val === "Im Lager" || val === "Aktiv")
                     return `<td ${colAttr}><span class="badge bg-success-subtle text-success border border-success-subtle py-1 px-2 rounded-pill">${val==='Aktiv'?'Aktiv':'Lager'}</span></td>`;
@@ -508,32 +511,37 @@ function renderInventoryTable() {
                 if (val === "Verkauft")
                     return `<td ${colAttr}><span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle py-1 px-2 rounded-pill">Verkauft</span></td>`;
                 if (val === "Defekt" || val === "Ausgemustert")
-                    return `<td ${colAttr}><span class="badge bg-danger-subtle text-danger border border-danger-subtle py-1 px-2 rounded-pill">${val}</span></td>`;
+                    return `<td ${colAttr}><span class="badge bg-danger-subtle text-danger border border-danger-subtle py-1 px-2 rounded-pill">${invEscapeHtml(val)}</span></td>`;
                 if (val === "Verstorben")
                     return `<td ${colAttr}><span class="badge bg-dark text-white py-1 px-2 rounded-pill">† Verstorben</span></td>`;
-                return `<td ${colAttr}><span class="badge bg-secondary py-1 px-2 rounded-pill">${val||'-'}</span></td>`;
+                return `<td ${colAttr}><span class="badge bg-secondary py-1 px-2 rounded-pill">${invEscapeHtml(val||'-')}</span></td>`;
             }
             if (dateKeys.some(dk => key.toLowerCase().includes(dk.toLowerCase())) && val)
-                return `<td ${colAttr}>${formatCH(val)}</td>`;
+                return `<td ${colAttr}>${invEscapeHtml(formatCH(val))}</td>`;
             if (key.toLowerCase().includes("preis") || key.toLowerCase().includes("sponsoring")) {
                 if (val !== undefined && val !== null && val !== "") {
                     const num = parseFloat(val);
                     const isNeg = key.toLowerCase().includes("sponsoring") && num > 0;
-                    return `<td ${colAttr} class="text-end font-monospace ${key.toLowerCase().includes("sponsoring") ? 'text-danger fw-semibold' : (key.toLowerCase().includes("verkauf") ? 'fw-bold text-success' : '')}">${!isNaN(num) ? (isNeg ? '-CHF ' : 'CHF ') + num.toFixed(2) : val}</td>`;
+                    const formattedNum = !isNaN(num)
+                        ? (isNeg ? `- ${UIFormatKit.money(num)}` : UIFormatKit.money(num))
+                        : invEscapeHtml(val);
+                    return `<td ${colAttr} class="text-end font-monospace ${key.toLowerCase().includes("sponsoring") ? 'text-danger fw-semibold' : (key.toLowerCase().includes("verkauf") ? 'fw-bold text-success' : '')}">${formattedNum}</td>`;
                 }
                 return `<td ${colAttr} class="text-end text-muted small">-</td>`;
             }
             if (key.toLowerCase().includes("pfand") || key === "Depot" || key === "Depotbetrag")
-                return `<td ${colAttr} class="text-end font-monospace fw-bold text-primary">${val ? parseFloat(val).toFixed(2) : '0.00'}</td>`;
-            return `<td ${colAttr}>${val !== undefined && val !== null && val !== "" ? val : '-'}</td>`;
+                return `<td ${colAttr} class="text-end font-monospace fw-bold text-primary">${val ? UIFormatKit.money(val, { symbol: false }) : '0.00'}</td>`;
+            return `<td ${colAttr}>${val !== undefined && val !== null && val !== "" ? invEscapeHtml(val) : '-'}</td>`;
         }).join('');
 
+        const jsSafeTarget = invEscapeHtml(String(target)).replace(/'/g, "\\'");
+        const jsSafeId = invEscapeHtml(String(row.ID || '')).replace(/'/g, "\\'");
         return `<tr>${idCell}${cells}<td class="text-center inv-col-sticky-action" data-col-id="col_aktionen">
             <div class="btn-group btn-group-sm">
                 ${canAdd() ? `<button class="btn btn-outline-primary btn-sm rounded-2 me-1"
-                        onclick="editInventarItem('${target}','${row.ID}')" title="Bearbeiten"><i class="fas fa-edit"></i></button>` : ''}
+                        onclick="editInventarItem('${jsSafeTarget}','${jsSafeId}')" title="Bearbeiten"><i class="fas fa-edit"></i></button>` : ''}
                 ${canDelete() ? `<button class="btn btn-outline-danger btn-sm rounded-2"
-                        onclick="deleteInventarItem('${target}','${row.ID}')" title="Löschen"><i class="fas fa-trash"></i></button>` : ''}
+                        onclick="deleteInventarItem('${jsSafeTarget}','${jsSafeId}')" title="Löschen"><i class="fas fa-trash"></i></button>` : ''}
             </div>
         </td></tr>`;
     }).join('');
@@ -566,7 +574,7 @@ function renderInventoryTable() {
 // =========================================================
 function openInventarItemModal(preferredCat) {
     if (!canAdd()) {
-        alert("❌ Du hast keine Berechtigung zum Erfassen von Gegenständen.");
+        invAlert('Keine Berechtigung', 'Du hast keine Berechtigung zum Erfassen von Gegenständen.', 'danger');
         return;
     }
     const filterVal = preferredCat || document.getElementById('filter-liste')?.value || 'Inventar_Kleidung';
@@ -582,8 +590,14 @@ function openInventarItemModal(preferredCat) {
     const titleEl = document.getElementById('modal-inventar-item-title');
     if (titleEl) titleEl.innerHTML = `<i class="fas fa-plus-circle me-2 text-primary"></i>Neuen Gegenstand erfassen`;
 
+    const form = document.getElementById('form-inventar-item');
+    if (form) form.reset();
+
     const catSelect = document.getElementById('item-modal-category');
-    if (catSelect) catSelect.value = target;
+    if (catSelect) {
+        catSelect.disabled = false;
+        catSelect.value = target;
+    }
 
     const idInput = document.getElementById('item-modal-id');
     if (idInput) idInput.value = '';
@@ -593,9 +607,6 @@ function openInventarItemModal(preferredCat) {
 
     const delBtn = document.getElementById('btn-item-modal-delete');
     if (delBtn) delBtn.classList.add('d-none');
-
-    const form = document.getElementById('form-inventar-item');
-    if (form) form.reset();
 
     renderItemModalFields(target);
 
@@ -691,7 +702,7 @@ function renderItemModalFields(target) {
 // =========================================================
 function editInventarItem(targetSheet, id) {
     if (targetSheet === 'Personendaten') {
-        alert("ℹ️ Mitgliederdaten werden im Modul 'Mitglieder' gepflegt.");
+        invAlert('Hinweis', 'Mitgliederdaten werden direkt im Modul «Mitglieder» gepflegt.', 'info');
         return;
     }
 
@@ -703,7 +714,7 @@ function editInventarItem(targetSheet, id) {
         .find(item => item.ID.toString() === id.toString());
 
     if (!data) {
-        alert("Gegenstand nicht gefunden.");
+        invAlert('Nicht gefunden', 'Der ausgewählte Gegenstand wurde nicht gefunden.', 'warning');
         return;
     }
 
@@ -715,10 +726,13 @@ function editInventarItem(targetSheet, id) {
     }
 
     const titleEl = document.getElementById('modal-inventar-item-title');
-    if (titleEl) titleEl.innerHTML = `<i class="fas fa-edit me-2 text-warning"></i>Gegenstand bearbeiten: <strong>${id}</strong>`;
+    if (titleEl) titleEl.innerHTML = `<i class="fas fa-edit me-2 text-warning"></i>Gegenstand bearbeiten: <strong>${invEscapeHtml(id)}</strong>`;
 
     const catSelect = document.getElementById('item-modal-category');
-    if (catSelect) catSelect.value = targetSheet;
+    if (catSelect) {
+        catSelect.value = targetSheet;
+        catSelect.disabled = true;
+    }
 
     const idInput = document.getElementById('item-modal-id');
     if (idInput) idInput.value = id;
@@ -759,149 +773,165 @@ function editInventarItem(targetSheet, id) {
 // =========================================================
 async function saveInventarItemModal(e) {
     e.preventDefault();
-    setInventarBusy(true);
 
-    const target = document.getElementById('item-modal-category')?.value || 'Inventar_Kleidung';
-    const fields = {};
-    new FormData(e.target).forEach((v,k) => fields[k]=v);
-    const isUpdate = Boolean(fields.ID && fields.ID !== "");
+    const saveAction = async () => {
+        setInventarBusy(true);
 
-    const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
+        const target = document.getElementById('item-modal-category')?.value || 'Inventar_Kleidung';
+        const fields = {};
+        new FormData(e.target).forEach((v,k) => fields[k]=v);
+        const isUpdate = Boolean(fields.ID && fields.ID !== "");
 
-    try {
-        if (supa && target !== 'Personendaten') {
-            const catMap = {
-                "Inventar_Gewehre": "gewehr",
-                "Inventar_Schluessel": "schluessel",
-                "Inventar_Kleidung": "kleidung",
-                "Inventar_Schiessbekleidung": "schiessbekleidung"
-            };
-            const prefixMap = {
-                "Inventar_Gewehre": "G",
-                "Inventar_Schluessel": "SCH",
-                "Inventar_Kleidung": "K",
-                "Inventar_Schiessbekleidung": "SB"
-            };
-            const category = catMap[target] || 'gewehr';
-            const prefix = prefixMap[target] || 'X';
+        const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
 
-            let itemId = fields.ID;
-            if (!isUpdate) {
-                const keyMap = { "gewehr":"gewehre","schluessel":"schluessel","kleidung":"kleidung","schiessbekleidung":"schiessbekleidung" };
-                const existingItems = inventarState?.[keyMap[category]] || [];
-                let maxNum = 0;
-                existingItems.forEach(it => {
-                    const idStr = String(it.ID || '');
-                    if (idStr.startsWith(prefix + '-')) {
-                        const n = parseInt(idStr.split('-')[1]);
-                        if (!isNaN(n) && n > maxNum) maxNum = n;
-                    }
-                });
-                itemId = `${prefix}-${maxNum + 1}`;
-                fields.ID = itemId;
-            }
+        try {
+            if (supa && target !== 'Personendaten') {
+                const catMap = {
+                    "Inventar_Gewehre": "gewehr",
+                    "Inventar_Schluessel": "schluessel",
+                    "Inventar_Kleidung": "kleidung",
+                    "Inventar_Schiessbekleidung": "schiessbekleidung"
+                };
+                const prefixMap = {
+                    "Inventar_Gewehre": "G",
+                    "Inventar_Schluessel": "SCH",
+                    "Inventar_Kleidung": "K",
+                    "Inventar_Schiessbekleidung": "SB"
+                };
+                const category = catMap[target] || 'gewehr';
+                const prefix = prefixMap[target] || 'X';
 
-            const supaItem = {
-                id: String(itemId).trim(),
-                category: category,
-                depot_amount: parseFloat(fields.Depotbetrag) || 0,
-                purchase_price: parseFloat(fields.Kaufpreis) || null,
-                purchase_year: fields.Kauf_Spender_Jahr ? String(fields.Kauf_Spender_Jahr) : null,
-                purchase_date: fields.Kaufdatum ? (typeof formatISODateSafe === 'function' ? formatISODateSafe(fields.Kaufdatum) : fields.Kaufdatum) : null,
-                updated_at: new Date().toISOString()
-            };
-
-            if (!isUpdate) {
-                supaItem.status = 'Im Lager';
-                supaItem.current_owner_id = null;
-            } else if (fields.Status) {
-                supaItem.status = fields.Status;
-            }
-
-            if (category === 'gewehr') {
-                supaItem.manufacturer = fields.Hersteller || null;
-                supaItem.model = fields.Modell || null;
-                supaItem.serial_number = fields.Laufnummer || null;
-                supaItem.diopter = fields.Diopter || null;
-                supaItem.front_sight = fields.Ringkorn || null;
-                supaItem.stock = fields.Schaft ? fields.Schaft.trim() : null;
-                supaItem.accessories = fields.Zubehoer || null;
-                supaItem.special_notes = fields.Spezielles || null;
-                supaItem.caliber_distance = fields.Distanz || '50m';
-                supaItem.owner_person_id = fields.Eigentümer_ID || null;
-                supaItem.donor_person_id = fields.Gespendet_ID || null;
-                supaItem.seller_person_id = fields.Verkaeufer_ID || null;
-            } else if (category === 'schluessel') {
-                supaItem.key_name = fields.Bezeichnung || '';
-                supaItem.key_number = fields.Nummer ? String(fields.Nummer) : null;
-            } else if (category === 'kleidung' || category === 'schiessbekleidung') {
-                supaItem.item_type = fields.Typ || '';
-                supaItem.model = fields.Modell || null;
-                supaItem.manufacturer = fields.Hersteller || (category === 'kleidung' ? 'Erima' : null);
-                supaItem.size = fields.Groesse || '';
-                supaItem.selling_price = fields.Verkaufspreis ? parseFloat(fields.Verkaufspreis) : null;
-                supaItem.retail_price = fields.Katalogpreis ? parseFloat(fields.Katalogpreis) : (fields.Kaufpreis ? parseFloat(fields.Kaufpreis) : null);
-                supaItem.discount_amount = fields.Sponsoring ? parseFloat(fields.Sponsoring) : null;
-                supaItem.sponsor_company = fields.Sponsor_Firma ? fields.Sponsor_Firma.trim() : null;
-                supaItem.base_price = fields.Grundpreis ? parseFloat(fields.Grundpreis) : null;
-                supaItem.finishing_price = fields.Veredelung ? parseFloat(fields.Veredelung) : null;
-            }
-
-            const { error: saveErr } = await supa
-                .from('inventory_items')
-                .upsert(supaItem, { onConflict: 'id' });
-
-            if (saveErr) throw new Error("Supabase Speicherfehler: " + saveErr.message);
-
-            // Falls neuer Kleidungstyp oder neue Grösse erfasst wurde, in inventory_config abspeichern
-            if ((category === 'kleidung' || category === 'schiessbekleidung') && supa) {
-                try {
-                    if (fields.Typ && fields.Typ.trim()) {
-                        const typKey = category === 'schiessbekleidung' ? 'Schiessbekleidung_Typ' : 'Kleidung_Typ';
-                        const knownTypes = (inventarState?.config || []).map(c => c[typKey]).filter(Boolean);
-                        if (!knownTypes.includes(fields.Typ.trim())) {
-                            await supa.from('inventory_config').insert([{
-                                config_key: typKey,
-                                value: fields.Typ.trim(),
-                                sort_order: knownTypes.length + 1
-                            }]);
+                let itemId = fields.ID;
+                if (!isUpdate) {
+                    const keyMap = { "gewehr":"gewehre","schluessel":"schluessel","kleidung":"kleidung","schiessbekleidung":"schiessbekleidung" };
+                    const existingItems = inventarState?.[keyMap[category]] || [];
+                    let maxNum = 0;
+                    existingItems.forEach(it => {
+                        const idStr = String(it.ID || '');
+                        if (idStr.startsWith(prefix + '-')) {
+                            const n = parseInt(idStr.split('-')[1], 10);
+                            if (!isNaN(n) && n > maxNum) maxNum = n;
                         }
-                    }
-                    if (fields.Groesse && fields.Groesse.trim()) {
-                        const knownSizes = (inventarState?.config || []).map(c => c['Kleidung_Schiessbekleidung_Groesse']).filter(Boolean);
-                        if (!knownSizes.includes(fields.Groesse.trim())) {
-                            await supa.from('inventory_config').insert([{
-                                config_key: 'Kleidung_Schiessbekleidung_Groesse',
-                                value: fields.Groesse.trim(),
-                                sort_order: knownSizes.length + 1
-                            }]);
-                        }
-                    }
-                } catch (confErr) {
-                    console.warn("Warnung beim Speichern neuer Typ/Grösse-Konfiguration:", confErr);
+                    });
+                    itemId = `${prefix}-${maxNum + 1}`;
+                    fields.ID = itemId;
                 }
+
+                const supaItem = {
+                    id: String(itemId).trim(),
+                    category: category,
+                    depot_amount: parseFloat(fields.Depotbetrag) || 0,
+                    purchase_price: parseFloat(fields.Kaufpreis) || null,
+                    purchase_year: fields.Kauf_Spender_Jahr ? String(fields.Kauf_Spender_Jahr) : null,
+                    purchase_date: fields.Kaufdatum ? (typeof formatISODateSafe === 'function' ? formatISODateSafe(fields.Kaufdatum) : fields.Kaufdatum) : null,
+                    updated_at: new Date().toISOString()
+                };
+
+                if (!isUpdate) {
+                    supaItem.status = 'Im Lager';
+                    supaItem.current_owner_id = null;
+                } else if (fields.Status) {
+                    supaItem.status = fields.Status;
+                    if (fields.Status === 'Im Lager' || fields.Status === 'Defekt' || fields.Status === 'Ausgemustert') {
+                        supaItem.current_owner_id = null;
+                    }
+                }
+
+                if (category === 'gewehr') {
+                    supaItem.manufacturer = fields.Hersteller || null;
+                    supaItem.model = fields.Modell || null;
+                    supaItem.serial_number = fields.Laufnummer || null;
+                    supaItem.diopter = fields.Diopter || null;
+                    supaItem.front_sight = fields.Ringkorn || null;
+                    supaItem.stock = fields.Schaft ? fields.Schaft.trim() : null;
+                    supaItem.accessories = fields.Zubehoer || null;
+                    supaItem.special_notes = fields.Spezielles || null;
+                    supaItem.caliber_distance = fields.Distanz || '50m';
+                    supaItem.owner_person_id = fields.Eigentümer_ID || null;
+                    supaItem.donor_person_id = fields.Gespendet_ID || null;
+                    supaItem.seller_person_id = fields.Verkaeufer_ID || null;
+                } else if (category === 'schluessel') {
+                    supaItem.key_name = fields.Bezeichnung || '';
+                    supaItem.key_number = fields.Nummer ? String(fields.Nummer) : null;
+                } else if (category === 'kleidung' || category === 'schiessbekleidung') {
+                    supaItem.item_type = fields.Typ || '';
+                    supaItem.model = fields.Modell || null;
+                    supaItem.manufacturer = fields.Hersteller || (category === 'kleidung' ? 'Erima' : null);
+                    supaItem.size = fields.Groesse || '';
+                    supaItem.selling_price = fields.Verkaufspreis ? parseFloat(fields.Verkaufspreis) : null;
+                    supaItem.retail_price = fields.Katalogpreis ? parseFloat(fields.Katalogpreis) : (fields.Kaufpreis ? parseFloat(fields.Kaufpreis) : null);
+                    supaItem.discount_amount = fields.Sponsoring ? parseFloat(fields.Sponsoring) : null;
+                    supaItem.sponsor_company = fields.Sponsor_Firma ? fields.Sponsor_Firma.trim() : null;
+                    supaItem.base_price = fields.Grundpreis ? parseFloat(fields.Grundpreis) : null;
+                    supaItem.finishing_price = fields.Veredelung ? parseFloat(fields.Veredelung) : null;
+                }
+
+                const { error: saveErr } = await supa
+                    .from('inventory_items')
+                    .upsert(supaItem, { onConflict: 'id' });
+
+                if (saveErr) throw new Error("Supabase Speicherfehler: " + saveErr.message);
+
+                // Falls neuer Kleidungstyp oder neue Grösse erfasst wurde, in inventory_config abspeichern
+                if ((category === 'kleidung' || category === 'schiessbekleidung') && supa) {
+                    try {
+                        if (fields.Typ && fields.Typ.trim()) {
+                            const typKey = category === 'schiessbekleidung' ? 'Schiessbekleidung_Typ' : 'Kleidung_Typ';
+                            const knownTypes = (inventarState?.config || []).map(c => c[typKey]).filter(Boolean);
+                            if (!knownTypes.includes(fields.Typ.trim())) {
+                                await supa.from('inventory_config').insert([{
+                                    config_key: typKey,
+                                    value: fields.Typ.trim(),
+                                    sort_order: knownTypes.length + 1
+                                }]);
+                            }
+                        }
+                        if (fields.Groesse && fields.Groesse.trim()) {
+                            const knownSizes = (inventarState?.config || []).map(c => c['Kleidung_Schiessbekleidung_Groesse']).filter(Boolean);
+                            if (!knownSizes.includes(fields.Groesse.trim())) {
+                                await supa.from('inventory_config').insert([{
+                                    config_key: 'Kleidung_Schiessbekleidung_Groesse',
+                                    value: fields.Groesse.trim(),
+                                    sort_order: knownSizes.length + 1
+                                }]);
+                            }
+                        }
+                    } catch (confErr) {
+                        console.warn("Warnung beim Speichern neuer Typ/Grösse-Konfiguration:", confErr);
+                    }
+                }
+
+                // Revisions-Auditlog eintragen
+                await supa.from('inventory_audit_log').insert([{
+                    timestamp: new Date().toISOString(),
+                    user_name: (window.currentUser || localStorage.getItem('portal_user') || 'Vorstand'),
+                    action: isUpdate ? 'updateItem' : 'addNewItem',
+                    details: `${target}: ID ${itemId} (${isUpdate ? 'aktualisiert' : 'neu erfasst'})`
+                }]);
             }
 
-            // Revisions-Auditlog eintragen
-            await supa.from('inventory_audit_log').insert([{
-                timestamp: new Date().toISOString(),
-                user_name: (window.currentUser || localStorage.getItem('portal_user') || 'Vorstand'),
-                action: isUpdate ? 'updateItem' : 'addNewItem',
-                details: `${target}: ID ${itemId} (${isUpdate ? 'aktualisiert' : 'neu erfasst'})`
-            }]);
-        }
+            const modalEl = document.getElementById('modal-inventar-item');
+            if (modalEl) {
+                bootstrap.Modal.getInstance(modalEl)?.hide();
+            }
 
-        const modalEl = document.getElementById('modal-inventar-item');
-        if (modalEl) {
-            bootstrap.Modal.getInstance(modalEl)?.hide();
+            await loadInventarData(true);
+            await invAlert(
+                'Gespeichert',
+                isUpdate ? `Änderung für <strong>${invEscapeHtml(fields.ID)}</strong> gespeichert.` : `Neuer Gegenstand <strong>${invEscapeHtml(fields.ID)}</strong> erfolgreich angelegt.`,
+                'success'
+            );
+        } catch (err) {
+            await invAlert('Speicherfehler', invEscapeHtml(err.message), 'danger');
+        } finally {
+            setInventarBusy(false);
         }
+    };
 
-        await loadInventarData(true);
-        alert(isUpdate ? `✅ Änderung für ${fields.ID} gespeichert!` : `✅ Neuer Gegenstand ${fields.ID} erfolgreich angelegt!`);
-    } catch (err) {
-        alert("Fehler: " + err.message);
-    } finally {
-        setInventarBusy(false);
+    if (window.UIButtonKit && typeof window.UIButtonKit.withLoading === 'function') {
+        await window.UIButtonKit.withLoading('#btn-item-modal-save', saveAction);
+    } else {
+        await saveAction();
     }
 }
 
@@ -910,11 +940,18 @@ async function saveInventarItemModal(e) {
 // =========================================================
 async function deleteInventarItem(target, id) {
     if (!canDelete()) {
-        alert("❌ Du hast keine Berechtigung zum Löschen.");
+        await invAlert('Keine Berechtigung', 'Du hast keine Berechtigung zum Löschen von Gegenständen.', 'danger');
         return;
     }
 
-    if (!confirm(`Möchtest du den Eintrag ${id} wirklich unwiderruflich löschen?`)) return;
+    const ok = await invConfirm({
+        title: `Eintrag ${id} löschen?`,
+        message: `Möchtest du den Eintrag <strong>${invEscapeHtml(id)}</strong> wirklich unwiderruflich löschen?`,
+        type: 'danger',
+        confirmText: 'Unwiderruflich löschen',
+        cancelText: 'Abbrechen'
+    });
+    if (!ok) return;
 
     setInventarBusy(true);
 
@@ -938,9 +975,9 @@ async function deleteInventarItem(target, id) {
         }
 
         await loadInventarData(true);
-        alert(`✅ Eintrag ${id} wurde erfolgreich gelöscht!`);
+        await invAlert('Gelöscht', `Eintrag <strong>${invEscapeHtml(id)}</strong> wurde erfolgreich gelöscht.`, 'success');
     } catch (err) {
-        alert("Fehler: " + err.message);
+        await invAlert('Löschfehler', invEscapeHtml(err.message), 'danger');
     } finally {
         setInventarBusy(false);
     }

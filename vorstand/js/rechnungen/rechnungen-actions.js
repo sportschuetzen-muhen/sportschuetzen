@@ -154,6 +154,11 @@ window.rnSavePayment = async function(event, invoiceId) {
           }).eq('id', invoiceId);
         }
       }
+
+      const invIdUpper = String(invoiceId || '').toUpperCase();
+      if (invIdUpper.startsWith('MV-') || invIdUpper.startsWith('DP-')) {
+        window._inventarNeedsReload = true;
+      }
     } catch (err) {
       console.error("❌ Fehler bei Zahlungsverbuchung:", err);
       if (window.UIConfirmKit) {
@@ -3634,8 +3639,8 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
 
           for (const itemId of itemIds) {
             if (!itemId) continue;
-            // Wenn Materialverkauf: Artikel wieder ins Lager stellen
-            if (!inv || inv.type === 'Materialverkauf' || !inv.type || inv.type.includes('Verkauf')) {
+            // Sowohl Materialverkauf (MV-*) als auch Depot / Pfand (DP-*) stellen den Artikel wieder ins Lager zurück
+            if (!inv || inv.type === 'Materialverkauf' || inv.type === 'Depot / Pfand' || !inv.type || inv.type.includes('Verkauf') || String(invoiceId).startsWith('MV-') || String(invoiceId).startsWith('DP-')) {
               await sb.from('inventory_items').update({ status: 'Im Lager', current_owner_id: null, updated_at: new Date().toISOString() }).eq('id', itemId);
             }
           }
@@ -3662,6 +3667,7 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
             details: `Rechnung ${invoiceId} (${inv?.type || 'Inventar'}) gelöscht: Inventarbestand/Depot automatisch zurückgestellt (${Array.from(itemIds).join(', ')})`
           }]);
 
+          window._inventarNeedsReload = true;
           if (typeof window.loadInventarData === 'function') {
             try { await window.loadInventarData(true); } catch (_) {}
           }

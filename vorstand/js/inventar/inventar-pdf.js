@@ -16,14 +16,17 @@ async function regeneratePDF(groupJson) {
         const isAusgabe = aktion === 'AUSGABE' || aktion === 'CHECKOUT';
 
         const items = group.map(t => ({
-            itemId:           t.Inventar_ID,
-            label:            getItemLabelFromTrans(t),
-            kategorie:        (t.Kategorie||"").toLowerCase(),
-            zustandAbgabe:    t.Zustand_Abgabe    || '-',
-            zustandRueckgabe: t.Zustand_Rueckgabe || '-',
-            pfandBetrag:      parseFloat(t.Pfandbetrag)    || 0,
-            pfandEinnahme:    t.Pfand_einnahme             || 'Nein',
-            pfandRetour:      t.Pfand_retour_bezahlt       || 'Nein'
+            itemId:             t.Inventar_ID,
+            label:              getItemLabelFromTrans(t),
+            kategorie:          (t.Kategorie||"").toLowerCase(),
+            zustandAbgabe:      t.Zustand_Abgabe    || '-',
+            zustandRueckgabe:   t.Zustand_Rueckgabe || '-',
+            pfandBetrag:        parseFloat(t.Pfandbetrag)    || 0,
+            pfandEinnahme:      t.Pfand_einnahme             || 'Nein',
+            pfandRetour:        t.Pfand_retour_bezahlt       || 'Nein',
+            verkaufMethode:     isVerkauf ? (t.Zahlungsart || 'Bar') : null,
+            pfandMethode:       isAusgabe ? (t.Zahlungsart || 'Bar') : null,
+            pfandRetourMethode: (!isVerkauf && !isAusgabe) ? (t.Zahlungsart || 'Bar') : null
         }));
 
         const [sigMBase64, sigVBase64] = await Promise.all([
@@ -41,9 +44,13 @@ async function regeneratePDF(groupJson) {
             sigMitglied:           sigMBase64,
             Sig_Vorstand:          sigVBase64,
             items
-        }, String(first.Inventar_ID || '?'), sigMBase64, sigVBase64, isVerkauf);
+        }, String(first.db_id || first.id || first.Inventar_ID || '1'), sigMBase64, sigVBase64, isVerkauf);
     } catch (err) {
-        alert("PDF konnte nicht wiederhergestellt werden: " + err.message);
+        if (typeof invAlert === 'function') {
+            invAlert('PDF-Fehler', 'PDF konnte nicht wiederhergestellt werden: ' + invEscapeHtml(err.message), 'danger');
+        } else {
+            alert("PDF konnte nicht wiederhergestellt werden: " + err.message);
+        }
     }
 }
 
@@ -151,13 +158,20 @@ async function generateQuittungPDF(data, transId, sigMitgliedUrl, sigVorstandUrl
         
         let status = '';
         if (isVerkauf) {
-             const methode = items[0]?.verkaufMethode || 'Bar';
-             status = methode === 'Einzahlungsschein' ? 'Rechnung folgt (QR)' : `Bezahlt (${methode})`;
+            const methods = [...new Set(items.filter(i => parseFloat(i.pfandBetrag) > 0).map(i => i.verkaufMethode || 'Bar'))];
+            status = (methods.length === 1 && methods[0] === 'Einzahlungsschein')
+                ? 'Rechnung folgt (QR)'
+                : `Zahlungsart: ${methods.join(', ') || 'Bar'}`;
+        } else if (isAusgabe) {
+            const methods = [...new Set(items.filter(i => parseFloat(i.pfandBetrag) > 0).map(i => i.pfandMethode || 'Bar'))];
+            status = items.some(i => i.pfandEinnahme === 'Ja')
+                ? `✓ Pfand kassiert (${methods.join(', ') || 'Bar'})`
+                : '✗ Nicht kassiert';
         } else {
-             const methode = isAusgabe ? (items[0]?.pfandMethode || 'Bar') : (items[0]?.pfandRetourMethode || 'Bar retour');
-             status = isAusgabe
-                ? (items[0]?.pfandEinnahme === 'Ja' ? `✓ Pfand kassiert (${methode})` : '✗ Nicht kassiert')
-                : (items[0]?.pfandRetour   === 'Ja' ? `✓ Pfand erstattet (${methode})` : '✗ Nicht erstattet');
+            const methods = [...new Set(items.filter(i => parseFloat(i.pfandBetrag) > 0).map(i => i.pfandRetourMethode || 'Bar retour'))];
+            status = items.some(i => i.pfandRetour === 'Ja')
+                ? `✓ Pfand erstattet (${methods.join(', ') || 'Bar'})`
+                : '✗ Nicht erstattet';
         }
         
         doc.setFont(undefined,'normal');
@@ -197,6 +211,6 @@ async function generateQuittungPDF(data, transId, sigMitgliedUrl, sigVorstandUrl
              105, 287, { align:'center' });
 
     const dateStr  = new Date().toISOString().split('T')[0].replace(/-/g,'');
-    const typKurz  = isAusgabe ? 'Ausgabe' : 'Rueckgabe';
+    const typKurz  = isVerkauf ? 'Verkauf' : (isAusgabe ? 'Ausgabe' : 'Rueckgabe');
     doc.save(`${dateStr}_${typKurz}_${mitglied?.Nachname||'Unbekannt'}_T${transId}.pdf`);
 }

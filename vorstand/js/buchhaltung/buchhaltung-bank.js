@@ -2070,10 +2070,15 @@ function bhBankMatchAll(transactions) {
               suggestedHaben = '3420'; // Nachwuchsförderung
             } else if (invType.includes('sponsor') || invType.includes('gönner')) {
               suggestedHaben = '3800'; // Sponsoring / Spenden
-            } else if (invType.includes('munition') || invType.includes('material') || invIdUpper.startsWith('MV-')) {
-              suggestedHaben = '3800'; // Material-/Munitionsverkauf
             } else if (invType.includes('depot') || invType.includes('pfand') || invType.includes('kaution') || invIdUpper.startsWith('DP-')) {
-              suggestedHaben = '2000'; // Kaution / Verbindlichkeiten
+              const posKonto = (bestInv.positions || []).find(p => p.konto)?.konto;
+              suggestedHaben = posKonto || localStorage.getItem('inventar_preferred_haben_konto_depot') || '2030'; // Kaution / Depots
+            } else if (invIdUpper.startsWith('MV-') || invType.includes('material')) {
+              const posKonto = (bestInv.positions || []).find(p => p.konto)?.konto;
+              suggestedHaben = posKonto || localStorage.getItem('inventar_preferred_haben_konto_verkauf') || '8121'; // Materialverkauf Inventar
+            } else if (invType.includes('munition')) {
+              const posKonto = (bestInv.positions || []).find(p => p.konto)?.konto;
+              suggestedHaben = posKonto || '3800'; // Munitionsverkauf / Übriger Ertrag
             } else {
               suggestedHaben = '3650';
             }
@@ -3239,9 +3244,10 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
           await window.RechnungsCore.recordPayment(matchedInvoice.id, {
             amount: Number(tx.amount || matchedInvoice.total_amount || 0),
             paymentDate: bookingDate,
-            method: 'Bank',
-            reference: belegNr,
-            notes: `Bankabgleich CAMT: ${tx.partyName || ''} (${belegNr})`
+            paymentMethod: 'Überweisung',
+            documentRef: belegNr,
+            notes: `Bankabgleich CAMT: ${tx.partyName || ''} (${belegNr})`,
+            syncBookkeeping: false
           });
           console.log(`✅ [RechnungsCore] Zahlung via Bankabgleich verbucht für Rechnung ${matchedInvoice.id}`);
         } else if (sb) {
@@ -3252,6 +3258,11 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
             document_ref: belegNr,
             updated_at: new Date().toISOString()
           }).eq('id', matchedInvoice.id);
+        }
+
+        const invIdUpper = String(matchedInvoice.id || '').toUpperCase();
+        if (invIdUpper.startsWith('MV-') || invIdUpper.startsWith('DP-') || matchedInvoice.source_module === 'inventar') {
+          window._inventarNeedsReload = true;
         }
 
         // Cache im Rechnungsmodul direkt aktualisieren
@@ -5276,8 +5287,12 @@ window.bhBankClearSplit = function(txIdx) {
     } else if (tx.matchedInvoice) {
       const invIdUpper = String(tx.matchedInvoice.id || '').toUpperCase();
       const invType = String(tx.matchedInvoice.type || '').toLowerCase();
-      if (invIdUpper.startsWith('MV-') || invType.includes('material')) tx.suggestedHaben = '3800';
-      else if (invIdUpper.startsWith('VT-') || invType.includes('vermietung')) tx.suggestedHaben = '3650';
+      const posKonto = (tx.matchedInvoice.positions || []).find(p => p.konto)?.konto;
+      if (invIdUpper.startsWith('DP-') || invType.includes('depot') || invType.includes('pfand') || invType.includes('kaution')) {
+        tx.suggestedHaben = posKonto || localStorage.getItem('inventar_preferred_haben_konto_depot') || '2030';
+      } else if (invIdUpper.startsWith('MV-') || invType.includes('material')) {
+        tx.suggestedHaben = posKonto || localStorage.getItem('inventar_preferred_haben_konto_verkauf') || '8121';
+      } else if (invIdUpper.startsWith('VT-') || invType.includes('vermietung')) tx.suggestedHaben = '3650';
       else if (invIdUpper.startsWith('JB-') || invType.includes('jahresbeitrag')) tx.suggestedHaben = '3410';
       else tx.suggestedHaben = '3800';
     }

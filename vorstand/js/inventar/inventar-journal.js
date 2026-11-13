@@ -42,20 +42,24 @@ function renderOffeneAusleihen() {
             const mitglied  = getInventarNameFromId(besitzer);
             const itemLabel = getItemLabel(keyMap[key], item);
             const pfand     = (inventarState.pfand || []).find(p =>
-                p.Inventar_ID?.toString() === item.ID.toString() &&
-                (p.Status||"").toLowerCase() === "offen");
+                String(p.Mitglied_ID || '') === String(besitzer) &&
+                String(p.Inventar_ID || '') === String(item.ID) &&
+                (p.Status || '').toLowerCase() === 'offen');
             const pfandNum  = pfand ? parseFloat(pfand.Betrag || 0) : 0;
-            const pfandStr  = pfand ? `CHF ${pfandNum.toFixed(2)}` : '-';
+            const pfandStr  = pfand ? UIFormatKit.money(pfandNum) : '-';
 
-            const trans = [...(inventarState.transaktionen||[])].reverse().find(t => {
-                const ak = (t.Aktion||"").toUpperCase();
-                if (ak !== 'AUSGABE' && ak !== 'CHECKOUT') return false;
-                if (t.Inventar_ID.toString() === item.ID.toString()) return true;
-                const numT = parseInt(t.Inventar_ID);
-                const numI = parseInt(item.ID.toString().replace(/\D/g,''));
-                return !isNaN(numT) && !isNaN(numI) && numT===numI &&
-                       (t.Kategorie||"").toLowerCase() === keyMap[key];
-            });
+            const trans = [...(inventarState.transaktionen || [])]
+                .sort((a, b) => new Date(b.Zeitstempel || 0).getTime() - new Date(a.Zeitstempel || 0).getTime())
+                .find(t => {
+                    const ak = (t.Aktion || '').toUpperCase();
+                    if (ak !== 'AUSGABE' && ak !== 'CHECKOUT') return false;
+                    if (String(t.Aktueller_Besitzer_ID || '') !== String(besitzer)) return false;
+                    if (String(t.Inventar_ID || '') === String(item.ID)) return true;
+                    const numT = parseInt(t.Inventar_ID, 10);
+                    const numI = parseInt(item.ID.toString().replace(/\D/g, ''), 10);
+                    return !isNaN(numT) && !isNaN(numI) && numT === numI &&
+                           (t.Kategorie || '').toLowerCase() === keyMap[key];
+                });
             const seit     = trans?.Zeitstempel ? formatCH(trans.Zeitstempel) : '-';
             const seitDate = trans?.Zeitstempel ? new Date(trans.Zeitstempel) : new Date(0);
             allRows.push({ mitglied, kategorie:keyMap[key], itemLabel, seit, seitDate, pfandNum, pfandStr, besitzer, katKey: keyMap[key], itemId: item.ID });
@@ -128,15 +132,18 @@ function renderOffeneAusleihen() {
         html += `<tr><td colspan="6" class="text-muted text-center py-3">${search ? 'Keine passenden Ausleihen gefunden' : '✅ Keine offenen Ausleihen'}</td></tr>`;
     } else {
         rows.forEach(r => {
+            const jsMitglied = invEscapeHtml(String(r.besitzer || '')).replace(/'/g, "\\'");
+            const jsKat = invEscapeHtml(String(r.katKey || '')).replace(/'/g, "\\'");
+            const jsItem = invEscapeHtml(String(r.itemId || '')).replace(/'/g, "\\'");
             html += `<tr>
-                <td data-col-id="col_mitglied"><span class="fw-semibold text-dark">${r.mitglied}</span></td>
-                <td data-col-id="col_kategorie"><span class="badge bg-secondary-subtle text-secondary border">${r.kategorie}</span></td>
-                <td data-col-id="col_gegenstand">${r.itemLabel}</td>
-                <td data-col-id="col_seit"><span class="font-monospace small text-muted">${r.seit}</span></td>
-                <td data-col-id="col_pfand"><span class="font-monospace fw-bold ${r.pfandNum > 0 ? 'text-primary' : 'text-muted'}">${r.pfandStr}</span></td>
+                <td data-col-id="col_mitglied"><span class="fw-semibold text-dark">${invEscapeHtml(r.mitglied)}</span></td>
+                <td data-col-id="col_kategorie"><span class="badge bg-secondary-subtle text-secondary border">${invEscapeHtml(r.kategorie)}</span></td>
+                <td data-col-id="col_gegenstand">${invEscapeHtml(r.itemLabel)}</td>
+                <td data-col-id="col_seit"><span class="font-monospace small text-muted">${invEscapeHtml(r.seit)}</span></td>
+                <td data-col-id="col_pfand"><span class="font-monospace fw-bold ${r.pfandNum > 0 ? 'text-primary' : 'text-muted'}">${invEscapeHtml(r.pfandStr)}</span></td>
                 <td data-col-id="col_aktionen" class="text-center">
                     <button class="btn btn-xs btn-outline-success fw-bold py-0.5 px-2"
-                            onclick="startCheckinFromJournal('${r.besitzer}', '${r.katKey}', '${r.itemId}')"
+                            onclick="startCheckinFromJournal('${jsMitglied}', '${jsKat}', '${jsItem}')"
                             title="Rückgabe erfassen">
                         <i class="fas fa-undo me-1"></i>Rückgabe
                     </button>
@@ -168,6 +175,8 @@ function renderOffeneAusleihen() {
 }
 
 window.startCheckinFromJournal = function(mitgliedId, kat, itemId) {
+    warenkorb = [];
+    if (typeof renderWarenkorb === 'function') renderWarenkorb();
     localStorage.setItem('inventar-activeTab', 'ausgabe');
     showInventarSection('ausgabe');
     document.getElementById('select-action').value = 'checkin';
@@ -300,15 +309,16 @@ function renderTransaktionenTable() {
                 const istStorno  = aktion === 'STORNO' || (t.Bemerkungen||'').includes('[STORNIERT]');
                 const istVerkauf = aktion === 'VERKAUF';
                 const istAusgabe = aktion === 'AUSGABE' || aktion === 'CHECKOUT';
-                const invBadge   = (t.invoice_id || t.Invoice_ID) ? ` <span class="badge bg-light text-primary border ms-1" title="Verknüpfte Rechnung: ${t.invoice_id || t.Invoice_ID}"><i class="fas fa-file-invoice me-1"></i>${t.invoice_id || t.Invoice_ID}</span>` : '';
+                const invIdRaw   = t.invoice_id || t.Invoice_ID;
+                const invBadge   = invIdRaw ? ` <span class="badge bg-light text-primary border ms-1" title="Verknüpfte Rechnung: ${invEscapeHtml(invIdRaw)}"><i class="fas fa-file-invoice me-1"></i>${invEscapeHtml(invIdRaw)}</span>` : '';
                 let aktionBadge  = `<span class="badge bg-success-subtle text-success border border-success-subtle">Rückgabe</span>${invBadge}`;
                 if (istStorno) {
                     aktionBadge  = `<span class="badge bg-danger-subtle text-danger border border-danger-subtle fw-bold"><i class="fas fa-ban me-1"></i>Storniert</span>${invBadge}`;
                 } else if (istVerkauf) {
-                    const methodeStr = t.Zahlungsart ? ` <span class="badge bg-light text-dark border ms-1">${t.Zahlungsart}</span>` : '';
+                    const methodeStr = t.Zahlungsart ? ` <span class="badge bg-light text-dark border ms-1">${invEscapeHtml(t.Zahlungsart)}</span>` : '';
                     aktionBadge  = `<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle fw-bold">Verkauf</span>${methodeStr}${invBadge}`;
                 } else if (istAusgabe) {
-                    const pfandStr = parseFloat(t.Pfandbetrag) > 0 ? ` <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1" title="Pfand: CHF ${parseFloat(t.Pfandbetrag).toFixed(2)} (${t.Zahlungsart || '-'})">Pfand CHF ${parseFloat(t.Pfandbetrag).toFixed(2)}</span>` : '';
+                    const pfandStr = parseFloat(t.Pfandbetrag) > 0 ? ` <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1" title="Pfand: ${invEscapeHtml(UIFormatKit.money(t.Pfandbetrag))} (${invEscapeHtml(t.Zahlungsart || '-')})">Pfand ${invEscapeHtml(UIFormatKit.money(t.Pfandbetrag))}</span>` : '';
                     aktionBadge  = `<span class="badge bg-primary-subtle text-primary border border-primary-subtle">Ausgabe</span>${pfandStr}${invBadge}`;
                 } else if (parseFloat(t.Pfandbetrag) > 0) {
                     const retourStr = ` <span class="badge bg-light text-dark border ms-1">Pfand-Retour</span>`;
@@ -321,9 +331,10 @@ function renderTransaktionenTable() {
                 if (idx === 0) {
                     const safeGroup = encodeURIComponent(JSON.stringify(group));
                     const backendPdfUrl = group[0].PDF_URL || "";
+                    const bustedPdfUrl = backendPdfUrl ? `${backendPdfUrl}${backendPdfUrl.includes('?') ? '&' : '?'}t=${Date.now()}` : "";
                     const isGroupCancelled = group.some(gt => (gt.Aktion||'').toUpperCase() === 'STORNO' || (gt.Bemerkungen||'').includes('[STORNIERT]'));
-                    const pdfBtn = backendPdfUrl
-                        ? `<a href="${backendPdfUrl}" target="_blank"
+                    const pdfBtn = bustedPdfUrl
+                        ? `<a href="${invEscapeHtml(bustedPdfUrl)}" target="_blank"
                               class="btn btn-sm btn-outline-success py-1 px-2 rounded-2" title="Quittungs-PDF öffnen"><i class="fas fa-file-pdf"></i></a>`
                         : `<button class="btn btn-sm btn-outline-secondary py-1 px-2 rounded-2"
                                    title="PDF lokal generieren"
@@ -345,12 +356,12 @@ function renderTransaktionenTable() {
                     </td>`;
                 }
                 html += `<tr>
-                    <td data-col-id="col_datum"><span class="font-monospace small text-muted">${date}</span></td>
-                    <td data-col-id="col_mitglied"><span class="fw-semibold text-dark">${mitglied}</span></td>
+                    <td data-col-id="col_datum"><span class="font-monospace small text-muted">${invEscapeHtml(date)}</span></td>
+                    <td data-col-id="col_mitglied"><span class="fw-semibold text-dark">${invEscapeHtml(mitglied)}</span></td>
                     <td data-col-id="col_aktion">${aktionBadge}</td>
-                    <td data-col-id="col_kategorie"><span class="badge bg-secondary-subtle text-secondary border">${kat}</span></td>
-                    <td data-col-id="col_gegenstand">${gegenstand}</td>
-                    <td data-col-id="col_bemerkung"><small class="text-muted">${t.Bemerkungen||'-'}</small></td>
+                    <td data-col-id="col_kategorie"><span class="badge bg-secondary-subtle text-secondary border">${invEscapeHtml(kat)}</span></td>
+                    <td data-col-id="col_gegenstand">${invEscapeHtml(gegenstand)}</td>
+                    <td data-col-id="col_bemerkung"><small class="text-muted">${invEscapeHtml(t.Bemerkungen||'-')}</small></td>
                     ${actionCell}
                 </tr>`;
             });
@@ -383,42 +394,47 @@ function renderTransaktionenTable() {
 // =========================================================
 window.storniereInventarBuchung = async function(safeGroup) {
     if (!canDelete()) {
-        alert("❌ Keine Berechtigung zum Stornieren von Buchungen.");
+        await invAlert('Keine Berechtigung', 'Du hast keine Berechtigung zum Stornieren von Buchungen.', 'danger');
         return;
     }
     let group = [];
     try {
         group = JSON.parse(decodeURIComponent(safeGroup));
     } catch (e) {
-        alert("Fehler beim Lesen der Buchungsdaten.");
+        await invAlert('Fehler', 'Fehler beim Lesen der Buchungsdaten.', 'danger');
         return;
     }
     if (!group || !group.length) return;
 
     const first = group[0];
-    const aktion = (first.Aktion || '').toUpperCase();
     const mitgliedName = getInventarNameFromId(first.Aktueller_Besitzer_ID);
     const datumStr = formatCH(first.Zeitstempel);
     const count = group.length;
 
-    const warnMsg = `⚠️ Möchtest du diese Buchung wirklich stornieren / rückgängig machen?\n\n` +
-        `• Datum: ${datumStr}\n` +
-        `• Aktion: ${first.Aktion}\n` +
-        `• Mitglied: ${mitgliedName}\n` +
-        `• Positionen: ${count} Gegenstand/Gegenstände\n\n` +
-        `Auswirkungen:\n` +
-        `1. Artikelbestand wird auf den vorherigen Status zurückgestellt (z.B. zurück ins Lager).\n` +
-        `2. Offene Pfandeinträge werden storniert.\n` +
-        `3. Eine verknüpfte QR-Rechnung im Modul Rechnungen wird automatisch storniert / gelöscht.\n` +
-        `(Hinweis: Bar-Kassenbuchungen bleiben unverändert).\n\n` +
-        `Fortfahren?`;
+    const warnHtml = `Möchtest du diese Buchung wirklich stornieren / rückgängig machen?<br><br>` +
+        `• <strong>Datum:</strong> ${invEscapeHtml(datumStr)}<br>` +
+        `• <strong>Aktion:</strong> ${invEscapeHtml(first.Aktion)}<br>` +
+        `• <strong>Mitglied:</strong> ${invEscapeHtml(mitgliedName)}<br>` +
+        `• <strong>Positionen:</strong> ${count} Gegenstand/Gegenstände<br><br>` +
+        `<strong>Auswirkungen:</strong><br>` +
+        `1. Artikelbestand wird auf den vorherigen Status zurückgestellt (z. B. zurück ins Lager).<br>` +
+        `2. Zugehörige Pfandeinträge werden zurückgesetzt / storniert.<br>` +
+        `3. Eine verknüpfte QR-Rechnung im Modul Rechnungen wird automatisch storniert.<br>` +
+        `<small class="text-muted">(Hinweis: Bar-Kassenbuchungen bleiben unverändert).</small>`;
 
-    if (!confirm(warnMsg)) return;
+    const confirmed = await invConfirm({
+        title: 'Inventar-Buchung stornieren?',
+        message: warnHtml,
+        type: 'danger',
+        confirmText: 'Verbindlich stornieren',
+        cancelText: 'Abbrechen'
+    });
+    if (!confirmed) return;
 
     setInventarBusy(true);
     const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
     if (!supa) {
-        alert("❌ Supabase Client nicht verfügbar.");
+        await invAlert('Verbindungsfehler', 'Supabase Client ist nicht verfügbar.', 'danger');
         setInventarBusy(false);
         return;
     }
@@ -551,12 +567,19 @@ window.storniereInventarBuchung = async function(safeGroup) {
                         .eq('item_id', itemId)
                         .eq('status', 'Offen');
                 } else if (tAction === 'CHECKIN') {
-                    // Retourniertes Pfand wieder auf 'Offen' zurücksetzen
-                    await supa.from('inventory_deposits')
-                        .update({ status: 'Offen', date_returned: null, updated_at: nowIso })
+                    // Ausschliesslich das zuletzt retournierte Pfand wieder auf 'Offen' zurücksetzen
+                    const { data: recentRetours } = await supa.from('inventory_deposits')
+                        .select('id')
                         .eq('member_id', memberId)
                         .eq('item_id', itemId)
-                        .eq('status', 'Retour');
+                        .eq('status', 'Retour')
+                        .order('date_returned', { ascending: false })
+                        .limit(1);
+                    if (recentRetours && recentRetours.length > 0) {
+                        await supa.from('inventory_deposits')
+                            .update({ status: 'Offen', date_returned: null, updated_at: nowIso })
+                            .eq('id', recentRetours[0].id);
+                    }
                 }
             }
 
@@ -598,14 +621,14 @@ window.storniereInventarBuchung = async function(safeGroup) {
         await loadInventarData(true);
 
         const infoFeedback = invoicesCancelled.length 
-            ? `✅ Buchung erfolgreich storniert! Artikelbestand zurückgestellt & Rechnung ${invoicesCancelled.join(', ')} storniert.`
-            : `✅ Buchung erfolgreich storniert! Artikelbestand und Pfandkasse wurden zurückgestellt.`;
+            ? `Buchung erfolgreich storniert! Artikelbestand zurückgestellt & Rechnung <strong>${invEscapeHtml(invoicesCancelled.join(', '))}</strong> storniert.`
+            : `Buchung erfolgreich storniert! Artikelbestand und Pfandstatus wurden zurückgestellt.`;
 
-        alert(infoFeedback);
+        await invAlert('Storniert', infoFeedback, 'success');
 
     } catch (err) {
         console.error("Fehler beim Stornieren:", err);
-        alert("❌ Fehler beim Stornieren: " + err.message);
+        await invAlert('Stornierungsfehler', invEscapeHtml(err.message), 'danger');
     } finally {
         setInventarBusy(false);
     }
@@ -821,10 +844,10 @@ function renderProtokollTable() {
     } else {
         rows.forEach(r => {
             html += `<tr>
-                <td data-col-id="col_zeit"><small class="text-muted font-monospace">${formatCHDateTime(r.ts)}</small></td>
-                <td data-col-id="col_nutzer"><span class="fw-semibold text-dark">${r.nutzer}</span></td>
-                <td data-col-id="col_aktion"><span class="badge bg-light text-primary border">${r.aktion}</span></td>
-                <td data-col-id="col_details"><small class="text-secondary">${r.details}</small></td>
+                <td data-col-id="col_zeit"><small class="text-muted font-monospace">${invEscapeHtml(formatCHDateTime(r.ts))}</small></td>
+                <td data-col-id="col_nutzer"><span class="fw-semibold text-dark">${invEscapeHtml(r.nutzer)}</span></td>
+                <td data-col-id="col_aktion"><span class="badge bg-light text-primary border">${invEscapeHtml(r.aktion)}</span></td>
+                <td data-col-id="col_details"><small class="text-secondary">${invEscapeHtml(r.details)}</small></td>
             </tr>`;
         });
     }

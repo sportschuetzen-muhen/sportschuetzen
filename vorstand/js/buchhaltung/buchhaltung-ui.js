@@ -1512,12 +1512,15 @@ window.renderTabKontenrahmen = function (container) {
 };
 
 window.bhJumpToInventarKonten = function () {
-  if (typeof showView === 'function') {
+  window._inventarRequestedTab = 'finanzen';
+  localStorage.setItem('inventar-activeTab', 'finanzen');
+  if (typeof navTo === 'function') {
+    navTo('inventar');
+  } else if (typeof showView === 'function') {
     showView('inventar');
   }
   setTimeout(() => {
     if (typeof showInventarSection === 'function') {
-      localStorage.setItem('inventar-activeTab', 'finanzen');
       showInventarSection('finanzen');
       setTimeout(() => {
         const el = document.getElementById('inv-fibu-settings-card');
@@ -1528,5 +1531,5 @@ window.bhJumpToInventarKonten = function () {
         }
       }, 250);
     }
-  }, 100);
+  }, 350);
 };

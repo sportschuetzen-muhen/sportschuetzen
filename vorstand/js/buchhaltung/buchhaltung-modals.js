@@ -3329,7 +3329,8 @@ window.bhDetectLinkedModulesForJournal = async function(entries) {
       if (depRows && depRows.length > 0) {
         depRows.forEach(d => {
           result.deposits.push(d);
-          if (d.status === 'Hinterlegt' || d.status === 'Bezahlt') {
+          const st = String(d.status || '').toLowerCase();
+          if (st === 'offen' || st === 'retour' || st === 'hinterlegt' || st === 'bezahlt') {
             result.hasLinkedPaid = true;
           }
         });
@@ -3444,6 +3445,7 @@ window.bhCascadeResetLinkedModules = async function(linkedInfo) {
 
   // 4. Inventar-Depots (inventory_deposits) zurücksetzen
   if (linkedInfo.deposits && linkedInfo.deposits.length > 0) {
+    window._inventarNeedsReload = true;
     for (const dep of linkedInfo.deposits) {
       try {
         await supa.from('inventory_deposits').update({

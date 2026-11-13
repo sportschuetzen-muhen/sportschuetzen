@@ -18,35 +18,63 @@ function warenkorbAdd() {
         const pfandRet   = document.getElementById('pfand-retour').value;
         const mitgliedId = document.getElementById('select-mitglied').value;
 
-        if (!mitgliedId) { alert("⚠️ Bitte wähle zuerst ein Mitglied aus."); return; }
-        if (!itemId)     { alert("⚠️ Bitte wähle einen Gegenstand aus."); return; }
+        if (!mitgliedId) { invAlert('Eingabe fehlt', 'Bitte wähle zuerst ein Mitglied aus.', 'warning'); return; }
+        if (!itemId)     { invAlert('Eingabe fehlt', 'Bitte wähle einen Gegenstand aus.', 'warning'); return; }
 
-    if (warenkorb.find(w => w.itemId === itemId && w.kategorie === kategorie)) {
-        alert("Dieser Gegenstand ist bereits in deinem Warenkorb."); return;
-    }
-
-    const keyMap = { "gewehr":"gewehre","schluessel":"schluessel",
-                     "kleidung":"kleidung","schiessbekleidung":"schiessbekleidung" };
-    const item   = (inventarState[keyMap[kategorie]] || [])
-        .find(i => i.ID.toString() === itemId.toString());
-    const label  = item ? getItemLabel(kategorie, item) : itemId;
-
-    const isOut = item && item.Aktueller_Besitzer_ID &&
-                  item.Aktueller_Besitzer_ID.toString() !== "0" &&
-                  item.Aktueller_Besitzer_ID.toString() !== "";
-
-    if (action === 'checkin') {
-        if (!item || item.Aktueller_Besitzer_ID.toString() !== mitgliedId.toString()) {
-            alert("⚠️ Dieser Gegenstand ist nicht bei diesem Mitglied!"); return;
+        if (warenkorb.find(w => w.itemId === itemId && w.kategorie === kategorie)) {
+            invAlert('Bereits im Warenkorb', 'Dieser Gegenstand ist bereits in deinem Warenkorb.', 'info');
+            return;
         }
-    } else if (action === 'checkout' || action === 'verkauf') {
-        if (isOut) {
-            alert("⚠️ Dieser Gegenstand ist bereits ausgegeben/verkauft und nicht im Bestand!"); return;
+
+        if (action === 'verkauf' && (kategorie === 'gewehr' || kategorie === 'schluessel')) {
+            invAlert('Verkauf nicht möglich', 'Vereinsgewehre und Schlüssel können nicht direkt verkauft werden. Bitte wähle «Ausgabe (Ausleihe)» oder eine verkäufliche Kategorie.', 'warning');
+            return;
         }
-    }
+
+        const keyMap = { "gewehr":"gewehre","schluessel":"schluessel",
+                         "kleidung":"kleidung","schiessbekleidung":"schiessbekleidung" };
+        const item   = (inventarState[keyMap[kategorie]] || [])
+            .find(i => i.ID.toString() === itemId.toString());
+        const label  = item ? getItemLabel(kategorie, item) : itemId;
+
+        const isOut = item && item.Aktueller_Besitzer_ID &&
+                      item.Aktueller_Besitzer_ID.toString() !== "0" &&
+                      item.Aktueller_Besitzer_ID.toString() !== "";
+        const isVerkauft = item && (item.Status || '').toLowerCase() === 'verkauft';
+
+        if (action === 'checkin') {
+            if (!item || String(item.Aktueller_Besitzer_ID || '') !== String(mitgliedId)) {
+                invAlert('Ungültige Rückgabe', 'Dieser Gegenstand ist nicht bei diesem Mitglied ausgeliehen.', 'warning'); return;
+            }
+            if (pfandRet !== 'Nein') {
+                if (pfand <= 0) {
+                    invAlert('Betrag fehlt', 'Für eine Pfand-Rückzahlung musst du einen Betrag grösser als CHF 0.00 eingeben (oder «Nein (nicht ausbezahlt)» wählen).', 'warning');
+                    const pInput = document.getElementById('pfand-betrag');
+                    if (pInput) { pInput.focus(); pInput.classList.add('is-invalid'); }
+                    return;
+                }
+                const openPfand = (inventarState?.pfand || []).find(p =>
+                    String(p.Mitglied_ID) === String(mitgliedId) &&
+                    String(p.Inventar_ID) === String(itemId) &&
+                    (p.Status || '').toLowerCase() === 'offen'
+                );
+                if (!openPfand) {
+                    invAlert('Kein offenes Depot', 'Für diesen Artikel ist bei diesem Mitglied kein offenes Pfand/Depot hinterlegt. Bitte wähle bei Pfand retour «Nein».', 'warning');
+                    return;
+                }
+                if (openPfand.invoice_id && String(openPfand.Invoice_Status || '').toLowerCase() !== 'bezahlt') {
+                    invAlert('Depot-Rechnung unbezahlt', `Die zugehörige Depot-Rechnung (${invEscapeHtml(openPfand.invoice_id)}) ist noch nicht bezahlt. Es darf keine Rückerstattung erfolgen.`, 'warning');
+                    return;
+                }
+            }
+        } else if (action === 'checkout' || action === 'verkauf') {
+            if (isOut || isVerkauft) {
+                invAlert('Nicht verfügbar', 'Dieser Gegenstand ist bereits ausgegeben oder verkauft und nicht mehr im Bestand.', 'warning'); return;
+            }
+        }
 
         if (action === 'verkauf' && pfand <= 0) {
-            alert("⚠️ Für einen Verkauf musst du einen gültigen Verkaufspreis grösser als CHF 0.00 eingeben.");
+            invAlert('Verkaufspreis fehlt', 'Für einen Verkauf musst du einen gültigen Verkaufspreis grösser als CHF 0.00 eingeben.', 'warning');
             const pInput = document.getElementById('pfand-betrag');
             if (pInput) { pInput.focus(); pInput.classList.add('is-invalid'); }
             return;
@@ -54,13 +82,13 @@ function warenkorbAdd() {
 
         if (action === 'checkout') {
             if (pfandEin === 'Einzahlungsschein' && pfand <= 0) {
-                alert("⚠️ Für eine Pfandrechnung (Einzahlungsschein) musst du einen Pfandbetrag grösser als CHF 0.00 eingeben.");
+                invAlert('Pfandbetrag fehlt', 'Für eine Pfandrechnung (Einzahlungsschein) musst du einen Pfandbetrag grösser als CHF 0.00 eingeben.', 'warning');
                 const pInput = document.getElementById('pfand-betrag');
                 if (pInput) { pInput.focus(); pInput.classList.add('is-invalid'); }
                 return;
             }
             if ((pfandEin === 'Bar' || pfandEin === 'Twint') && pfand <= 0) {
-                alert(`⚠️ Für die Pfandeinnahme (${pfandEin}) musst du einen Pfandbetrag grösser als CHF 0.00 eingeben (oder 'Nein' wählen).`);
+                invAlert('Pfandbetrag fehlt', `Für die Pfandeinnahme (${invEscapeHtml(pfandEin)}) musst du einen Pfandbetrag grösser als CHF 0.00 eingeben (oder «Nein» wählen).`, 'warning');
                 const pInput = document.getElementById('pfand-betrag');
                 if (pInput) { pInput.focus(); pInput.classList.add('is-invalid'); }
                 return;
@@ -94,7 +122,7 @@ function warenkorbAdd() {
         updateSubOptions();
     } catch(err) {
         console.error("Fehler in warenkorbAdd:", err);
-        alert("Fehler beim Hinzufügen: " + err.message);
+        invAlert('Fehler beim Hinzufügen', invEscapeHtml(err.message), 'danger');
     }
 }
 
@@ -134,18 +162,18 @@ function renderWarenkorb() {
                             else if (action === 'checkout') methodeInfo = ` (${w.pfandMethode || 'Bar'})`;
                             else if (action === 'checkin') methodeInfo = ` (${w.pfandRetourMethode || 'Bar retour'})`;
                         }
-                        const sponsorCompanyText = w.sponsorCompany ? ` ${w.sponsorCompany}` : '';
+                        const sponsorCompanyText = w.sponsorCompany ? ` ${invEscapeHtml(w.sponsorCompany)}` : '';
                         const sponsorBadge = (action === 'verkauf' && w.sponsorDiscount > 0) 
                             ? `<br><span class="badge bg-danger-subtle text-danger border border-danger-subtle text-wrap text-start mt-1" style="font-size: 10px; line-height: 1.25; display: inline-block; max-width: 190px;">abzgl. CHF ${w.sponsorDiscount} Sponsoring${sponsorCompanyText}</span>` 
                             : '';
                         return `
                         <tr>
-                            <td style="white-space: nowrap;"><span class="badge bg-secondary">${w.kategorie}</span></td>
-                            <td><small class="fw-semibold">${w.label}</small></td>
-                            <td><small>${action==='checkout' || action==='verkauf' ? w.zustandAbgabe : w.zustandRueckgabe}</small></td>
-                            <td><small class="fw-bold">${w.pfandBetrag>0 ? `CHF ${w.pfandBetrag.toFixed(2)}${methodeInfo}${sponsorBadge}` : '-'}</small></td>
+                            <td style="white-space: nowrap;"><span class="badge bg-secondary">${invEscapeHtml(w.kategorie)}</span></td>
+                            <td><small class="fw-semibold">${invEscapeHtml(w.label)}</small></td>
+                            <td><small>${invEscapeHtml(action==='checkout' || action==='verkauf' ? w.zustandAbgabe : w.zustandRueckgabe)}</small></td>
+                            <td><small class="fw-bold">${w.pfandBetrag>0 ? `CHF ${w.pfandBetrag.toFixed(2)}${invEscapeHtml(methodeInfo)}${sponsorBadge}` : '-'}</small></td>
                             <td style="width: 36px; text-align: center;">
-                                <button class="btn btn-sm btn-outline-danger py-0 px-1" title="Position entfernen"
+                                <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1" title="Position entfernen"
                                         onclick="warenkorbRemove(${i})">✕</button>
                             </td>
                         </tr>`;
@@ -169,85 +197,113 @@ function renderWarenkorb() {
 async function handleInventarSubmit(e) {
     e.preventDefault();
     if (window._isInventarSubmitting) return;
-    if (warenkorb.length === 0) { alert("Dein Warenkorb ist noch leer."); return; }
-    
-    window._isInventarSubmitting = true;
-    setInventarBusy(true);
-
-    const action     = document.getElementById('select-action').value;
-    const mitgliedId = document.getElementById('select-mitglied').value;
-
-    const cleanKonto = (action === 'verkauf')
-        ? ((typeof window.getInventarDefaultHabenKonto === 'function') ? window.getInventarDefaultHabenKonto('verkauf') : '8121')
-        : ((typeof window.getInventarDefaultHabenKonto === 'function') ? window.getInventarDefaultHabenKonto('depot') : '2030');
-
-    if (action === 'verkauf' && !cleanKonto) {
-        alert("❌ Es ist kein gültiges Ertragskonto für den Materialverkauf konfiguriert.");
-        window._isInventarSubmitting = false;
-        setInventarBusy(false);
-        return;
-    }
-    const hasPfandCheckout = action === 'checkout' && warenkorb.some(w => parseFloat(w.pfandBetrag) > 0);
-    if (hasPfandCheckout && !cleanKonto) {
-        alert("❌ Es ist kein gültiges Kautionskonto für das Depot konfiguriert (Standard: 2030).");
-        window._isInventarSubmitting = false;
-        setInventarBusy(false);
+    if (warenkorb.length === 0) {
+        await invAlert('Warenkorb leer', 'Dein Warenkorb ist noch leer. Bitte füge zuerst mindestens einen Gegenstand hinzu.', 'warning');
         return;
     }
 
-    const mailAdresse = localStorage.getItem('portal_mailadresse') || localStorage.getItem('portal_mailanzeige') || "";
-    const emailToUse = mailAdresse.includes('@') ? mailAdresse : "sportschuetzen.muhen@gmail.com";
+    const executeSubmit = async () => {
+        if (window._isInventarSubmitting) return;
+        window._isInventarSubmitting = true;
+        setInventarBusy(true);
 
-    const payloadAction = action === 'verkauf' ? 'VERKAUF' : (action === 'checkout' ? 'AUSGABE' : 'CHECKIN');
-    
-    let bemerkungen = document.getElementById('trans-bemerkungen').value;
-    if (action === 'verkauf') {
-        const methods = [...new Set(warenkorb.map(w => w.verkaufMethode))].filter(Boolean);
-        bemerkungen = `[VERKAUF - Zahlung: ${methods.join(', ')}] ` + bemerkungen;
-    }
+        const action     = document.getElementById('select-action').value;
+        const mitgliedId = document.getElementById('select-mitglied').value;
 
-    const payload = {
-        action:                action === 'verkauf' ? 'checkout' : action,
-        Aktion:                payloadAction,
-        isVerkauf:             action === 'verkauf',
-        Aktueller_Besitzer_ID: mitgliedId,
-        mitgliedId:            mitgliedId,
-        Bemerkungen:           bemerkungen,
-        Verantwortliche_ID:    (window.currentUser || localStorage.getItem('portal_user') || 'Vorstand'),
-        verantwortlicheEmail:  emailToUse,
-        sigMitglied:           sigPadMitglied ? sigPadMitglied.toDataURL() : "",
-        Sig_Vorstand:          sigPadVorstand ? sigPadVorstand.toDataURL() : "",
-        items: warenkorb.map(w => ({
-            itemId:           w.itemId,
-            kategorie:        w.kategorie,
-            zustandAbgabe:    w.zustandAbgabe,
-            zustandRueckgabe: w.zustandRueckgabe,
-            pfandBetrag:      w.pfandBetrag,
-            pfandEinnahme:    w.pfandEinnahme,
-            pfandRetour:      w.pfandRetour,
-            pfandMethode:     w.pfandMethode,
-            pfandRetourMethode: w.pfandRetourMethode,
-            label:            w.label,
-            verkaufMethode:   w.verkaufMethode,
-            zahlungsart:      action === 'verkauf' ? w.verkaufMethode : (action === 'checkout' ? w.pfandMethode : w.pfandRetourMethode)
-        }))
-    };
+        const cleanKonto = (action === 'verkauf')
+            ? ((typeof window.getInventarDefaultHabenKonto === 'function') ? window.getInventarDefaultHabenKonto('verkauf') : '8121')
+            : ((typeof window.getInventarDefaultHabenKonto === 'function') ? window.getInventarDefaultHabenKonto('depot') : '2030');
 
-    // --- SUPABASE FIRST BUCHUNG ---
-    const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
-    let result = { status: 'success', transactionIds: [] };
+        if (action === 'verkauf' && !cleanKonto) {
+            await invAlert('Konto fehlt', 'Es ist kein gültiges Ertragskonto für den Materialverkauf konfiguriert.', 'danger');
+            window._isInventarSubmitting = false;
+            setInventarBusy(false);
+            return;
+        }
+        const hasPfandCheckout = action === 'checkout' && warenkorb.some(w => parseFloat(w.pfandBetrag) > 0);
+        if (hasPfandCheckout && !cleanKonto) {
+            await invAlert('Konto fehlt', 'Es ist kein gültiges Kautionskonto für das Depot konfiguriert (Standard: 2030).', 'danger');
+            window._isInventarSubmitting = false;
+            setInventarBusy(false);
+            return;
+        }
 
-    try {
-        if (supa) {
+        const mailAdresse = localStorage.getItem('portal_mailadresse') || localStorage.getItem('portal_mailanzeige') || "";
+        const emailToUse = mailAdresse.includes('@') ? mailAdresse : "sportschuetzen.muhen@gmail.com";
+
+        const payloadAction = action === 'verkauf' ? 'VERKAUF' : (action === 'checkout' ? 'AUSGABE' : 'CHECKIN');
+
+        let bemerkungen = document.getElementById('trans-bemerkungen').value;
+        if (action === 'verkauf') {
+            const methods = [...new Set(warenkorb.map(w => w.verkaufMethode))].filter(Boolean);
+            bemerkungen = `[VERKAUF - Zahlung: ${methods.join(', ')}] ` + bemerkungen;
+        }
+
+        const payload = {
+            action:                action === 'verkauf' ? 'checkout' : action,
+            Aktion:                payloadAction,
+            isVerkauf:             action === 'verkauf',
+            Aktueller_Besitzer_ID: mitgliedId,
+            mitgliedId:            mitgliedId,
+            Bemerkungen:           bemerkungen,
+            Verantwortliche_ID:    (window.currentUser || localStorage.getItem('portal_user') || 'Vorstand'),
+            verantwortlicheEmail:  emailToUse,
+            sigMitglied:           sigPadMitglied ? sigPadMitglied.toDataURL() : "",
+            Sig_Vorstand:          sigPadVorstand ? sigPadVorstand.toDataURL() : "",
+            items: warenkorb.map(w => ({
+                itemId:           w.itemId,
+                kategorie:        w.kategorie,
+                zustandAbgabe:    w.zustandAbgabe,
+                zustandRueckgabe: w.zustandRueckgabe,
+                pfandBetrag:      w.pfandBetrag,
+                pfandEinnahme:    w.pfandEinnahme,
+                pfandRetour:      w.pfandRetour,
+                pfandMethode:     w.pfandMethode,
+                pfandRetourMethode: w.pfandRetourMethode,
+                label:            w.label,
+                verkaufMethode:   w.verkaufMethode,
+                zahlungsart:      action === 'verkauf' ? w.verkaufMethode : (action === 'checkout' ? w.pfandMethode : w.pfandRetourMethode)
+            }))
+        };
+
+        // --- SUPABASE FIRST BUCHUNG MIT ROLLBACK-SCHUTZ ---
+        const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
+        if (!supa) {
+            await invAlert('Verbindungsfehler', 'Supabase Client ist nicht verfügbar. Buchung abgebrochen.', 'danger');
+            window._isInventarSubmitting = false;
+            setInventarBusy(false);
+            return;
+        }
+
+        let result = { status: 'success', transactionIds: [], depositIds: [] };
+        const createdTxIds = [];
+        const createdDepositIds = [];
+        const closedDepositIds = [];
+        const previousItemStates = [];
+        const keyMap = { "gewehr":"gewehre","schluessel":"schluessel","kleidung":"kleidung","schiessbekleidung":"schiessbekleidung" };
+
+        try {
             const neuerStatus = action === 'checkin' ? "Im Lager" : (action === 'verkauf' ? "Verkauft" : "Ausgegeben");
-            const neuerBesitzer = action === 'checkin' ? null : ((mitgliedId && parseInt(mitgliedId) > 0) ? parseInt(mitgliedId) : null);
+            const neuerBesitzer = action === 'checkin' ? null : ((mitgliedId && parseInt(mitgliedId, 10) > 0) ? parseInt(mitgliedId, 10) : null);
             const bookingTime = new Date().toISOString();
+
+            // Aktuellen Item-Status für allfälliges Rollback merken
+            warenkorb.forEach(w => {
+                const curItem = (inventarState?.[keyMap[w.kategorie]] || []).find(i => String(i.ID) === String(w.itemId));
+                if (curItem) {
+                    previousItemStates.push({
+                        id: String(w.itemId).trim(),
+                        status: curItem.Status || 'Im Lager',
+                        current_owner_id: curItem.Aktueller_Besitzer_ID ? parseInt(curItem.Aktueller_Besitzer_ID, 10) : null
+                    });
+                }
+            });
 
             // 1. Transaktionen in Supabase anlegen
             const txRecords = warenkorb.map(w => ({
                 timestamp: bookingTime,
                 action: payloadAction,
-                member_id: (mitgliedId && parseInt(mitgliedId) > 0) ? parseInt(mitgliedId) : null,
+                member_id: (mitgliedId && parseInt(mitgliedId, 10) > 0) ? parseInt(mitgliedId, 10) : null,
                 item_id: String(w.itemId).trim(),
                 category: w.kategorie,
                 condition_out: w.zustandAbgabe || null,
@@ -257,7 +313,7 @@ async function handleInventarSubmit(e) {
                 deposit_amount: parseFloat(w.pfandBetrag) || 0,
                 deposit_received: action === 'checkout' ? (w.pfandEinnahme || '-') : '-',
                 deposit_returned: action === 'checkin' ? (w.pfandRetour || '-') : '-',
-                payment_method: action === 'verkauf' ? (w.verkaufMethode || 'Bar') : (action === 'checkout' ? (w.pfandMethode || 'Bar') : (w.pfandRetourMethode || 'Bar retour')),
+                payment_method: action === 'verkauf' ? (w.verkaufMethode || 'Bar') : (action === 'checkout' ? (w.pfandMethode || 'Bar') : (w.pfandRetour === 'Ja' ? (w.pfandRetourMethode || 'Bar') : 'Keine Rückzahlung')),
                 sig_member_url: payload.sigMitglied || null,
                 sig_board_url: payload.Sig_Vorstand || null
             }));
@@ -265,18 +321,22 @@ async function handleInventarSubmit(e) {
             const { data: createdTx, error: txErr } = await supa
                 .from('inventory_transactions')
                 .insert(txRecords)
-                .select('id');
+                .select('id, item_id, category');
 
-            if (txErr) {
-                console.warn("Supabase Transaktions-Insert Fehler:", txErr.message);
-            } else if (createdTx) {
-                result.transactionIds = createdTx.map(t => t.id);
-                result.transactionId = createdTx[0]?.id;
+            if (txErr || !createdTx || createdTx.length === 0) {
+                throw new Error(`Transaktion konnte nicht in Supabase gespeichert werden: ${txErr?.message || 'Unbekannter Fehler'}`);
             }
+
+            result.transactionIds = createdTx.map(t => t.id);
+            result.transactionId = createdTx[0]?.id;
+            createdTxIds.push(...result.transactionIds);
+            createdTx.forEach((row, idx) => {
+                if (warenkorb[idx]) warenkorb[idx]._txId = row.id;
+            });
 
             // 2. Artikelstatus & Besitzer aktualisieren
             for (const w of warenkorb) {
-                await supa
+                const { error: itemErr } = await supa
                     .from('inventory_items')
                     .update({
                         status: neuerStatus,
@@ -284,105 +344,157 @@ async function handleInventarSubmit(e) {
                         updated_at: bookingTime
                     })
                     .eq('id', String(w.itemId).trim());
+                if (itemErr) {
+                    throw new Error(`Artikel ${w.itemId} konnte nicht aktualisiert werden: ${itemErr.message}`);
+                }
             }
 
             // 3. Pfand-Verwaltung in Supabase
-            result.depositIds = [];
             if (action === 'checkout') {
                 for (const w of warenkorb) {
                     if (parseFloat(w.pfandBetrag) > 0) {
                         const pfandId = 'P-' + Math.floor(100000 + Math.random() * 900000);
                         result.depositIds.push(pfandId);
-                        await supa.from('inventory_deposits').insert([{
+                        createdDepositIds.push(pfandId);
+                        w._depositId = pfandId;
+                        const { error: depInsErr } = await supa.from('inventory_deposits').insert([{
                             id: pfandId,
-                            member_id: parseInt(mitgliedId),
+                            member_id: parseInt(mitgliedId, 10),
                             item_id: String(w.itemId).trim(),
                             category: w.kategorie,
                             amount: parseFloat(w.pfandBetrag) || 0,
                             date_out: bookingTime,
                             status: 'Offen',
-                            payment_method: w.pfandMethode || 'Bar'
+                            payment_method: (w.pfandMethode && w.pfandMethode !== '-') ? w.pfandMethode : 'Bar'
                         }]);
+                        if (depInsErr) {
+                            throw new Error(`Pfand für ${w.itemId} konnte nicht gespeichert werden: ${depInsErr.message}`);
+                        }
                     }
                 }
             } else if (action === 'checkin') {
                 for (const w of warenkorb) {
-                    if (w.pfandRetour === 'Ja' || (w.pfandRetour && w.pfandRetour !== 'Nein' && w.pfandRetour !== '-')) {
-                        await supa.from('inventory_deposits')
-                            .update({
-                                status: 'Retour',
-                                date_returned: bookingTime
-                            })
-                            .eq('member_id', parseInt(mitgliedId))
+                    if (w.pfandRetour === 'Ja') {
+                        const { data: openDeps, error: depFindErr } = await supa
+                            .from('inventory_deposits')
+                            .select('id')
+                            .eq('member_id', parseInt(mitgliedId, 10))
                             .eq('item_id', String(w.itemId).trim())
-                            .eq('status', 'Offen');
+                            .eq('status', 'Offen')
+                            .order('date_out', { ascending: false })
+                            .limit(1);
+                        if (depFindErr) {
+                            throw new Error(`Offenes Pfand für ${w.itemId} konnte nicht geprüft werden: ${depFindErr.message}`);
+                        }
+                        if (openDeps && openDeps.length > 0) {
+                            const depId = openDeps[0].id;
+                            const { error: depUpdErr } = await supa.from('inventory_deposits')
+                                .update({
+                                    status: 'Retour',
+                                    date_returned: bookingTime,
+                                    payment_method: w.pfandRetourMethode || 'Bar',
+                                    updated_at: bookingTime
+                                })
+                                .eq('id', depId);
+                            if (depUpdErr) {
+                                throw new Error(`Pfand-Rückzahlung für ${w.itemId} konnte nicht gespeichert werden: ${depUpdErr.message}`);
+                            }
+                            closedDepositIds.push(depId);
+                        }
                     }
                 }
             }
 
-            // 4. Revisions-Auditlog
-            await supa.from('inventory_audit_log').insert([{
+            // 4. Nachbearbeitung (Rechnung / FiBu-Journal) vor UI-Reset, damit Rollback greifen kann
+            let invoiceFeedback = '';
+            if (action === 'verkauf') {
+                const invRes = await verarbeiteVerkaufNachbereitung(warenkorb, mitgliedId, result.transactionIds);
+                if (invRes && invRes.invoiceId) {
+                    invoiceFeedback = `Rechnung <strong>${invEscapeHtml(invRes.invoiceId)}</strong> (${UIFormatKit.money(invRes.totalAmount)}) wurde ins <strong>Modul Rechnungen</strong> übertragen (bereit für Massenversand).`;
+                }
+            } else if (action === 'checkout') {
+                const invRes = await verarbeitePfandRechnungen(warenkorb, mitgliedId, result.depositIds, result.transactionIds);
+                if (invRes && invRes.invoiceId) {
+                    invoiceFeedback = `Depot-Rechnung <strong>${invEscapeHtml(invRes.invoiceId)}</strong> (${UIFormatKit.money(invRes.totalAmount)}) wurde ins <strong>Modul Rechnungen</strong> übertragen (bereit für Massenversand).`;
+                }
+                await verarbeitePfandBuchhaltung(warenkorb, 'checkout');
+            } else if (action === 'checkin') {
+                await verarbeitePfandBuchhaltung(warenkorb, 'checkin');
+            }
+
+            // 5. Revisions-Auditlog
+            const { error: auditErr } = await supa.from('inventory_audit_log').insert([{
                 timestamp: bookingTime,
                 user_name: (window.currentUser || localStorage.getItem('portal_user') || 'Vorstand'),
                 action: payloadAction,
                 details: `${payloadAction} (${warenkorb.length} Pos.) für Mitglied ${mitgliedId}: ${warenkorb.map(w => w.label || w.itemId).join(', ')}`
             }]);
+            if (auditErr) console.warn("⚠️ Audit-Log Eintrag fehlgeschlagen:", auditErr.message);
 
             console.log("✅ Buchung erfolgreich in Supabase gespeichert!");
-        }
 
+            // 6. PDF lokal generieren (nach erfolgreicher DB- und FiBu-Buchung)
+            await generateQuittungPDF(
+                payload,
+                result.transactionId || result.transactionIds?.[0] || '1',
+                payload.sigMitglied || "",
+                payload.Sig_Vorstand || "",
+                action === 'verkauf'
+            );
 
+            const bookedCount = warenkorb.length || 1;
+            warenkorb = [];
+            renderWarenkorb();
+            document.getElementById('form-ausgabe').reset();
+            sigPadMitglied?.clear();
+            sigPadVorstand?.clear();
 
-        // PDF lokal generieren
-        await generateQuittungPDF(
-            payload,
-            result.transactionId || result.transactionIds?.[0] || '1',
-            payload.sigMitglied || "",
-            payload.Sig_Vorstand || "",
-            action === 'verkauf'
-        );
+            const alertText = invoiceFeedback
+                ? `${bookedCount} Position(en) erfolgreich erfasst. ${invoiceFeedback}`
+                : `${bookedCount} Position(en) erfolgreich erfasst.`;
 
-        // --- NACHBEARBEITUNG (Rechnung/Buchhaltung) ---
-        let invoiceFeedback = '';
-        if (action === 'verkauf') {
-            const invRes = await verarbeiteVerkaufNachbereitung(warenkorb, mitgliedId, result.transactionIds);
-            if (invRes && invRes.invoiceId) {
-                invoiceFeedback = `Rechnung <strong>${invRes.invoiceId}</strong> (CHF ${Number(invRes.totalAmount).toFixed(2)}) wurde ins <strong>Modul Rechnungen</strong> übertragen (bereit für Massenversand).`;
+            showJournalConfirmationAlert(alertText);
+            localStorage.setItem('inventar-activeTab', 'journal');
+            showInventarSection('journal');
+
+            // Journal direkt mit neuen Daten vom Server aktualisieren
+            await loadInventarData(true);
+
+        } catch (err) {
+            console.error("Buchungsfehler:", err);
+            // Kompensierendes Rollback der bereits geschriebenen Inventar-Änderungen
+            try {
+                for (const prev of previousItemStates) {
+                    await supa.from('inventory_items').update({
+                        status: prev.status,
+                        current_owner_id: prev.current_owner_id,
+                        updated_at: new Date().toISOString()
+                    }).eq('id', prev.id);
+                }
+                if (createdDepositIds.length > 0) {
+                    await supa.from('inventory_deposits').delete().in('id', createdDepositIds);
+                }
+                if (closedDepositIds.length > 0) {
+                    await supa.from('inventory_deposits').update({ status: 'Offen', date_returned: null, updated_at: new Date().toISOString() }).in('id', closedDepositIds);
+                }
+                if (createdTxIds.length > 0) {
+                    await supa.from('inventory_transactions').delete().in('id', createdTxIds);
+                }
+                console.warn("↩️ Rollback nach Buchungsfehler erfolgreich durchgeführt.");
+            } catch (rbErr) {
+                console.error("⚠️ Rollback nach Buchungsfehler teilweise fehlgeschlagen:", rbErr);
             }
-        } else if (action === 'checkout') {
-            const invRes = await verarbeitePfandRechnungen(warenkorb, mitgliedId, result.depositIds, result.transactionIds);
-            if (invRes && invRes.invoiceId) {
-                invoiceFeedback = `Depot-Rechnung <strong>${invRes.invoiceId}</strong> (CHF ${Number(invRes.totalAmount).toFixed(2)}) wurde ins <strong>Modul Rechnungen</strong> übertragen (bereit für Massenversand).`;
-            }
-            await verarbeitePfandBuchhaltung(warenkorb, 'checkout');
-        } else if (action === 'checkin') {
-            await verarbeitePfandBuchhaltung(warenkorb, 'checkin');
+            await invAlert('Fehler bei der Buchung', `${invEscapeHtml(err.message)}<br><small class="text-muted">Bereits erfasste Bestandsänderungen wurden automatisch zurückgerollt.</small>`, 'danger');
+        } finally {
+            window._isInventarSubmitting = false;
+            setInventarBusy(false);
         }
+    };
 
-        const bookedCount = warenkorb.length || 1;
-        warenkorb = [];
-        renderWarenkorb();
-        document.getElementById('form-ausgabe').reset();
-        sigPadMitglied?.clear();
-        sigPadVorstand?.clear();
-
-        const alertText = invoiceFeedback 
-            ? `${bookedCount} Position(en) erfolgreich erfasst. ${invoiceFeedback}`
-            : `${bookedCount} Position(en) erfolgreich erfasst.`;
-
-        showJournalConfirmationAlert(alertText);
-        localStorage.setItem('inventar-activeTab', 'journal');
-        showInventarSection('journal');
-        
-        // Journal direkt mit neuen Daten vom Server aktualisieren
-        await loadInventarData(true);
-        
-    } catch(err) {
-        console.error("Buchungsfehler:", err);
-        alert("❌ Fehler bei der Buchung: " + err.message);
-    } finally {
-        window._isInventarSubmitting = false;
-        setInventarBusy(false);
+    if (window.UIButtonKit && typeof window.UIButtonKit.withLoading === 'function') {
+        await window.UIButtonKit.withLoading('#btn-warenkorb-submit', executeSubmit);
+    } else {
+        await executeSubmit();
     }
 }
 
@@ -486,8 +598,14 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId, txId
                 positions: (() => {
                     const orderPositions = [];
                     let posNr = 1;
+                    const allInventoryItems = [
+                        ...(inventarState?.kleidung || []),
+                        ...(inventarState?.schiessbekleidung || []),
+                        ...(inventarState?.gewehre || []),
+                        ...(inventarState?.schluessel || [])
+                    ];
                     invoiceItems.forEach(w => {
-                        const invItem = (inventarState.kleidung || []).find(k => String(k.ID) === String(w.itemId)) || {};
+                        const invItem = allInventoryItems.find(k => String(k.ID) === String(w.itemId)) || {};
                         const endBetrag = parseFloat(w.pfandBetrag) || 0;
                         const retailPrice = (invItem.Katalogpreis !== '' && invItem.Katalogpreis !== null && invItem.Katalogpreis !== undefined)
                             ? Math.round(parseFloat(invItem.Katalogpreis))
@@ -571,14 +689,17 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId, txId
                 }
             }
 
-            // 2. Rechnungs-ID in inventory_transactions hinterlegen (Zwei-Wege-Identifikation)
+            // 2. Rechnungs-ID in inventory_transactions hinterlegen (nur für Positionen mit Einzahlungsschein)
             const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
-            if (supa && txIds && txIds.length > 0) {
+            const invoiceTxIds = invoiceItems.map(w => w._txId).filter(Boolean);
+            const targetTxIds = invoiceTxIds.length > 0 ? invoiceTxIds : (txIds || []);
+            if (supa && targetTxIds.length > 0) {
                 try {
-                    await supa.from('inventory_transactions')
+                    const { error: linkErr } = await supa.from('inventory_transactions')
                         .update({ invoice_id: invoiceId })
-                        .in('id', txIds);
-                    console.log(`✅ [Inventar->Supabase] invoice_id ${invoiceId} in ${txIds.length} Transaktion(en) hinterlegt.`);
+                        .in('id', targetTxIds);
+                    if (linkErr) throw linkErr;
+                    console.log(`✅ [Inventar->Supabase] invoice_id ${invoiceId} in ${targetTxIds.length} Transaktion(en) hinterlegt.`);
                 } catch (txLinkErr) {
                     console.warn("⚠️ Fehler beim Hinterlegen von invoice_id in inventory_transactions:", txLinkErr);
                 }
@@ -602,40 +723,32 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId, txId
                 ? window.getInventarDefaultHabenKonto('verkauf')
                 : (localStorage.getItem('inventar_preferred_haben_konto_verkauf') || '8121');
 
+            const sb = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
+            if (!sb) throw new Error("Supabase Client für FiBu-Buchung nicht verfügbar.");
+
             let seqCounter = 1;
-            for (let w of barItems) {
-                const uniqueBeleg = `VK-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}${seqCounter++}`;
+            const todayIso = new Date().toISOString().slice(0, 10);
+            const curYear = new Date().getFullYear();
+            for (const w of barItems) {
+                const betrag = parseFloat(w.pfandBetrag) || 0;
+                if (betrag <= 0) continue;
+                const uniqueBeleg = `VK-${curYear}-${Date.now().toString().slice(-4)}${seqCounter++}`;
 
-                const bhPayload = {
-                    beleg_nr: uniqueBeleg,
-                    beschreibung: `Materialverkauf (Bar): ${w.label}`,
-                    konto_soll: '1000', // Kasse
-                    konto_haben: customKontoHaben, // z.B. 3200 Ertrag Materialverkauf
-                    betrag: parseFloat(w.pfandBetrag) || 0,
-                    typ: 'Verkauf',
-                    buchungstyp: 'KASSE',
-                    jahr: new Date().getFullYear()
-                };
-
-                console.log("Buche Bar-Verkauf in Buchhaltung...", bhPayload);
-                const sb = (typeof window.getBuchhaltungSupabaseClient === 'function') ? window.getBuchhaltungSupabaseClient() : (typeof window.getInventarSupabaseClient === 'function' ? window.getInventarSupabaseClient() : null);
-                if (sb) {
-                    sb.from('accounting_journal').insert([{
-                        jahr: parseInt(bhPayload.jahr, 10),
-                        datum: new Date().toISOString().slice(0, 10),
-                        beleg_nr: bhPayload.beleg_nr,
-                        beschreibung: bhPayload.beschreibung,
-                        konto_soll: String(bhPayload.konto_soll).trim(),
-                        konto_haben: String(bhPayload.konto_haben).trim(),
-                        betrag: Number(bhPayload.betrag || 0),
-                        typ: 'Verkauf',
-                        buchungstyp: 'KASSE',
-                        created_at: new Date().toISOString()
-                    }]).then(({ error }) => {
-                        if (error) console.warn('[Inventar -> FiBu] Supabase journal insert error:', error);
-                        else console.log('✅ Materialverkauf in Supabase FiBu gebucht.');
-                    }).catch(e => console.warn('[Inventar -> FiBu] Insert exception:', e));
+                const { error: rpcErr } = await sb.rpc('inventar_book_accounting_journal', {
+                    p_jahr: curYear,
+                    p_datum: todayIso,
+                    p_beleg_nr: uniqueBeleg,
+                    p_beschreibung: `Materialverkauf (Bar): ${w.label}`,
+                    p_konto_soll: '1000',
+                    p_konto_haben: String(customKontoHaben).trim(),
+                    p_betrag: betrag,
+                    p_typ: 'Verkauf',
+                    p_buchungstyp: 'KASSE'
+                });
+                if (rpcErr) {
+                    throw new Error(`FiBu-Buchung fehlgeschlagen (${w.label}): ${rpcErr.message}`);
                 }
+                console.log('✅ Materialverkauf in Supabase FiBu gebucht:', uniqueBeleg);
             }
         }
     } catch (err) {
@@ -648,90 +761,67 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId, txId
 //  PFAND / DEPOT: KAUTIONSKONTO IN BUCHHALTUNG VERBUCHEN
 // =========================================================
 async function verarbeitePfandBuchhaltung(cart, action) {
-    try {
-        const sb = (typeof window.getBuchhaltungSupabaseClient === 'function') ? window.getBuchhaltungSupabaseClient() : (typeof window.getInventarSupabaseClient === 'function' ? window.getInventarSupabaseClient() : null);
-        if (action === 'checkout') {
-            const kautionsKonto = (typeof window.getInventarDefaultHabenKonto === 'function')
-                ? window.getInventarDefaultHabenKonto('depot')
-                : (localStorage.getItem('inventar_preferred_haben_konto_depot') || '2030');
-            // Bar-Pfand erhalten: Soll 1000 (Kasse) an Haben 2030 (Kautionen / Depots)
-            const barPfand = cart.filter(w => (w.pfandMethode === 'Bar' || w.pfandEinnahme === 'Ja') && w.pfandMethode !== 'Twint' && w.pfandMethode !== 'Einzahlungsschein' && (parseFloat(w.pfandBetrag) || 0) > 0);
-            let seqCounter = 1;
-            for (let w of barPfand) {
-                const betrag = parseFloat(w.pfandBetrag) || 0;
-                const uniqueBeleg = `DEP-IN-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}${seqCounter++}`;
-                const bhPayload = {
-                    beleg_nr: uniqueBeleg,
-                    beschreibung: `Pfand Kasse (Eingang): ${w.label}`,
-                    konto_soll: '1000', // Kasse
-                    konto_haben: kautionsKonto, // z.B. 2030 Kautionen / Depots (Passivkonto)
-                    betrag: betrag,
-                    typ: 'Kaution',
-                    buchungstyp: 'KASSE',
-                    jahr: new Date().getFullYear()
-                };
-                console.log("Buche Bar-Pfand Eingang auf Kautionskonto 2030...", bhPayload);
-                if (sb) {
-                    sb.from('accounting_journal').insert([{
-                        jahr: parseInt(bhPayload.jahr, 10),
-                        datum: new Date().toISOString().slice(0, 10),
-                        beleg_nr: bhPayload.beleg_nr,
-                        beschreibung: bhPayload.beschreibung,
-                        konto_soll: String(bhPayload.konto_soll).trim(),
-                        konto_haben: String(bhPayload.konto_haben).trim(),
-                        betrag: betrag,
-                        typ: 'Kaution',
-                        buchungstyp: 'KASSE',
-                        created_at: new Date().toISOString()
-                    }]).then(({ error }) => {
-                        if (error) console.warn('[Inventar -> FiBu] Supabase Pfand-Eingang error:', error);
-                    }).catch(e => console.warn('[Inventar -> FiBu] Exception:', e));
-                }
-            }
-        } else if (action === 'checkin') {
-            // Bar-Pfand zurückbezahlt: Soll 2030 (Kautionen / Depots) an Haben 1000 (Kasse)
-            const barRetour = cart.filter(w => (w.pfandRetourMethode === 'Bar' || w.pfandRetour === 'Ja') && w.pfandRetourMethode !== 'Twint' && w.pfandRetourMethode !== 'Banküberweisung');
-            let seqCounter = 1;
-            for (let w of barRetour) {
-                let betrag = parseFloat(w.pfandBetrag) || 0;
-                if (betrag === 0 && inventarState?.pfand) {
-                    const op = inventarState.pfand.find(p => String(p.Inventar_ID) === String(w.itemId) && (p.Status || '').toLowerCase() === 'offen');
-                    if (op) betrag = parseFloat(op.Betrag) || 0;
-                }
-                if (betrag <= 0) continue;
+    const sb = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
+    const kautionsKonto = (typeof window.getInventarDefaultHabenKonto === 'function')
+        ? window.getInventarDefaultHabenKonto('depot')
+        : (localStorage.getItem('inventar_preferred_haben_konto_depot') || '2030');
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const curYear = new Date().getFullYear();
 
-                const uniqueBeleg = `DEP-OUT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}${seqCounter++}`;
-                const bhPayload = {
-                    beleg_nr: uniqueBeleg,
-                    beschreibung: `Pfand Rückzahlung (Bar): ${w.label}`,
-                    konto_soll: '2030', // Kautionen / Depots (Passivkonto)
-                    konto_haben: '1000', // Kasse
-                    betrag: betrag,
-                    typ: 'Kaution',
-                    buchungstyp: 'KASSE',
-                    jahr: new Date().getFullYear()
-                };
-                console.log("Buche Bar-Pfand Rückzahlung von Kautionskonto 2030...", bhPayload);
-                if (sb) {
-                    sb.from('accounting_journal').insert([{
-                        jahr: parseInt(bhPayload.jahr, 10),
-                        datum: new Date().toISOString().slice(0, 10),
-                        beleg_nr: bhPayload.beleg_nr,
-                        beschreibung: bhPayload.beschreibung,
-                        konto_soll: String(bhPayload.konto_soll).trim(),
-                        konto_haben: String(bhPayload.konto_haben).trim(),
-                        betrag: betrag,
-                        typ: 'Kaution',
-                        buchungstyp: 'KASSE',
-                        created_at: new Date().toISOString()
-                    }]).then(({ error }) => {
-                        if (error) console.warn('[Inventar -> FiBu] Supabase Pfand-Rückzahlung error:', error);
-                    }).catch(e => console.warn('[Inventar -> FiBu] Exception:', e));
-                }
+    if (action === 'checkout') {
+        // Bar-Pfand erhalten: Soll 1000 (Kasse) an Haben Kautionskonto (z. B. 2030)
+        const barPfand = cart.filter(w => (w.pfandMethode === 'Bar' || w.pfandEinnahme === 'Ja') && w.pfandMethode !== 'Twint' && w.pfandMethode !== 'Einzahlungsschein' && (parseFloat(w.pfandBetrag) || 0) > 0);
+        if (barPfand.length > 0 && !sb) throw new Error("Supabase Client für Pfand-FiBu-Buchung nicht verfügbar.");
+        let seqCounter = 1;
+        for (const w of barPfand) {
+            const betrag = parseFloat(w.pfandBetrag) || 0;
+            const uniqueBeleg = `DEP-IN-${curYear}-${Date.now().toString().slice(-4)}${seqCounter++}`;
+            const { error: rpcErr } = await sb.rpc('inventar_book_accounting_journal', {
+                p_jahr: curYear,
+                p_datum: todayIso,
+                p_beleg_nr: uniqueBeleg,
+                p_beschreibung: `Pfand Kasse (Eingang): ${w.label}`,
+                p_konto_soll: '1000',
+                p_konto_haben: String(kautionsKonto).trim(),
+                p_betrag: betrag,
+                p_typ: 'Kaution',
+                p_buchungstyp: 'KASSE'
+            });
+            if (rpcErr) {
+                throw new Error(`Pfand-Eingang FiBu fehlgeschlagen (${w.label}): ${rpcErr.message}`);
             }
         }
-    } catch (err) {
-        console.error("Fehler in verarbeitePfandBuchhaltung:", err);
+    } else if (action === 'checkin') {
+        // Bar-Pfand zurückbezahlt: Soll Kautionskonto (z. B. 2030) an Haben 1000 (Kasse)
+        const barRetour = cart.filter(w => w.pfandRetour === 'Ja' && (w.pfandRetourMethode === 'Bar' || !w.pfandRetourMethode));
+        if (barRetour.length > 0 && !sb) throw new Error("Supabase Client für Pfand-Rückzahlung nicht verfügbar.");
+        let seqCounter = 1;
+        for (const w of barRetour) {
+            const openPfand = (inventarState?.pfand || []).find(p =>
+                String(p.Inventar_ID) === String(w.itemId) && (p.Status || '').toLowerCase() === 'offen'
+            );
+            if (!openPfand) continue;
+            if (openPfand.invoice_id && String(openPfand.Invoice_Status || '').toLowerCase() !== 'bezahlt') continue;
+
+            let betrag = parseFloat(w.pfandBetrag) || parseFloat(openPfand.Betrag) || 0;
+            if (betrag <= 0) continue;
+
+            const uniqueBeleg = `DEP-OUT-${curYear}-${Date.now().toString().slice(-4)}${seqCounter++}`;
+            const { error: rpcErr } = await sb.rpc('inventar_book_accounting_journal', {
+                p_jahr: curYear,
+                p_datum: todayIso,
+                p_beleg_nr: uniqueBeleg,
+                p_beschreibung: `Pfand Rückzahlung (Bar): ${w.label}`,
+                p_konto_soll: String(kautionsKonto).trim(),
+                p_konto_haben: '1000',
+                p_betrag: betrag,
+                p_typ: 'Kaution',
+                p_buchungstyp: 'KASSE'
+            });
+            if (rpcErr) {
+                throw new Error(`Pfand-Rückzahlung FiBu fehlgeschlagen (${w.label}): ${rpcErr.message}`);
+            }
+        }
     }
 }
 
@@ -829,19 +919,23 @@ async function verarbeitePfandRechnungen(cart, mitgliedId, depositIds = [], txId
             }
         }
 
-        // 2. Rechnungs-ID in inventory_transactions und inventory_deposits hinterlegen (Zwei-Wege-Identifikation)
+        // 2. Rechnungs-ID in inventory_transactions und inventory_deposits hinterlegen (nur für Positionen mit Einzahlungsschein)
         const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
+        const invoiceTxIds = invoicePfandItems.map(w => w._txId).filter(Boolean);
+        const targetTxIds = invoiceTxIds.length > 0 ? invoiceTxIds : (txIds || []);
+        const invoiceDepositIds = invoicePfandItems.map(w => w._depositId).filter(Boolean);
+        const targetDepositIds = invoiceDepositIds.length > 0 ? invoiceDepositIds : (depositIds || []);
         if (supa) {
             try {
-                if (txIds && txIds.length > 0) {
+                if (targetTxIds.length > 0) {
                     await supa.from('inventory_transactions')
                         .update({ invoice_id: invoiceId })
-                        .in('id', txIds);
+                        .in('id', targetTxIds);
                 }
-                if (depositIds && depositIds.length > 0) {
+                if (targetDepositIds.length > 0) {
                     await supa.from('inventory_deposits')
                         .update({ invoice_id: invoiceId })
-                        .in('id', depositIds);
+                        .in('id', targetDepositIds);
                 }
                 console.log(`✅ [Inventar->Supabase] invoice_id ${invoiceId} in Transaktion(en) & Deposit(s) hinterlegt.`);
             } catch (pfandLinkErr) {
@@ -861,97 +955,6 @@ async function verarbeitePfandRechnungen(cart, mitgliedId, depositIds = [], txId
     } catch (err) {
         console.error("❌ Fehler in verarbeitePfandRechnungen:", err);
         throw new Error(`Fehler bei der Pfand-Rechnungserstellung: ${err.message}`);
-    }
-}
-
-// =========================================================
-//  INVENTAR-RECHNUNG & MAIL-LOG IN SUPABASE SICHERN
-// =========================================================
-async function saveInventarInvoiceToSupabase({
-    invoiceId,
-    personNumber,
-    recipientName,
-    type,
-    totalAmount,
-    positions,
-    memberEmail,
-    pdfUrl,
-    pdfStoragePath,
-    mailResult
-}) {
-    const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
-    if (!supa) return;
-
-    try {
-        const isSent = !!(memberEmail && memberEmail.includes('@') && mailResult?.success !== false);
-        const nowIso = new Date().toISOString();
-
-        // 1. Invoices Header
-        const sbInvoice = {
-            id: invoiceId,
-            person_number: personNumber ? String(personNumber).trim() : null,
-            recipient_name: recipientName || 'Mitglied',
-            year: new Date().getFullYear(),
-            type: type || 'Materialverkauf',
-            status: 'offen',
-            total_amount: Number(totalAmount || 0),
-            mail_status: isSent ? 'gesendet' : 'entwurf',
-            send_date: isSent ? nowIso : null,
-            pdf_url: pdfUrl || mailResult?.pdfUrl || null,
-            pdf_storage_path: pdfStoragePath || mailResult?.storagePath || null,
-            created_at: nowIso,
-            updated_at: nowIso
-        };
-        const { error: invErr } = await supa.from('invoices').upsert(sbInvoice);
-        if (invErr) console.warn("⚠️ [Inventar->Supabase] Fehler beim Speichern der Rechnung:", invErr);
-
-        // 2. Invoice Positions
-        if (positions && positions.length > 0) {
-            const sbPositions = positions.map(p => ({
-                invoice_id: invoiceId,
-                position_nr: p.position_nr,
-                description: p.description,
-                quantity: p.quantity,
-                unit_price: p.unit_price,
-                amount: p.amount,
-                konto: String(p.konto || '8501').trim()
-            }));
-            await supa.from('invoice_positions').delete().eq('invoice_id', invoiceId);
-            const { error: posErr } = await supa.from('invoice_positions').insert(sbPositions);
-            if (posErr) console.warn("⚠️ [Inventar->Supabase] Fehler beim Speichern der Positionen:", posErr);
-        }
-
-        // 3. Mail Log (Versandprotokoll) - nur falls nicht schon durch sendMailViaEngine geloggt
-        if (isSent && !mailResult?.logId) {
-            const { error: mailErr } = await supa.from('mail_logs').insert([{
-                module_ref: 'rechnung',
-                record_id: invoiceId,
-                recipient_email: memberEmail,
-                recipient_name: recipientName,
-                subject: `Rechnung ${invoiceId} – ${type} | Sportschützen Muhen`,
-                body_snippet: `Guten Tag ${recipientName},\n\nvielen Dank für deinen Bezug aus unserem Vereinsinventar. Anbei senden wir dir die Rechnung ${invoiceId} über CHF ${Number(totalAmount).toFixed(2)} inkl. QR-Einzahlungsschein.`,
-                status: 'gesendet',
-                sender_email: 'sportschuetzen.muhen@gmail.com',
-                sender_name: 'Sportschützen Muhen',
-                attachment_name: `Rechnung_${invoiceId}_${(recipientName || 'Rechnung').replace(/\s+/g, '_')}.pdf`,
-                has_pdf: !!pdfUrl,
-                sent_via: 'Supabase_SMTP',
-                created_by: 'Inventar',
-                sent_at: nowIso
-            }]);
-            if (mailErr) console.warn("⚠️ [Inventar->Supabase] Fehler beim Eintrag in mail_logs:", mailErr);
-        }
-
-        // 4. In-Memory Cache des Rechnungsmoduls invalidieren & im Hintergrund frisch laden
-        window._invoices = null;
-        window._jbAllInvoices = null;
-        if (typeof window.loadRechnungenData === 'function') {
-            window.loadRechnungenData(true, true).catch(e => console.warn("Rechnungen Refresh:", e));
-        }
-
-        console.log(`✅ [Inventar->Supabase] Rechnung ${invoiceId} und Mail-Log erfolgreich in Supabase synchronisiert.`);
-    } catch (e) {
-        console.error("❌ [Inventar->Supabase] Ausnahme bei Rechnungs-Speicherung:", e);
     }
 }
 

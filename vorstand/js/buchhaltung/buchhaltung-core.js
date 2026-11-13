@@ -362,8 +362,8 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
         supa.from('members').select('person_number, salutation, first_name, last_name, street, post_code, city, iban, is_passive').eq('is_active', true).eq('deceased', false).order('last_name', { ascending: true }),
         (async () => {
           try {
-            // Pro Memoria Gewehre aus inventar_items falls vorhanden
-            const r = await supa.from('inventar_items').select('id, typ').ilike('typ', '%gewehr%');
+            // Pro Memoria Gewehre aus inventory_items ermitteln
+            const r = await supa.from('inventory_items').select('id, category').eq('category', 'gewehr');
             if (r.data) window._bhProMemoriaGewehreCount = r.data.length;
           } catch (_) {}
         })(),

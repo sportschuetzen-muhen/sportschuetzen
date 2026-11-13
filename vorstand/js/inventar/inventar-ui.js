@@ -183,7 +183,7 @@ function renderInventarUI(container) {
                                     <div class="alert alert-info py-2 px-3 mb-0 border-0 rounded-3 shadow-xs" style="font-size: 11px; background-color: #e0f2fe; color: #0369a1;">
                                         <i class="fas fa-sync-alt me-1 fw-bold text-primary"></i>
                                         <strong>Automatische Buchhaltung & Rechnungs-Erstellung:</strong><br>
-                                        • <strong>Bar / Twint:</strong> Bucht automatisch im Kassabuch (Soll 1000/1020 an Haben <span id="label-verwendungs-konto" class="fw-bold">8501</span>).<br>
+                                        • <strong>Bar / Twint:</strong> Bucht automatisch im Kassabuch (Soll 1000/1020 an Haben <span id="label-verwendungs-konto" class="fw-bold">8121</span>).<br>
                                         • <strong>Einzahlungsschein:</strong> Erstellt eine QR-Rechnung im Modul Rechnungen (bereit für Prüfung, Einzel- oder Massenversand).
                                     </div>
                                 </div>
@@ -271,10 +271,10 @@ function renderInventarUI(container) {
                         ${canAdd() ? `
                         <button type="button" class="btn btn-sm btn-primary fw-semibold rounded-2 shadow-xs d-inline-flex align-items-center" onclick="openInventarItemModal()" title="Neuen Gegenstand erfassen">
                             <i class="fas fa-plus me-1.5"></i> Neuer Artikel
-                        </button>` : ''}
+                        </button>
                         <button type="button" class="btn btn-sm btn-outline-success fw-semibold rounded-2 shadow-xs d-inline-flex align-items-center" onclick="openInventarExcelImportModal()" title="Inventargegenstände aus Excel oder CSV importieren">
                             <i class="fas fa-file-import me-1.5"></i> Excel-Import
-                        </button>
+                        </button>` : ''}
 
                         <!-- Excel-Export Dropdown (Gefiltert, Aktuelle Kategorie & Gesamtes Inventar) -->
                         <div class="dropdown d-inline-block">
@@ -359,7 +359,6 @@ function renderInventarUI(container) {
                         <select id="inv-filter-sponsor" class="form-select form-select-sm w-auto rounded-2 bg-white d-none" onchange="renderInventoryTable()" title="Nach Sponsor-Firma filtern">
                             <option value="">🤝 Alle Sponsoren</option>
                         </select>
-                    </div>
                     </div>
                 </div>
 
@@ -704,6 +703,18 @@ function toggleBookingFields() {
         labelBetrag.innerText = 'Pfandbetrag CHF';
     }
     
+    // Beim Verkauf dürfen nur verkäufliche Artikel (Kleidung / Schiessbekleidung) gewählt werden
+    const katSel = document.getElementById('select-kategorie');
+    if (katSel) {
+        Array.from(katSel.options).forEach(opt => {
+            const disallowedForSale = isVerkauf && (opt.value === 'gewehr' || opt.value === 'schluessel');
+            opt.disabled = disallowedForSale;
+        });
+        if (isVerkauf && (katSel.value === 'gewehr' || katSel.value === 'schluessel')) {
+            katSel.value = 'kleidung';
+        }
+    }
+
     updateSubOptions();
 }
 
@@ -1007,6 +1018,7 @@ window.addAllMemberItemsToReturnCart = function(mitgliedId) {
     const allKeyMap = { "gewehr":"gewehre","schluessel":"schluessel",
                         "kleidung":"kleidung","schiessbekleidung":"schiessbekleidung" };
     let addedCount = 0;
+    const unpaidWarnings = [];
     Object.keys(allKeyMap).forEach(k => {
         (inventarState[allKeyMap[k]] || []).forEach(item => {
             if (item.Aktueller_Besitzer_ID && String(item.Aktueller_Besitzer_ID) === String(mitgliedId) && (item.Status || '').toLowerCase() !== 'verkauft') {
@@ -1019,14 +1031,19 @@ window.addAllMemberItemsToReturnCart = function(mitgliedId) {
                         (p.Status||'').toLowerCase() === 'offen'
                     );
                     let pfand = 0;
+                    let retourFlag = 'Nein';
                     let retourMethode = 'Bar';
                     if (openPfand && parseFloat(openPfand.Betrag) > 0) {
-                        pfand = parseFloat(openPfand.Betrag);
-                        const art = (openPfand.Zahlungsart || '').toLowerCase();
-                        if (art.includes('twint')) retourMethode = 'Twint';
-                        else if (art.includes('einzahlungsschein') || art.includes('rechnung')) retourMethode = 'Banküberweisung';
-                    } else if (item.Depotbetrag) {
-                        pfand = parseFloat(item.Depotbetrag) || 0;
+                        const invUnpaid = Boolean(openPfand.invoice_id) && String(openPfand.Invoice_Status || '').toLowerCase() !== 'bezahlt';
+                        if (invUnpaid) {
+                            unpaidWarnings.push(`${label} (${openPfand.invoice_id})`);
+                        } else {
+                            pfand = parseFloat(openPfand.Betrag);
+                            retourFlag = 'Ja';
+                            const art = (openPfand.Zahlungsart || '').toLowerCase();
+                            if (art.includes('twint')) retourMethode = 'Twint';
+                            else if (art.includes('einzahlungsschein') || art.includes('rechnung')) retourMethode = 'Banküberweisung';
+                        }
                     }
                     warenkorb.push({
                         itemId: itemId,
@@ -1037,7 +1054,7 @@ window.addAllMemberItemsToReturnCart = function(mitgliedId) {
                         pfandBetrag: pfand,
                         pfandEinnahme: 'Nein',
                         pfandMethode: null,
-                        pfandRetour: 'Ja',
+                        pfandRetour: retourFlag,
                         pfandRetourMethode: retourMethode,
                         verkaufMethode: null
                     });
@@ -1050,20 +1067,30 @@ window.addAllMemberItemsToReturnCart = function(mitgliedId) {
         renderWarenkorb();
         updateSubOptions();
     }
+    if (unpaidWarnings.length > 0) {
+        invAlert(
+            'Unbezahlte Depot-Rechnung',
+            `Für folgende Artikel ist noch eine unbezahlte Depot-Rechnung offen:<br><strong>${unpaidWarnings.map(invEscapeHtml).join('<br>')}</strong><br><br>Es wird daher <strong>keine Pfand-Rückerstattung</strong> vorselektiert. Bitte storniere die offene Rechnung im Modul «Rechnungen», falls kein Geld eingegangen ist.`,
+            'warning'
+        );
+    }
 };
 
 function onGegenstandSelect() {
     const action = document.getElementById('select-action').value;
     const kat = document.getElementById('select-kategorie').value;
     const itemId = document.getElementById('select-gegenstand').value;
-    if (!itemId) return;
+    const sponsorHintEl = document.getElementById('inv-verkauf-sponsoring-hint');
+    if (!itemId) {
+        if (sponsorHintEl) sponsorHintEl.className = 'd-none';
+        return;
+    }
 
     const keyMap = { "gewehr":"gewehre","schluessel":"schluessel",
                      "kleidung":"kleidung","schiessbekleidung":"schiessbekleidung" };
     const item = (inventarState[keyMap[kat]] || []).find(i => i.ID.toString() === itemId.toString());
     
     if (item) {
-        const sponsorHintEl = document.getElementById('inv-verkauf-sponsoring-hint');
         if (action === 'verkauf') {
             // 1. Verkauf: Verkaufspreis (Mitgliederpreis) vorblenden, sonst Kaufpreis
             let preisRaw = item.Verkaufspreis || item.selling_price || item.Kaufpreis || item.Preis || item.kaufpreis || 0;
@@ -1104,16 +1131,26 @@ function onGegenstandSelect() {
             document.getElementById('pfand-betrag').placeholder = 'Pfandbetrag z.B. 50.00';
             return;
         } else if (action === 'checkin') {
-            // 3. Rückgabe: Nachschlagen, ob ein offenes Pfand für dieses Mitglied & Item existiert
+            // 3. Rückgabe: Ausschliesslich effektiv bezahltes offenes Pfand aus inventory_deposits verwenden
             const mitgliedId = document.getElementById('select-mitglied').value;
+            const retSelect = document.getElementById('pfand-retour');
             const openPfand = (inventarState?.pfand || []).find(p => 
                 String(p.Mitglied_ID) === String(mitgliedId) && 
                 String(p.Inventar_ID) === String(itemId) && 
                 (p.Status || '').toLowerCase() === 'offen'
             );
             if (openPfand && parseFloat(openPfand.Betrag) > 0) {
+                const invUnpaid = Boolean(openPfand.invoice_id) && String(openPfand.Invoice_Status || '').toLowerCase() !== 'bezahlt';
+                if (invUnpaid) {
+                    document.getElementById('pfand-betrag').value = '0.00';
+                    if (retSelect) retSelect.value = 'Nein';
+                    if (sponsorHintEl) {
+                        sponsorHintEl.className = 'small text-warning-emphasis bg-warning-subtle border border-warning rounded p-2 mt-1 d-block';
+                        sponsorHintEl.innerHTML = `<i class="fas fa-exclamation-triangle me-1"></i>Offene Depot-Rechnung <strong>${invEscapeHtml(openPfand.invoice_id)}</strong> ist noch nicht bezahlt – keine Pfand-Rückzahlung möglich.`;
+                    }
+                    return;
+                }
                 document.getElementById('pfand-betrag').value = parseFloat(openPfand.Betrag).toFixed(2);
-                const retSelect = document.getElementById('pfand-retour');
                 if (retSelect) {
                     const art = (openPfand.Zahlungsart || '').toLowerCase();
                     if (art.includes('twint')) retSelect.value = 'Twint';
@@ -1121,17 +1158,8 @@ function onGegenstandSelect() {
                     else retSelect.value = 'Bar';
                 }
                 return;
-            } else {
-                // Fallback: hinterlegter Depotbetrag des Gegenstands
-                let depotRaw = item.Depotbetrag || item.Depot || 0;
-                if (depotRaw) {
-                    const depot = parseFloat(depotRaw.toString().replace("'", "").replace("CHF", "").trim());
-                    if (!isNaN(depot) && depot > 0) {
-                        document.getElementById('pfand-betrag').value = depot.toFixed(2);
-                        return;
-                    }
-                }
             }
+            if (retSelect) retSelect.value = 'Nein';
         }
     }
     document.getElementById('pfand-betrag').value = '';
@@ -1277,11 +1305,11 @@ function getCategoryExportRows(targetKey, onlyFiltered = false) {
 
 window.exportInventarExcel = function(scope = 'current') {
     if (typeof XLSX === 'undefined') {
-        alert("❌ SheetJS (XLSX) Bibliothek ist im Portal nicht verfügbar.");
+        invAlert('Bibliothek fehlt', 'SheetJS (XLSX) Bibliothek ist im Portal nicht verfügbar.', 'danger');
         return;
     }
     if (!inventarState) {
-        alert("⚠️ Keine Inventardaten geladen.");
+        invAlert('Keine Daten', 'Keine Inventardaten geladen.', 'warning');
         return;
     }
 
@@ -1298,13 +1326,13 @@ window.exportInventarExcel = function(scope = 'current') {
     if (scope === 'filtered' || scope === 'current') {
         const currentTarget = document.getElementById('filter-liste')?.value || 'Inventar_Kleidung';
         if (currentTarget === 'Personendaten') {
-            alert("ℹ️ Mitglieder-Export steht direkt im Modul «Mitglieder» zur Verfügung.");
+            invAlert('Hinweis', 'Mitglieder-Export steht direkt im Modul «Mitglieder» zur Verfügung.', 'info');
             return;
         }
         const isFiltered = (scope === 'filtered');
         const rows = getCategoryExportRows(currentTarget, isFiltered);
         if (rows.length === 0) {
-            alert(isFiltered ? "⚠️ Keine Datensätze entsprechen deiner aktuellen Filterung." : "⚠️ Keine Datensätze in dieser Kategorie vorhanden.");
+            invAlert('Keine Datensätze', isFiltered ? 'Keine Datensätze entsprechen deiner aktuellen Filterung.' : 'Keine Datensätze in dieser Kategorie vorhanden.', 'warning');
             return;
         }
         const baseName = (catLabels[currentTarget] || 'Bestand').slice(0, 20);
@@ -1331,7 +1359,7 @@ window.exportInventarExcel = function(scope = 'current') {
         });
 
         if (totalExported === 0) {
-            alert("⚠️ Keine Inventargegenstände zum Exportieren vorhanden.");
+            invAlert('Keine Datensätze', 'Keine Inventargegenstände zum Exportieren vorhanden.', 'warning');
             return;
         }
         XLSX.writeFile(wb, `Vereinsinventar_Gesamtbestand_${todayStr}.xlsx`);
@@ -1340,7 +1368,7 @@ window.exportInventarExcel = function(scope = 'current') {
 
 window.printInventarBestand = function(scope = 'current') {
     if (!inventarState) {
-        alert("⚠️ Keine Inventardaten vorhanden.");
+        invAlert('Keine Daten', 'Keine Inventardaten vorhanden.', 'warning');
         return;
     }
 
@@ -1355,7 +1383,7 @@ window.printInventarBestand = function(scope = 'current') {
     if (scope === 'filtered' || scope === 'current') {
         const currentTarget = document.getElementById('filter-liste')?.value || 'Inventar_Kleidung';
         if (currentTarget === 'Personendaten') {
-            alert("ℹ️ Druckfunktion für Mitglieder befindet sich im Modul «Mitglieder».");
+            invAlert('Hinweis', 'Druckfunktion für Mitglieder befindet sich im Modul «Mitglieder».', 'info');
             return;
         }
         const isFiltered = (scope === 'filtered');
@@ -1417,7 +1445,7 @@ window.printInventarBestand = function(scope = 'current') {
                                     if (h.includes('CHF')) {
                                         return `<td class="text-end font-monospace">${val ? (h.includes('Sponsoring') ? '-CHF ' : 'CHF ') + val : '-'}</td>`;
                                     }
-                                    return `<td>${val || '-'}</td>`;
+                                    return `<td>${invEscapeHtml(val || '-')}</td>`;
                                 }).join('')}
                             </tr>
                         `).join('')}
@@ -1428,13 +1456,13 @@ window.printInventarBestand = function(scope = 'current') {
     });
 
     if (totalItems === 0) {
-        alert("⚠️ Keine Datensätze zum Drucken vorhanden.");
+        invAlert('Keine Datensätze', 'Keine Datensätze zum Drucken vorhanden.', 'warning');
         return;
     }
 
     const printWin = window.open('', '_blank', 'width=1150,height=850');
     if (!printWin) {
-        alert("Popup-Fenster wurde vom Browser blockiert. Bitte Popups für diese Seite erlauben.");
+        invAlert('Popup blockiert', 'Popup-Fenster wurde vom Browser blockiert. Bitte erlaube Popups für diese Seite.', 'warning');
         return;
     }
 

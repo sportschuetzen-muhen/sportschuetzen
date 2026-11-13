@@ -189,12 +189,28 @@ function mapLogFromSupabase(l) {
 // =========================================================
 //  ENTRYPOINT
 // =========================================================
+function ensureInventarSignaturePads() {
+    if (typeof SignaturePad !== 'function') return;
+    const canvasMitglied = document.getElementById('sig-mitglied');
+    const canvasVorstand = document.getElementById('sig-vorstand');
+    if (canvasMitglied && !sigPadMitglied) sigPadMitglied = new SignaturePad(canvasMitglied);
+    if (canvasVorstand && !sigPadVorstand) sigPadVorstand = new SignaturePad(canvasVorstand);
+}
+
 async function loadInventarData(force = false) {
     const container = document.getElementById('inventar-container');
     if (!container) return;
 
-    if (!force && inventarState && container.querySelector('.nav-btn')) {
+    const shouldForce = force || Boolean(window._inventarNeedsReload);
+    if (!shouldForce && inventarState && container.querySelector('.nav-btn')) {
         console.log("⚡ loadInventarData: Lade aus lokalem Cache...");
+        ensureInventarSignaturePads();
+        if (typeof renderWarenkorb === 'function') renderWarenkorb();
+        if (window._inventarRequestedTab) {
+            const reqTab = window._inventarRequestedTab;
+            window._inventarRequestedTab = null;
+            if (typeof showInventarSection === 'function') showInventarSection(reqTab);
+        }
         return;
     }
 
@@ -290,10 +306,13 @@ async function loadInventarData(force = false) {
                     mitglieder: mappedMembers,
                     _isSupabase: true
                 };
+                window._inventarNeedsReload = false;
 
                 if (hasNav) {
+                    ensureInventarSignaturePads();
                     fillInventarDropdowns();
                     renderJournalTables();
+                    if (typeof renderWarenkorb === 'function') renderWarenkorb();
                     if (typeof updateInventarFilterDropdowns === 'function') {
                         updateInventarFilterDropdowns(true);
                     }
@@ -309,6 +328,11 @@ async function loadInventarData(force = false) {
                             renderFinanzen();
                         }
                     }
+                    if (window._inventarRequestedTab) {
+                        const reqTab = window._inventarRequestedTab;
+                        window._inventarRequestedTab = null;
+                        if (typeof showInventarSection === 'function') showInventarSection(reqTab);
+                    }
                     return;
                 }
 
@@ -319,7 +343,7 @@ async function loadInventarData(force = false) {
             }
         } catch (supaErr) {
             console.error("Supabase Abfrage für Inventar fehlgeschlagen:", supaErr);
-            container.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Fehler beim Laden aus Supabase: ${supaErr.message}</div>`;
+            container.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Fehler beim Laden aus Supabase: ${invEscapeHtml(supaErr.message)}</div>`;
             return;
         }
     }
@@ -374,6 +398,9 @@ function teardownInventar() {
     sigPadMitglied = null;
     sigPadVorstand = null;
     warenkorb      = [];
+    if (typeof renderWarenkorb === 'function') {
+        renderWarenkorb();
+    }
     if (typeof window.resetInventarFilterCategory === 'function') {
         window.resetInventarFilterCategory();
     }
@@ -387,15 +414,39 @@ function setInventarBusy(status) {
 }
 
 // =========================================================
-//  SYNC MEMBERS
-// =========================================================
-async function syncInventarMembers() {
-    alert("ℹ️ Hinweis: Das Inventar ist direkt mit der zentralen Mitgliederdatenbank verknüpft. Ein manueller Sync ist nicht mehr erforderlich.");
-}
-
-// =========================================================
 //  COMMON INVENTORY HELPERS
 // =========================================================
+function invEscapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+async function invAlert(title, message, type = 'info') {
+    if (window.UIConfirmKit && typeof window.UIConfirmKit.alert === 'function') {
+        await window.UIConfirmKit.alert({
+            title: title || 'Hinweis',
+            message: message || '',
+            type: type || 'info'
+        });
+    } else {
+        const plain = String(message || '').replace(/<[^>]+>/g, '');
+        alert(title ? `${title}\n\n${plain}` : plain);
+    }
+}
+
+async function invConfirm(options = {}) {
+    if (window.UIConfirmKit && typeof window.UIConfirmKit.confirm === 'function') {
+        return await window.UIConfirmKit.confirm(options);
+    }
+    const plain = String(options.message || '').replace(/<[^>]+>/g, '');
+    return confirm(options.title ? `${options.title}\n\n${plain}` : plain);
+}
+
 function getInventarNameFromId(id) {
     if (!id || id === "" || id === 0 || id === "0") return '-';
     if (!inventarState?.mitglieder) return String(id);

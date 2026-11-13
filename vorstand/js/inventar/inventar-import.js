@@ -4,6 +4,10 @@
 // =====================================================================
 
 window.openInventarExcelImportModal = function() {
+    if (typeof canAdd === 'function' && !canAdd()) {
+        invAlert('Keine Berechtigung', 'Du hast keine Berechtigung zum Importieren von Inventargegenständen.', 'danger');
+        return;
+    }
     let modalEl = document.getElementById('invModalExcelImport');
     if (!modalEl) {
         modalEl = document.createElement('div');
@@ -146,7 +150,7 @@ window.invHandleImportFileSelect = function(e) {
 window.invParseFile = function(file) {
     if (!file) return;
     if (typeof XLSX === 'undefined') {
-        alert("❌ Fehler: SheetJS (XLSX) Bibliothek ist im Portal nicht verfügbar.");
+        invAlert('Bibliothek fehlt', 'SheetJS (XLSX) Bibliothek ist im Portal nicht verfügbar.', 'danger');
         return;
     }
 
@@ -160,7 +164,7 @@ window.invParseFile = function(file) {
             const jsonRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
             if (!jsonRows || jsonRows.length < 2) {
-                alert("⚠️ Die Datei enthält keine Datenzeilen.");
+                invAlert('Leere Datei', 'Die ausgewählte Datei enthält keine Datenzeilen.', 'warning');
                 return;
             }
 
@@ -168,7 +172,7 @@ window.invParseFile = function(file) {
             invProcessRawData(jsonRows);
         } catch (err) {
             console.error("Fehler beim Lesen der Excel-Datei:", err);
-            alert("❌ Fehler beim Lesen der Datei: " + err.message);
+            invAlert('Lesefehler', 'Fehler beim Lesen der Datei: ' + invEscapeHtml(err.message), 'danger');
         }
     };
     reader.readAsArrayBuffer(file);
@@ -223,10 +227,23 @@ window.invProcessRawData = function(jsonRows) {
     const prefix = prefixMap[category] || 'K';
 
     const existingItems = inventarState?.[category === 'kleidung' ? 'kleidung' : (category === 'gewehr' ? 'gewehre' : (category === 'schluessel' ? 'schluessel' : 'schiessbekleidung'))] || [];
+    const usedIds = new Set();
     let nextNum = 1;
+    const prefixRe = new RegExp(`^${prefix}-(\\d+)`, 'i');
     existingItems.forEach(it => {
-        const m = String(it.ID || it.id || '').match(new RegExp(`^${prefix}-(\\d+)`, 'i'));
+        const rawId = String(it.ID || it.id || '').trim();
+        if (rawId) usedIds.add(rawId.toUpperCase());
+        const m = rawId.match(prefixRe);
         if (m) nextNum = Math.max(nextNum, parseInt(m[1], 10) + 1);
+    });
+    // Explizit in der Importdatei vergebene IDs vorab reservieren, um Kollisionen mit Auto-IDs zu verhindern
+    dataRows.forEach(row => {
+        const explicitId = (headerIndices.id !== undefined && row[headerIndices.id]) ? String(row[headerIndices.id]).trim() : '';
+        if (explicitId) {
+            usedIds.add(explicitId.toUpperCase());
+            const m = explicitId.match(prefixRe);
+            if (m) nextNum = Math.max(nextNum, parseInt(m[1], 10) + 1);
+        }
     });
 
     const parseNum = v => {
@@ -260,7 +277,10 @@ window.invProcessRawData = function(jsonRows) {
     dataRows.forEach((row) => {
         let idVal = headerIndices.id !== undefined && row[headerIndices.id] ? String(row[headerIndices.id]).trim() : '';
         if (!idVal) {
-            idVal = `${prefix}-${nextNum++}`;
+            do {
+                idVal = `${prefix}-${nextNum++}`;
+            } while (usedIds.has(idVal.toUpperCase()));
+            usedIds.add(idVal.toUpperCase());
         }
 
         const itemObj = {
@@ -452,35 +472,37 @@ window.invRenderPreview = function(items, category) {
     }
 };
 
-window.invExecuteImport = function() {
+window.invExecuteImport = async function() {
+    if (typeof canAdd === 'function' && !canAdd()) {
+        await invAlert('Keine Berechtigung', 'Du hast keine Berechtigung zum Importieren von Inventargegenständen.', 'danger');
+        return;
+    }
+
     const items = window._invImportParsedRows;
     if (!items || items.length === 0) return;
 
-    if (!confirm(`Möchtest du ${items.length} Datensätze jetzt verbindlich in die Supabase-Datenbank importieren?`)) {
-        return;
-    }
+    const ok = await invConfirm({
+        title: `${items.length} Datensätze importieren?`,
+        message: `Möchtest du <strong>${items.length} Datensätze</strong> jetzt verbindlich in die Supabase-Datenbank importieren?`,
+        type: 'primary',
+        confirmText: 'Jetzt importieren',
+        cancelText: 'Abbrechen'
+    });
+    if (!ok) return;
 
-    const btn = document.getElementById('btn-inv-do-import');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Importiere...';
+    const runImport = async () => {
+        const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
+        if (!supa) {
+            await invAlert('Verbindungsfehler', 'Supabase Client ist nicht initialisiert.', 'danger');
+            return;
+        }
 
-    const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
-    if (!supa) {
-        alert("❌ Supabase Client nicht initialisiert.");
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-check-circle me-1"></i> Jetzt importieren';
-        return;
-    }
-
-    const category = document.getElementById('inv-import-category').value;
-    supa.from('inventory_items')
-        .upsert(items, { onConflict: 'id' })
-        .then(async ({ error }) => {
+        const category = document.getElementById('inv-import-category').value;
+        try {
+            const { error } = await supa.from('inventory_items').upsert(items, { onConflict: 'id' });
             if (error) {
                 console.error("Import-Fehler:", error);
-                alert("❌ Fehler beim Importieren: " + error.message);
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-check-circle me-1"></i> Jetzt importieren';
+                await invAlert('Importfehler', 'Fehler beim Importieren: ' + invEscapeHtml(error.message), 'danger');
                 return;
             }
 
@@ -510,7 +532,6 @@ window.invExecuteImport = function() {
                 }]);
             } catch (_) {}
 
-            alert(`✅ ${items.length} Datensätze erfolgreich in Supabase importiert!`);
             const modalEl = document.getElementById('invModalExcelImport');
             if (modalEl) {
                 const modal = bootstrap.Modal.getInstance(modalEl);
@@ -519,18 +540,23 @@ window.invExecuteImport = function() {
 
             // Neu laden
             await loadInventarData(true);
-        })
-        .catch(err => {
+            await invAlert('Import erfolgreich', `<strong>${items.length} Datensätze</strong> wurden erfolgreich in Supabase importiert.`, 'success');
+        } catch (err) {
             console.error("Import Exception:", err);
-            alert("❌ Ausnahme beim Import: " + err.message);
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-check-circle me-1"></i> Jetzt importieren';
-        });
+            await invAlert('Ausnahmefehler', 'Ausnahme beim Import: ' + invEscapeHtml(err.message), 'danger');
+        }
+    };
+
+    if (window.UIButtonKit && typeof window.UIButtonKit.withLoading === 'function') {
+        await window.UIButtonKit.withLoading('#btn-inv-do-import', runImport);
+    } else {
+        await runImport();
+    }
 };
 
 window.invDownloadExcelTemplate = function() {
     if (typeof XLSX === 'undefined') {
-        alert("SheetJS ist nicht verfügbar.");
+        invAlert('Bibliothek fehlt', 'SheetJS ist im Portal nicht verfügbar.', 'danger');
         return;
     }
 
