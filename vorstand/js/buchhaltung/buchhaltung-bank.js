@@ -520,6 +520,16 @@ function bhBankMatchText(journalDesc, partyName, remittanceInfo, creditorReferen
     if (suffix && suffix.length >= 3 && !/^20\d{2}$/.test(suffix) && cleanJ.includes(suffix)) return true;
   }
 
+  // 2b. Widersprüchliche Vertrags- / Buchungscodes (z.B. V-2026-0025 vs. LL2026-003LL) dürfen nicht über Kreuz matchen
+  if (remittanceInfo) {
+    const contractPattern = /\b(?:v-\d{4}-\d{3,4}|ll\d{4}-[a-z0-9]+)\b/gi;
+    const rContractCodes = [...new Set((String(remittanceInfo).match(contractPattern) || []).map(c => c.toLowerCase().replace(/[^a-z0-9]/g, '')))];
+    const jContractCodes = [...new Set((String(journalDesc).match(contractPattern) || []).map(c => c.toLowerCase().replace(/[^a-z0-9]/g, '')))];
+    if (rContractCodes.length > 0 && jContractCodes.length > 0 && !rContractCodes.some(c => jContractCodes.includes(c))) {
+      return false;
+    }
+  }
+
   // 3. Name des Absenders / Empfängers (Wort-für-Wort, toleriert Invertierung "Muster Hans" vs "Hans Muster")
   if (partyName) {
     const pWords = normalizeString(partyName).split(' ').filter(w => w.length >= 3 && !['herr','frau','dr','die','der','das','und','gmbh','ag','schuetzen','sportschuetzen','sportschützen','muhen'].includes(w));
@@ -555,10 +565,15 @@ function bhBankMatchText(journalDesc, partyName, remittanceInfo, creditorReferen
       }
     }
 
-    // Spezifische Textwörter aus dem Verwendungszweck (ausser generische Vermietungs- und Standard-Stoppwörter)
-    const rWords = normalizeString(remittanceInfo).split(' ').filter(w =>
-      w.length >= 4 && !['zahlung','gutschrift','ueberweisung','rechnung','danke','spesen','abrechnung','muhen','vermietung','schuetzenhaus','schutzenhaus','miete','depot'].includes(w)
-    );
+    // Spezifische Textwörter aus dem Verwendungszweck (dedupliziert; ohne reine Zahlen/Jahreszahlen & Standard-Stoppwörter)
+    const rWords = [...new Set(
+      normalizeString(remittanceInfo).split(' ').filter(w =>
+        w.length >= 4 &&
+        !/^\d+$/.test(w) &&
+        !/^(?:ll|v|re)?20\d{2}$/.test(w) &&
+        !['zahlung','gutschrift','ueberweisung','rechnung','danke','spesen','abrechnung','muhen','vermietung','schuetzenhaus','schutzenhaus','miete','depot','schiessen','gruppendoppel'].includes(w)
+      )
+    )];
     if (rWords.length >= 2) {
       const rMatchCount = rWords.filter(w => cleanJ.includes(w)).length;
       if (rMatchCount >= 2) return true;
@@ -2424,44 +2439,63 @@ function bhBankMatchAll(transactions) {
     // 2. Suche im Kassabuch-Journal (Split-Gruppen und Einzelzeilen)
     if (journalHistory && journalHistory.length > 0) {
       // A. Split-Gruppen im Journal abgleichen (z. B. Jahresbeiträge mit Grundbeitrag + Lizenz oder Split-Rechnungen)
+      // Priorisiere starke Partei-/Referenz-Treffer sowie zeitlich nächste Buchungen (kleinstes days), statt blind id DESC zu nehmen
       if (!alreadyBooked || !matchedJournalEntry) {
+        const grpCandidates = [];
         for (const [grpKey, grp] of journalGroups.entries()) {
           if (usedGroupKeys.has(grpKey)) continue;
           const netGrp = getGroupNetBankAmount(grp, tx.isCredit, txBankKonto);
           if (Math.abs(netGrp - tx.amount) < 0.05) {
             const days = bhBankDaysDiff(grp.datum, tx.bookingDate);
-            if (days <= 35) {
-              const textMatch = bhBankMatchText(grp.allDescriptions, tx.partyName, tx.remittanceInfo, tx.creditorReference, matchedMember, matchedInvoice);
-              if (textMatch) {
-                alreadyBooked = true;
-                matchedJournalEntry = grp.entries[0];
-                bookedDate = bookedDate || formatSwissDate(grp.datum || tx.bookingDate);
-                matchLabel = `Im Journal gebucht (${grp.belegNr})`;
-                usedGroupKeys.add(grpKey);
-                grp.entryIds.forEach(id => usedJournalIds.add(id));
-                break;
-              }
+            if (days <= 35 && bhBankMatchText(grp.allDescriptions, tx.partyName, tx.remittanceInfo, tx.creditorReference, matchedMember, matchedInvoice)) {
+              const strongMatch = bhBankMatchText(grp.allDescriptions, tx.partyName, '', tx.creditorReference, matchedMember, matchedInvoice);
+              grpCandidates.push({ grpKey, grp, days, strongMatch });
             }
           }
         }
+        if (grpCandidates.length > 0) {
+          grpCandidates.sort((a, b) => {
+            if (a.strongMatch !== b.strongMatch) return a.strongMatch ? -1 : 1;
+            return a.days - b.days;
+          });
+          const best = grpCandidates[0];
+          alreadyBooked = true;
+          matchedJournalEntry = best.grp.entries[0];
+          bookedDate = bookedDate || formatSwissDate(best.grp.datum || tx.bookingDate);
+          matchLabel = `Im Journal gebucht (${best.grp.belegNr})`;
+          usedGroupKeys.add(best.grpKey);
+          best.grp.entryIds.forEach(id => usedJournalIds.add(id));
+        }
       }
 
-      // B. Einzelbuchungen mit Text- / Namens-Match
+      // B. Einzelbuchungen mit Text- / Namens-Match (ebenfalls nach Partei-/Referenz-Stärke und kleinster Datumsdifferenz sortiert)
       if (!alreadyBooked || !matchedJournalEntry) {
-        const matchedSingle = journalHistory.find(j => {
-          if (usedJournalIds.has(j.id)) return false;
-          const amtDiff = Math.abs(Number(j.betrag || 0) - tx.amount);
-          if (amtDiff >= 0.05) return false;
+        const singleCandidates = journalHistory
+          .filter(j => {
+            if (usedJournalIds.has(j.id)) return false;
+            const amtDiff = Math.abs(Number(j.betrag || 0) - tx.amount);
+            if (amtDiff >= 0.05) return false;
 
-          // Strikte Bankkonto-Prüfung: Nur genau das erkannte Bankkonto (1020, 1021, 1022) der CAMT-Transaktion abgleichen!
-          if (tx.isCredit && String(j.konto_soll || '').trim() !== String(txBankKonto).trim()) return false;
-          if (!tx.isCredit && String(j.konto_haben || '').trim() !== String(txBankKonto).trim()) return false;
+            // Strikte Bankkonto-Prüfung: Nur genau das erkannte Bankkonto (1020, 1021, 1022) der CAMT-Transaktion abgleichen!
+            if (tx.isCredit && String(j.konto_soll || '').trim() !== String(txBankKonto).trim()) return false;
+            if (!tx.isCredit && String(j.konto_haben || '').trim() !== String(txBankKonto).trim()) return false;
 
-          const days = bhBankDaysDiff(j.datum, tx.bookingDate);
-          if (days > 35) return false;
+            const days = bhBankDaysDiff(j.datum, tx.bookingDate);
+            if (days > 35) return false;
 
-          return bhBankMatchText(j.beschreibung, tx.partyName, tx.remittanceInfo, tx.creditorReference, matchedMember, matchedInvoice);
-        });
+            return bhBankMatchText(j.beschreibung, tx.partyName, tx.remittanceInfo, tx.creditorReference, matchedMember, matchedInvoice);
+          })
+          .map(j => ({
+            j,
+            days: bhBankDaysDiff(j.datum, tx.bookingDate),
+            strongMatch: bhBankMatchText(j.beschreibung, tx.partyName, '', tx.creditorReference, matchedMember, matchedInvoice)
+          }))
+          .sort((a, b) => {
+            if (a.strongMatch !== b.strongMatch) return a.strongMatch ? -1 : 1;
+            return a.days - b.days;
+          });
+
+        const matchedSingle = singleCandidates.length > 0 ? singleCandidates[0].j : null;
 
         if (matchedSingle) {
           alreadyBooked = true;
