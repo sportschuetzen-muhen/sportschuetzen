@@ -3425,13 +3425,17 @@ window.bhCascadeResetLinkedModules = async function(linkedInfo) {
           updated_at: nowIso
         }).eq('id', r.id);
 
-        await supa.from('rental_status_logs').insert([{
-          rental_request_id: r.id,
-          previous_status: r.status,
-          new_status: 'confirmed',
-          comment: 'Zahlung im Journal gelöscht, Status zurückgesetzt',
-          changed_by: 'FIBU Journal'
-        }]);
+        // DB-Trigger trg_log_rental_status protokolliert echte Statusübergänge automatisch;
+        // manueller Eintrag nur, falls Status bereits 'confirmed' war.
+        if (r.status === 'confirmed') {
+          await supa.from('rental_status_logs').insert([{
+            rental_request_id: r.id,
+            previous_status: r.status,
+            new_status: 'confirmed',
+            comment: 'Zahlung im Journal gelöscht, Status zurückgesetzt',
+            changed_by: 'FIBU Journal'
+          }]);
+        }
       } catch (e) {
         console.warn(`⚠️ Fehler beim Zurücksetzen der Vermietung ${r.id}:`, e);
       }

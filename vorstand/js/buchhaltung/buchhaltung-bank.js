@@ -3273,33 +3273,38 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
         if (isVermietungInv && sb) {
           try {
             const vnr = matchedInvoice.booking_number || matchedInvoice.source_id;
-            let rQuery = sb.from('rental_requests').update({
+            const matchFilter = (vnr && matchedInvoice.id)
+              ? `booking_number.eq.${vnr},invoice_id.eq.${matchedInvoice.id}`
+              : (vnr ? `booking_number.eq.${vnr}` : `invoice_id.eq.${matchedInvoice.id}`);
+
+            const { data: beforeRentals } = await sb
+              .from('rental_requests')
+              .select('id, status')
+              .or(matchFilter);
+
+            const { data: updatedRentals } = await sb.from('rental_requests').update({
               status: 'paid',
               is_paid: true,
               status_raiffeisen: 'fibu_gebucht',
               datum_raiffeisen: bookingDate,
               kommentar_raiffeisen: `FIBU gebucht via CAMT (${belegNr})`,
               updated_at: new Date().toISOString()
-            });
+            }).or(matchFilter).select();
 
-            if (vnr && matchedInvoice.id) {
-              rQuery = rQuery.or(`booking_number.eq.${vnr},invoice_id.eq.${matchedInvoice.id}`);
-            } else if (vnr) {
-              rQuery = rQuery.eq('booking_number', vnr);
-            } else {
-              rQuery = rQuery.eq('invoice_id', matchedInvoice.id);
-            }
-
-            const { data: updatedRentals } = await rQuery.select();
+            // DB-Trigger trg_log_rental_status protokolliert echte Statuswechsel automatisch;
+            // manueller Eintrag nur nötig, falls Status bereits 'paid' war (Stufe 1 -> Stufe 2).
             if (updatedRentals && updatedRentals.length > 0) {
+              const prevStatusById = new Map((beforeRentals || []).map(x => [x.id, x.status]));
               for (const ur of updatedRentals) {
-                await sb.from('rental_status_logs').insert([{
-                  rental_request_id: ur.id,
-                  previous_status: ur.status,
-                  new_status: 'paid',
-                  comment: `Zahlung in FIBU via CAMT verbucht (${belegNr})`,
-                  changed_by: 'FIBU CAMT-Import'
-                }]);
+                if (prevStatusById.get(ur.id) === 'paid') {
+                  await sb.from('rental_status_logs').insert([{
+                    rental_request_id: ur.id,
+                    previous_status: 'paid',
+                    new_status: 'paid',
+                    comment: `Zahlung in FIBU via CAMT verbucht (${belegNr})`,
+                    changed_by: 'FIBU CAMT-Import'
+                  }]);
+                }
               }
               console.log(`✅ [FIBU CAMT] rental_requests erfolgreich auf Stufe 2 (fibu_gebucht) aktualisiert.`);
             }

@@ -156,19 +156,22 @@ async function fetchGoogleHausKalender() {
         console.warn('Worker Hauskalender fehlgeschlagen, versuche Supabase:', e);
     }
 
-    // B. Fallback: Supabase rental_requests
+    // B. Fallback: PII-freie Supabase Kalender-RPC (get_public_rental_calendar)
     try {
-        const supaResp = await fetch(`${SUPABASE_REST_URL}/rental_requests?select=booking_number,start_date,end_date,festbeginn,status,is_inquiry&status=neq.cancelled&order=start_date.asc`, {
+        const supaResp = await fetch(`${SUPABASE_REST_URL}/rpc/get_public_rental_calendar`, {
+            method: 'POST',
             headers: {
                 'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-            }
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: '{}'
         });
         if (supaResp.ok) {
             const rentals = await supaResp.json();
             if (Array.isArray(rentals)) {
                 return rentals.map(r => ({
-                    id: r.booking_number,
+                    id: 'cal_' + (r.start_date || '') + '_' + Math.random().toString(36).substr(2, 6),
                     datum: r.start_date || '',
                     datum_iso: r.start_date || '',
                     start: r.festbeginn || '',

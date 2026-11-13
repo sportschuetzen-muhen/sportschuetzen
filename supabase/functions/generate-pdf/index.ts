@@ -4463,16 +4463,33 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // Supabase Client initialisieren
+  // Supabase Client sauber mit Service-Role initialisieren (ohne global Authorization Override durch Caller-Token!)
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || "https://supabase-muhen.danfamily.uk";
   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY") || "";
-  const authHeader = req.headers.get("Authorization");
+  const authHeader = req.headers.get("Authorization") || "";
+  const callerToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+  const isServiceRole = Boolean(callerToken && Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") && callerToken === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
   const supabase = createClient(supabaseUrl, supabaseServiceKey, {
     auth: { persistSession: false },
-    global: { headers: authHeader ? { Authorization: authHeader } : {} },
   });
 
+  // Optional eingeloggten Benutzer aus Caller-JWT ermitteln (für Berechtigung & Absender-Profil)
+  let callerUser: any = null;
+  if (callerToken && !isServiceRole) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser(callerToken);
+      if (user?.id) callerUser = user;
+    } catch (_) {}
+  }
+
   const action = payload.action || "generate-invoice";
+  const isPublicRentalContractAction = (action === "generate-contract" || action === "generateRentalContractPDF");
+  if (!isServiceRole && !callerUser && !isPublicRentalContractAction) {
+    return new Response(JSON.stringify({ success: false, error: "Authentifizierung erforderlich." }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
   const curYear = payload.year ? String(payload.year) : new Date().getFullYear().toString();
 
   try {
@@ -4568,9 +4585,9 @@ Deno.serve(async (req: Request) => {
       sender.name = sender.name || [sender.vorname, sender.nachname].filter(Boolean).join(" ");
 
       // Automatisches Nachladen aus admin_profiles & members bei unvollständigem Absender
-      if ((!sender.vorname || !sender.strasse) && supabase) {
+      if ((!sender.vorname || !sender.strasse) && supabase && callerUser?.id) {
         try {
-          const { data: { user } } = await supabase.auth.getUser();
+          const user = callerUser;
           if (user?.id) {
             const { data: prof } = await supabase
               .from("admin_profiles")
@@ -4623,11 +4640,28 @@ Deno.serve(async (req: Request) => {
       if (!bookId) throw new Error("Mietvertrags- oder Buchungs-ID ist zwingend erforderlich.");
       recordId = bookId;
 
+      // Buchung serverseitig prüfen (verhindert unbefugte Vertragsgenerierung & Betragsmanipulation durch anon)
+      const isUuidBookId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bookId);
+      const { data: rentalRow } = await supabase
+        .from("rental_requests")
+        .select("id, booking_number, status, total_amount_chf")
+        .eq(isUuidBookId ? "id" : "booking_number", bookId)
+        .maybeSingle();
+
+      if (!isServiceRole && !callerUser) {
+        if (!rentalRow || rentalRow.status === "cancelled") {
+          return new Response(JSON.stringify({ success: false, error: "Ungültige oder stornierte Buchungs-ID." }), {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+
       const recipient = payload.recipient || { name: "Mieter" };
       const sender = payload.sender || { vorname: "Vermietung", nachname: CLUB_NAME };
       const mietdatum = payload.mietdatum || new Date().toLocaleDateString("de-CH");
       const festbeginn = payload.festbeginn || "14:00 Uhr";
-      const mietbetrag = Number(payload.mietbetrag || payload.totalAmount || 300);
+      const mietbetrag = Number(rentalRow?.total_amount_chf || payload.mietbetrag || payload.totalAmount || 300);
       pdfBytes = await generateRentalContractPdf(
         bookId,
         recipient,
@@ -4733,9 +4767,9 @@ Deno.serve(async (req: Request) => {
       };
 
       // Automatisches Nachladen aus admin_profiles & members bei unvollständigem Absender
-      if ((!sender.vorname || !sender.strasse) && supabase) {
+      if ((!sender.vorname || !sender.strasse) && supabase && callerUser?.id) {
         try {
-          const { data: { user } } = await supabase.auth.getUser();
+          const user = callerUser;
           if (user?.id) {
             const { data: prof } = await supabase
               .from("admin_profiles")

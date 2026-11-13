@@ -261,7 +261,7 @@ function renderVermietungCockpit(daten) {
       <div class="col-6 col-md-2">
         <div class="card vermietung-stat-card border-0 shadow-sm text-center p-3 h-100" style="border-left:4px solid #0f3a5d !important;">
           <div style="font-size:1.1rem;font-weight:bold;color:#0f3a5d" id="einnahmen-betrag">
-            CHF ${einnahmen.toFixed(0)}
+            ${window.UIFormatKit ? UIFormatKit.formatCurrency(einnahmen) : `CHF ${einnahmen.toFixed(2)}`}
           </div>
           <div class="small text-muted fw-bold mb-1">💰 Einnahmen</div>
           <select class="form-select form-select-sm border-0 bg-light" style="font-size: 0.8rem; font-weight: 600;" onchange="updateEinnahmen(this.value)">
@@ -543,7 +543,7 @@ function renderRentalSettingsForm() {
   const wPhone = s.wirtschaft_phone || '+41 79 987 65 43';
   const wEmail = s.wirtschaft_email || 'wirtschaft@sportschuetzen-muhen.ch';
 
-  const iban = s.iban || 'CH44 8080 8009 1234 5678 9';
+  const iban = s.iban || 'CH06 8080 8003 6331 3189 2';
   const mapsUrl = s.maps_url || 'https://www.google.com/maps/search/?api=1&query=Schützenhaus+Muhen';
   const fbUrl = s.feedback_base_url || 'https://sps-b55.pages.dev/sportschuetzen-website/frontend/storno_feedback';
 

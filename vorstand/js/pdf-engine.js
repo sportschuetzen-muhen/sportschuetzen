@@ -494,8 +494,12 @@
             }
         } catch (err) {
             console.error("Mietvertrag PDF Fehler:", err);
-            if (!isSilent) {
-                alert("❌ Fehler beim Generieren des Mietvertrags: " + err.message);
+            if (!isSilent && window.UIConfirmKit) {
+                await UIConfirmKit.alert({
+                    title: "Fehler beim Generieren",
+                    message: "❌ Fehler beim Generieren des Mietvertrags: " + err.message,
+                    type: "danger"
+                });
             }
             throw err;
         } finally {

@@ -148,14 +148,14 @@ function parseRaiffeisenMail(msg: any): ParsedPaymentInfo {
 
   const fullText = (extractBodyText(msg.payload) + "\n" + msg.snippet).replace(/&#35;/g, "#").replace(/\r/g, "");
 
-  // Vertragsnummer suchen (z.B. V-2026-0050 oder ##2026-050##)
+  // Vertragsnummer suchen (z.B. V-2026-0050, V-2026-N001 oder ##2026-050##)
   let contractNumber: string | null = null;
-  const matchV = fullText.match(/V-(\d{4}-\d{3,4})/i);
+  const matchV = fullText.match(/V-(\d{4}-N?\d{3,4})/i);
   if (matchV) {
-    contractNumber = `V-${matchV[1]}`;
+    contractNumber = `V-${matchV[1].toUpperCase()}`;
   } else {
-    const matchHash = fullText.match(/##(\d{4}-\d{3,4})##/);
-    if (matchHash) contractNumber = `V-${matchHash[1]}`;
+    const matchHash = fullText.match(/##(\d{4}-N?\d{3,4})##/i);
+    if (matchHash) contractNumber = `V-${matchHash[1].toUpperCase()}`;
   }
 
   // Betrag suchen
@@ -480,10 +480,12 @@ Deno.serve(async (req) => {
       }
 
       if (rpcRes.code === "underpaid") {
+        const displayVnr = matchedVnr || contractNumber || "–";
         await supabase
           .from("bank_mail_ingest_logs")
           .update({
             result: "underpaid",
+            contract_nr: matchedVnr || contractNumber,
             rental_request_id: rentalData?.id || null,
             error_message: rpcRes.message,
           })
@@ -492,8 +494,8 @@ Deno.serve(async (req) => {
         await moveMessageLabels(googleToken, m.id, [errorLabelId], [inboxLabelId]);
 
         await sendBankReport(supabase, settings, {
-          ergebnis: `⚠️ Zahlung zu niedrig: ${contractNumber}`,
-          vertragsnr: contractNumber,
+          ergebnis: `⚠️ Zahlung zu niedrig: ${displayVnr}`,
+          vertragsnr: displayVnr,
           betrag: amount.toFixed(2),
           sollbetrag: sollAmount,
           hinweis: `Erhalten: <b>CHF ${amount.toFixed(2)}</b> &bull; Erwartet (Soll): <b>CHF ${sollAmount}</b>.<br>Buchung wurde nicht automatisch freigegeben.`,
@@ -505,10 +507,12 @@ Deno.serve(async (req) => {
       }
 
       if (rpcRes.code === "cancelled") {
+        const displayVnr = matchedVnr || contractNumber || "–";
         await supabase
           .from("bank_mail_ingest_logs")
           .update({
             result: "cancelled",
+            contract_nr: matchedVnr || contractNumber,
             rental_request_id: rentalData?.id || null,
             error_message: rpcRes.message,
           })
@@ -517,11 +521,11 @@ Deno.serve(async (req) => {
         await moveMessageLabels(googleToken, m.id, [errorLabelId], [inboxLabelId]);
 
         await sendBankReport(supabase, settings, {
-          ergebnis: `⚠️ Zahlung für stornierten Vertrag: ${contractNumber}`,
-          vertragsnr: contractNumber,
+          ergebnis: `⚠️ Zahlung für stornierten Vertrag: ${displayVnr}`,
+          vertragsnr: displayVnr,
           betrag: amount.toFixed(2),
           sollbetrag: sollAmount,
-          hinweis: `Für die stornierte Reservation <b>${contractNumber}</b> ging eine Zahlung von CHF ${amount.toFixed(2)} ein. Bitte Fall klären.`,
+          hinweis: `Für die stornierte Reservation <b>${displayVnr}</b> ging eine Zahlung von CHF ${amount.toFixed(2)} ein. Bitte Fall klären.`,
           rental: rentalData,
         });
 
@@ -531,11 +535,12 @@ Deno.serve(async (req) => {
 
       // Erfolg oder bereits bezahlt
       const isAlready = rpcRes.code === "already_paid";
+      const effectiveVnr = matchedVnr || contractNumber || rentalData?.booking_number || "–";
       await supabase
         .from("bank_mail_ingest_logs")
         .update({
           result: isAlready ? "already_paid" : "success",
-          contract_nr: matchedVnr || contractNumber,
+          contract_nr: effectiveVnr !== "–" ? effectiveVnr : null,
           rental_request_id: rentalData?.id || null,
           match_method: rpcRes.match_method || 'contract_nr',
           error_message: null,
@@ -551,14 +556,15 @@ Deno.serve(async (req) => {
           const renderedConfirm = await renderRentalMail(supabase, "vm_bestaetigung", rentalData, settings);
           await sendViaMailEngine({
             to: rentalData.email,
+            cc: settings.rental_cc_emails || undefined,
             ccSystemMailKey: "Info_Mail_an_Wirtschaftsverantwortliche",
             subject: renderedConfirm.subject,
             html: renderedConfirm.html,
             module: "vermietung",
-            referenceId: contractNumber,
+            referenceId: effectiveVnr,
           });
         } catch (mErr: any) {
-          console.error(`Fehler beim Senden der Zahlungsbestätigung an Mieter (${contractNumber}):`, mErr);
+          console.error(`Fehler beim Senden der Zahlungsbestätigung an Mieter (${effectiveVnr}):`, mErr);
           await supabase.from("bank_mail_ingest_logs").update({ mail_error: mErr.message }).eq("id", logId);
         }
 
@@ -570,17 +576,17 @@ Deno.serve(async (req) => {
             subject: renderedWirt.subject,
             html: renderedWirt.html,
             module: "vermietung",
-            referenceId: contractNumber,
+            referenceId: effectiveVnr,
           });
         } catch (wErr: any) {
-          console.error(`Fehler beim Senden der Wirtschafts-Info (${contractNumber}):`, wErr);
+          console.error(`Fehler beim Senden der Wirtschafts-Info (${effectiveVnr}):`, wErr);
         }
       }
 
       // 3. Rapport an Vorstand / Admin (Info_Mail_Bank_Eingang)
       await sendBankReport(supabase, settings, {
-        ergebnis: isAlready ? `ℹ️ Bereits verbucht: ${contractNumber}` : `✅ Zahlung verbucht: ${contractNumber}`,
-        vertragsnr: contractNumber,
+        ergebnis: isAlready ? `ℹ️ Bereits verbucht: ${effectiveVnr}` : `✅ Zahlung verbucht: ${effectiveVnr}`,
+        vertragsnr: effectiveVnr,
         betrag: amount.toFixed(2),
         sollbetrag: sollAmount,
         hinweis: isAlready

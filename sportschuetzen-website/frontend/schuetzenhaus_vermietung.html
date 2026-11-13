@@ -1613,8 +1613,8 @@
               </div>
               <div class="form-group">
                 <label for="mietdatum">Gewünschtes Mietdatum *</label>
-                <input type="text" id="mietdatum" required placeholder="Format: DD.MM.YYYY (z.B. 12.08.2026)">
-                <small id="mietdatum-hint" style="font-size: 0.8rem; color: #64748b; margin-top: 2px;"><i class="fa-solid fa-arrow-pointer"></i> Wähle ein Datum im Kalender aus.</small>
+                <input type="text" id="mietdatum" required readonly placeholder="Datum im Kalender auswählen" style="cursor:pointer; background:#f8fafc;" onclick="document.getElementById('calendar-module')?.scrollIntoView({ behavior: 'smooth', block: 'center' })">
+                <small id="mietdatum-hint" style="font-size: 0.8rem; color: #64748b; margin-top: 2px;"><i class="fa-solid fa-arrow-pointer"></i> Bitte Datum direkt im Kalender oben anklicken.</small>
               </div>
             </div>
 
@@ -1823,7 +1823,11 @@
 
       try {
         const [resRentals, resTermine, resGoogle, resPricing, resSettings] = await Promise.all([
-          fetch(`${SUPABASE_REST_URL}/rental_requests?select=booking_number,start_date,end_date,festbeginn,status,is_inquiry&status=neq.cancelled&order=start_date.asc`, { headers }).catch(() => null),
+          fetch(`${SUPABASE_REST_URL}/rpc/get_public_rental_calendar`, {
+            method: 'POST',
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: '{}'
+          }).catch(() => null),
           fetch(`${SUPABASE_REST_URL}/termine?select=anlasstitel,datum,startzeit,endzeit,status&status=neq.abgesagt&order=datum.asc`, { headers }).catch(() => null),
           fetch('https://github-dropdown-refresh.dan-hunziker73.workers.dev?action=getHausKalender').then(r => r.ok ? r.json() : []).catch(() => []),
           fetch(`${SUPABASE_REST_URL}/rental_pricing?tariff_code=eq.standard_tag&select=base_price_chf&is_active=eq.true`, { headers }).catch(() => null),
@@ -1878,6 +1882,8 @@
                   titel: r.is_inquiry ? 'Vorab-Anfrage' : 'Vermietung',
                   datum_iso: key,
                   start: r.festbeginn || '',
+                  ende: '',
+                  is_inquiry: Boolean(r.is_inquiry),
                   status: 'fix',
                   typ: 'extern'
                 });
@@ -1935,7 +1941,7 @@
       const events = calendarEventsMap[dateKey] || [];
 
       // 1. Prüfung: Ist der Tag selbst privat vermietet?
-      const rentalEvent = events.find(e => (e.titel || '').toLowerCase().includes('vermiet'));
+      const rentalEvent = events.find(e => !e.is_inquiry && (e.titel || '').toLowerCase().includes('vermiet'));
       if (rentalEvent) {
         return {
           status: 'booked',
@@ -1958,17 +1964,30 @@
         };
       }
 
+      // 2b. Prüfung: Liegt bereits eine offene Vorab-Terminanfrage vor?
+      const inquiryEvent = events.find(e => e.is_inquiry || (e.titel || '').toLowerCase().includes('vorab-anfrage'));
+      if (inquiryEvent) {
+        return {
+          status: 'inquiry',
+          type: 'partial',
+          isSelectable: true,
+          label: 'Vorab-Prüfung (bereits eine Anfrage offen)',
+          desc: 'Für dieses Datum liegt bereits eine unverbindliche Terminanfrage vor. Du kannst trotzdem eine Anfrage einreichen – wir klären die Verfügbarkeit gerne.'
+        };
+      }
+
       // 3. Prüfung: Vereinsanlass oder Teilbelegung
       if (events.length > 0) {
         const ev = events[0];
         const isAllDay = (!ev.start || ev.start === '00:00') && (!ev.ende || ev.ende === '00:00');
         if (!isAllDay) {
+          const timeRange = ev.ende ? `${ev.start} – ${ev.ende} Uhr` : `ab ${ev.start} Uhr`;
           return {
             status: 'inquiry',
             type: 'partial',
             isSelectable: true,
-            label: `${ev.titel} (${ev.start} – ${ev.ende} Uhr)`,
-            desc: `Teilweise belegt von ${ev.start} bis ${ev.ende} Uhr (${ev.titel}). Bitte gib deinen gewünschten Festbeginn an – wir prüfen die Machbarkeit gerne für dich.`
+            label: `${ev.titel} (${timeRange})`,
+            desc: `Teilweise belegt (${timeRange}, ${ev.titel}). Bitte gib deinen gewünschten Festbeginn an – wir prüfen die Machbarkeit gerne für dich.`
           };
         } else {
           return {
@@ -2250,40 +2269,56 @@
           datum_vertrag: new Date().toISOString().split('T')[0]
         };
 
-        // 4-Sekunden-Timeout für Supabase-Server
+        // Server-Validation (verhindert manuelle Manipulation des Datums)
+        const preCheck = getDayAnalysis(isoDate);
+        if (preCheck && !preCheck.isSelectable) {
+          const blockErr = new Error(preCheck.desc || "Dieser Termin ist bereits reserviert.");
+          blockErr.isBusinessError = true;
+          throw blockErr;
+        }
+
+        // 4-Sekunden-Timeout für Supabase-Server (nur Erstanlage; danach echte Fehlerbehandlung)
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 4000);
 
-        const response = await fetch(`${SUPABASE_REST_URL}/rental_requests`, {
+        const response = await fetch(`${SUPABASE_REST_URL}/rpc/submit_public_rental_request`, {
           method: 'POST',
           headers: {
             'apikey': SUPABASE_ANON_KEY,
             'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=representation'
+            'Content-Type': 'application/json'
           },
-          body: JSON.stringify(supaPayload),
+          body: JSON.stringify({ p_payload: supaPayload }),
           signal: controller.signal
         });
         clearTimeout(timeoutId);
 
         if (!response.ok) {
           const errText = await response.text();
-          throw new Error("HTTP Fehler " + response.status + ": " + errText);
+          let errMsg = `HTTP Fehler ${response.status}: ${errText}`;
+          try {
+            const parsed = JSON.parse(errText);
+            if (parsed?.message) {
+              errMsg = String(parsed.message).replace(/^(DOUBLE_BOOKING|VALIDATION_ERROR):\s*/i, '');
+            }
+          } catch (_) {}
+          const reqErr = new Error(errMsg);
+          if (response.status >= 400 && response.status < 500) {
+            reqErr.isBusinessError = true;
+          }
+          throw reqErr;
         }
 
-        const insertedRecords = await response.json();
-        const newRecord = Array.isArray(insertedRecords) ? insertedRecords[0] : insertedRecords;
-        const vnr = newRecord?.booking_number || '';
+        const newRecord = await response.json();
+        if (!newRecord || !newRecord.booking_number) {
+          throw new Error("Unerwartete Antwort beim Speichern der Reservation.");
+        }
+        const vnr = newRecord.booking_number || '';
+        const effectiveRentalAmount = Number(newRecord.total_amount_chf || currentStandardRentalPrice || 300);
 
         if (isCurrentlyInquiry) {
-          showCustomToast(
-            "success",
-            "Terminanfrage übermittelt",
-            `Vielen Dank! Deine Terminanfrage ${vnr ? '(' + vnr + ') ' : ''}für den ${payload.mietdatum} wurde erfolgreich eingereicht. Eine Bestätigung wurde an deine E-Mail gesendet.`
-          );
-
           // E-Mail-Benachrichtigungen für Vorab-Anfrage (Vorlagen vm_anfrage & vm_anfrage_intern)
+          let customerMailOk = false;
           try {
             if (!window.RentalMailLayout) {
               throw new Error("RentalMailLayout nicht geladen.");
@@ -2320,26 +2355,6 @@
             const vermieterEmail = (custMail.settings && custMail.settings.club_email) || 'sportschuetzen.muhen@gmail.com';
             const ccEmailsToUse = currentRentalCcEmails || (custMail.settings && custMail.settings.rental_cc_emails) || vermieterEmail;
 
-            // 1. Empfangsbestätigung an Interessenten senden (mit CC an zentralen Vermietungs-Verteiler)
-            fetch('https://supabase-muhen.danfamily.uk/functions/v1/send-email', {
-              method: 'POST',
-              headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                to: payload.email,
-                cc: ccEmailsToUse,
-                ccSystemMailKey: 'Info_Mail_an_Wirtschaftsverantwortliche',
-                subject: custMail.subject,
-                html: custMail.html,
-                moduleRef: 'vermietung',
-                recordId: vnr
-              })
-            }).catch(e => console.warn("Kundenbestätigung Fehler:", e));
-
-            // 2. Interne Benachrichtigung an Verein/Vermieter zur Prüfung (Vorlage vm_anfrage_intern)
             const internMail = await window.RentalMailLayout.renderWebsiteRentalMail({
               restUrl: SUPABASE_REST_URL,
               anonKey: SUPABASE_ANON_KEY,
@@ -2348,39 +2363,74 @@
               settingsMap: custMail.settings
             });
 
-            fetch('https://supabase-muhen.danfamily.uk/functions/v1/send-email', {
-              method: 'POST',
-              headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                to: ccEmailsToUse,
-                subject: internMail.subject,
-                html: internMail.html,
-                moduleRef: 'vermietung',
-                recordId: vnr
+            const [custRes, internRes] = await Promise.allSettled([
+              fetch('https://supabase-muhen.danfamily.uk/functions/v1/send-email', {
+                method: 'POST',
+                headers: {
+                  'apikey': SUPABASE_ANON_KEY,
+                  'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  to: payload.email,
+                  cc: ccEmailsToUse,
+                  ccSystemMailKey: 'Info_Mail_an_Wirtschaftsverantwortliche',
+                  subject: custMail.subject,
+                  html: custMail.html,
+                  moduleRef: 'vermietung',
+                  recordId: vnr
+                })
+              }),
+              fetch('https://supabase-muhen.danfamily.uk/functions/v1/send-email', {
+                method: 'POST',
+                headers: {
+                  'apikey': SUPABASE_ANON_KEY,
+                  'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  to: ccEmailsToUse,
+                  subject: internMail.subject,
+                  html: internMail.html,
+                  moduleRef: 'vermietung',
+                  recordId: vnr
+                })
               })
-            }).catch(e => console.warn("Vereins-Benachrichtigung Fehler:", e));
+            ]);
 
+            if (custRes.status === 'fulfilled' && custRes.value.ok) {
+              const j = await custRes.value.json().catch(() => ({}));
+              customerMailOk = Boolean(j?.success);
+            }
+            if (internRes.status !== 'fulfilled' || !internRes.value.ok) {
+              console.warn("Vereins-Benachrichtigung bei Anfrage fehlgeschlagen.");
+            }
           } catch (inqErr) {
             console.error("Mail-Fehler bei Anfrage:", inqErr);
+          }
+
+          if (customerMailOk) {
+            showCustomToast(
+              "success",
+              "Terminanfrage übermittelt",
+              `Vielen Dank! Deine Terminanfrage ${vnr ? '(' + vnr + ') ' : ''}für den ${payload.mietdatum} wurde erfolgreich eingereicht. Eine Bestätigung wurde an deine E-Mail gesendet.`
+            );
+          } else {
+            showCustomToast(
+              "success",
+              "Terminanfrage gespeichert",
+              `Deine Terminanfrage ${vnr ? '(' + vnr + ') ' : ''}für den ${payload.mietdatum} wurde gespeichert. Hinweis: Die automatische Bestätigungs-E-Mail konnte nicht sofort zugestellt werden – wir melden uns direkt bei dir.`
+            );
           }
 
         } else {
           // =========================================================================
           // REGULÄRE VERBINDLICHE BUCHUNG (VOLLAUTOMATION)
           // =========================================================================
-          showCustomToast(
-            "success",
-            "Reservierung erfolgreich",
-            `Deine Reservierung (${vnr}) wurde erfolgreich verbucht! Der Mietvertrag mit QR-Einzahlungsschein wurde soeben per E-Mail an dich gesendet.`
-          );
 
-          // 1. Google Kalender blockieren via Supabase Edge Function sync-calendar (Google Calendar REST API)
+          // 1. Google Kalender blockieren via Edge Function sync-calendar
           try {
-            fetch('https://supabase-muhen.danfamily.uk/functions/v1/sync-calendar', {
+            await fetch('https://supabase-muhen.danfamily.uk/functions/v1/sync-calendar', {
               method: 'POST',
               headers: {
                 'apikey': SUPABASE_ANON_KEY,
@@ -2395,12 +2445,12 @@
                 vorname: payload.vorname,
                 nachname: payload.nachname
               })
-            }).catch(e => console.warn("Google Kalender Blockierung Hinweis:", e));
+            });
           } catch (calErr) {
             console.warn("Google Kalender Sync Fehler:", calErr);
           }
 
-          // 2. Mietvertrag PDF generieren via Edge Function generate-pdf
+          // 2. Mietvertrag PDF generieren via Edge Function generate-pdf (inkl. Proforma & URL-Update in DB)
           let pdfStoragePath = null;
           let pdfUrl = null;
           try {
@@ -2426,7 +2476,7 @@
                 },
                 mietdatum: payload.mietdatum,
                 festbeginn: payload.festbeginn,
-                mietbetrag: currentStandardRentalPrice,
+                mietbetrag: effectiveRentalAmount,
                 kaution: 0,
                 type: 'Vermietung'
               })
@@ -2437,19 +2487,6 @@
               if (pdfData.success) {
                 pdfUrl = pdfData.pdfUrl;
                 pdfStoragePath = pdfData.storagePath;
-
-                // contract_file_url in Supabase aktualisieren
-                if (newRecord?.id && pdfUrl) {
-                  fetch(`${SUPABASE_REST_URL}/rental_requests?id=eq.${newRecord.id}`, {
-                    method: 'PATCH',
-                    headers: {
-                      'apikey': SUPABASE_ANON_KEY,
-                      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                      'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ contract_file_url: pdfUrl })
-                  }).catch(() => {});
-                }
               }
             }
           } catch (pdfErr) {
@@ -2457,6 +2494,7 @@
           }
 
           // 3. Mietvertrags-Mail (vm_vertrag) über gemeinsames RentalMailLayout an den Mieter senden
+          let contractMailSent = false;
           try {
             if (!window.RentalMailLayout) {
               throw new Error("RentalMailLayout nicht geladen.");
@@ -2482,7 +2520,7 @@
                 anrede: payload.anrede || '',
                 vorname: payload.vorname || '',
                 nachname: payload.nachname || '',
-                mietbetrag: currentStandardRentalPrice.toFixed(2),
+                mietbetrag: effectiveRentalAmount.toFixed(2),
                 kaution: '0.00'
               }
             });
@@ -2507,37 +2545,47 @@
             }
 
             // Vollautomatischer Mailversand an den Mieter (mit CC an zentralen Vermietungs-Verteiler)
-            try {
-              const mailResp = await fetch('https://supabase-muhen.danfamily.uk/functions/v1/send-email', {
-                method: 'POST',
-                headers: {
-                  'apikey': SUPABASE_ANON_KEY,
-                  'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                  to: payload.email,
-                  cc: ccEmailsToUse,
-                  ccSystemMailKey: 'Info_Mail_an_Wirtschaftsverantwortliche',
-                  subject: contractMail.subject,
-                  html: contractMail.html,
-                  attachments: mailAttachments,
-                  moduleRef: 'vermietung',
-                  recordId: vnr
-                })
-              });
-              const mailResult = await mailResp.json();
-              if (mailResult && mailResult.success) {
-                console.log("✅ Mietvertrag E-Mail erfolgreich versendet:", mailResult);
-              } else {
-                console.warn("⚠️ Mietvertrag E-Mail Warnung:", mailResult);
-              }
-            } catch (sendErr) {
-              console.warn("Mietvertrag E-Mail Fehler:", sendErr);
+            const mailResp = await fetch('https://supabase-muhen.danfamily.uk/functions/v1/send-email', {
+              method: 'POST',
+              headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                to: payload.email,
+                cc: ccEmailsToUse,
+                ccSystemMailKey: 'Info_Mail_an_Wirtschaftsverantwortliche',
+                subject: contractMail.subject,
+                html: contractMail.html,
+                attachments: mailAttachments,
+                moduleRef: 'vermietung',
+                recordId: vnr
+              })
+            });
+            const mailResult = await mailResp.json().catch(() => ({}));
+            if (mailResp.ok && mailResult && mailResult.success) {
+              contractMailSent = true;
+              console.log("✅ Mietvertrag E-Mail erfolgreich versendet:", mailResult);
+            } else {
+              console.warn("⚠️ Mietvertrag E-Mail Warnung:", mailResult);
             }
-
           } catch (mailErr) {
             console.error("Mietvertrag-Mail Versandfehler:", mailErr);
+          }
+
+          if (pdfUrl && contractMailSent) {
+            showCustomToast(
+              "success",
+              "Reservierung erfolgreich",
+              `Deine Reservierung (${vnr}) wurde erfolgreich verbucht! Der Mietvertrag mit QR-Einzahlungsschein wurde soeben per E-Mail an dich gesendet.`
+            );
+          } else {
+            showCustomToast(
+              "error",
+              "Reservierung gespeichert – E-Mail ausstehend",
+              `Deine Reservierung (${vnr}) für den ${payload.mietdatum} ist verbindlich im System erfasst. Die automatische Zustellung des Mietvertrags-PDFs hat leider geklemmt – bitte melde dich kurz bei sportschuetzen.muhen@gmail.com, wir senden dir den Vertrag direkt zu.`
+            );
           }
         }
 
@@ -2549,6 +2597,12 @@
         loadCalendarEvents();
 
       } catch (error) {
+        if (error && error.isBusinessError) {
+          showCustomToast("error", "Termin nicht buchbar", error.message);
+          loadCalendarEvents();
+          return;
+        }
+
         console.warn("⚠️ Primärer Supabase-Server offline oder nicht erreichbar:", error.message);
         console.info("🛡️ Starte Notfall-Ausfallschutz über Cloudflare-Proxy...");
 

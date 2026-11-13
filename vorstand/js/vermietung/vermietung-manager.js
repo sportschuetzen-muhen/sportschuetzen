@@ -75,7 +75,7 @@ function openVermietungModal(rowOrId) {
             <a href="${escapeHtml(d.contract_file_url)}" target="_blank" class="btn btn-xs btn-outline-primary" style="font-size:0.75rem; font-weight:600;">
               <i class="fas fa-external-link-alt me-1"></i>PDF öffnen
             </a>` : ''}
-          ${!istStorniert ? `
+          ${!istStorniert && !(d.status === 'inquiry' || d.status === '00') ? `
             <button class="btn btn-xs btn-outline-info" style="font-size:0.75rem; font-weight:600;" onclick="vermietungAktion('vertrag_mail', '${d.id || d.row}')">
               <i class="far fa-paper-plane me-1"></i>Vertrag per Mail
             </button>` : ''}
@@ -138,17 +138,24 @@ function openVermietungModal(rowOrId) {
   const isBankNotifiedCur = sRaiffCur === 'bank_notified' || sRaiffCur === 'info_mail' || (d.is_paid && !isFibuCur);
 
   const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('vermietung') : true;
+  const isInquiryState = d.status === 'inquiry' || d.status === '00';
   const modalFooter = document.getElementById('vermietung-modal-footer');
   modalFooter.innerHTML = `
     <button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Schliessen</button>
+
+    ${canWrite && !istStorniert && isInquiryState ? `
+      <button class="btn btn-sm btn-success fw-semibold"
+              onclick="vermietungAktion('anfrage_annehmen', '${d.id || d.row}')">
+        <i class="fas fa-check-circle me-1"></i>Anfrage annehmen &amp; Vertrag senden
+      </button>` : ''}
     
-    ${canWrite && !istStorniert && !isBankNotifiedCur && !isFibuCur ? `
+    ${canWrite && !istStorniert && !isInquiryState && !isBankNotifiedCur && !isFibuCur ? `
       <button class="btn btn-sm btn-warning fw-semibold"
               onclick="vermietungAktion('mahnung', '${d.id || d.row}')">
         <i class="fas fa-exclamation-triangle me-1"></i>❗ Mahnung
       </button>` : ''}
     
-    ${canWrite && !istStorniert && !isFibuCur ? `
+    ${canWrite && !istStorniert && !isInquiryState && !isFibuCur ? `
       ${!isBankNotifiedCur ? `
         <button class="btn btn-sm fw-semibold" style="background-color:#dcfce7; color:#15803d; border:1px solid #86efac;"
                 onclick="vermietungAktion('bestaetigen', '${d.id || d.row}')"
@@ -162,7 +169,7 @@ function openVermietungModal(rowOrId) {
         </button>`}
     ` : ''}
 
-    ${canWrite && !istStorniert && (istBezahlt || isBankNotifiedCur || isFibuCur) && d.status !== 'keys_issued' && d.status !== '04' ? `
+    ${canWrite && !istStorniert && !isInquiryState && (istBezahlt || isBankNotifiedCur || isFibuCur) && d.status !== 'keys_issued' && d.status !== '04' && d.status !== 'completed' ? `
       <button class="btn btn-sm btn-info text-white fw-semibold"
               onclick="vermietungAktion('schluessel', '${d.id || d.row}')">
         <i class="fas fa-key me-1"></i>Schlüsselübergabe senden
@@ -171,7 +178,7 @@ function openVermietungModal(rowOrId) {
     ${canWrite && !istStorniert ? `
       <button class="btn btn-sm btn-danger fw-semibold"
               onclick="vermietungAktion('stornieren', '${d.id || d.row}')">
-        <i class="fas fa-trash-alt me-1"></i>Stornieren
+        <i class="fas fa-trash-alt me-1"></i>${isInquiryState ? 'Ablehnen / Stornieren' : 'Stornieren'}
       </button>` : ''}
   `;
 
@@ -376,6 +383,7 @@ async function sendRentalWorkflowEmail(action, d, settings) {
   // 1. Zuweisung des Aktionscodes zur Template-ID
   const actionToTplCode = {
     'vertrag_mail': 'vm_vertrag',
+    'anfrage_annehmen': 'vm_vertrag',
     'anfrage': 'vm_anfrage',
     'mahnung': 'vm_mahnung',
     'bestaetigen': 'vm_bestaetigung',
@@ -409,7 +417,10 @@ async function sendRentalWorkflowEmail(action, d, settings) {
 
   // 4. Platzhalter-Auflösung
   const bookingNr = d.booking_number || d.vertragsnr || d.id || '';
-  const dateStr = d.start_date ? new Date(d.start_date).toLocaleDateString('de-CH') : (d.mietdatum || '–');
+  const isoDateRaw = d.start_date_iso || d.start_date || '';
+  const dateStr = isoDateRaw
+    ? (window.UIFormatKit ? UIFormatKit.formatDate(isoDateRaw) : new Date(isoDateRaw).toLocaleDateString('de-CH'))
+    : (d.mietdatum || '–');
   const rawAmt = (d.total_amount_chf !== undefined && d.total_amount_chf !== null)
     ? d.total_amount_chf
     : (d.betrag_raw || (d.mietbetrag ? String(d.mietbetrag).replace(/[^\d.]/g, '') : 300));
@@ -505,7 +516,7 @@ async function sendRentalWorkflowEmail(action, d, settings) {
 
   // 5. Anhänge ermitteln (mit voller Storage-Path und URL Unterstützung)
   let attachments = [];
-  if (action === 'vertrag_mail' || action === 'mahnung') {
+  if (action === 'vertrag_mail' || action === 'anfrage_annehmen' || action === 'mahnung') {
     const bookingNrClean = bookingNr || 'Vertrag';
     if (d.contract_storage_path) {
       attachments.push({
@@ -549,6 +560,54 @@ async function sendRentalWorkflowEmail(action, d, settings) {
     module: 'vermietung',
     referenceId: bookingNr
   });
+}
+
+/**
+ * Synchronisiert eine Vermietung mit Google Calendar über die Edge Function 'sync-calendar'.
+ * Verwendet den aktuellen Vorstands-Session-JWT statt des anonymen Keys.
+ */
+async function syncRentalCalendar(calAction, record) {
+  try {
+    const supa = (typeof window.getSupabaseClient === 'function') ? window.getSupabaseClient() : window.supabaseClient;
+    const supaUrl = window.SUPABASE_URL || 'https://supabase-muhen.danfamily.uk';
+    const anonKey = (supa && supa.supabaseKey) || window.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
+    let bearerToken = anonKey;
+    if (supa) {
+      try {
+        const { data: { session } } = await supa.auth.getSession();
+        if (session?.access_token) bearerToken = session.access_token;
+      } catch (_) {}
+    }
+
+    const first = record.first_name || record.vorname || '';
+    const last = record.last_name || record.nachname || '';
+    const initials = `${first.charAt(0)}${last.charAt(0)}`.toUpperCase() || 'Kunde';
+    const resp = await fetch(`${supaUrl}/functions/v1/sync-calendar`, {
+      method: 'POST',
+      headers: {
+        'apikey': anonKey,
+        'Authorization': `Bearer ${bearerToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        action: calAction,
+        date: record.start_date_iso || record.start_date || record.mietdatum,
+        bookingId: record.vertragsnr || record.booking_number || record.id,
+        initials: initials,
+        vorname: first,
+        nachname: last
+      })
+    });
+    const resJson = await resp.json().catch(() => ({}));
+    if (!resp.ok || resJson?.success === false) {
+      console.warn(`⚠️ [Kalender-Sync ${calAction}] Warnung:`, resJson?.error || resp.status);
+      return { success: false, error: resJson?.error || `HTTP ${resp.status}` };
+    }
+    return resJson;
+  } catch (err) {
+    console.warn(`⚠️ [Kalender-Sync ${calAction}] Fehler:`, err);
+    return { success: false, error: err.message };
+  }
 }
 
 // Führt Vermietungsaktionen aus (Supabase Single Source of Truth, Audit-Log & Mail-Engine)
@@ -647,6 +706,17 @@ async function vermietungAktion(action, idOrRow) {
       });
       if (!ok) return;
     } else if (!confirm(msg)) return;
+  } else if (action === 'anfrage_annehmen') {
+    const msg = `Vorab-Anfrage ${d.vertragsnr} verbindlich annehmen?\n\nDadurch wird die Buchung aktiviert, der Google Kalender blockiert, das Mietvertrags-PDF (QR) erzeugt, die Proforma-Rechnung angelegt und der Vertrag an ${d.email} versandt.`;
+    if (window.UIConfirmKit) {
+      const ok = await UIConfirmKit.confirm({
+        title: "Terminanfrage annehmen",
+        message: msg,
+        confirmText: "Annehmen & Vertrag senden",
+        type: "primary"
+      });
+      if (!ok) return;
+    } else if (!confirm(msg)) return;
   }
 
   const modalFooter = document.getElementById('vermietung-modal-footer');
@@ -663,7 +733,12 @@ async function vermietungAktion(action, idOrRow) {
     const updatePayload = {};
     let statusLogNewStatus = null;
 
-    if (action === 'mahnung') {
+    if (action === 'anfrage_annehmen') {
+      updatePayload.is_inquiry = false;
+      updatePayload.status = 'contract_sent';
+      updatePayload.datum_vertrag = todayIso;
+      statusLogNewStatus = 'contract_sent';
+    } else if (action === 'mahnung') {
       updatePayload.status = 'reminded';
       updatePayload.datum_mahnung = todayIso;
       statusLogNewStatus = 'reminded';
@@ -695,24 +770,34 @@ async function vermietungAktion(action, idOrRow) {
 
     // 1. Supabase-Aktualisierung
     if (Object.keys(updatePayload).length > 0) {
+      const prevStatus = d.raw?.status || d.status;
       const { error: supaErr } = await supa
         .from('rental_requests')
         .update(updatePayload)
         .eq('id', d.id);
       if (supaErr) throw supaErr;
 
-      // Status-Audit protokollieren
-      await supa.from('rental_status_logs').insert([{
-        rental_request_id: d.id,
-        previous_status: d.raw?.status || d.status,
-        new_status: statusLogNewStatus,
-        comment: `Aktion ${action} durch Vorstand ausgeführt`,
-        changed_by: (window.currentUser && (window.currentUser.display_name || window.currentUser.email)) || 'Vorstand'
-      }]);
+      // DB-Trigger trg_log_rental_status protokolliert echte Statusübergänge automatisch;
+      // manueller Audit-Eintrag nur, wenn der Status gleich geblieben ist (z.B. paid -> fibu_manuell).
+      if (statusLogNewStatus && prevStatus === statusLogNewStatus) {
+        await supa.from('rental_status_logs').insert([{
+          rental_request_id: d.id,
+          previous_status: prevStatus,
+          new_status: statusLogNewStatus,
+          comment: `Aktion ${action} durch Vorstand ausgeführt`,
+          changed_by: (window.currentUser && (window.currentUser.display_name || window.currentUser.email)) || 'Vorstand'
+        }]);
+      }
     }
 
     // 1.1 RechnungsCore-Synchronisation (Single Source of Truth)
-    if ((action === 'bestaetigen' || action === 'fibu_manuell') && window.RechnungsCore && typeof window.RechnungsCore.recordPayment === 'function') {
+    if (action === 'anfrage_annehmen') {
+      try {
+        await ensureRentalInvoice(d);
+      } catch (invErr) {
+        console.warn("⚠️ [Vermietung] RechnungsCore Anlage bei Anfrage-Freigabe:", invErr);
+      }
+    } else if ((action === 'bestaetigen' || action === 'fibu_manuell') && window.RechnungsCore && typeof window.RechnungsCore.recordPayment === 'function') {
       try {
         const inv = await ensureRentalInvoice(d);
         if (inv && (inv.status === 'offen' || inv.status === 'teilbezahlt' || inv.status === 'entwurf')) {
@@ -739,7 +824,7 @@ async function vermietungAktion(action, idOrRow) {
     }
 
     // 1.2 Falls Vertrag per E-Mail gesendet werden soll, aber PDF noch nicht vorhanden ist: On-the-fly generieren!
-    if (action === 'vertrag_mail' && (!d.contract_file_url && !d.contract_storage_path)) {
+    if ((action === 'vertrag_mail' || action === 'anfrage_annehmen') && (!d.contract_file_url && !d.contract_storage_path)) {
       if (typeof window.vmGenerateRentalContractPdf === 'function') {
         try {
           const genRes = await window.vmGenerateRentalContractPdf(d.vertragsnr || d.id, { silent: true });
@@ -753,11 +838,18 @@ async function vermietungAktion(action, idOrRow) {
       }
     }
 
+    // 1.3 Bei Anfrage-Annahme: Google Kalender blockieren
+    if (action === 'anfrage_annehmen') {
+      await syncRentalCalendar('block', d);
+    }
+
     // 2. E-Mail-Versand über Supabase Mail-Engine (nur wenn nicht fibu_manuell)
+    let mailWarnMsg = '';
     if (action !== 'fibu_manuell') {
       const mailRes = await sendRentalWorkflowEmail(action, d, window._rentalSettings);
       if (!mailRes.success) {
         console.warn("Mailversand-Hinweis:", mailRes.error);
+        mailWarnMsg = ` (Mail-Hinweis: ${mailRes.error})`;
       }
     }
 
@@ -773,23 +865,7 @@ async function vermietungAktion(action, idOrRow) {
 
     // 2.2 Bei Stornierung: Google Kalender Termine via Edge Function sync-calendar freigeben (Google Calendar API)
     if (action === 'stornieren') {
-      try {
-        const supaUrl = window.SUPABASE_URL || 'https://supabase-muhen.danfamily.uk';
-        const anonKey = window.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
-        fetch(`${supaUrl}/functions/v1/sync-calendar`, {
-          method: 'POST',
-          headers: {
-            'apikey': anonKey,
-            'Authorization': `Bearer ${anonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            action: 'release',
-            date: d.start_date_iso || d.start_date || d.mietdatum,
-            bookingId: d.vertragsnr || d.booking_number || d.id
-          })
-        }).catch(e => console.warn("Kalender-Storno Fehler:", e));
-      } catch (_) {}
+      await syncRentalCalendar('release', d);
     }
 
     // Modal schliessen und Daten neu laden
@@ -797,7 +873,7 @@ async function vermietungAktion(action, idOrRow) {
     const modalInstance = bootstrap.Modal.getInstance(modalElem);
     if (modalInstance) modalInstance.hide();
 
-    showToast(`✅ Aktion «${action}» erfolgreich ausgeführt!`);
+    showToast(`✅ Aktion «${action}» erfolgreich ausgeführt!${mailWarnMsg}`);
     await loadVermietungData(true);
 
   } catch (e) {
@@ -889,6 +965,15 @@ function openNewReservationModal() {
         <label class="form-label small fw-bold text-muted">Bemerkungen / Admin-Notiz</label>
         <textarea class="form-control form-control-sm" id="new-res-notes" rows="2" placeholder="Zusätzliche Vereinbarungen..."></textarea>
       </div>
+
+      <div class="col-12">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="new-res-send-mail" checked>
+          <label class="form-check-label small fw-semibold" for="new-res-send-mail">
+            Mietvertrag (PDF + QR) sofort per E-Mail senden &amp; Google Kalender blockieren
+          </label>
+        </div>
+      </div>
     </form>
   `;
 
@@ -972,9 +1057,28 @@ async function saveNewReservation() {
       // Automatisches Generieren des Mietvertrags-PDFs mit Schweizer QR-Rechnung
       if (typeof window.vmGenerateRentalContractPdf === 'function') {
         try {
-          await window.vmGenerateRentalContractPdf(data.booking_number);
+          const pdfRes = await window.vmGenerateRentalContractPdf(data.booking_number, { silent: true });
+          if (pdfRes) {
+            data.contract_file_url = pdfRes.pdfUrl || data.contract_file_url;
+            data.contract_storage_path = pdfRes.storagePath || data.contract_storage_path;
+          }
         } catch (pdfErr) {
           console.warn("Hinweis PDF-Generierung:", pdfErr);
+        }
+      }
+
+      const shouldDispatch = document.getElementById('new-res-send-mail')?.checked !== false;
+      let dispatchNote = '';
+      if (shouldDispatch) {
+        await syncRentalCalendar('block', data);
+        try {
+          const mailRes = await sendRentalWorkflowEmail('vertrag_mail', data, window._rentalSettings);
+          if (!mailRes?.success) {
+            dispatchNote = ` (Mail-Hinweis: ${mailRes?.error || 'Versand prüfen'})`;
+          }
+        } catch (mailErr) {
+          console.warn("Hinweis Vertrag-Mail bei Neuerfassung:", mailErr);
+          dispatchNote = ` (Mail-Hinweis: ${mailErr.message})`;
         }
       }
 
@@ -983,7 +1087,7 @@ async function saveNewReservation() {
       const modalInstance = bootstrap.Modal.getInstance(modalElem);
       if (modalInstance) modalInstance.hide();
 
-      showToast(`✅ Reservation ${data.booking_number} erfolgreich in Supabase erfasst!`);
+      showToast(`✅ Reservation ${data.booking_number} erfolgreich in Supabase erfasst!${dispatchNote}`);
       await loadVermietungData(true);
 
     } catch (err) {
@@ -1025,6 +1129,9 @@ async function ensureRentalInvoice(d) {
       .limit(1);
 
     if (existing && existing.length > 0) {
+      if (d.id && !d.invoice_id) {
+        await supa.from('rental_requests').update({ invoice_id: existing[0].id }).eq('id', d.id);
+      }
       return existing[0];
     }
 
@@ -1067,6 +1174,9 @@ async function ensureRentalInvoice(d) {
     };
 
     const newInvoice = await window.RechnungsCore.createInvoice(invoiceOrder);
+    if (newInvoice?.id && d.id) {
+      await supa.from('rental_requests').update({ invoice_id: newInvoice.id }).eq('id', d.id);
+    }
     console.log(`✅ [Vermietung] Zentrale Rechnung erfolgreich via RechnungsCore erstellt: ${newInvoice.id}`);
     return newInvoice;
   } catch (err) {
@@ -1308,7 +1418,7 @@ async function syncNotfallBuchungen() {
       // Proforma-Rechnung im RechnungsCore anlegen falls feste Buchung
       if (!isInq && inserted && inserted[0]) {
         try {
-          await supa.rpc('ensure_rental_proforma_invoice', { p_rental_id: inserted[0].id });
+          await supa.rpc('ensure_rental_proforma_invoice', { p_booking_number: inserted[0].booking_number });
         } catch (invErr) {
           console.warn("Proforma-Rechnung Hinweis:", invErr);
         }
@@ -1336,8 +1446,8 @@ async function syncNotfallBuchungen() {
     }
     
     // Daten im Cockpit neu laden
-    if (typeof loadVermietungDaten === 'function') {
-      await loadVermietungDaten();
+    if (typeof loadVermietungData === 'function') {
+      await loadVermietungData(true);
     }
   } catch (err) {
     console.error("Notfall-Sync Fehler:", err);

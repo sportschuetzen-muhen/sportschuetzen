@@ -12,6 +12,7 @@
 // ==============================================================================
 
 import { corsHeaders } from "../_shared/cors.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.8";
 
 const TARGET_CALENDAR_ID = "sportschuetzen.muhen@gmail.com";
 
@@ -162,6 +163,57 @@ Deno.serve(async (req: Request) => {
     console.log(`[sync-calendar] Method=${req.method}, Action=${payload.action}, BookingId=${payload.bookingId}, Date=${payload.date}`);
 
     const action = payload.action || "block";
+
+    // Aufrufer-Authentifizierung & Schutz vor Missbrauch mit öffentlichem Anon-Key
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "https://supabase-muhen.danfamily.uk";
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    const authHeader = req.headers.get("Authorization") || "";
+    const callerToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+    const isServiceRole = Boolean(callerToken && supabaseServiceKey && callerToken === supabaseServiceKey);
+    const supabaseAdmin = (supabaseUrl && supabaseServiceKey)
+      ? createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false } })
+      : null;
+
+    let callerUser: any = null;
+    if (supabaseAdmin && callerToken && !isServiceRole) {
+      try {
+        const { data: { user } } = await supabaseAdmin.auth.getUser(callerToken);
+        if (user?.id) callerUser = user;
+      } catch (_) {}
+    }
+
+    const isBlockAction = (action === "block" || action === "blockCalendar");
+    if (!isServiceRole && !callerUser) {
+      if (!isBlockAction) {
+        return new Response(JSON.stringify({ success: false, error: "Authentifizierung erforderlich für Kalender-Freigabe." }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+      // Anonyme Blockierung nur für eine existierende, noch nicht im Kalender blockierte Buchung erlauben
+      const anonBookingId = String(payload.bookingId || payload.vertragsnr || payload.vertragsnummer || "").trim();
+      if (!anonBookingId || !supabaseAdmin) {
+        return new Response(JSON.stringify({ success: false, error: "Gültige Buchungs-ID erforderlich." }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+      const { data: rentalCheck } = await supabaseAdmin
+        .from("rental_requests")
+        .select("id, booking_number, start_date, status, is_inquiry, google_calendar_event_id")
+        .eq("booking_number", anonBookingId)
+        .maybeSingle();
+
+      const rawReqDate = String(payload.date || payload.mietdatum || payload.startDate || "").trim();
+      const reqIsoDate = rawReqDate ? formatDateIso(parseDateInput(rawReqDate)) : "";
+      if (!rentalCheck || rentalCheck.status !== "contract_sent" || rentalCheck.is_inquiry || rentalCheck.google_calendar_event_id || !reqIsoDate || reqIsoDate !== rentalCheck.start_date) {
+        return new Response(JSON.stringify({ success: false, error: "Buchung für anonyme Kalenderblockierung nicht gültig oder bereits blockiert." }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+    }
+
     const saKey = await getServiceAccountKey();
     const accessToken = await getGoogleAccessToken(saKey);
 
@@ -243,6 +295,15 @@ Deno.serve(async (req: Request) => {
 
       if (!res1.ok || !res2.ok) {
         throw new Error(`Google Calendar API Fehler beim Erstellen: ${JSON.stringify({ e1: data1, e2: data2 })}`);
+      }
+
+      if (supabaseAdmin && bookingId && data1?.id) {
+        try {
+          await supabaseAdmin
+            .from("rental_requests")
+            .update({ google_calendar_event_id: data1.id })
+            .eq("booking_number", bookingId);
+        } catch (_) {}
       }
 
       return new Response(JSON.stringify({

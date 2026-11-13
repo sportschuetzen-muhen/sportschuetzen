@@ -142,9 +142,21 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "https://supabase-muhen.danfamily.uk";
   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+  // Aufrufer-Authentifizierung ermitteln
+  const authHeader = req.headers.get("Authorization") || "";
+  const callerToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+  const isServiceRole = Boolean(callerToken && supabaseServiceKey && callerToken === supabaseServiceKey);
+  let callerUser: any = null;
+  if (callerToken && !isServiceRole) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser(callerToken);
+      if (user?.id) callerUser = user;
+    } catch (_) {}
+  }
 
   // SMTP Konfiguration aus Supabase Secrets
   const smtpHost = Deno.env.get("SMTP_HOST") || "smtp.gmail.com";
@@ -223,6 +235,61 @@ Deno.serve(async (req) => {
   const bccList: string[] = Array.isArray(payload.bcc)
     ? payload.bcc
     : (payload.bcc ? payload.bcc.split(/[,;]/).map((s) => s.trim()).filter(Boolean) : []);
+
+  // Missbrauchsschutz: Anonyme Aufrufe (ohne User-JWT / Service-Role) nur für verifizierte Website-Flows zulassen
+  if (!isServiceRole && !callerUser) {
+    const isWebsiteContactFlow =
+      payload.systemMailKey === "Info_Mail_Kontakt_Website" &&
+      !payload.to &&
+      !payload.cc &&
+      !payload.bcc;
+
+    let isAllowedPublicRentalFlow = false;
+    if (!isWebsiteContactFlow && payload.moduleRef === "vermietung" && bccList.length === 0) {
+      const allowedEmails = new Set<string>(["sportschuetzen.muhen@gmail.com"]);
+      const addEmailList = (val: unknown) => {
+        if (!val) return;
+        const arr = Array.isArray(val) ? val : String(val).split(/[,;]/);
+        for (const item of arr) {
+          const clean = String(item || "").trim().toLowerCase();
+          if (clean) allowedEmails.add(clean);
+        }
+      };
+
+      const { data: rSettings } = await supabase
+        .from("rental_settings")
+        .select("setting_key, setting_value")
+        .in("setting_key", ["club_email", "rental_cc_emails", "wirtschaft_email"]);
+      for (const s of rSettings || []) addEmailList(s.setting_value);
+
+      for (const sysKey of ["Info_Mail_an_Wirtschaftsverantwortliche"]) {
+        const { data: sysMails } = await supabase.rpc("get_system_mail_array", { p_schluessel: sysKey });
+        addEmailList(sysMails);
+      }
+
+      if (payload.recordId) {
+        const { data: rentalRow } = await supabase
+          .from("rental_requests")
+          .select("email, status")
+          .eq("booking_number", String(payload.recordId).trim())
+          .maybeSingle();
+        if (rentalRow && rentalRow.status !== "cancelled") {
+          addEmailList(rentalRow.email);
+        }
+      }
+
+      const allTargets = [...recipients, ...ccList].map((e) => e.trim().toLowerCase()).filter(Boolean);
+      isAllowedPublicRentalFlow =
+        allTargets.length > 0 && allTargets.every((addr) => allowedEmails.has(addr));
+    }
+
+    if (!isWebsiteContactFlow && !isAllowedPublicRentalFlow) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Nicht autorisierter E-Mail-Versand (Authentifizierung erforderlich)." }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+  }
 
   const subject = payload.subject || "Mitteilung Sportschützen Muhen";
   const bodyText = payload.text || (payload.html ? payload.html.replace(/<[^>]*>/g, " ") : "");
