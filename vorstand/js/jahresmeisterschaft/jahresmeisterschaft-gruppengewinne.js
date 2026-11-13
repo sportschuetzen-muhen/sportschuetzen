@@ -58,6 +58,71 @@
     }
 
     /**
+     * Prüft, ob der Gruppenanteil eines Schützen bereits abgerechnet bzw. geschützt ist.
+     */
+    function isMemberGroupProtected(m) {
+        if (!m) return false;
+        return (
+            m.status === 'verrechnet' ||
+            m.status === 'in_zahlung' ||
+            m.status === 'ausgefuehrt' ||
+            (Boolean(m.contribution_position_id) && Number(m.anteil_gruppe || 0) > 0)
+        );
+    }
+
+    /**
+     * Ermittelt die effektiven Gruppenmitglieder (ohne nachträgliche reine Einzelgewinner mit anteil_gruppe = 0).
+     */
+    function getEffectiveGroupMembers(members) {
+        const list = Array.isArray(members) ? members : [];
+        if (list.length === 0) return [];
+        const withGroupShare = list.filter(m => Number(m.anteil_gruppe || 0) > 0 || isMemberGroupProtected(m));
+        return withGroupShare.length > 0 ? withGroupShare : list;
+    }
+
+    /**
+     * Ermittelt für einen Schützen aufgeteilte Gruppen-, Einzel-, Total-, verrechnete und offene Beträge.
+     */
+    function getMemberSplitAmounts(m, comp, fallbackPerShooter = 0) {
+        if (!m) {
+            return { grpAmt: 0, einzelAmt: 0, totalAmt: 0, settledAmt: 0, unsettledAmt: 0, openForTransferAmt: 0 };
+        }
+        const typ = comp?.anlass_typ || 'gruppe';
+        const isEinzelOnly = typ === 'einzel';
+        const isGruppeOnly = typ === 'gruppe';
+        const hasExplicitSplit = m.anteil_gruppe !== undefined && m.anteil_gruppe !== null;
+
+        const grpAmt = isEinzelOnly
+            ? 0
+            : (hasExplicitSplit ? Number(m.anteil_gruppe || 0) : Number(m.betrag ?? fallbackPerShooter ?? 0));
+        const einzelAmt = isGruppeOnly
+            ? 0
+            : Number(m.anteil_einzel ?? (isEinzelOnly ? (m.betrag ?? 0) : 0));
+        const totalAmt = (m.betrag !== undefined && m.betrag !== null)
+            ? Number(m.betrag || 0)
+            : (grpAmt + einzelAmt);
+
+        const isDone = m.status === 'verrechnet' || m.status === 'ausgefuehrt';
+        const hasSettledGroup = !isDone && Boolean(m.contribution_position_id) && grpAmt > 0;
+        const settledAmt = isDone ? totalAmt : (hasSettledGroup ? grpAmt : 0);
+        const unsettledAmt = isDone ? 0 : (hasSettledGroup ? einzelAmt : totalAmt);
+        const openForTransferAmt = (isDone || m.status === 'in_zahlung') ? 0 : unsettledAmt;
+
+        return { grpAmt, einzelAmt, totalAmt, settledAmt, unsettledAmt, openForTransferAmt };
+    }
+
+    /**
+     * Berechnet das Gruppen-Punktetotal ohne nachträgliche reine Einzelgewinner (anteil_gruppe = 0).
+     */
+    function computeGroupPointsTotal(members, typ = 'gruppe') {
+        const list = Array.isArray(members) ? members : [];
+        if (list.length === 0) return 0;
+        const sourceMembers = typ === 'einzel' ? list : getEffectiveGroupMembers(list);
+        const sumPts = sourceMembers.reduce((acc, m) => acc + (Number(m.punkte) || 0), 0);
+        return Math.round(sumPts * 10) / 10;
+    }
+
+    /**
      * Lädt alle hinterlegten Ranglisten-Dateien für ein Jahr aus public.jm_competition_files.
      */
     async function jmLoadCompetitionFiles(year) {
@@ -633,16 +698,16 @@
             const ueberschuss = gruppenUeberschuss + einzelTotal;
             const vereinsDeckung = isEinzelOnly ? 0 : Math.min(gewinn, doppel);
             const members = Array.isArray(comp.members) ? comp.members : [];
-            const count = members.length > 0 ? members.length : Number(comp.anzahl_schuetzen || 5);
+            const groupMembers = getEffectiveGroupMembers(members);
+            const count = groupMembers.length > 0 ? groupMembers.length : Number(comp.anzahl_schuetzen || 5);
             const perShooterGruppe = count > 0 && gruppenUeberschuss > 0 ? (gruppenUeberschuss / count) : 0;
 
             // Auszahlungsstatus der Schützen
             const allVerrechnet = members.length > 0 && ueberschuss > 0 && members.every(m => m.status === 'verrechnet' || m.status === 'ausgefuehrt');
             const openJbMembers = members.filter(m => {
                 if ((m.payout_method || 'jahresbeitrag') !== 'jahresbeitrag') return false;
-                if (m.status === 'verrechnet' || m.status === 'ausgefuehrt') return false;
-                const amt = Number(m.betrag ?? ((Number(m.anteil_gruppe || 0) + Number(m.anteil_einzel || 0)) || (isEinzelOnly ? 0 : perShooterGruppe)) ?? 0);
-                return amt > 0;
+                const split = getMemberSplitAmounts(m, comp, isEinzelOnly ? 0 : perShooterGruppe);
+                return split.openForTransferAmt > 0;
             });
             const someVerrechnet = members.some(m => m.status === 'verrechnet' || m.status === 'ausgefuehrt' || Boolean(m.contribution_position_id));
 
@@ -696,12 +761,10 @@
                         const icon = isDone ? '<i class="fas fa-check-circle text-success me-1"></i>' : (isBank ? '<i class="fas fa-university text-info me-1"></i>' : '<i class="far fa-clock text-muted me-1"></i>');
                         const ptsStr = m.punkte ? `<strong>${m.punkte}</strong>` : '-';
                         
-                        const hasExplicitSplit = m.anteil_gruppe !== undefined && m.anteil_gruppe !== null;
-                        const antGruppe = isEinzelOnly
-                            ? 0
-                            : (hasExplicitSplit ? Number(m.anteil_gruppe || 0) : Number(m.betrag ?? perShooterGruppe ?? 0));
-                        const antEinzel = Number(m.anteil_einzel || 0);
-                        const shareVal = Number(m.betrag ?? ((antGruppe + antEinzel) || (isEinzelOnly ? 0 : perShooterGruppe)) ?? 0);
+                        const split = getMemberSplitAmounts(m, comp, isEinzelOnly ? 0 : perShooterGruppe);
+                        const antGruppe = split.grpAmt;
+                        const antEinzel = split.einzelAmt;
+                        const shareVal = split.totalAmt;
                         
                         let detailHint = '';
                         if (antGruppe > 0 && antEinzel > 0) {
@@ -727,7 +790,7 @@
                 : `<span class="text-muted fst-italic">Noch keine Schützen zugewiesen (${count} Plätze)</span>`;
 
             // Punkte-Plausibilität
-            const calcPtsSum = Math.round(members.reduce((acc, m) => acc + (Number(m.punkte) || 0), 0) * 10) / 10;
+            const calcPtsSum = computeGroupPointsTotal(members, anlassTyp);
             const totalPtsDisplay = comp.punkte_total || (calcPtsSum > 0 ? calcPtsSum : null);
 
             // Hinterlegte Ranglisten-Dateien für diesen Anlass
@@ -847,21 +910,19 @@
             }
 
             const members = Array.isArray(c.members) ? c.members : [];
-            const count = members.length > 0 ? members.length : Number(c.anzahl_schuetzen || 5);
+            const groupMembers = getEffectiveGroupMembers(members);
+            const count = groupMembers.length > 0 ? groupMembers.length : Number(c.anzahl_schuetzen || 5);
             const perShooterGruppe = count > 0 && gruppenUeberschuss > 0 ? (gruppenUeberschuss / count) : 0;
 
             let compHasOpen = false;
             members.forEach(m => {
-                const amt = Number(m.betrag || (Number(m.anteil_gruppe || 0) + Number(m.anteil_einzel || 0)) || perShooterGruppe || 0);
-                if (amt <= 0) return;
-                if (m.status === 'verrechnet' || m.status === 'ausgefuehrt') {
-                    totalVerrechnet += amt;
-                } else {
-                    totalOffen += amt;
-                    if ((m.payout_method || 'jahresbeitrag') === 'jahresbeitrag') {
-                        compHasOpen = true;
-                        openShootersCount++;
-                    }
+                const split = getMemberSplitAmounts(m, c, isEinzelOnly ? 0 : perShooterGruppe);
+                if (split.totalAmt <= 0) return;
+                totalVerrechnet += split.settledAmt;
+                totalOffen += split.unsettledAmt;
+                if (split.openForTransferAmt > 0 && (m.payout_method || 'jahresbeitrag') === 'jahresbeitrag') {
+                    compHasOpen = true;
+                    openShootersCount++;
                 }
             });
             if (compHasOpen && ueb > 0) openCompsCount++;
@@ -1891,6 +1952,9 @@
                 schuetze_name: s.name,
                 jahrgang: s.jahrgang,
                 punkte: s.punkte,
+                stich_name: '',
+                anteil_gruppe: 0,
+                anteil_einzel: 0,
                 betrag: 0,
                 payout_method: 'jahresbeitrag',
                 iban: iban,
@@ -1898,8 +1962,8 @@
             });
         }
 
-        const sumPts = _jmCurrentEditingComp.members.reduce((a, b) => a + (Number(b.punkte) || 0), 0);
-        _jmCurrentEditingComp.punkte_total = Math.round(sumPts * 10) / 10;
+        const typ = _jmCurrentEditingComp.anlass_typ || 'gruppe';
+        _jmCurrentEditingComp.punkte_total = computeGroupPointsTotal(_jmCurrentEditingComp.members, typ);
         _jmCurrentEditingComp.anzahl_schuetzen = _jmCurrentEditingComp.members.length;
 
         const punkteInput = document.getElementById('jme-punkte');
@@ -2774,12 +2838,7 @@
      * Ermittelt den noch offenen (nicht bereits per JB/Bank abgewickelten) Betrag eines Schützen.
      */
     function getMemberOpenAmount(m) {
-        if (!m) return 0;
-        if (m.status === 'verrechnet' || m.status === 'ausgefuehrt' || m.status === 'in_zahlung') return 0;
-        if (Boolean(m.contribution_position_id) && Number(m.anteil_gruppe || 0) > 0) {
-            return Number(m.anteil_einzel || 0);
-        }
-        return Number(m.betrag || 0);
+        return getMemberSplitAmounts(m, _jmCurrentEditingComp).openForTransferAmt;
     }
 
     /**
@@ -2883,25 +2942,24 @@
         const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${Number(v || 0).toFixed(2)}`);
 
         const members = _jmCurrentEditingComp.members || [];
-        const isMemberGroupProtected = (m) => (
-            m.status === 'verrechnet' ||
-            m.status === 'in_zahlung' ||
-            m.status === 'ausgefuehrt' ||
-            (Boolean(m.contribution_position_id) && Number(m.anteil_gruppe || 0) > 0)
-        );
-
         const protectedMembers = members.filter(isMemberGroupProtected);
         const openGroupMembers = members.filter(m => !isMemberGroupProtected(m));
         const settledGruppeSum = protectedMembers.reduce((acc, m) => acc + Number(m.anteil_gruppe || 0), 0);
         const remainingUeberschuss = Math.max(0, ueberschuss - settledGruppeSum);
 
-        let perShooter = 0;
+        let openPerShooter = 0;
         if (!isEinzel && openGroupMembers.length > 0 && remainingUeberschuss > 0) {
             // Rappen-Rundung (5 Rappen) für offene Gruppenmitglieder
-            perShooter = Math.round((remainingUeberschuss / openGroupMembers.length) * 20) / 20;
-        } else if (!isEinzel && members.length > 0 && ueberschuss > 0 && openGroupMembers.length === 0) {
-            // Alle Gruppenmitglieder bereits verrechnet: Anzeige des bisherigen Anteils je Schütze
-            perShooter = Math.round((ueberschuss / members.length) * 20) / 20;
+            openPerShooter = Math.round((remainingUeberschuss / openGroupMembers.length) * 20) / 20;
+        }
+
+        // Anzeige-Badge oben: offener Anteil je Gruppenmitglied oder (falls Gruppe bereits komplett verteilt) der Gruppenanteil
+        let displayPerShooter = openPerShooter;
+        if (!isEinzel && displayPerShooter === 0 && ueberschuss > 0 && protectedMembers.length > 0) {
+            const protectedWithGroup = protectedMembers.filter(m => Number(m.anteil_gruppe || 0) > 0);
+            const groupCountForDisplay = protectedWithGroup.length > 0 ? protectedWithGroup.length : protectedMembers.length;
+            const basisSum = settledGruppeSum > 0 ? settledGruppeSum : ueberschuss;
+            displayPerShooter = groupCountForDisplay > 0 ? Math.round((basisSum / groupCountForDisplay) * 20) / 20 : 0;
         }
 
         let sumEinzel = 0;
@@ -2914,11 +2972,11 @@
             if (badgeUeberschuss) badgeUeberschuss.innerText = fmtCurr(sumEinzel);
         } else if (isGruppe) {
             if (badgeUeberschuss) badgeUeberschuss.innerText = fmtCurr(ueberschuss);
-            if (badgePerShooter) badgePerShooter.innerText = fmtCurr(perShooter);
+            if (badgePerShooter) badgePerShooter.innerText = fmtCurr(displayPerShooter);
         } else {
             // kombiniert
             if (badgeUeberschuss) badgeUeberschuss.innerText = `${fmtCurr(ueberschuss)} (+ ${fmtCurr(sumEinzel)})`;
-            if (badgePerShooter) badgePerShooter.innerText = fmtCurr(perShooter);
+            if (badgePerShooter) badgePerShooter.innerText = fmtCurr(displayPerShooter);
         }
 
         // Zeilen-Beträge aktualisieren
@@ -2931,15 +2989,15 @@
 
             if (!isProtected) {
                 if (isGruppe) {
-                    m.anteil_gruppe = perShooter;
+                    m.anteil_gruppe = openPerShooter;
                     m.anteil_einzel = 0;
-                    m.betrag = perShooter;
+                    m.betrag = openPerShooter;
                 } else if (isEinzel) {
                     m.anteil_gruppe = 0;
                     m.betrag = Number(m.anteil_einzel || 0);
                 } else {
-                    m.anteil_gruppe = perShooter;
-                    m.betrag = perShooter + Number(m.anteil_einzel || 0);
+                    m.anteil_gruppe = openPerShooter;
+                    m.betrag = openPerShooter + Number(m.anteil_einzel || 0);
                 }
             } else if (!isFullyLocked) {
                 // Bereits verrechneter Gruppenanteil bleibt unverändert; Gesamtsumme führt Einzelgewinn mit nach
@@ -2972,13 +3030,14 @@
             _jmCurrentEditingComp.members[idx].person_number = null;
         }
         renderShooterRows(_jmCurrentEditingComp.members);
+        jmRecalculateCurrentComp();
     }
 
     function jmOnShooterPointsChange(idx, val) {
         if (!_jmCurrentEditingComp?.members?.[idx]) return;
         _jmCurrentEditingComp.members[idx].punkte = val ? parseFloat(val) : null;
-        const sumPts = (_jmCurrentEditingComp.members || []).reduce((a, b) => a + (Number(b.punkte) || 0), 0);
-        _jmCurrentEditingComp.punkte_total = Math.round(sumPts * 10) / 10;
+        const typ = _jmCurrentEditingComp.anlass_typ || 'gruppe';
+        _jmCurrentEditingComp.punkte_total = computeGroupPointsTotal(_jmCurrentEditingComp.members, typ);
         const punkteInput = document.getElementById('jme-punkte');
         if (punkteInput) punkteInput.value = _jmCurrentEditingComp.punkte_total || '';
     }
@@ -3147,6 +3206,7 @@
         }
 
         const mergedRanglisten = getMergedRanglistenForComp(_jmCurrentEditingComp);
+        const effectiveGroupMembers = getEffectiveGroupMembers(members);
         const payloadComp = {
             jahr: _jmCurrentEditingComp?.jahr || getActiveYear(),
             anlass_name: anlass,
@@ -3157,7 +3217,7 @@
             gruppendoppel: doppel,
             gruppengewinn: gewinn,
             anzahl_schuetzen: members.length,
-            betrag_pro_schuetze: typ === 'einzel' ? 0 : (members.length > 0 ? (Math.max(0, gewinn - doppel) / members.length) : 0),
+            betrag_pro_schuetze: typ === 'einzel' ? 0 : (effectiveGroupMembers.length > 0 ? (Math.max(0, gewinn - doppel) / effectiveGroupMembers.length) : 0),
             einzel_total: Number(_jmCurrentEditingComp?.einzel_total || 0),
             status: 'offen',
             ranglisten_files: mergedRanglisten
@@ -3599,17 +3659,13 @@
             const gewinn = isEinzelOnly ? 0 : Number(comp.gruppengewinn || 0);
             const ueb = Math.max(0, gewinn - doppel);
             const members = Array.isArray(comp.members) ? comp.members : [];
-            const count = members.length > 0 ? members.length : 5;
+            const groupMembers = getEffectiveGroupMembers(members);
+            const count = groupMembers.length > 0 ? groupMembers.length : 5;
             const perShooter = (!isEinzelOnly && count > 0) ? (Math.round((ueb / count) * 20) / 20) : 0;
 
-            const getOpenAmt = (m) => {
-                if (Boolean(m.contribution_position_id) && Number(m.anteil_gruppe || 0) > 0) {
-                    return Number(m.anteil_einzel || 0);
-                }
-                return Number(m.betrag || perShooter);
-            };
+            const getOpenAmt = (m) => getMemberSplitAmounts(m, comp, isEinzelOnly ? 0 : perShooter).openForTransferAmt;
 
-            const openMembers = members.filter(m => (m.payout_method || 'jahresbeitrag') === 'jahresbeitrag' && getOpenAmt(m) > 0 && m.status !== 'verrechnet' && m.status !== 'ausgefuehrt' && m.status !== 'in_zahlung');
+            const openMembers = members.filter(m => (m.payout_method || 'jahresbeitrag') === 'jahresbeitrag' && getOpenAmt(m) > 0);
             if (openMembers.length === 0) return;
 
             const fmtCurr = window.UIFormatKit ? UIFormatKit.formatCurrency : (v => `CHF ${Number(v || 0).toFixed(2)}`);
@@ -3683,17 +3739,13 @@
                 if (ueb <= 0) return;
 
                 const members = Array.isArray(c.members) ? c.members : [];
-                const count = members.length > 0 ? members.length : 5;
+                const groupMembers = getEffectiveGroupMembers(members);
+                const count = groupMembers.length > 0 ? groupMembers.length : 5;
                 const perShooter = (!isEinzelOnly && count > 0) ? (Math.round((grpUeb / count) * 20) / 20) : 0;
 
-                const getOpenAmt = (m) => {
-                    if (Boolean(m.contribution_position_id) && Number(m.anteil_gruppe || 0) > 0) {
-                        return Number(m.anteil_einzel || 0);
-                    }
-                    return Number(m.betrag || perShooter);
-                };
+                const getOpenAmt = (m) => getMemberSplitAmounts(m, c, isEinzelOnly ? 0 : perShooter).openForTransferAmt;
 
-                const openMems = members.filter(m => (m.payout_method || 'jahresbeitrag') === 'jahresbeitrag' && getOpenAmt(m) > 0 && m.status !== 'verrechnet' && m.status !== 'ausgefuehrt' && m.status !== 'in_zahlung');
+                const openMems = members.filter(m => (m.payout_method || 'jahresbeitrag') === 'jahresbeitrag' && getOpenAmt(m) > 0);
                 if (openMems.length > 0) {
                     const compSum = openMems.reduce((acc, m) => acc + getOpenAmt(m), 0);
                     openComps.push({ comp: c, count: openMems.length, sum: compSum });
@@ -3993,7 +4045,8 @@
         const ueberschuss = isEinzel ? 0 : Math.max(0, gewinn - doppel);
         const einzelTotal = Number(comp.einzel_total || 0);
         const members = Array.isArray(comp.members) ? comp.members : [];
-        const count = members.length > 0 ? members.length : 5;
+        const groupMembers = getEffectiveGroupMembers(members);
+        const count = groupMembers.length > 0 ? groupMembers.length : 5;
         const perShooter = (!isEinzel && count > 0) ? (ueberschuss / count) : 0;
 
         const todayStr = (window.UIFormatKit && UIFormatKit.formatDate) ? UIFormatKit.formatDate(new Date().toISOString().split('T')[0]) : new Date().toLocaleDateString('de-CH');
@@ -4120,6 +4173,7 @@
         if (isEinzel) {
             shooterHead = [['Nr.', 'Name des Schützen', 'Pkt.', 'Stich / Gabe', 'Betrag', 'Auszahlungsweg / Details', 'Visum']];
             shooterBody = members.map((m, idx) => {
+                const split = getMemberSplitAmounts(m, comp, 0);
                 const methodLabel = m.payout_method === 'jahresbeitrag'
                     ? 'Verrechnung Jahresbeitrag'
                     : (m.payout_method === 'bank' ? `Bank (${m.iban || 'IBAN fehlt'})` : 'Barauszahlung');
@@ -4128,7 +4182,7 @@
                     m.schuetze_name,
                     m.punkte ? String(m.punkte) : '-',
                     m.stich_name || 'Auszahler',
-                    fmtCurr(Number(m.betrag || m.anteil_einzel || 0)),
+                    fmtCurr(split.einzelAmt || split.totalAmt),
                     methodLabel,
                     ''
                 ];
@@ -4145,6 +4199,7 @@
         } else if (isKombiniert) {
             shooterHead = [['Nr.', 'Name des Schützen', 'Pkt.', 'Stich', 'Gruppe', 'Einzel', 'Total', 'Auszahlung', 'Visum']];
             shooterBody = members.map((m, idx) => {
+                const split = getMemberSplitAmounts(m, comp, perShooter);
                 const methodLabel = m.payout_method === 'jahresbeitrag'
                     ? 'Jahresbeitrag'
                     : (m.payout_method === 'bank' ? 'Bank' : 'Bar');
@@ -4153,9 +4208,9 @@
                     m.schuetze_name,
                     m.punkte ? String(m.punkte) : '-',
                     m.stich_name || '-',
-                    fmtCurr(Number(m.anteil_gruppe || perShooter)),
-                    fmtCurr(Number(m.anteil_einzel || 0)),
-                    fmtCurr(Number(m.betrag || 0)),
+                    fmtCurr(split.grpAmt),
+                    fmtCurr(split.einzelAmt),
+                    fmtCurr(split.totalAmt),
                     methodLabel,
                     ''
                 ];
@@ -4174,6 +4229,7 @@
         } else {
             shooterHead = [['Rang', 'Name des Schützen', 'Pkt.', 'Anteil', 'Auszahlungsweg / Details', 'Visum / Quittung']];
             shooterBody = members.map((m, idx) => {
+                const split = getMemberSplitAmounts(m, comp, perShooter);
                 const methodLabel = m.payout_method === 'jahresbeitrag'
                     ? 'Verrechnung Jahresbeitrag'
                     : (m.payout_method === 'bank' ? `Bank (${m.iban || 'IBAN fehlt'})` : 'Barauszahlung Stand');
@@ -4181,7 +4237,7 @@
                     String(idx + 1),
                     m.schuetze_name,
                     m.punkte ? String(m.punkte) : '-',
-                    fmtCurr(Number(m.betrag || perShooter)),
+                    fmtCurr(split.totalAmt),
                     methodLabel,
                     ''
                 ];
@@ -4272,15 +4328,16 @@
             else if (r === 3) rank3List.push(c);
 
             const members = Array.isArray(c.members) ? c.members : [];
-            const count = members.length > 0 ? members.length : Number(c.anzahl_schuetzen || 5);
-            const perShooter = count > 0 ? (Math.round((ueb / count) * 20) / 20) : 0;
+            const groupMembers = getEffectiveGroupMembers(members);
+            const count = groupMembers.length > 0 ? groupMembers.length : Number(c.anzahl_schuetzen || 5);
+            const perShooter = (!isEinzel && count > 0) ? (Math.round((ueb / count) * 20) / 20) : 0;
 
             members.forEach(m => {
-                const amt = Number(m.betrag || perShooter || 0);
-                const isDone = m.status === 'verrechnet' || m.status === 'ausgefuehrt';
+                const split = getMemberSplitAmounts(m, c, perShooter);
+                const amt = split.totalAmt;
                 if (amt > 0) {
-                    if (isDone) totalVerrechnet += amt;
-                    else totalOffen += amt;
+                    totalVerrechnet += split.settledAmt;
+                    totalOffen += split.unsettledAmt;
                 }
 
                 // Schützenname normalisieren ("Vorname Nachname")
@@ -4318,8 +4375,8 @@
                     }
                 }
                 st.totalShare += amt;
-                if (isDone) st.verrechnetShare += amt;
-                else st.offenShare += amt;
+                st.verrechnetShare += split.settledAmt;
+                st.offenShare += split.unsettledAmt;
                 st.events.push({
                     anlass: c.anlass_name,
                     gruppe: c.gruppe_name,
@@ -4412,26 +4469,40 @@
         // Tabelle 1: Alle Gruppenschiessen mit Teilnehmern & Einzelpunkten
         const compHead = [['Anlass / Schützenfest', 'Gruppe', 'Rang', 'Total Pkt.', 'Doppel', 'Gewinn', 'Überschuss', 'Beteiligte Schützen (Einzelpunkte & Anteil)', 'Status']];
         const compBody = data.comps.map(c => {
-            const doppel = Number(c.gruppendoppel || 30);
-            const gewinn = Number(c.gruppengewinn || 0);
-            const ueb = Math.max(0, gewinn - doppel);
+            const typ = c.anlass_typ || 'gruppe';
+            const isEinzel = typ === 'einzel';
+            const isKombiniert = typ === 'kombiniert';
+            const doppel = isEinzel ? 0 : Number(c.gruppendoppel || 30);
+            const grpGewinn = isEinzel ? 0 : Number(c.gruppengewinn || 0);
+            const einzelAmt = Number(c.einzel_total || 0);
+            const brutto = grpGewinn + einzelAmt;
+            const grpUeb = isEinzel ? 0 : Math.max(0, grpGewinn - doppel);
+            const ueb = grpUeb + einzelAmt;
             const members = Array.isArray(c.members) ? [...c.members].sort((a, b) => (Number(b.punkte) || 0) - (Number(a.punkte) || 0)) : [];
-            const count = members.length > 0 ? members.length : 5;
-            const perShooter = count > 0 ? (Math.round((ueb / count) * 20) / 20) : 0;
+            const groupMembers = getEffectiveGroupMembers(members);
+            const count = groupMembers.length > 0 ? groupMembers.length : 5;
+            const perShooter = (!isEinzel && count > 0) ? (Math.round((grpUeb / count) * 20) / 20) : 0;
 
             const allDone = members.length > 0 && ueb > 0 && members.every(m => m.status === 'verrechnet' || m.status === 'ausgefuehrt');
-            const statusTxt = ueb === 0 ? 'Kein Überschuss' : (allDone ? 'Abgewickelt (JB)' : `Offen (je ${fmtCurr(perShooter)})`);
+            const someDone = members.some(m => m.status === 'verrechnet' || m.status === 'ausgefuehrt' || Boolean(m.contribution_position_id));
+            const statusTxt = ueb === 0
+                ? 'Kein Überschuss'
+                : (allDone
+                    ? 'Abgewickelt (JB)'
+                    : (someDone
+                        ? 'Teilw. verrechnet'
+                        : (isEinzel ? 'Offen (Einzel)' : (isKombiniert ? 'Offen (Kombi)' : `Offen (je ${fmtCurr(perShooter)})`))));
 
             const shootersStr = members.map(m => `${m.schuetze_name} (${m.punkte || '-'} Pkt.)`).join(', ');
-            const calcPts = Math.round(members.reduce((a, b) => a + (Number(b.punkte) || 0), 0) * 10) / 10;
+            const calcPts = computeGroupPointsTotal(members, typ);
 
             return [
                 c.anlass_name,
-                c.gruppe_name,
-                c.rang ? `${c.rang}.` : '-',
+                isEinzel ? 'Einzel' : c.gruppe_name,
+                (!isEinzel && c.rang) ? `${c.rang}.` : '-',
                 c.punkte_total ? `${c.punkte_total}` : (calcPts > 0 ? `${calcPts}` : '-'),
-                fmtCurr(doppel),
-                fmtCurr(gewinn),
+                isEinzel ? '-' : fmtCurr(doppel),
+                fmtCurr(brutto),
                 fmtCurr(ueb),
                 shootersStr || '-',
                 statusTxt
@@ -4584,20 +4655,24 @@
 
         // Übersichtstabelle aller Schiessen
         const overviewRowsHtml = data.comps.map(c => {
-            const doppel = Number(c.gruppendoppel || 30);
-            const gewinn = Number(c.gruppengewinn || 0);
-            const ueb = Math.max(0, gewinn - doppel);
+            const typ = c.anlass_typ || 'gruppe';
+            const isEinzel = typ === 'einzel';
+            const doppel = isEinzel ? 0 : Number(c.gruppendoppel || 30);
+            const grpGewinn = isEinzel ? 0 : Number(c.gruppengewinn || 0);
+            const einzelAmt = Number(c.einzel_total || 0);
+            const brutto = grpGewinn + einzelAmt;
+            const ueb = (isEinzel ? 0 : Math.max(0, grpGewinn - doppel)) + einzelAmt;
             const members = Array.isArray(c.members) ? [...c.members].sort((a, b) => (Number(b.punkte) || 0) - (Number(a.punkte) || 0)) : [];
             const shooterText = members.map(m => `${escapeHtml(m.schuetze_name)} (${m.punkte || '-'})`).join(', ');
-            const calcPts = Math.round(members.reduce((a, b) => a + (Number(b.punkte) || 0), 0) * 10) / 10;
+            const calcPts = computeGroupPointsTotal(members, typ);
 
             return `
                 <tr>
                     <td><strong>${escapeHtml(c.anlass_name)}</strong></td>
-                    <td>${escapeHtml(c.gruppe_name)}</td>
-                    <td style="text-align:center;"><strong>${c.rang ? c.rang + '. Rang' : '-'}</strong></td>
+                    <td>${escapeHtml(isEinzel ? 'Einzel' : c.gruppe_name)}</td>
+                    <td style="text-align:center;"><strong>${(!isEinzel && c.rang) ? c.rang + '. Rang' : '-'}</strong></td>
                     <td style="text-align:right;"><strong>${c.punkte_total || calcPts || '-'}</strong></td>
-                    <td style="text-align:right;">${fmtCurr(gewinn)}</td>
+                    <td style="text-align:right;">${fmtCurr(brutto)}</td>
                     <td style="text-align:right;">${fmtCurr(ueb)}</td>
                     <td>${shooterText}</td>
                 </tr>
@@ -4606,31 +4681,43 @@
 
         // Detailblöcke je Schützenfest (für Jahresbericht-Anreicherung)
         const eventDetailBlocksHtml = data.comps.map(c => {
-            const doppel = Number(c.gruppendoppel || 30);
-            const gewinn = Number(c.gruppengewinn || 0);
-            const ueb = Math.max(0, gewinn - doppel);
+            const typ = c.anlass_typ || 'gruppe';
+            const isEinzel = typ === 'einzel';
+            const doppel = isEinzel ? 0 : Number(c.gruppendoppel || 30);
+            const grpGewinn = isEinzel ? 0 : Number(c.gruppengewinn || 0);
+            const einzelAmt = Number(c.einzel_total || 0);
+            const grpUeb = isEinzel ? 0 : Math.max(0, grpGewinn - doppel);
+            const ueb = grpUeb + einzelAmt;
             const members = Array.isArray(c.members) ? [...c.members].sort((a, b) => (Number(b.punkte) || 0) - (Number(a.punkte) || 0)) : [];
-            const count = members.length > 0 ? members.length : 5;
-            const perShooter = count > 0 ? (Math.round((ueb / count) * 20) / 20) : 0;
-            const calcPts = Math.round(members.reduce((a, b) => a + (Number(b.punkte) || 0), 0) * 10) / 10;
+            const groupMembers = getEffectiveGroupMembers(members);
+            const count = groupMembers.length > 0 ? groupMembers.length : 5;
+            const perShooter = (!isEinzel && count > 0) ? (Math.round((grpUeb / count) * 20) / 20) : 0;
+            const calcPts = computeGroupPointsTotal(members, typ);
 
-            const mRows = members.map((m, idx) => `
+            const mRows = members.map((m, idx) => {
+                const split = getMemberSplitAmounts(m, c, perShooter);
+                return `
                 <tr>
                     <td style="text-align:center;">${idx + 1}.</td>
                     <td><strong>${escapeHtml(m.schuetze_name)}</strong></td>
                     <td style="text-align:right;"><strong>${m.punkte || '-'} Pkt.</strong></td>
-                    <td style="text-align:right;">${fmtCurr(Number(m.betrag || perShooter))}</td>
+                    <td style="text-align:right;">${fmtCurr(split.totalAmt)}</td>
                 </tr>
-            `).join('');
+            `;
+            }).join('');
+
+            const finanzInfo = isEinzel
+                ? `Einzelgewinne Brutto / Netto-Ausschüttung: <strong>${fmtCurr(einzelAmt)}</strong>`
+                : `Gruppengabe Brutto: <strong>${fmtCurr(grpGewinn)}</strong> | Gruppendoppel Verein: ${fmtCurr(doppel)} | Gruppen-Überschuss: <strong>${fmtCurr(grpUeb)}</strong> (je ${fmtCurr(perShooter)})${einzelAmt > 0 ? ` | Einzelgewinne: <strong>${fmtCurr(einzelAmt)}</strong> | Total: <strong>${fmtCurr(ueb)}</strong>` : ''}`;
 
             return `
                 <div style="margin-bottom: 14pt; page-break-inside: avoid;">
                     <h3 style="margin: 8pt 0 4pt 0; color: #1e4078; font-size: 11.5pt;">
-                        ${escapeHtml(c.anlass_name)} – Gruppe «${escapeHtml(c.gruppe_name)}»
-                        ${c.rang ? `(${c.rang}. Rang)` : ''} · Total: ${c.punkte_total || calcPts || '-'} Punkte
+                        ${escapeHtml(c.anlass_name)} – ${isEinzel ? 'Einzelgewinne' : `Gruppe «${escapeHtml(c.gruppe_name)}»`}
+                        ${(!isEinzel && c.rang) ? `(${c.rang}. Rang)` : ''} · Total: ${c.punkte_total || calcPts || '-'} Punkte
                     </h3>
                     <div style="font-size: 9.5pt; color: #444; margin-bottom: 4pt;">
-                        Gruppengabe Brutto: <strong>${fmtCurr(gewinn)}</strong> | Gruppendoppel Verein: ${fmtCurr(doppel)} | Netto-Überschuss Schützen: <strong>${fmtCurr(ueb)}</strong> (je ${fmtCurr(perShooter)})
+                        ${finanzInfo}
                     </div>
                     <table border="1" cellspacing="0" cellpadding="4" style="border-collapse: collapse; width: 100%; font-size: 9.5pt; border-color: #cbd5e1;">
                         <thead>
@@ -5481,17 +5568,22 @@
             const tableRows = supp.items.map((it, idx) => {
                 const rangStr = it.rang ? ` · ${it.rang}. Rang` : '';
                 const grpPtsStr = it.gruppeTotalPunkte ? `${it.gruppeTotalPunkte} Pkt.` : '-';
-                const anlassBlock = `${it.anlassName}\nGruppe «${it.gruppeName}»${rangStr} · Total: ${grpPtsStr}\nTeam: ${it.teamPlain}`;
+                const anlassHeader = it.isEinzelOnly || (it.grpAmt === 0 && it.einzelAmt > 0)
+                    ? `${it.anlassName}\nEinzelwertung${it.stichName ? ` (${it.stichName})` : ''}`
+                    : `${it.anlassName}\nGruppe «${it.gruppeName}»${rangStr} · Total: ${grpPtsStr}\nTeam: ${it.teamPlain}`;
                 const myPtsStr = it.schuetzePunkte ? `${it.schuetzePunkte} Pkt.` : '-';
-                const calcBlock = `Brutto: ${fmtCurr(it.gewinnBrutto)}\n./. Doppel: ${fmtCurr(it.abzugDoppel)}\nNetto: ${fmtCurr(it.nettoUeberschuss)}`;
-                const shareBlock = `- ${fmtCurr(it.schuetzeAnteil)}\n(1/${it.anzahlSchuetzen} Anteil)`;
+                const calcBlock = (it.isEinzelOnly || (it.grpAmt === 0 && it.einzelAmt > 0))
+                    ? `${it.stichName || 'Einzelgewinn'}: ${fmtCurr(it.einzelAmt || it.schuetzeAnteil)}`
+                    : `Brutto: ${fmtCurr(it.gewinnBrutto)}\n./. Doppel: ${fmtCurr(it.abzugDoppel)}\nNetto: ${fmtCurr(it.nettoUeberschuss)}${it.einzelAmt > 0 ? `\n+ ${it.stichName || 'Einzel'}: ${fmtCurr(it.einzelAmt)}` : ''}`;
+                const shareSub = it.shareSubLabelPlain || `(1/${it.anzahlSchuetzen} Anteil)`;
+                const shareBlock = `- ${fmtCurr(it.schuetzeAnteil)}\n${shareSub}`;
                 const linkLabels = (it.links && it.links.length > 0)
                     ? it.links.map(lk => `> ${lk.label} öffnen`).join('\n')
                     : '-';
 
                 return [
                     String(idx + 1),
-                    anlassBlock,
+                    anlassHeader,
                     myPtsStr,
                     calcBlock,
                     shareBlock,
@@ -5634,6 +5726,10 @@
         // Immer frisch aus Supabase nachladen, damit soeben hochgeladene Ranglisten oder Mutationen sofort enthalten sind
         await jmLoadGroupCompetitions(yr);
 
+        const fmtCurr = (window.UIFormatKit && typeof UIFormatKit.formatCurrency === 'function')
+            ? UIFormatKit.formatCurrency
+            : (v => `CHF ${Number(v || 0).toFixed(2)}`);
+
         const comps = window._jmGroupCompetitions || [];
         const shooterItems = [];
         let shooterName = '';
@@ -5645,23 +5741,27 @@
             const myMember = members.find(m => String(m.person_number || '').trim() === pnStr);
             if (!myMember) continue;
 
-            const doppel = Number(comp.gruppendoppel || 30);
-            const gewinn = Number(comp.gruppengewinn || 0);
-            const ueberschuss = Math.max(0, gewinn - doppel);
-            const count = members.length > 0 ? members.length : Number(comp.anzahl_schuetzen || 5);
-            const defaultPerShooter = (count > 0 && ueberschuss > 0) ? (Math.round((ueberschuss / count) * 20) / 20) : 0;
-            const myShare = Number(myMember.betrag !== undefined && myMember.betrag !== null ? myMember.betrag : defaultPerShooter);
+            const typ = comp.anlass_typ || 'gruppe';
+            const isEinzelOnly = typ === 'einzel';
+            const doppel = isEinzelOnly ? 0 : Number(comp.gruppendoppel || 30);
+            const gewinn = isEinzelOnly ? 0 : Number(comp.gruppengewinn || 0);
+            const ueberschuss = isEinzelOnly ? 0 : Math.max(0, gewinn - doppel);
+            const groupMembers = isEinzelOnly ? members : getEffectiveGroupMembers(members);
+            const count = groupMembers.length > 0 ? groupMembers.length : Number(comp.anzahl_schuetzen || 5);
+            const defaultPerShooter = (!isEinzelOnly && count > 0 && ueberschuss > 0) ? (Math.round((ueberschuss / count) * 20) / 20) : 0;
+            const split = getMemberSplitAmounts(myMember, comp, defaultPerShooter);
+            const myShare = split.totalAmt;
 
-            // Nur Gruppenschiessen mit effektiver Gutschrift (oder Verrechnung auf Jahresbeitrag) aufführen
-            if (myShare <= 0 && ueberschuss <= 0) continue;
+            // Nur Schiessen mit effektiver Gutschrift (oder Verrechnung auf Jahresbeitrag) aufführen
+            if (myShare <= 0) continue;
             if (myMember.payout_method && myMember.payout_method !== 'jahresbeitrag') continue;
 
             if (!shooterName && myMember.schuetze_name) {
                 shooterName = myMember.schuetze_name;
             }
 
-            // Alle Teamkollegen mit Punktzahl formatieren
-            const sortedTeam = [...members].sort((a, b) => (Number(b.punkte) || 0) - (Number(a.punkte) || 0));
+            // Alle Teamkollegen der Gruppe mit Punktzahl formatieren
+            const sortedTeam = [...groupMembers].sort((a, b) => (Number(b.punkte) || 0) - (Number(a.punkte) || 0));
             const teamSummary = sortedTeam.map(tm => {
                 const isMe = String(tm.person_number || '').trim() === pnStr;
                 const pStr = tm.punkte ? ` (${tm.punkte})` : '';
@@ -5669,8 +5769,16 @@
             }).join(', ');
             const teamSummaryPlain = sortedTeam.map(tm => `${tm.schuetze_name}${tm.punkte ? ' (' + tm.punkte + ')' : ''}`).join(', ');
 
-            const calcPtsSum = Math.round(members.reduce((acc, m) => acc + (Number(m.punkte) || 0), 0) * 10) / 10;
+            const calcPtsSum = computeGroupPointsTotal(members, typ);
             const totalPts = comp.punkte_total || (calcPtsSum > 0 ? calcPtsSum : null);
+
+            const stichName = String(myMember.stich_name || '').trim();
+            let shareSubLabelPlain = `(1/${count} Anteil)`;
+            if (split.grpAmt > 0 && split.einzelAmt > 0) {
+                shareSubLabelPlain = `Gruppe (1/${count}): ${fmtCurr(split.grpAmt)}\n+ ${stichName || 'Einzel'}: ${fmtCurr(split.einzelAmt)}`;
+            } else if (split.einzelAmt > 0 && split.grpAmt === 0) {
+                shareSubLabelPlain = `Einzelgewinn${stichName ? ` (${stichName})` : ''}`;
+            }
 
             // Für alle hinterlegten Ranglisten dieses Schiessens 180-Tage-Links generieren (keine Ranglisten-PDF-Anhänge)
             const rangFiles = getMergedRanglistenForComp(comp);
@@ -5692,6 +5800,11 @@
                 compId: comp.id,
                 anlassName: comp.anlass_name,
                 gruppeName: comp.gruppe_name || 'Strohaus',
+                isEinzelOnly,
+                stichName,
+                grpAmt: split.grpAmt,
+                einzelAmt: split.einzelAmt,
+                shareSubLabelPlain,
                 rang: comp.rang || null,
                 gruppeTotalPunkte: totalPts,
                 schuetzePunkte: myMember.punkte || null,
@@ -5719,10 +5832,6 @@
             ? UIFormatKit.formatDate(expiryIso)
             : expiryDate.toLocaleDateString('de-CH');
 
-        const fmtCurr = (window.UIFormatKit && typeof UIFormatKit.formatCurrency === 'function')
-            ? UIFormatKit.formatCurrency
-            : (v => `CHF ${Number(v || 0).toFixed(2)}`);
-
         // HTML-Einzelberechnung + 180-Tage-Links (Ranglisten als Links)
         const rowsHtml = shooterItems.map(it => {
             const rangStr = it.rang ? ` · ${it.rang}. Rang` : '';
@@ -5732,22 +5841,34 @@
                 ? it.links.map(lk => `<a href="${escapeHtml(lk.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block; padding:3px 8px; margin:2px 0; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; border-radius:4px; text-decoration:none; font-weight:600; font-size:11.5px;">📄 ${escapeHtml(lk.label)} öffnen</a>`).join('<br>')
                 : `<span style="color:#94a3b8; font-size:11px;">–</span>`;
 
+            const isPureEinzelForMe = it.isEinzelOnly || (it.grpAmt === 0 && it.einzelAmt > 0);
+            const anlassDetailHtml = isPureEinzelForMe
+                ? `<div style="font-size:11.5px; color:#475569; margin-top:2px;">Einzelwertung${it.stichName ? ` (${escapeHtml(it.stichName)})` : ''}</div>`
+                : `<div style="font-size:11.5px; color:#475569; margin-top:2px;">Gruppe «${escapeHtml(it.gruppeName)}»${escapeHtml(rangStr)} · Total: ${escapeHtml(grpPtsStr)}</div>
+                   <div style="font-size:11px; color:#64748b; margin-top:3px;">Gruppe: ${it.teamHtml}</div>`;
+
+            const calcHtml = isPureEinzelForMe
+                ? `<div style="font-weight:600; color:#0f172a;">${escapeHtml(it.stichName || 'Einzelgewinn')}: ${escapeHtml(fmtCurr(it.einzelAmt || it.schuetzeAnteil))}</div>`
+                : `<div>Brutto: ${escapeHtml(fmtCurr(it.gewinnBrutto))}</div>
+                   <div style="color:#64748b; font-size:11px;">./. Doppel: ${escapeHtml(fmtCurr(it.abzugDoppel))}</div>
+                   <div style="font-weight:600; color:#0f172a; margin-top:2px;">Netto: ${escapeHtml(fmtCurr(it.nettoUeberschuss))}</div>
+                   ${it.einzelAmt > 0 ? `<div style="color:#15803d; font-size:11px; margin-top:2px;">+ ${escapeHtml(it.stichName || 'Einzel')}: ${escapeHtml(fmtCurr(it.einzelAmt))}</div>` : ''}`;
+
+            const shareSubHtml = escapeHtml(it.shareSubLabelPlain).replace(/\n/g, '<br>');
+
             return `
                 <tr>
                     <td style="padding:8px 10px; border-bottom:1px solid #e2e8f0; vertical-align:top;">
                         <div style="font-weight:700; color:#0f172a;">${escapeHtml(it.anlassName)}</div>
-                        <div style="font-size:11.5px; color:#475569; margin-top:2px;">Gruppe «${escapeHtml(it.gruppeName)}»${escapeHtml(rangStr)} · Total: ${escapeHtml(grpPtsStr)}</div>
-                        <div style="font-size:11px; color:#64748b; margin-top:3px;">Gruppe: ${it.teamHtml}</div>
+                        ${anlassDetailHtml}
                     </td>
                     <td style="padding:8px 8px; border-bottom:1px solid #e2e8f0; text-align:center; vertical-align:top; white-space:nowrap;">${myPtsStr}</td>
                     <td style="padding:8px 8px; border-bottom:1px solid #e2e8f0; text-align:right; vertical-align:top; white-space:nowrap; font-size:12px; color:#334155;">
-                        <div>Brutto: ${escapeHtml(fmtCurr(it.gewinnBrutto))}</div>
-                        <div style="color:#64748b; font-size:11px;">./. Doppel: ${escapeHtml(fmtCurr(it.abzugDoppel))}</div>
-                        <div style="font-weight:600; color:#0f172a; margin-top:2px;">Netto: ${escapeHtml(fmtCurr(it.nettoUeberschuss))}</div>
+                        ${calcHtml}
                     </td>
                     <td style="padding:8px 10px; border-bottom:1px solid #e2e8f0; text-align:right; vertical-align:top; white-space:nowrap; font-weight:700; color:#15803d; font-size:13px;">
                         - ${escapeHtml(fmtCurr(it.schuetzeAnteil))}
-                        <div style="font-size:10.5px; font-weight:400; color:#64748b;">(1/${it.anzahlSchuetzen} Anteil)</div>
+                        <div style="font-size:10.5px; font-weight:400; color:#64748b;">${shareSubHtml}</div>
                     </td>
                     <td style="padding:8px 10px; border-bottom:1px solid #e2e8f0; text-align:center; vertical-align:top;">
                         ${linksHtml}
@@ -5799,12 +5920,22 @@
             const rangTxt = it.rang ? `, ${it.rang}. Rang` : '';
             const totTxt = it.gruppeTotalPunkte ? `, Total ${it.gruppeTotalPunkte} Pkt.` : '';
             const myPtsTxt = it.schuetzePunkte ? `${it.schuetzePunkte} Pkt.` : '-';
-            textLines.push(
-                `${idx + 1}. ${it.anlassName} – Gruppe «${it.gruppeName}» (${ myPtsTxt } von dir${rangTxt}${totTxt})`,
-                `   Gruppengewinn Brutto: ${fmtCurr(it.gewinnBrutto)} | Abzug Doppel Verein: -${fmtCurr(it.abzugDoppel)} | Überschuss: ${fmtCurr(it.nettoUeberschuss)}`,
-                `   -> Dein gutgeschriebener Anteil (1/${it.anzahlSchuetzen}): -${fmtCurr(it.schuetzeAnteil)}`,
-                `   -> Gruppe: ${it.teamPlain}`
-            );
+            const isPureEinzelForMe = it.isEinzelOnly || (it.grpAmt === 0 && it.einzelAmt > 0);
+            const shareSubTxt = it.shareSubLabelPlain.replace(/\n/g, ' ');
+
+            if (isPureEinzelForMe) {
+                textLines.push(
+                    `${idx + 1}. ${it.anlassName} – Einzelwertung (${myPtsTxt} von dir)`,
+                    `   -> Dein gutgeschriebener ${shareSubTxt}: -${fmtCurr(it.schuetzeAnteil)}`
+                );
+            } else {
+                textLines.push(
+                    `${idx + 1}. ${it.anlassName} – Gruppe «${it.gruppeName}» (${myPtsTxt} von dir${rangTxt}${totTxt})`,
+                    `   Gruppengewinn Brutto: ${fmtCurr(it.gewinnBrutto)} | Abzug Doppel Verein: -${fmtCurr(it.abzugDoppel)} | Überschuss: ${fmtCurr(it.nettoUeberschuss)}`,
+                    `   -> Dein gutgeschriebener Anteil (${shareSubTxt}): -${fmtCurr(it.schuetzeAnteil)}`,
+                    `   -> Gruppe: ${it.teamPlain}`
+                );
+            }
             if (it.links && it.links.length > 0) {
                 it.links.forEach(lk => {
                     textLines.push(`   -> ${lk.label} (Link 180 Tage gültig bis ${validUntilStr}): ${lk.url}`);
