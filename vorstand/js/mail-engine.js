@@ -100,10 +100,19 @@
      * @param {string} testTargetEmail
      */
     window.testSmtpConnectionViaEngine = async function (testTargetEmail) {
-        if (!testTargetEmail || !testTargetEmail.includes('@')) {
-            alert('Bitte eine gültige Test-E-Mail-Adresse angeben.');
+        const cleanEmail = String(testTargetEmail || '').trim();
+        if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+            if (window.UIConfirmKit) {
+                await window.UIConfirmKit.alert({
+                    title: 'Ungültige E-Mail-Adresse',
+                    message: 'Bitte gib eine gültige Test-E-Mail-Adresse an.',
+                    type: 'warning'
+                });
+            }
             return;
         }
+
+        const safeEmail = (typeof escapeHtml === 'function') ? escapeHtml(cleanEmail) : cleanEmail;
 
         if (typeof showLoadingOverlay === 'function') {
             showLoadingOverlay('Sende Test-E-Mail über Supabase Mail-Engine...');
@@ -111,7 +120,7 @@
 
         try {
             const res = await window.sendMailViaEngine({
-                to: testTargetEmail,
+                to: cleanEmail,
                 subject: `Test-Mail Supabase Mail-Engine [${new Date().toLocaleTimeString('de-CH')}]`,
                 html: `
                     <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 8px; max-width: 500px;">
@@ -120,7 +129,7 @@
                         <ul>
                             <li><strong>System:</strong> Supabase Edge Function (send-email)</li>
                             <li><strong>Zeitstempel:</strong> ${new Date().toLocaleString('de-CH')}</li>
-                            <li><strong>Empfänger:</strong> ${testTargetEmail}</li>
+                            <li><strong>Empfänger:</strong> ${safeEmail}</li>
                         </ul>
                         <p style="font-size: 12px; color: #666; margin-bottom: 0;">Bereit für Phase 20 (Gmail / Infomaniak Transition).</p>
                     </div>
@@ -132,8 +141,12 @@
             if (res.success) {
                 if (typeof showSuccess === 'function') {
                     showSuccess(`🎉 ${res.message || 'Test-Mail erfolgreich versendet!'}`);
-                } else {
-                    alert(`🎉 ${res.message || 'Test-Mail erfolgreich versendet!'}`);
+                } else if (window.UIConfirmKit) {
+                    await window.UIConfirmKit.alert({
+                        title: 'Test-Mail gesendet',
+                        message: escapeHtml(res.message || 'Test-Mail erfolgreich versendet!'),
+                        type: 'success'
+                    });
                 }
             } else {
                 throw new Error(res.error || 'Versand fehlgeschlagen.');
@@ -141,8 +154,12 @@
         } catch (e) {
             if (typeof showError === 'function') {
                 showError(`Fehler beim SMTP-Test: ${e.message}`);
-            } else {
-                alert(`❌ Fehler beim SMTP-Test: ${e.message}`);
+            } else if (window.UIConfirmKit) {
+                await window.UIConfirmKit.alert({
+                    title: 'SMTP-Test fehlgeschlagen',
+                    message: `Fehler beim SMTP-Test: ${typeof escapeHtml === 'function' ? escapeHtml(e.message) : e.message}`,
+                    type: 'danger'
+                });
             }
         } finally {
             if (typeof hideLoadingOverlay === 'function') {
@@ -153,14 +170,49 @@
 
     /**
      * Interaktiver Prompt für den Vorstand zur Durchführung eines SMTP-Verbindungstests
+     * @param {HTMLElement} [btnEl]
      */
-    window.promptSmtpTest = async function () {
-        const defaultMail = (window._currentLoggedInUser && window._currentLoggedInUser.email) || 'daniel.hunziker@gmail.com';
-        const target = prompt('Ziel-E-Mail-Adresse für den SMTP-Testversand angeben:', defaultMail);
-        if (!target) return;
-        await window.testSmtpConnectionViaEngine(target.trim());
-        if (typeof loadMailLogData === 'function') {
-            setTimeout(() => loadMailLogData(true), 1200);
+    window.promptSmtpTest = async function (btnEl) {
+        if (window.Perms && !window.Perms.has('mail.manage') && !window.Perms.has('*')) {
+            if (window.UIConfirmKit) {
+                await window.UIConfirmKit.alert({
+                    title: 'Keine Berechtigung',
+                    message: 'Für den SMTP-Testversand benötigst du die Berechtigung «Mail verwalten».',
+                    type: 'warning'
+                });
+            }
+            return;
+        }
+
+        const defaultMail = (window._currentLoggedInUser && window._currentLoggedInUser.email) || '';
+        let target = null;
+
+        if (window.UIConfirmKit && typeof window.UIConfirmKit.prompt === 'function') {
+            target = await window.UIConfirmKit.prompt({
+                title: 'SMTP-Verbindung testen',
+                message: 'Gib die Ziel-E-Mail-Adresse für den Testversand ein:',
+                defaultValue: defaultMail,
+                placeholder: 'name@beispiel.ch',
+                inputType: 'email',
+                confirmText: 'Test-Mail senden',
+                cancelText: 'Abbrechen',
+                type: 'primary'
+            });
+        }
+
+        if (!target || typeof target !== 'string' || !target.trim()) return;
+
+        const runTest = async () => {
+            await window.testSmtpConnectionViaEngine(target.trim());
+            if (typeof loadMailLogData === 'function') {
+                setTimeout(() => loadMailLogData(true), 1200);
+            }
+        };
+
+        if (btnEl && window.UIButtonKit && typeof window.UIButtonKit.withLoading === 'function') {
+            await window.UIButtonKit.withLoading(btnEl, runTest);
+        } else {
+            await runTest();
         }
     };
 

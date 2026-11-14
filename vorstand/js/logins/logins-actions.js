@@ -465,18 +465,14 @@ window.loginsSendInvite = async function(email, username) {
     });
     if (error) throw error;
 
-    // Protokollieren in public.mail_logs (Projekt-Richtlinie 2)
+    // Protokollieren in public.mail_logs via SECURITY DEFINER RPC (Projekt-Richtlinie 2)
     try {
-      await supa.from('mail_logs').insert([{
-        recipient_email: email,
-        recipient_name: username || 'Admin',
-        subject: 'Aktivierung Vorstand-Zugang / Passwort setzen (Supabase Auth)',
-        status: 'gesendet',
-        sender_email: 'sportschuetzen.muhen@gmail.com',
-        sender_name: 'Sportschützen Muhen (Auth)',
-        sent_via: 'Supabase_Auth_GoTrue',
-        created_by: window.currentUser || 'admin'
-      }]);
+      await supa.rpc('log_auth_mail_event', {
+        p_event_type: 'invite',
+        p_recipient_email: email,
+        p_recipient_name: username || 'Admin',
+        p_record_id: 'invite_' + Date.now()
+      });
     } catch (logErr) {
       console.warn("Mail-Log Protokollierung fehlgeschlagen:", logErr);
     }

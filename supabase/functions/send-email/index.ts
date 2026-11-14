@@ -222,22 +222,63 @@ Deno.serve(async (req) => {
     }
   }
 
-  const senderEmail = payload.senderEmail || smtpUser;
-  const senderName = payload.senderName || "Sportschützen Muhen";
+  const stripHeaderChars = (val: string) => String(val || "").replace(/[\r\n<>]/g, "").trim();
+  const senderEmail = stripHeaderChars(payload.senderEmail || smtpUser) || smtpUser;
+  const senderName = String(payload.senderName || "Sportschützen Muhen").replace(/[\r\n]/g, " ").trim();
   const fromHeader = `${encodeHeaderPhrase(senderName)} <${senderEmail}>`;
+
+  // Empfänger & CC/BCC von Zeilenumbrüchen bereinigen (SMTP-Header-Injection-Schutz)
+  recipients = recipients.map(stripHeaderChars).filter(Boolean);
 
   // CC bereinigen: Duplikate entfernen und Adressen ausschliessen, die bereits in 'recipients' stehen
   const recipientSet = new Set(recipients.map(r => r.toLowerCase()));
   const ccList: string[] = Array.from(new Set(rawCcList))
-    .map((s) => s.trim())
+    .map(stripHeaderChars)
     .filter((s) => s && !recipientSet.has(s.toLowerCase()));
 
-  const bccList: string[] = Array.isArray(payload.bcc)
+  const bccList: string[] = (Array.isArray(payload.bcc)
     ? payload.bcc
-    : (payload.bcc ? payload.bcc.split(/[,;]/).map((s) => s.trim()).filter(Boolean) : []);
+    : (payload.bcc ? payload.bcc.split(/[,;]/).map((s) => s.trim()).filter(Boolean) : []))
+    .map(stripHeaderChars)
+    .filter(Boolean);
 
-  // Missbrauchsschutz: Anonyme Aufrufe (ohne User-JWT / Service-Role) nur für verifizierte Website-Flows zulassen
-  if (!isServiceRole && !callerUser) {
+  const reqModuleRef = String(payload.moduleRef || payload.module || "allgemein").trim();
+
+  // RBAC-Prüfung für authentifizierte Benutzer (kein freier SMTP-/Storage-Zugriff für normale Mitglieder oder reine .view-Rollen)
+  let isAuthorizedBoardManager = false;
+  if (!isServiceRole && callerUser) {
+    try {
+      const { data: userRoles } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", callerUser.id);
+
+      const roleList = (userRoles || []).map((r: { role: string }) => String(r.role || "").toLowerCase()).filter(Boolean);
+      if (roleList.includes("admin")) {
+        isAuthorizedBoardManager = true;
+      } else if (roleList.length > 0) {
+        const { data: rolePerms } = await supabase
+          .from("role_permissions")
+          .select("permission")
+          .in("role", roleList);
+
+        const perms = new Set((rolePerms || []).map((p: { permission: string }) => String(p.permission || "")));
+        if (perms.has("*")) {
+          isAuthorizedBoardManager = true;
+        } else if (reqModuleRef === "system_test") {
+          isAuthorizedBoardManager = perms.has("mail.manage");
+        } else {
+          isAuthorizedBoardManager = Array.from(perms).some((p) => p.endsWith(".manage"));
+        }
+      }
+    } catch (rbacErr) {
+      console.warn("⚠️ RBAC-Prüfung in send-email fehlgeschlagen:", rbacErr);
+      isAuthorizedBoardManager = false;
+    }
+  }
+
+  // Missbrauchsschutz: Unberechtigte oder anonyme Aufrufe nur für verifizierte öffentliche Website-Flows zulassen
+  if (!isServiceRole && !isAuthorizedBoardManager) {
     const isWebsiteContactFlow =
       payload.systemMailKey === "Info_Mail_Kontakt_Website" &&
       !payload.to &&
@@ -245,7 +286,7 @@ Deno.serve(async (req) => {
       !payload.bcc;
 
     let isAllowedPublicRentalFlow = false;
-    if (!isWebsiteContactFlow && payload.moduleRef === "vermietung" && bccList.length === 0) {
+    if (!isWebsiteContactFlow && reqModuleRef === "vermietung" && bccList.length === 0) {
       const allowedEmails = new Set<string>(["sportschuetzen.muhen@gmail.com"]);
       const addEmailList = (val: unknown) => {
         if (!val) return;
@@ -285,18 +326,25 @@ Deno.serve(async (req) => {
 
     if (!isWebsiteContactFlow && !isAllowedPublicRentalFlow) {
       return new Response(
-        JSON.stringify({ success: false, error: "Nicht autorisierter E-Mail-Versand (Authentifizierung erforderlich)." }),
+        JSON.stringify({
+          success: false,
+          error: callerUser
+            ? "Keine Berechtigung für den E-Mail-Versand (erfordert Vorstands-Verwaltungsrecht)."
+            : "Nicht autorisierter E-Mail-Versand (Authentifizierung erforderlich).",
+        }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
   }
 
-  const subject = payload.subject || "Mitteilung Sportschützen Muhen";
+  const subject = String(payload.subject || "Mitteilung Sportschützen Muhen").replace(/[\r\n]/g, " ").trim();
   const bodyText = payload.text || (payload.html ? payload.html.replace(/<[^>]*>/g, " ") : "");
   const bodyHtml = payload.html || `<div style="font-family: sans-serif; font-size: 14px;">${bodyText.replace(/\n/g, "<br>")}</div>`;
   const snippet = bodyText.substring(0, 450);
 
   // 2. Anhänge laden / vorbereiten (Base64, storagePath oder Download via path URL)
+  // Storage-Downloads via Service-Role sind strikt auf Service-Role und autorisierte Manager beschränkt!
+  const canAccessPrivateStorage = isServiceRole || isAuthorizedBoardManager;
   const preparedAttachments: { filename: string; contentType: string; base64: string }[] = [];
   if (payload.attachments && payload.attachments.length > 0) {
     for (const att of payload.attachments) {
@@ -308,6 +356,10 @@ Deno.serve(async (req) => {
           base64: cleanBase64,
         });
       } else {
+        if (!canAccessPrivateStorage) {
+          console.warn("⚠️ Storage-/URL-Anhang für unberechtigten Aufrufer blockiert.");
+          continue;
+        }
         // storagePath oder path ermitteln
         let storagePath = att.storagePath;
         let bucket = att.storageBucket || "operatives-storage";

@@ -1497,7 +1497,14 @@
                     <option value="anlasse">📅 Anlässe</option>
                     <option value="vermietung">🔑 Vermietung</option>
                     <option value="mitglieder">👥 Mitglieder</option>
+                    <option value="gv">🏛️ Generalversammlung</option>
+                    <option value="manager">🎯 Team Manager</option>
+                    <option value="auth">🔐 Auth / Login</option>
+                    <option value="logins">🪪 Logins &amp; Einladungen</option>
+                    <option value="system_test">🧪 System-Test</option>
+                    <option value="allgemein">✉️ Allgemein</option>
                     <option value="sonstige">📁 Sonstige</option>
+                    <option value="unbekannt">❓ Unbekannt</option>
                 </select>
                 <select id="mail-log-filter-status" class="form-select form-select-sm" style="width:auto"
                         onchange="filterMailLog()">
@@ -1509,10 +1516,10 @@
                 <input type="text" id="mail-log-search" class="form-control form-control-sm"
                        style="width:220px" placeholder="🔍 Empfänger / Betreff..."
                        oninput="filterMailLog()">
-                <button class="btn btn-sm btn-outline-primary ms-auto" onclick="promptSmtpTest()" title="Sendet eine Test-Nachricht über die Supabase Mail-Engine (Gmail / Infomaniak)">
+                <button class="btn btn-sm btn-outline-primary ms-auto write-protected" onclick="promptSmtpTest(this)" title="Sendet eine Test-Nachricht über die Supabase Mail-Engine (Gmail / Infomaniak)">
                     <i class="fas fa-paper-plane me-1"></i> SMTP-Test senden
                 </button>
-                <button class="btn btn-sm btn-outline-secondary" onclick="loadMailLogData(true)">
+                <button class="btn btn-sm btn-outline-secondary" onclick="loadMailLogData(true, this)">
                     <i class="fas fa-sync me-1"></i> Aktualisieren
                 </button>
             </div>
@@ -2977,8 +2984,8 @@
 <script src="js/vermietung/vermietung-list.js?v=20261108_1"></script>
 <script src="js/vermietung/vermietung-manager.js?v=20261114_1"></script>
 <script src="js/vermietung/vermietung-automation.js?v=20261108_1"></script>
-<script src="js/mail.js"></script>
-<script src="js/mail-engine.js"></script>
+<script src="js/mail.js?v=20261114_1"></script>
+<script src="js/mail-engine.js?v=20261114_1"></script>
 <script src="js/jahresbeitrag/jahresbeitrag-core.js"></script>
 <script src="js/jahresbeitrag/jahresbeitrag-calc.js"></script>
 <script src="js/jahresbeitrag/jahresbeitrag-accounting.js"></script>

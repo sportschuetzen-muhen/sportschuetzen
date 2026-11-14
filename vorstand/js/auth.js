@@ -436,21 +436,14 @@ async function submitForgotPassword(e) {
 
         if (resetErr) throw resetErr;
 
-        // Audit-Log in public.mail_logs (Single Source of Truth / Postausgang)
+        // Audit-Log in public.mail_logs via SECURITY DEFINER RPC (Single Source of Truth / Postausgang)
         try {
-            await supa.from('mail_logs').insert([{
-                module_ref: 'auth',
-                record_id: 'pwd_reset_' + Date.now(),
-                recipient_email: targetEmail,
-                recipient_name: inputVal,
-                subject: 'Passwort zurücksetzen | Vorstandsportal Sportschützen Muhen',
-                body_snippet: `Passwort-Reset-Link angefordert für «${inputVal}» (${targetEmail}) via Supabase Auth`,
-                status: 'gesendet',
-                sender_email: 'sportschuetzen.muhen@gmail.com',
-                sender_name: 'Sportschützen Muhen (Auth)',
-                sent_via: 'Supabase_Auth_GoTrue',
-                created_by: 'vorstand_auth'
-            }]);
+            await supa.rpc('log_auth_mail_event', {
+                p_event_type: 'pwd_reset',
+                p_recipient_email: targetEmail,
+                p_recipient_name: inputVal,
+                p_record_id: 'pwd_reset_' + Date.now()
+            });
         } catch (logErr) {
             console.warn("Konnte mail_logs nicht aktualisieren:", logErr);
         }
@@ -557,21 +550,14 @@ async function submitMagicLink(e) {
 
         if (otpErr) throw otpErr;
 
-        // Audit-Log in public.mail_logs (Single Source of Truth / Postausgang)
+        // Audit-Log in public.mail_logs via SECURITY DEFINER RPC (Single Source of Truth / Postausgang)
         try {
-            await supa.from('mail_logs').insert([{
-                module_ref: 'auth',
-                record_id: 'magic_link_' + Date.now(),
-                recipient_email: targetEmail,
-                recipient_name: inputVal,
-                subject: 'Anmelde-Link (Magic Link) | Vorstandsportal Sportschützen Muhen',
-                body_snippet: `Einmalklick-Anmelde-Link angefordert für «${inputVal}» (${targetEmail}) via Supabase Auth`,
-                status: 'gesendet',
-                sender_email: 'sportschuetzen.muhen@gmail.com',
-                sender_name: 'Sportschützen Muhen (Auth)',
-                sent_via: 'Supabase_Auth_GoTrue',
-                created_by: 'vorstand_auth'
-            }]);
+            await supa.rpc('log_auth_mail_event', {
+                p_event_type: 'magic_link',
+                p_recipient_email: targetEmail,
+                p_recipient_name: inputVal,
+                p_record_id: 'magic_link_' + Date.now()
+            });
         } catch (logErr) {
             console.warn("Konnte mail_logs nicht aktualisieren:", logErr);
         }
