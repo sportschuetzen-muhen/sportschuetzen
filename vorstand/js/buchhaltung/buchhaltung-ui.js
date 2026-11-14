@@ -62,7 +62,7 @@ window.renderBuchhaltung = function () {
           <option value="2025" ${window._bhYear === 2025 ? 'selected' : ''}>Jahr: 2025</option>
           <option value="2024" ${window._bhYear === 2024 ? 'selected' : ''}>Jahr: 2024</option>
         </select>
-        ${(typeof hasWriteAccess === 'function' ? hasWriteAccess('buchhaltung') : true) ? `
+        ${(typeof window.bhCanWrite === 'function' ? window.bhCanWrite() : (typeof hasWriteAccess === 'function' ? hasWriteAccess('buchhaltung') : false)) ? `
         <button class="btn btn-sm btn-outline-warning text-dark fw-bold shadow-sm" onclick="if (typeof jmOpenGruppengewinneModal === 'function') jmOpenGruppengewinneModal();" title="Gruppengewinne (Konto 1301) verwalten & abrechnen">
           <i class="fas fa-trophy me-1 text-warning"></i> Gruppengewinne (1301)
         </button>
@@ -184,11 +184,13 @@ window.renderSubgroupRows = function (accounts, subgroupTitle) {
 
   let html = `
     <tr class="table-light">
-      <td colspan="3" class="ps-3 fw-bold text-muted small" style="background-color: rgba(15,58,93,0.02);">${subgroupTitle}</td>
+      <td colspan="3" class="ps-3 fw-bold text-muted small" style="background-color: rgba(15,58,93,0.02);">${bhEscHtml(subgroupTitle)}</td>
     </tr>
   `;
 
   accounts.forEach(acc => {
+    const safeKonto = bhEscHtml(acc.konto);
+    const safeKontoJs = bhEscJs(acc.konto);
     let proMemoriaHTML = '';
     if (String(acc.konto).trim() === '1510' && window._bhProMemoriaGewehreCount > 0) {
       const pmVal = window._bhProMemoriaGewehreCount * 0.5;
@@ -203,10 +205,10 @@ window.renderSubgroupRows = function (accounts, subgroupTitle) {
     html += `
       <tr class="bh-detail-row bh-account-row">
         <td class="ps-4 font-monospace" style="width: 80px;">
-          <a href="#" onclick="bhOpenKontoauszugModal('${acc.konto}'); return false;" class="text-primary fw-bold text-decoration-none" title="Kontoauszug anzeigen">${acc.konto}</a>
+          <a href="#" onclick="bhOpenKontoauszugModal('${safeKontoJs}'); return false;" class="text-primary fw-bold text-decoration-none" title="Kontoauszug anzeigen">${safeKonto}</a>
         </td>
         <td class="ps-3">
-          ${acc.bezeichnung}
+          ${bhEscHtml(acc.bezeichnung)}
           ${proMemoriaHTML}
         </td>
         <td class="text-end fw-semibold text-dark">${fmtChf(acc._endsaldo)}</td>
@@ -216,7 +218,7 @@ window.renderSubgroupRows = function (accounts, subgroupTitle) {
 
   html += `
     <tr class="bh-subtotal-row">
-      <td colspan="2" class="ps-3 text-muted italic">Subtotal ${subgroupTitle}</td>
+      <td colspan="2" class="ps-3 text-muted italic">Subtotal ${bhEscHtml(subgroupTitle)}</td>
       <td class="text-end fw-bold text-dark">${fmtChf(sum)}</td>
     </tr>
   `;
@@ -573,7 +575,7 @@ window.bhToggleJournalTransitFilter = function () {
 };
 
 window.renderTabJournal = function (container) {
-  const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('buchhaltung') : true;
+  const canWrite = typeof window.bhCanWrite === 'function' ? window.bhCanWrite() : (typeof hasWriteAccess === 'function' ? hasWriteAccess('buchhaltung') : false);
   const tableResp = container.querySelector('.table-responsive');
   const tableScrollTop = tableResp ? tableResp.scrollTop : 0;
   const windowScrollTop = window.scrollY || document.documentElement.scrollTop;
@@ -706,15 +708,15 @@ window.renderTabJournal = function (container) {
         <input type="checkbox" class="form-check-input cursor-pointer bh-journal-check" data-id="${item.id}" ${isSelected ? 'checked' : ''} onchange="bhToggleJournalRow(${item.id}, this.checked, event)" title="Zeile auswählen">
       </td>
       <td data-col-id="id" class="fw-semibold text-muted small tk-col-id">${item.id}</td>
-      <td data-col-id="datum" class="tk-col-datum">${isoToDisplay(item.datum)}</td>
-      <td data-col-id="beleg_nr" class="fw-bold text-dark small tk-col-beleg_nr">${item.beleg_nr}</td>
-      <td data-col-id="beschreibung" class="small fw-semibold tk-col-beschreibung">${escapeHtml(item.beschreibung)}</td>
+      <td data-col-id="datum" class="tk-col-datum">${bhFmtDate(item.datum)}</td>
+      <td data-col-id="beleg_nr" class="fw-bold text-dark small tk-col-beleg_nr">${bhEscHtml(item.beleg_nr)}</td>
+      <td data-col-id="beschreibung" class="small fw-semibold tk-col-beschreibung">${bhEscHtml(item.beschreibung)}</td>
       <td data-col-id="konto_soll" class="tk-col-konto_soll">
         ${cleanSoll ? `
-          <span class="bh-konto-badge bh-konto-soll-badge clickable ${cleanSoll === '1090' ? 'bg-info text-dark fw-bold' : ''}" style="cursor: pointer;" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${cleanSoll}')" title="Kontoblatt für Konto ${item.konto_soll} öffnen">${item.konto_soll}</span> 
+          <span class="bh-konto-badge bh-konto-soll-badge clickable ${cleanSoll === '1090' ? 'bg-info text-dark fw-bold' : ''}" style="cursor: pointer;" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${bhEscJs(cleanSoll)}')" title="Kontoblatt für Konto ${bhEscHtml(item.konto_soll)} öffnen">${bhEscHtml(item.konto_soll)}</span> 
           ${cleanSoll === '1090' ? '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1" style="font-size:10px;"><i class="fas fa-clock me-1"></i>Klärung</span>' : ''}
           ${cleanSoll === '1099' ? '<span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1" style="font-size:10px;"><i class="fas fa-exchange-alt me-1"></i>Geldtransit</span>' : ''}
-          <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_soll)}</span>
+          <span class="text-muted ms-1 small">${bhEscHtml(getAccountNameByCode(item.konto_soll))}</span>
         ` : `
           <span class="badge bg-warning text-dark border border-warning" title="Soll-Konto fehlt (Klicken auf Bearbeiten zum Nacherfassen)">
             <i class="fas fa-exclamation-triangle me-1"></i>Soll fehlt
@@ -723,10 +725,10 @@ window.renderTabJournal = function (container) {
       </td>
       <td data-col-id="konto_haben" class="tk-col-konto_haben">
         ${cleanHaben ? `
-          <span class="bh-konto-badge bh-konto-haben-badge clickable ${cleanHaben === '1090' ? 'bg-info text-dark fw-bold' : ''}" style="cursor: pointer;" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${cleanHaben}')" title="Kontoblatt für Konto ${item.konto_haben} öffnen">${item.konto_haben}</span> 
+          <span class="bh-konto-badge bh-konto-haben-badge clickable ${cleanHaben === '1090' ? 'bg-info text-dark fw-bold' : ''}" style="cursor: pointer;" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${bhEscJs(cleanHaben)}')" title="Kontoblatt für Konto ${bhEscHtml(item.konto_haben)} öffnen">${bhEscHtml(item.konto_haben)}</span> 
           ${cleanHaben === '1090' ? '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1" style="font-size:10px;"><i class="fas fa-clock me-1"></i>Klärung</span>' : ''}
           ${cleanHaben === '1099' ? '<span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1" style="font-size:10px;"><i class="fas fa-exchange-alt me-1"></i>Geldtransit</span>' : ''}
-          <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_haben)}</span>
+          <span class="text-muted ms-1 small">${bhEscHtml(getAccountNameByCode(item.konto_haben))}</span>
         ` : `
           <span class="badge bg-warning text-dark border border-warning" title="Haben-Konto fehlt (Klicken auf Bearbeiten zum Nacherfassen)">
             <i class="fas fa-exclamation-triangle me-1"></i>Haben fehlt
@@ -735,8 +737,8 @@ window.renderTabJournal = function (container) {
       </td>
       <td data-col-id="betrag" class="text-end fw-bold ${amountClass} tk-col-betrag" style="white-space: nowrap;">${amountSign}${fmtChf(item.betrag)}</td>
       <td data-col-id="buchungstyp" class="tk-col-buchungstyp">
-        <span class="badge ${badgeClass} border-0 small me-1 mb-1 mb-sm-0">${badgeLabel}</span>
-        <span class="badge bg-light text-dark border small">${item.typ || 'Rechnung'}</span>
+        <span class="badge ${badgeClass} border-0 small me-1 mb-1 mb-sm-0">${bhEscHtml(badgeLabel)}</span>
+        <span class="badge bg-light text-dark border small">${bhEscHtml(item.typ || 'Rechnung')}</span>
       </td>
       <td data-col-id="aktionen" class="text-end tk-col-aktionen" style="white-space: nowrap;" onclick="event.stopPropagation()">
         <button class="bh-edit-btn text-primary" onclick="bhPrintJournalBeleg(${item.id})" title="Kassenbeleg drucken / als PDF ablegen">
@@ -924,10 +926,10 @@ window.bhUpdateJournalSelectionUI = function () {
   bhUpdateJournalMasterCheckbox();
 };
 
-window.bhPrintSelectedJournalBelege = function () {
+window.bhPrintSelectedJournalBelege = async function () {
   const selectedIds = Array.from(window._bhSelectedJournalIds || []);
   if (selectedIds.length === 0) {
-    alert('Bitte mindestens eine Buchung auswählen.');
+    await window.bhAlert('Keine Auswahl', 'Bitte wähle mindestens eine Buchung aus.', 'warning');
     return;
   }
   if (typeof bhPrintJournalBeleg === 'function') {
@@ -1356,7 +1358,7 @@ window.bhFilterJournal = function (query) {
 // Zeilen-Klick Handler für Kontenrahmen
 window.bhHandleAccountRowClick = function (event, konto, rowIndex) {
   if (event.target.closest('a, button, input, select')) return;
-  if (typeof hasWriteAccess === 'function' && !hasWriteAccess('buchhaltung')) return;
+  if (!(window.bhCanWrite ? window.bhCanWrite() : false)) return;
   if (typeof window.bhOpenKontoModal === 'function') {
     window.bhOpenKontoModal(konto, rowIndex);
   }
@@ -1364,7 +1366,7 @@ window.bhHandleAccountRowClick = function (event, konto, rowIndex) {
 
 // RENDERING: TAB 3 – KONTENRAHMEN & BUDGET
 window.renderTabKontenrahmen = function (container) {
-  const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('buchhaltung') : true;
+  const canWrite = typeof window.bhCanWrite === 'function' ? window.bhCanWrite() : (typeof hasWriteAccess === 'function' ? hasWriteAccess('buchhaltung') : false);
   let sortedKonten = [...window._bhKontenrahmen];
   const col = window._bhKontenSortCol;
   const asc = window._bhKontenSortAsc;
@@ -1407,11 +1409,14 @@ window.renderTabKontenrahmen = function (container) {
     if (cat.main === 'Aufwand') { classLabel = 'Aufwand'; classColor = 'bg-danger'; }
     if (cat.main === 'Abschluss') { classLabel = 'Abschluss'; classColor = 'bg-dark'; }
 
+    const safeKonto = bhEscHtml(acc.konto);
+    const safeKontoJs = bhEscJs(acc.konto);
+
     return `
-      <tr class="bh-account-row" ${canWrite ? `onclick="bhHandleAccountRowClick(event, '${acc.konto}', ${acc._rowIndex || 'null'})" title="Klicken zum Bearbeiten von Konto ${acc.konto}"` : ''}>
-        <td data-col-id="konto" class="tk-col-konto"><a href="#" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${acc.konto}'); return false;" class="bh-konto-badge text-primary text-decoration-none" title="Kontoauszug anzeigen">${acc.konto}</a></td>
-        <td data-col-id="bezeichnung" class="fw-bold text-dark tk-col-bezeichnung">${acc.bezeichnung}</td>
-        <td data-col-id="klasse" class="tk-col-klasse"><span class="badge ${classColor} opacity-75">${classLabel}</span></td>
+      <tr class="bh-account-row" ${canWrite ? `onclick="bhHandleAccountRowClick(event, '${safeKontoJs}', ${acc._rowIndex || 'null'})" title="Klicken zum Bearbeiten von Konto ${safeKonto}"` : ''}>
+        <td data-col-id="konto" class="tk-col-konto"><a href="#" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${safeKontoJs}'); return false;" class="bh-konto-badge text-primary text-decoration-none" title="Kontoauszug anzeigen">${safeKonto}</a></td>
+        <td data-col-id="bezeichnung" class="fw-bold text-dark tk-col-bezeichnung">${bhEscHtml(acc.bezeichnung)}</td>
+        <td data-col-id="klasse" class="tk-col-klasse"><span class="badge ${classColor} opacity-75">${bhEscHtml(classLabel)}</span></td>
         <td data-col-id="eroeffnungssaldo" class="text-end text-muted tk-col-eroeffnungssaldo">${fmtChf(acc._dynamicEroeffnungssaldo)}</td>
         <td data-col-id="veraenderung" class="text-end ${acc._veraenderung >= 0 ? 'text-success' : 'text-danger'} tk-col-veraenderung">
           ${acc._veraenderung >= 0 ? '+' : ''}${fmtChf(acc._veraenderung)}
@@ -1420,10 +1425,10 @@ window.renderTabKontenrahmen = function (container) {
         <td data-col-id="budget" class="text-end fw-semibold text-secondary tk-col-budget">${budgetVal > 0 ? fmtChf(budgetVal) : '–'}</td>
         <td data-col-id="aktionen" class="text-end tk-col-aktionen" style="white-space: nowrap;">
           ${canWrite ? `
-          <button class="bh-edit-btn" onclick="event.stopPropagation(); bhOpenKontoModal('${acc.konto}', ${acc._rowIndex || 'null'})" title="Konto bearbeiten">
+          <button class="bh-edit-btn" onclick="event.stopPropagation(); bhOpenKontoModal('${safeKontoJs}', ${acc._rowIndex || 'null'})" title="Konto bearbeiten">
             <i class="fas fa-edit"></i>
           </button>
-          <button class="bh-edit-btn text-danger ms-1" onclick="event.stopPropagation(); bhDeleteKonto('${acc.konto}')" title="Konto löschen">
+          <button class="bh-edit-btn text-danger ms-1" onclick="event.stopPropagation(); bhDeleteKonto('${safeKontoJs}')" title="Konto löschen">
             <i class="fas fa-trash-alt"></i>
           </button>
           ` : ''}

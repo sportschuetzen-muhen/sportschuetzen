@@ -1,9 +1,9 @@
 # Fachdokumentation: Finanzbuchhaltung (FiBu) & Bankabgleich
 
 > **Status:** PRODUKTIV (Supabase Single Source of Truth)  
-> **Stand:** Oktober 2026  
-> **Komponenten:** `public.accounting_accounts`, `accounting_journal`, `accounting_budgets`, `accounting_bank_rules`, `invoice_payments`  
-> **Frontend:** [`vorstand/js/buchhaltung/`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/buchhaltung/) (`buchhaltung-core.js`, `buchhaltung-bank.js`, `buchhaltung-journal.js`, `buchhaltung-konten.js`, `buchhaltung-controlling.js`)
+> **Stand:** November 2026  
+> **Komponenten:** `public.accounting_accounts`, `accounting_journal`, `accounting_payment_orders`, `accounting_budgets`, `accounting_bank_rules`, `accounting_cost_allocations`, `invoice_payments`  
+> **Frontend:** [`vorstand/js/buchhaltung/`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/buchhaltung/) (`buchhaltung-core.js`, `buchhaltung-ui.js`, `buchhaltung-modals.js`, `buchhaltung-bank.js`)
 
 ---
 
@@ -45,8 +45,8 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
 * **Ablauf beim Import:**
   1. Der Kassier lädt die `CAMT.054` XML-Datei der Bank im Cockpit hoch.
   2. Der Parser extrahiert die Gutschriften und sucht via QRR die zugehörige Rechnung in `public.invoices`.
-  3. Bei 100% Match wird die Zahlung in `public.invoice_payments` erfasst, der Status der Rechnung auf `bezahlt` aktualisiert und der Buchungssatz im Journal erzeugt.
-  4. Manuelle Tippfehler oder falsche Buchungsbeträge sind dadurch rechnerisch ausgeschlossen.
+  3. Bei 100% Match wird die Zahlung sowohl bei Einzel- als auch bei Batch-Verbuchungen (`bhBankBookOne`, `bhBankBookAll`, `bhBankBookSelected`) zentral über `RechnungsCore.recordPayment(..., { syncBookkeeping: false })` in `public.invoice_payments` erfasst, das Rechnungs-PDF im Hintergrund neu erzeugt (`RechnungsCore.renderPdf(..., { forceRecreate: true })`) und der Buchungssatz im Journal erzeugt (bei Vermietungen inklusive `rental_status_logs`-Protokollierung).
+  4. Manuelle Tippfehler, fehlerhafte Teilzahlungs-Salden oder umgangene Zahlungshistorien sind dadurch ausgeschlossen.
 * **E-Banking Gutschrifts-Automation (Vermietung):** Ergänzend zum periodischen CAMT-Sammelimport werden eingehende Mietzahlungen über die Edge Function `process-bank-mails` via Gmail-Schnittstelle und Kaskaden-Matching (Vertrags-Nr. oder Mietdatum + Nachname + exakter Betrag CHF 300.00) atomar über den `RechnungsCore` erfasst und direkt als Zahlungseingang verbucht.
 
 ### 2.4 Warum `accounting_journal.id` als `BIGSERIAL` (Integer) & Belegnummern-Chronologie?
@@ -79,7 +79,8 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
 
 ### 2.7 Intelligente Modul-Erkennung & Status-Rücksetzung beim Löschen im Journal
 * **Problemstellung & Kopplung:** Wird ein Buchungssatz im Journal gelöscht, dessen Zahlung zuvor ein Fachmodul (Rechnungen `invoices`, Jahresbeitrag `contributions_header`, Vermietung `rental_requests` oder Inventar-Depots `inventory_deposits`) auf `bezahlt` gesetzt hatte, führte eine isolierte Journalzeilen-Löschung zu Diskrepanzen (z.B. CAMT-Bankimport markierte die Buchung weiterhin als «bereits gebucht»).
-* **Lösung & Kaskade:** Vor dem Löschen (Einzelbuchung, Split-Gruppe oder Sammellöschung) scannt `bhDetectLinkedModulesForJournal` automatisch Fremdschlüssel (`invoice_payments`), Belegnummern und Buchungstexte auf verknüpfte Vorgänge. Bei erkannten bezahlten Modulen öffnet sich ein Entscheidungsmodal, in welchem der Benutzer wählen kann, ob nur der Buchungssatz gelöscht werden soll oder ob zusätzlich der Status der verknüpften Rechnungen und Module wieder auf `offen` (bzw. `confirmed`) zurückgesetzt und Zahlungen entfernt werden sollen (inklusive CAMT-Cache-Freigabe zur erneuten Buchung).
+* **Lösung & Kaskade:** Vor dem Löschen (Einzelbuchung, Split-Gruppe oder Sammellöschung) scannt `bhDetectLinkedModulesForJournal` automatisch per parametrisierter `.in()`-Abfrage `invoice_payments`, Belegnummern und Buchungstexte auf verknüpfte Vorgänge. Beim Zurücksetzen (`bhCascadeResetLinkedModules`) werden ausschliesslich die dem gelöschten Journalbeleg zugeordneten `invoice_payments`-Einträge (über `paymentIds`) gelöscht — der Trigger `trg_invoice_payments_sync` berechnet `open_amount` und `status` (offen/teilbezahlt) automatisch korrekt neu, verbleibende Teilzahlungen bleiben erhalten und die Rechnungs-PDFs werden neu generiert (`RechnungsCore.renderPdf(..., { forceRecreate: true })`). Anschliessend gibt `bhReleaseBankMatchResults` die betroffenen CAMT-Zeilen wieder zur Buchung frei.
+* **Deduplizierung beim CAMT.053-Import:** Der XML-Parser (`bhBankParseCAMT053`) prüft auf XML-Parserfehler (`parsererror`) und versieht identische Buchungen innerhalb derselben Datei mit einer Vorkommens-Sequenz (`_dupSeq`) pro Konto-IBAN und Richtung (`CRDT`/`DBIT`), damit taggleiche Mehrfachzahlungen über denselben Betrag erhalten bleiben.
 
 ### 2.8 Netto-Zahlungsfluss & Ertragsminderungen bei Split-Verbunden (Sammelbuchungen)
 * **Problemstellung:** Enthält eine Sammelbuchung (z.B. Jahresbeitragsabrechnung mit Lizenz, Beitrag und Ehrenmitglieder-Rabatt) sowohl Erträge als auch Ertragsminderungen/Gutschriften, führte ein blindes Aufsummieren aller Zeilenbeträge zu einem verfälschten Brutto-Total (z.B. CHF 268.00 statt der effektiv eingegangenen CHF 68.00).
@@ -167,5 +168,6 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
 
 ## 4. Berechtigungen & RLS
 
-* **Einsehen (`finanzen.view`):** Rollen `kassier`, `admin`, `vorstand`, `revisor`.
-* **Buchen & Mutieren (`finanzen.buchhaltung`):** Strikt beschränkt auf `kassier` und `admin`.
+* **Einsehen (`buchhaltung.view`):** Read-Only Einsicht (fail-closed über `window.bhCanWrite()`, alle Schreibaktionen und Schreib-Dialoge deaktiviert/ausgeblendet).
+* **Buchen & Mutieren (`buchhaltung.manage`):** Vollzugriff auf Kontenrahmen, Budgets, Journalbuchungen/-löschungen, Zahlungsaufträge und CAMT-Bankabgleich (inklusive `admin` Superuser).
+* **RLS-Policies:** Alle Kerntabellen (`accounting_accounts`, `accounting_journal`, `accounting_budgets`, `accounting_bank_rules`, `accounting_cost_allocations`, sowie `accounting_payment_orders` via Migration `132_harden_accounting_payment_orders_rls.sql`) erzwingen über `public.rbac_allows(...)` strikt `buchhaltung.view` / `buchhaltung.manage` auf `SELECT` und `buchhaltung.manage` auf Schreiboperationen.

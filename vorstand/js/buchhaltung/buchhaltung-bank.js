@@ -51,7 +51,11 @@ window.getBhBankRules = function() {
   }
 };
 
-window.saveBhBankRules = function(rules) {
+window.saveBhBankRules = async function(rules) {
+  if (window.bhCanWrite && !window.bhCanWrite()) {
+    throw new Error('Keine Schreibberechtigung für Bankregeln.');
+  }
+
   window._bhBankServerRules = rules;
   try {
     localStorage.setItem('bh_bank_rules', JSON.stringify(rules));
@@ -61,37 +65,49 @@ window.saveBhBankRules = function(rules) {
 
   // 1. Supabase Persistence
   const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
-  if (sb) {
-    const isUuid = id => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-    const ruleRows = rules.map((r, i) => {
-      const row = {
-        label: String(r.label || ''),
-        pattern_party: String(r.pattern_party !== undefined && r.pattern_party !== null ? r.pattern_party : ''),
-        pattern_text: String(r.pattern_text !== undefined && r.pattern_text !== null ? r.pattern_text : ''),
-        pattern: String(r.pattern !== undefined && r.pattern !== null ? r.pattern : ''),
-        prefix: String(r.prefix || r.label || ''),
-        soll: String(r.soll || '').split('|')[0].trim(),
-        haben: String(r.haben || '').split('|')[0].trim(),
-        scope: String(r.scope || 'all'),
-        amount_mode: String(r.amount_mode || 'any'),
-        amount_min: (r.amount_min !== undefined && r.amount_min !== null && r.amount_min !== '') ? Number(r.amount_min) : null,
-        amount_max: (r.amount_max !== undefined && r.amount_max !== null && r.amount_max !== '') ? Number(r.amount_max) : null,
-        sort_order: i,
-        updated_at: new Date().toISOString()
-      };
-      if (isUuid(r.id)) {
-        row.id = r.id;
-      }
-      return row;
-    });
-
-    sb.from('accounting_bank_rules').upsert(ruleRows, { onConflict: 'id' })
-      .then(({ error }) => {
-        if (error) console.warn('[Buchhaltung Supabase] Error saving bank rules:', error);
-        else console.log('✅ Bank-Regeln in Supabase gespeichert.');
-      })
-      .catch(err => console.warn('[Buchhaltung Supabase] Bank rules save exception:', err));
+  if (!sb) {
+    throw new Error('Keine Datenbankverbindung verfügbar.');
   }
+
+  const isUuid = id => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  const ruleRows = rules.map((r, i) => {
+    const row = {
+      label: String(r.label || ''),
+      pattern_party: String(r.pattern_party !== undefined && r.pattern_party !== null ? r.pattern_party : ''),
+      pattern_text: String(r.pattern_text !== undefined && r.pattern_text !== null ? r.pattern_text : ''),
+      pattern: String(r.pattern !== undefined && r.pattern !== null ? r.pattern : ''),
+      prefix: String(r.prefix || r.label || ''),
+      soll: String(r.soll || '').split('|')[0].trim(),
+      haben: String(r.haben || '').split('|')[0].trim(),
+      scope: String(r.scope || 'all'),
+      amount_mode: String(r.amount_mode || 'any'),
+      amount_min: (r.amount_min !== undefined && r.amount_min !== null && r.amount_min !== '') ? Number(r.amount_min) : null,
+      amount_max: (r.amount_max !== undefined && r.amount_max !== null && r.amount_max !== '') ? Number(r.amount_max) : null,
+      sort_order: i,
+      updated_at: new Date().toISOString()
+    };
+    if (isUuid(r.id)) {
+      row.id = r.id;
+    }
+    return row;
+  });
+
+  if (ruleRows.length === 0) return true;
+
+  const { data: savedRows, error } = await sb.from('accounting_bank_rules').upsert(ruleRows, { onConflict: 'id' }).select();
+  if (error) {
+    console.warn('[Buchhaltung Supabase] Error saving bank rules:', error);
+    throw new Error(error.message || 'Fehler beim Speichern der Bankregeln in Supabase.');
+  }
+  if (Array.isArray(savedRows) && savedRows.length === rules.length) {
+    savedRows.forEach((sr, idx) => {
+      if (sr && sr.id && rules[idx] && !rules[idx].id) {
+        rules[idx].id = sr.id;
+      }
+    });
+    try { localStorage.setItem('bh_bank_rules', JSON.stringify(rules)); } catch (_) {}
+  }
+  return true;
 };
 
 // Beim Modulstart zentrale Regeln aus Supabase abrufen
@@ -181,10 +197,11 @@ window.renderTabBankabgleich = function(container) {
 
   const hasResults = window._bhBankMatchResults && window._bhBankMatchResults.length > 0;
   const results = window._bhBankMatchResults || [];
+  const canEdit = window.bhCanWrite ? window.bhCanWrite() : false;
 
   const jbCount = results.filter(r => r.isJahresbeitrag || r.isInvoice).length;
   const ruleCount = results.filter(r => !r.isJahresbeitrag && !r.isInvoice && (r.matchType === 'rule' || r.matchType === 'journal' || r.matchType === 'heuristic')).length;
-  const unklarCount = results.filter(r => !r.isJahresbeitrag && !r.isInvoice && r.matchType !== 'rule' && r.matchType !== 'journal' && !r.alreadyBooked).length;
+  const unklarCount = results.filter(r => !r.isJahresbeitrag && !r.isInvoice && !r.isSplit && r.matchType !== 'rule' && r.matchType !== 'journal' && r.matchType !== 'heuristic' && r.matchType !== 'payment_order' && !r.alreadyBooked).length;
 
   const ibanFilterChecked = window._bhBankIbanFilterOff ? '' : 'checked';
 
@@ -201,16 +218,16 @@ window.renderTabBankabgleich = function(container) {
           </p>
         </div>
         <div class="d-flex align-items-center gap-2">
-          <button class="btn btn-sm btn-outline-primary fw-bold shadow-sm" onclick="bhOpenPaymentOrdersModal()" title="Erfasste Zahlungsaufträge verwalten & Sammel-pain.001 exportieren">
+          <button class="btn btn-sm btn-outline-primary fw-bold shadow-sm" onclick="bhOpenPaymentOrdersModal()" title="Erfasste Zahlungsaufträge einsehen / verwalten">
             <i class="fas fa-file-export me-1"></i> Zahlungsaufträge (pain.001)
           </button>
-          ${hasResults ? `
+          ${(hasResults && canEdit) ? `
             <button class="btn btn-sm btn-outline-danger" onclick="bhBankClearTransactions()" title="Aktuell geladene Transaktionen verwerfen und Auszug neu hochladen">
               <i class="fas fa-trash-alt me-1"></i> Auszug leeren
             </button>
           ` : ''}
           <button class="btn btn-sm btn-outline-secondary" onclick="bhBankManageRulesModal()">
-            <i class="fas fa-cog me-1"></i> Buchungsregeln verwalten
+            <i class="fas fa-cog me-1"></i> ${canEdit ? 'Buchungsregeln verwalten' : 'Buchungsregeln ansehen'}
           </button>
         </div>
       </div>
@@ -275,9 +292,11 @@ window.renderTabBankabgleich = function(container) {
             <i class="fas fa-info-circle text-primary me-1.5"></i>
             <span>Buchungen werden in einem Schritt chronologisch nach Datum sortiert verbucht.</span>
           </div>
-          <button class="btn btn-sm btn-success fw-bold shadow-sm px-3 py-1.5" id="bhBtnBookAll" onclick="bhBankBookAll()" title="Alle offenen Bank-Buchungen chronologisch nach Datum sortiert ins Journal buchen">
-            <i class="fas fa-bolt me-1"></i>Alle Buchungen ausführen
-          </button>
+          ${canEdit ? `
+            <button class="btn btn-sm btn-success fw-bold shadow-sm px-3 py-1.5" id="bhBtnBookAll" onclick="bhBankBookAll()" title="Alle offenen Bank-Buchungen chronologisch nach Datum sortiert ins Journal buchen">
+              <i class="fas fa-bolt me-1"></i>Alle Buchungen ausführen
+            </button>
+          ` : ''}
         </div>
       </div>
 
@@ -306,7 +325,7 @@ function bhBankStatsBannerHTML() {
   const results = window._bhBankMatchResults || [];
   const jbRows = results.filter(r => r.isJahresbeitrag || r.isInvoice);
   const ruleRows = results.filter(r => !r.isJahresbeitrag && !r.isInvoice && (r.matchType === 'rule' || r.matchType === 'journal' || r.matchType === 'heuristic'));
-  const unklarRows = results.filter(r => !r.isJahresbeitrag && !r.isInvoice && r.matchType !== 'rule' && r.matchType !== 'journal' && !r.alreadyBooked);
+  const unklarRows = results.filter(r => !r.isJahresbeitrag && !r.isInvoice && !r.isSplit && r.matchType !== 'rule' && r.matchType !== 'journal' && r.matchType !== 'heuristic' && r.matchType !== 'payment_order' && !r.alreadyBooked);
   const bookedRows = results.filter(r => r.alreadyBooked);
   const openRows = results.filter(r => !r.alreadyBooked);
 
@@ -857,7 +876,7 @@ function bhBankRenderResults(filter) {
   if (activeFilter === 'booked') filtered = rows.filter(r => r.alreadyBooked);
   if (activeFilter === 'jb')     filtered = rows.filter(r => r.isJahresbeitrag || r.isInvoice);
   if (activeFilter === 'rules')  filtered = rows.filter(r => !r.isJahresbeitrag && !r.isInvoice && (r.matchType === 'rule' || r.matchType === 'journal' || r.matchType === 'heuristic'));
-  if (activeFilter === 'unklar') filtered = rows.filter(r => !r.isJahresbeitrag && !r.isInvoice && r.matchType !== 'rule' && r.matchType !== 'journal' && !r.alreadyBooked);
+  if (activeFilter === 'unklar') filtered = rows.filter(r => !r.isJahresbeitrag && !r.isInvoice && !r.isSplit && r.matchType !== 'rule' && r.matchType !== 'journal' && r.matchType !== 'heuristic' && r.matchType !== 'payment_order' && !r.alreadyBooked);
 
   // Live-Aktualisierung des Statistik-Banners & Filter-Counts ohne DOM-Zerstörung
   const statsEl = document.getElementById('bhBankStatsBanner');
@@ -867,7 +886,7 @@ function bhBankRenderResults(filter) {
 
   const jbCount = rows.filter(r => r.isJahresbeitrag || r.isInvoice).length;
   const ruleCount = rows.filter(r => !r.isJahresbeitrag && !r.isInvoice && (r.matchType === 'rule' || r.matchType === 'journal' || r.matchType === 'heuristic')).length;
-  const unklarCount = rows.filter(r => !r.isJahresbeitrag && !r.isInvoice && r.matchType !== 'rule' && r.matchType !== 'journal' && !r.alreadyBooked).length;
+  const unklarCount = rows.filter(r => !r.isJahresbeitrag && !r.isInvoice && !r.isSplit && r.matchType !== 'rule' && r.matchType !== 'journal' && r.matchType !== 'heuristic' && r.matchType !== 'payment_order' && !r.alreadyBooked).length;
   const offenCount = rows.filter(r => !r.alreadyBooked).length;
   const bookedCount = rows.filter(r => r.alreadyBooked).length;
 
@@ -928,7 +947,7 @@ function bhBankRenderResults(filter) {
     return asc ? res : -res;
   });
 
-  const canEdit = typeof hasWriteAccess === 'function' ? hasWriteAccess('buchhaltung') : (typeof userHasRole === 'function' ? userHasRole('admin') : false);
+  const canEdit = window.bhCanWrite ? window.bhCanWrite() : false;
   const kontenrahmen = window._bhKontenrahmen || [];
 
   function makeKontoSelectHTML(id, selectedVal, type, isLocked = false) {
@@ -962,32 +981,35 @@ function bhBankRenderResults(filter) {
     const isCredit = r.isCredit;
 
     let statusBadge = '';
-    const isRowEditable = !r.alreadyBooked && !r.isWrongYear;
+    const isRowEditable = canEdit && !r.alreadyBooked && !r.isWrongYear;
+    const assignAttr = isRowEditable ? `role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;"` : '';
+    const editIcon = isRowEditable ? ' <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i>' : '';
+    const linkIcon = isRowEditable ? ' <i class="fas fa-link ms-1 opacity-75" style="font-size:9px;"></i>' : '';
 
     if (r.isWrongYear) {
       statusBadge = `<span class="badge bg-secondary opacity-75" title="🔒 FALSCHES BUCHUNGSJAHR: Diese Transaktion stammt aus ${r.txYear}, oben ist Buchhaltungsjahr ${window._bhYear} gewählt. Bitte oben Jahr umschalten!"><i class="fas fa-calendar-times me-1"></i>Jahr ${r.txYear}</span>`;
     } else if (r.alreadyBooked) {
       statusBadge = `<span class="badge bg-light text-secondary border" title="🔒 Transaktion wurde am ${escHtml(r.bookedDate || 'früher')} im Kassabuch erfasst."><i class="fas fa-check-double text-success me-1"></i>Gebucht</span>`;
     } else if (r.alreadyPaidInvoice) {
-      statusBadge = `<span class="badge bg-secondary opacity-75" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="🔒 Rechnung ${escHtml(r.matchedInvoice?.id || '')} ist im Rechnungsmodul bereits als BEZAHLT markiert. Klicken zum Ändern oder Aufheben."><i class="fas fa-info-circle me-1"></i>Bezahlt <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i></span>`;
+      statusBadge = `<span class="badge bg-secondary opacity-75" ${assignAttr} title="🔒 Rechnung ${escHtml(r.matchedInvoice?.id || '')} ist im Rechnungsmodul bereits als BEZAHLT markiert."><i class="fas fa-info-circle me-1"></i>Bezahlt${editIcon}</span>`;
     } else if (r.alreadyPaidJb) {
-      statusBadge = `<span class="badge bg-secondary opacity-75" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="🔒 Jahresbeitrag von ${escHtml(r.matchedMember?.FirstName || '')} ${escHtml(r.matchedMember?.LastName || '')} ist bereits als BEZAHLT markiert. Klicken zum Ändern oder Aufheben."><i class="fas fa-info-circle me-1"></i>Bezahlt <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i></span>`;
+      statusBadge = `<span class="badge bg-secondary opacity-75" ${assignAttr} title="🔒 Jahresbeitrag von ${escHtml(r.matchedMember?.FirstName || '')} ${escHtml(r.matchedMember?.LastName || '')} ist bereits als BEZAHLT markiert."><i class="fas fa-info-circle me-1"></i>Bezahlt${editIcon}</span>`;
     } else if (r.isInvoice) {
-      statusBadge = `<span class="badge bg-success" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="✅ RECHNUNGS-TREFFER: ${escHtml(r.matchedInvoice?.id || '')} (${escHtml(r.matchedInvoice?.name || '')}). Klicken zum Ändern oder Aufheben."><i class="fas fa-file-invoice me-1"></i>Rechnung <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i></span>`;
+      statusBadge = `<span class="badge bg-success" ${assignAttr} title="✅ RECHNUNGS-TREFFER: ${escHtml(r.matchedInvoice?.id || '')} (${escHtml(r.matchedInvoice?.name || '')})."><i class="fas fa-file-invoice me-1"></i>Rechnung${editIcon}</span>`;
     } else if (r.isJahresbeitrag) {
-      statusBadge = `<span class="badge bg-success" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="✅ JAHRESBEITRAG: Mitglied und offener Beitrag erkannt. Klicken zum Ändern oder Aufheben."><i class="fas fa-check-circle me-1"></i>Jahresbeitrag <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i></span>`;
+      statusBadge = `<span class="badge bg-success" ${assignAttr} title="✅ JAHRESBEITRAG: Mitglied und offener Beitrag erkannt."><i class="fas fa-check-circle me-1"></i>Jahresbeitrag${editIcon}</span>`;
     } else if (r.matchType === 'payment_order') {
-      statusBadge = `<span class="badge bg-primary text-white" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="📤 ZAHLUNGSAUFTRAG: ${escHtml(r.matchLabel)}. Klicken zum Ändern oder Zuordnen."><i class="fas fa-file-export me-1"></i>Auszahlung <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i></span>`;
+      statusBadge = `<span class="badge bg-primary text-white" ${assignAttr} title="📤 ZAHLUNGSAUFTRAG: ${escHtml(r.matchLabel)}."><i class="fas fa-file-export me-1"></i>Auszahlung${editIcon}</span>`;
     } else if (r.matchType === 'rule') {
-      statusBadge = `<span class="badge bg-info text-dark" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="⚡ REGEL-TREFFER: ${escHtml(r.matchRuleName)}. Klicken zum Ändern oder Aufheben."><i class="fas fa-magic me-1"></i>Regel <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i></span>`;
+      statusBadge = `<span class="badge bg-info text-dark" ${assignAttr} title="⚡ REGEL-TREFFER: ${escHtml(r.matchRuleName)}."><i class="fas fa-magic me-1"></i>Regel${editIcon}</span>`;
     } else if (r.matchType === 'journal') {
-      statusBadge = `<span class="badge bg-primary text-white" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="💡 HISTORIE-TREFFER: Noch NICHT gebucht! Klicken zum Ändern oder Zuordnen."><i class="fas fa-history me-1"></i>Historie <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i></span>`;
+      statusBadge = `<span class="badge bg-primary text-white" ${assignAttr} title="💡 HISTORIE-TREFFER: Noch NICHT gebucht!"><i class="fas fa-history me-1"></i>Historie${editIcon}</span>`;
     } else if (r.matchType === 'heuristic') {
-      statusBadge = `<span class="badge bg-light text-dark border" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="💡 SMART VORSCHLAG: Noch NICHT gebucht. Klicken zum Zuordnen."><i class="fas fa-lightbulb me-1"></i>Vorschlag <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i></span>`;
+      statusBadge = `<span class="badge bg-light text-dark border" ${assignAttr} title="💡 SMART VORSCHLAG: Noch NICHT gebucht."><i class="fas fa-lightbulb me-1"></i>Vorschlag${editIcon}</span>`;
     } else if (r.matchType === 'transit' || (!r.isSplit && (String(r.suggestedSoll).trim() === '1090' || String(r.suggestedHaben).trim() === '1090'))) {
-      statusBadge = `<span class="badge bg-info text-dark" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="⏳ KLÄRUNG 1090: Keine automatische Zuordnung. Wird über Klärungskonto 1090 (Transit) gebucht, damit Belegnummern aufsteigend bleiben. Klicken zum Zuordnen."><i class="fas fa-clock me-1"></i>Transit 1090 <i class="fas fa-link ms-1 opacity-75" style="font-size:9px;"></i></span>`;
+      statusBadge = `<span class="badge bg-info text-dark" ${assignAttr} title="⏳ KLÄRUNG 1090: Wird über Klärungskonto 1090 (Transit) gebucht, damit Belegnummern aufsteigend bleiben."><i class="fas fa-clock me-1"></i>Transit 1090${linkIcon}</span>`;
     } else {
-      statusBadge = `<span class="badge bg-warning text-dark" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="❓ OFFEN: Keine automatische Zuordnung. Klicken zum Zuordnen."><i class="fas fa-question-circle me-1"></i>Offen <i class="fas fa-link ms-1 opacity-75" style="font-size:9px;"></i></span>`;
+      statusBadge = `<span class="badge bg-warning text-dark" ${assignAttr} title="❓ OFFEN: Keine automatische Zuordnung."><i class="fas fa-question-circle me-1"></i>Offen${linkIcon}</span>`;
     }
 
     if (r.isVerbandsschiessen && !r.alreadyBooked && !r.isWrongYear) {
@@ -1125,7 +1147,7 @@ function bhBankRenderResults(filter) {
           ${amountSign} CHF ${Number(r.amount || 0).toFixed(2)}
         </td>
         <td data-col-id="remittance" class="tk-col-remittance">
-          ${(r.alreadyBooked || r.isWrongYear) ? `
+          ${(!isRowEditable) ? `
             <div class="small text-muted" style="white-space: normal; word-break: break-word;" title="${escHtml(r.remittanceInfo || '–')}">
               ${escHtml(r.remittanceInfo || '–')}
             </div>
@@ -1147,7 +1169,7 @@ function bhBankRenderResults(filter) {
         <td data-col-id="type" class="tk-col-type">${matchInfo}</td>
         <td data-col-id="soll" class="tk-col-soll">
           ${(r.isSplit && !isCredit && Array.isArray(r.splitRows) && r.splitRows.length > 0 && !r.alreadyBooked && !r.isWrongYear) ? `
-            <div class="badge bg-primary-subtle text-primary border border-primary-subtle p-1.5 w-100 text-start d-block" style="font-size:11px; cursor:pointer; max-width:100%; overflow:hidden;" onclick="bhBankOpenSplitModal(${realI})" title="Split-Positionen (Soll): Klicken zum Ansehen/Bearbeiten">
+            <div class="badge bg-primary-subtle text-primary border border-primary-subtle p-1.5 w-100 text-start d-block" style="font-size:11px; ${isRowEditable ? 'cursor:pointer;' : ''} max-width:100%; overflow:hidden;" ${isRowEditable ? `onclick="bhBankOpenSplitModal(${realI})" title="Split-Positionen (Soll): Klicken zum Ansehen/Bearbeiten"` : ''}>
               <div class="fw-bold text-truncate"><i class="fas fa-layer-group me-1"></i>Split (${r.splitRows.length} Posten)</div>
               <div class="text-muted text-truncate font-monospace" style="font-size:9.5px;">${r.splitRows.map(s => {
                 const isAbzug = isBankKontoCode(s.kontoSoll) && !isBankKontoCode(s.kontoHaben);
@@ -1156,11 +1178,11 @@ function bhBankRenderResults(filter) {
                 return `${kCode}: ${sign}${Number(s.betrag).toFixed(2)}`;
               }).join(' · ')}</div>
             </div>
-          ` : makeKontoSelectHTML(sollSelectId, r.suggestedSoll, 'soll', r.alreadyBooked || r.isWrongYear)}
+          ` : makeKontoSelectHTML(sollSelectId, r.suggestedSoll, 'soll', !isRowEditable)}
         </td>
         <td data-col-id="haben" class="tk-col-haben">
           ${(r.isSplit && isCredit && Array.isArray(r.splitRows) && r.splitRows.length > 0 && !r.alreadyBooked && !r.isWrongYear) ? `
-            <div class="badge bg-primary-subtle text-primary border border-primary-subtle p-1.5 w-100 text-start d-block" style="font-size:11px; cursor:pointer; max-width:100%; overflow:hidden;" onclick="bhBankOpenSplitModal(${realI})" title="Split-Positionen (Haben): Klicken zum Ansehen/Bearbeiten">
+            <div class="badge bg-primary-subtle text-primary border border-primary-subtle p-1.5 w-100 text-start d-block" style="font-size:11px; ${isRowEditable ? 'cursor:pointer;' : ''} max-width:100%; overflow:hidden;" ${isRowEditable ? `onclick="bhBankOpenSplitModal(${realI})" title="Split-Positionen (Haben): Klicken zum Ansehen/Bearbeiten"` : ''}>
               <div class="fw-bold text-truncate"><i class="fas fa-layer-group me-1"></i>Split (${r.splitRows.length} Posten)</div>
               <div class="text-muted text-truncate font-monospace" style="font-size:9.5px;">${r.splitRows.map(s => {
                 const isAbzug = isBankKontoCode(s.kontoHaben) && !isBankKontoCode(s.kontoSoll);
@@ -1169,7 +1191,7 @@ function bhBankRenderResults(filter) {
                 return `${kCode}: ${sign}${Number(s.betrag).toFixed(2)}`;
               }).join(' · ')}</div>
             </div>
-          ` : makeKontoSelectHTML(habenSelectId, r.suggestedHaben, 'haben', r.alreadyBooked || r.isWrongYear)}
+          ` : makeKontoSelectHTML(habenSelectId, r.suggestedHaben, 'haben', !isRowEditable)}
         </td>
         ${canEdit ? `<td data-col-id="actions" class="bh-col-sticky-action text-center tk-col-actions"><div class="d-flex align-items-center justify-content-center gap-1">${actionButtons}</div></td>` : ''}
       </tr>
@@ -1395,12 +1417,15 @@ window.bhBankHandleFiles = async function(files) {
 
   const fileList = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.xml'));
   if (!fileList.length) {
-    alert('Bitte mindestens eine gültige XML-Datei (CAMT.053) auswählen.');
+    if (window.bhAlert) {
+      await window.bhAlert('Ungültiges Dateiformat', 'Bitte wähle mindestens eine gültige XML-Datei (CAMT.053) aus.', 'warning');
+    }
     return;
   }
 
   let allParsedTransactions = [];
   let processedFilesCount = 0;
+  const failedFiles = [];
 
   for (const file of fileList) {
     try {
@@ -1423,6 +1448,21 @@ window.bhBankHandleFiles = async function(files) {
       processedFilesCount++;
     } catch(err) {
       console.error(`Fehler beim Lesen von ${file.name}:`, err);
+      failedFiles.push({ name: file.name, error: err?.message || String(err) });
+    }
+  }
+
+  if (failedFiles.length > 0) {
+    const errList = failedFiles.map(f => `• ${f.name}: ${f.error}`).join('\n');
+    if (window.bhAlert) {
+      await window.bhAlert('Fehler beim XML-Import', `Folgende XML-Datei(en) konnten nicht eingelesen werden:\n\n${errList}`, 'danger');
+    } else if (typeof showError === 'function') {
+      showError(`Fehler beim XML-Import (${failedFiles.length} Datei(en) fehlgeschlagen).`);
+    }
+    if (processedFilesCount === 0) {
+      const inp = document.getElementById('bhBankXmlInput');
+      if (inp) inp.value = '';
+      return;
     }
   }
 
@@ -1430,12 +1470,13 @@ window.bhBankHandleFiles = async function(files) {
   const existing = window._bhBankTransactions || [];
   const combined = [...existing, ...allParsedTransactions];
 
-  // Exakte Transaktions-Deduplizierung innerhalb des Arbeits-Speichers
+  // Exakte Transaktions-Deduplizierung innerhalb des Arbeits-Speichers (inkl. Konto-IBAN, Richtung & Dateivorkommen-Sequenz)
   const uniqueTxs = [];
   const seenKeys = new Set();
 
   combined.forEach((t, idx) => {
-    const key = `${t.bookingDate}_${t.amount}_${(t.partyName||'').toLowerCase()}_${(t.remittanceInfo||'').substring(0,30).toLowerCase()}`;
+    const baseKey = `${t.accountIban || ''}_${t.isCredit ? 'C' : 'D'}_${t.bookingDate}_${t.amount}_${(t.partyName||'').toLowerCase()}_${(t.remittanceInfo||'').substring(0,40).toLowerCase()}`;
+    const key = `${baseKey}_${t._dupSeq !== undefined ? t._dupSeq : 0}`;
     if (!seenKeys.has(key)) {
       seenKeys.add(key);
       if (t._camtOrderIndex === undefined) t._camtOrderIndex = idx;
@@ -1467,20 +1508,14 @@ window.bhBankHandleFiles = async function(files) {
     window._bhBankMatchResults = bhBankMatchAll(uniqueTxs);
     window._bhBankSortCol = 'date';
     window._bhBankSortAsc = false; // Neueste Buchungen sofort oben anzeigen
-    window._bhBankActiveFilter = (uniqueTxs.some(t => !t.alreadyBooked)) ? 'offen' : 'all';
+    window._bhBankActiveFilter = (window._bhBankMatchResults.some(t => !t.alreadyBooked)) ? 'offen' : 'all';
 
     renderTabBankabgleich(document.getElementById('bh-tab-content-container'));
     showToast(`✅ ${processedFilesCount} Datei(en) eingelesen! Insges. ${uniqueTxs.length} Transaktionen analysiert.`, 'success');
   } catch (err) {
     console.error('[Bankabgleich] Fehler beim Verarbeiten der CAMT-Datei:', err);
-    if (window.UIConfirmKit && typeof window.UIConfirmKit.alert === 'function') {
-      await window.UIConfirmKit.alert({
-        title: 'Fehler beim CAMT-Import',
-        message: `Die Datei konnte nicht verarbeitet werden: ${err.message || err}`,
-        type: 'danger'
-      });
-    } else {
-      alert('Fehler beim CAMT-Import: ' + (err.message || err));
+    if (window.bhAlert) {
+      await window.bhAlert('Fehler beim CAMT-Import', `Die Datei konnte nicht verarbeitet werden: ${err.message || err}`, 'danger');
     }
   } finally {
     const inp = document.getElementById('bhBankXmlInput');
@@ -1488,8 +1523,15 @@ window.bhBankHandleFiles = async function(files) {
   }
 };
 
-window.bhBankClearTransactions = function() {
-  if (!confirm('Möchtest du die aktuell geladenen Kontoauszugs-Transaktionen wirklich leeren, um den Auszug frisch einzulesen?')) return;
+window.bhBankClearTransactions = async function() {
+  if (window.bhCanWrite && !window.bhCanWrite()) {
+    if (window.bhAlert) await window.bhAlert('Keine Berechtigung', 'Du hast keine Berechtigung zum Leeren des Bankauszugs.', 'warning');
+    return;
+  }
+  const ok = window.bhConfirm
+    ? await window.bhConfirm('Bankauszug leeren', 'Möchtest du die aktuell geladenen Kontoauszugs-Transaktionen wirklich leeren, um den Auszug frisch einzulesen?', { type: 'warning', confirmText: 'Auszug leeren', cancelText: 'Abbrechen' })
+    : false;
+  if (!ok) return;
   window._bhBankTransactions = [];
   window._bhBankMatchResults = [];
   try {
@@ -1505,6 +1547,10 @@ window.bhBankClearTransactions = function() {
 function bhBankParseCAMT053(xmlText) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlText, 'application/xml');
+  const parseErr = doc.querySelector('parsererror');
+  if (parseErr) {
+    throw new Error('Ungültige XML-Struktur (Parserfehler in CAMT.053-Datei).');
+  }
 
   function getTagText(el, tagName) {
     if (!el) return '';
@@ -1529,6 +1575,7 @@ function bhBankParseCAMT053(xmlText) {
 
   const transactions = [];
   const entries = doc.getElementsByTagNameNS('*', 'Ntry');
+  const fileOccCounts = new Map();
 
   for (let i = 0; i < entries.length; i++) {
     const ntry = entries[i];
@@ -1581,8 +1628,13 @@ function bhBankParseCAMT053(xmlText) {
     const cdtrRefInf = getFirstChild(strd, 'CdtrRefInf');
     const creditorReference = getTagText(cdtrRefInf, 'Ref');
 
+    const occKey = `${accountIban || ''}_${isCredit ? 'C' : 'D'}_${bookingDate}_${amount}_${(partyName || '').toLowerCase()}_${(remittanceInfo || '').substring(0, 40).toLowerCase()}`;
+    const dupSeq = fileOccCounts.get(occKey) || 0;
+    fileOccCounts.set(occKey, dupSeq + 1);
+
     transactions.push({
       _camtOrderIndex: i,
+      _dupSeq: dupSeq,
       isCredit,
       amount,
       bookingDate,
@@ -2659,7 +2711,17 @@ function bhBankMatchAll(transactions) {
       }
     }
 
-    const txYear = tx.bookingDate ? new Date(tx.bookingDate).getFullYear() : Number(window._bhYear || new Date().getFullYear());
+    let txYear = Number(window._bhYear || new Date().getFullYear());
+    if (tx.bookingDate) {
+      const isoMatch = String(tx.bookingDate).trim().match(/^(\d{4})-/);
+      const chMatch = String(tx.bookingDate).trim().match(/^\d{1,2}\.\d{1,2}\.(\d{4})$/);
+      if (isoMatch) txYear = parseInt(isoMatch[1], 10);
+      else if (chMatch) txYear = parseInt(chMatch[1], 10);
+      else {
+        const parsedDt = new Date(tx.bookingDate);
+        if (!isNaN(parsedDt.getTime())) txYear = parsedDt.getFullYear();
+      }
+    }
     const activeYear = Number(window._bhYear || new Date().getFullYear());
     const isWrongYear = txYear !== activeYear;
 
@@ -2866,8 +2928,8 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
   }
 
   if (tx.isWrongYear) {
-    if (!isBatch) {
-      alert(`⚠️ Buchung gesperrt:\n\nDiese Transaktion stammt aus dem Jahr ${tx.txYear}, oben im Portal ist aber das Buchhaltungsjahr ${window._bhYear} gewählt.\n\nBitte wechseln Sie oben das Buchhaltungsjahr auf ${tx.txYear}, um diese Transaktion in das entsprechende Jahr zu buchen.`);
+    if (!isBatch && window.bhAlert) {
+      window.bhAlert('Buchung gesperrt', `Diese Transaktion stammt aus dem Jahr ${tx.txYear}, oben im Portal ist aber das Buchhaltungsjahr ${window._bhYear} gewählt.\n\nBitte wechsle oben das Buchhaltungsjahr auf ${tx.txYear}, um diese Transaktion in das entsprechende Jahr zu buchen.`, 'warning');
     }
     return null;
   }
@@ -2896,11 +2958,11 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
 
   if (!tx.isSplit) {
     if (!kontoSoll && !kontoHaben) {
-      if (!isBatch) alert('Mindestens das Bankkonto (Soll oder Haben) muss vorhanden sein.');
+      if (!isBatch && window.bhAlert) window.bhAlert('Angaben unvollständig', 'Mindestens das Bankkonto (Soll oder Haben) muss vorhanden sein.', 'warning');
       throw new Error('Mindestens das Bankkonto (Soll oder Haben) muss vorhanden sein.');
     }
     if (kontoSoll && kontoHaben && kontoSoll === kontoHaben) {
-      if (!isBatch) alert('Soll- und Haben-Konto dürfen nicht identisch sein.');
+      if (!isBatch && window.bhAlert) window.bhAlert('Ungültige Kontierung', 'Soll- und Haben-Konto dürfen nicht identisch sein.', 'warning');
       throw new Error('Soll- und Haben-Konto dürfen nicht identisch sein.');
     }
   }
@@ -3091,12 +3153,169 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
 };
 
 // ---------------------------------------------------------------------
+// Nachgelagerte Modul-Synchronisation nach erfolgreicher Bank-Buchung
+// (RechnungsCore + PDF, Vermietung + Logs, Jahresbeitrag, pain.001)
+// ---------------------------------------------------------------------
+async function _bhProcessLinkedModulesAfterBankBooking(item, createdEntries, sb) {
+  const { tx, belegNr, bookingDate, matchedInvoice, matchedBeitrag, matchedPaymentOrder, isJahresbeitrag } = item;
+  const warnings = [];
+
+  // 1. Rechnung via RechnungsCore verbuchen (kein rohes invoices-Update-Fallback ohne invoice_payments!)
+  if (matchedInvoice && matchedInvoice.id) {
+    try {
+      if (!window.RechnungsCore || typeof window.RechnungsCore.recordPayment !== 'function') {
+        throw new Error('RechnungsCore.recordPayment ist nicht verfügbar.');
+      }
+      const payAmt = Number(tx?.amount || matchedInvoice.total_amount || 0);
+      const payRes = await window.RechnungsCore.recordPayment(matchedInvoice.id, {
+        amount: payAmt,
+        paymentDate: bookingDate,
+        paymentMethod: 'Überweisung',
+        documentRef: belegNr,
+        notes: `Bankabgleich CAMT: ${tx?.partyName || ''} (${belegNr})`,
+        syncBookkeeping: false
+      });
+      if (!payRes || payRes.success === false) {
+        throw new Error(payRes?.error || `Zahlung für Rechnung ${matchedInvoice.id} fehlgeschlagen.`);
+      }
+      if (typeof window.RechnungsCore.renderPdf === 'function') {
+        window.RechnungsCore.renderPdf(matchedInvoice.id, { forceRecreate: true }).catch(() => {});
+      }
+
+      const invIdUpper = String(matchedInvoice.id || '').toUpperCase();
+      if (invIdUpper.startsWith('MV-') || invIdUpper.startsWith('DP-') || matchedInvoice.source_module === 'inventar') {
+        window._inventarNeedsReload = true;
+      }
+
+      const cachedInv = (window._invoices || []).find(inv => String(inv.id) === String(matchedInvoice.id));
+      if (cachedInv) {
+        const newOpen = payRes.newOpenAmount !== undefined ? Number(payRes.newOpenAmount) : Math.max(0, Number(cachedInv.open_amount ?? cachedInv.total_amount ?? 0) - payAmt);
+        cachedInv.open_amount = newOpen;
+        cachedInv.status = payRes.newStatus || (newOpen <= 0.01 ? 'bezahlt' : 'teilbezahlt');
+        cachedInv.payment_date = bookingDate;
+        cachedInv.payment_method = 'Überweisung';
+        cachedInv.document_ref = belegNr;
+      }
+
+      // 1a. Falls Vermietung: Stufe 2 (fibu_gebucht via CAMT) setzen & Status-Log ergänzen
+      const isVermietungInv = Boolean(
+        matchedInvoice.source_module === 'vermietung' ||
+        String(matchedInvoice.id || '').startsWith('VM-') ||
+        String(matchedInvoice.booking_number || '').startsWith('V-') ||
+        String(matchedInvoice.source_id || '').startsWith('V-')
+      );
+      if (isVermietungInv && sb) {
+        const vnr = matchedInvoice.booking_number || matchedInvoice.source_id;
+        const matchFilter = (vnr && matchedInvoice.id)
+          ? `booking_number.eq.${vnr},invoice_id.eq.${matchedInvoice.id}`
+          : (vnr ? `booking_number.eq.${vnr}` : `invoice_id.eq.${matchedInvoice.id}`);
+
+        const { data: beforeRentals, error: rSelErr } = await sb
+          .from('rental_requests')
+          .select('id, status')
+          .or(matchFilter);
+        if (rSelErr) throw rSelErr;
+
+        const { data: updatedRentals, error: rUpdErr } = await sb.from('rental_requests').update({
+          status: 'paid',
+          is_paid: true,
+          status_raiffeisen: 'fibu_gebucht',
+          datum_raiffeisen: bookingDate,
+          kommentar_raiffeisen: `FIBU gebucht via CAMT (${belegNr})`,
+          updated_at: new Date().toISOString()
+        }).or(matchFilter).select();
+        if (rUpdErr) throw rUpdErr;
+
+        if (updatedRentals && updatedRentals.length > 0) {
+          const prevStatusById = new Map((beforeRentals || []).map(x => [x.id, x.status]));
+          for (const ur of updatedRentals) {
+            if (prevStatusById.get(ur.id) === 'paid') {
+              const { error: logErr } = await sb.from('rental_status_logs').insert([{
+                rental_request_id: ur.id,
+                previous_status: 'paid',
+                new_status: 'paid',
+                comment: `Zahlung in FIBU via CAMT verbucht (${belegNr})`,
+                changed_by: 'FIBU CAMT-Import'
+              }]);
+              if (logErr) throw logErr;
+            }
+          }
+        }
+      }
+    } catch (invErr) {
+      warnings.push(`Rechnung ${matchedInvoice.id}: ${invErr.message || invErr}`);
+    }
+  }
+
+  // 2. Jahresbeitrag im Beitragswesen als bezahlt setzen
+  if (isJahresbeitrag && matchedBeitrag && matchedBeitrag.id) {
+    try {
+      if (sb) {
+        const { error: jbErr } = await sb.from('contributions_header').update({
+          status: 'bezahlt',
+          payment_date: bookingDate,
+          payment_method: 'Überweisung',
+          document_ref: belegNr,
+          updated_at: new Date().toISOString()
+        }).eq('id', matchedBeitrag.id);
+        if (jbErr) throw jbErr;
+      }
+      const cachedJb = (window._jbAllBeitraege || []).find(h => String(h.id) === String(matchedBeitrag.id));
+      if (cachedJb) {
+        cachedJb.status = 'bezahlt';
+        cachedJb.payment_date = bookingDate;
+      }
+    } catch (jbErr) {
+      warnings.push(`Jahresbeitrag ${matchedBeitrag.id}: ${jbErr.message || jbErr}`);
+    }
+  }
+
+  // 3. Zahlungsauftrag (pain.001) auf 'ausgefuehrt' setzen
+  if (matchedPaymentOrder && matchedPaymentOrder.id && sb) {
+    try {
+      const matchedJournalRow = (createdEntries || []).find(ce => String(ce.beleg_nr || '').startsWith(String(belegNr))) || createdEntries?.[0];
+      const jId = matchedJournalRow?.id ? Number(matchedJournalRow.id) : null;
+      const execIso = new Date().toISOString();
+
+      const { error: poErr } = await sb.from('accounting_payment_orders').update({
+        status: 'ausgefuehrt',
+        journal_id: jId,
+        executed_at: execIso
+      }).eq('id', matchedPaymentOrder.id);
+      if (poErr) throw poErr;
+
+      matchedPaymentOrder.status = 'ausgefuehrt';
+      matchedPaymentOrder.journal_id = jId;
+      matchedPaymentOrder.executed_at = execIso;
+
+      const cachedPo = (window._bhPaymentOrders || []).find(o => String(o.id) === String(matchedPaymentOrder.id));
+      if (cachedPo) {
+        cachedPo.status = 'ausgefuehrt';
+        cachedPo.journal_id = jId;
+        cachedPo.executed_at = execIso;
+      }
+    } catch (poErr) {
+      warnings.push(`Zahlungsauftrag ${matchedPaymentOrder.order_nr || matchedPaymentOrder.id}: ${poErr.message || poErr}`);
+    }
+  }
+
+  return warnings;
+}
+
+// ---------------------------------------------------------------------
 // Einzelne Buchung durchführen (mit sequentieller Request-Queue)
 // ---------------------------------------------------------------------
 window._bhBookingPromiseQueue = window._bhBookingPromiseQueue || Promise.resolve();
 window._bhBookingQueueCount = window._bhBookingQueueCount || 0;
 
 window.bhBankBookOne = async function(txIdx, customBelegNr, isBatch = false) {
+  if (window.bhCanWrite && !window.bhCanWrite()) {
+    if (!isBatch && window.bhAlert) {
+      await window.bhAlert('Keine Berechtigung', 'Du hast keine Berechtigung zum Verbuchen von Banktransaktionen.', 'warning');
+    }
+    return;
+  }
+
   if (isBatch) {
     return await _bhBankBookOneInternal(txIdx, customBelegNr, true);
   }
@@ -3116,18 +3335,13 @@ window.bhBankBookOne = async function(txIdx, customBelegNr, isBatch = false) {
 
   if (unbookedPrior.length > 0) {
     const plannedBeleg = tx._projectedBelegNr || bhGetNextBankBelegNr(Number(window._bhYear || new Date().getFullYear()), isBankKontoCode(tx.suggestedSoll) ? tx.suggestedSoll : (isBankKontoCode(tx.suggestedHaben) ? tx.suggestedHaben : bhBankGetAccountForIban(tx.accountIban, '1020')));
-    let proceed = false;
-    if (window.UIConfirmKit && typeof window.UIConfirmKit.confirm === 'function') {
-      proceed = await window.UIConfirmKit.confirm({
-        title: 'Belegnummern-Chronologie beachten',
-        message: `Auf diesem Kontoauszug befinden sich noch ${unbookedPrior.length} frühere Buchung(en), die noch nicht im Journal erfasst sind.\n\nWenn du diese Zeile jetzt einzeln buchst, erhält sie die Belegnummer ${plannedBeleg}, wodurch die Belegnummern von oben nach unten auf dem Auszug nicht mehr streng synchron bleiben.\n\nEmpfehlung: Verbuche den Auszug gesammelt über «Alle offenen Bank-Buchungen buchen» (unklare Posten laufen über Klärungskonto 1090).\n\nMöchtest du diese Zeile trotzdem einzeln buchen?`,
-        type: 'warning',
-        confirmText: 'Ja, einzeln buchen',
-        cancelText: 'Abbrechen'
-      });
-    } else {
-      proceed = confirm(`Hinweis: Es gibt noch ${unbookedPrior.length} frühere ungebuchte Zeilen. Trotzdem einzeln buchen?`);
-    }
+    const proceed = window.bhConfirm
+      ? await window.bhConfirm(
+          'Belegnummern-Chronologie beachten',
+          `Auf diesem Kontoauszug befinden sich noch ${unbookedPrior.length} frühere Buchung(en), die noch nicht im Journal erfasst sind.\n\nWenn du diese Zeile jetzt einzeln buchst, erhält sie die Belegnummer ${plannedBeleg}, wodurch die Belegnummern von oben nach unten auf dem Auszug nicht mehr streng synchron bleiben.\n\nEmpfehlung: Verbuche den Auszug gesammelt über «Alle offenen Bank-Buchungen buchen» (unklare Posten laufen über Klärungskonto 1090).\n\nMöchtest du diese Zeile trotzdem einzeln buchen?`,
+          { type: 'warning', confirmText: 'Ja, einzeln buchen', cancelText: 'Abbrechen' }
+        )
+      : false;
     if (!proceed) return;
   }
 
@@ -3156,9 +3370,11 @@ window.bhBankBookOne = async function(txIdx, customBelegNr, isBatch = false) {
         bookBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Bucht...';
       }
       await _bhBankBookOneInternal(txIdx, customBelegNr, false);
+    } catch (taskErr) {
+      tx._isBooking = false;
+      console.error('[Bankabgleich] Queue-Buchung fehlgeschlagen:', taskErr);
     } finally {
       window._bhBookingQueueCount = Math.max(0, (window._bhBookingQueueCount || 1) - 1);
-      // Erst neu laden, wenn keine weiteren Klicks in der Warteschlange hängen
       if (window._bhBookingQueueCount === 0) {
         if (typeof loadBuchhaltungData === 'function') {
           loadBuchhaltungData(true, true);
@@ -3171,7 +3387,6 @@ window.bhBankBookOne = async function(txIdx, customBelegNr, isBatch = false) {
     }
   };
 
-  // Streng sequentiell an die Queue hängen, um Race Conditions bei Buchungsnummern und Journal-Einträgen zu vermeiden
   window._bhBookingPromiseQueue = window._bhBookingPromiseQueue.then(runTask, runTask);
   return window._bhBookingPromiseQueue;
 };
@@ -3179,7 +3394,7 @@ window.bhBankBookOne = async function(txIdx, customBelegNr, isBatch = false) {
 async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
   const prepared = window.bhBankPrepareBookingItem(txIdx, customBelegNr, isBatch);
   if (!prepared) return;
-  const { tx, belegNr, bookingDate, entries, bookBtn, matchedInvoice, matchedBeitrag, isJahresbeitrag } = prepared;
+  const { tx, belegNr, bookingDate, entries, bookBtn } = prepared;
 
   // Visuelle Rückmeldung
   tx._isBooking = true;
@@ -3189,7 +3404,6 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
   }
 
   try {
-    let jsonBh = null;
     const isSplit = entries.length > 1;
 
     // 1. Supabase Native Direct Write
@@ -3211,7 +3425,7 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
             konto_soll: String(e.konto_soll).trim(),
             konto_haben: String(e.konto_haben).trim(),
             betrag: Number(e.betrag || 0),
-            typ: 'Bank',
+            typ: e.typ || 'Bank',
             buchungstyp: e.buchungstyp || ((typeof getBuchungstyp === 'function') ? getBuchungstyp(e.konto_soll, e.konto_haben) : 'TRANSIT'),
             created_at: new Date().toISOString()
           };
@@ -3237,143 +3451,8 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
       throw new Error(lastSbErr?.message || lastSbErr?.details || 'Fehler beim Buchen im Supabase Journal: Keine Buchung erstellt');
     }
 
-    // 2. Falls eine Rechnung erkannt wurde: über RechnungsCore als bezahlt verbuchen
-    if (matchedInvoice && matchedInvoice.id) {
-      try {
-        if (window.RechnungsCore && typeof window.RechnungsCore.recordPayment === 'function') {
-          await window.RechnungsCore.recordPayment(matchedInvoice.id, {
-            amount: Number(tx.amount || matchedInvoice.total_amount || 0),
-            paymentDate: bookingDate,
-            paymentMethod: 'Überweisung',
-            documentRef: belegNr,
-            notes: `Bankabgleich CAMT: ${tx.partyName || ''} (${belegNr})`,
-            syncBookkeeping: false
-          });
-          console.log(`✅ [RechnungsCore] Zahlung via Bankabgleich verbucht für Rechnung ${matchedInvoice.id}`);
-        } else if (sb) {
-          await sb.from('invoices').update({
-            status: 'bezahlt',
-            payment_date: bookingDate,
-            payment_method: 'Überweisung',
-            document_ref: belegNr,
-            updated_at: new Date().toISOString()
-          }).eq('id', matchedInvoice.id);
-        }
-
-        const invIdUpper = String(matchedInvoice.id || '').toUpperCase();
-        if (invIdUpper.startsWith('MV-') || invIdUpper.startsWith('DP-') || matchedInvoice.source_module === 'inventar') {
-          window._inventarNeedsReload = true;
-        }
-
-        // Cache im Rechnungsmodul direkt aktualisieren
-        const cachedInv = (window._invoices || []).find(i => String(i.id) === String(matchedInvoice.id));
-        if (cachedInv) {
-          cachedInv.status = 'bezahlt';
-          cachedInv.payment_date = bookingDate;
-          cachedInv.payment_method = 'Überweisung';
-          cachedInv.document_ref = belegNr;
-        }
-
-        // 2.1 Falls Vermietung: auch in rental_requests auf Stufe 2 (fibu_gebucht via CAMT) verbuchen
-        const isVermietungInv = Boolean(
-          matchedInvoice.source_module === 'vermietung' ||
-          String(matchedInvoice.id || '').startsWith('VM-') ||
-          String(matchedInvoice.booking_number || '').startsWith('V-') ||
-          String(matchedInvoice.source_id || '').startsWith('V-')
-        );
-        if (isVermietungInv && sb) {
-          try {
-            const vnr = matchedInvoice.booking_number || matchedInvoice.source_id;
-            const matchFilter = (vnr && matchedInvoice.id)
-              ? `booking_number.eq.${vnr},invoice_id.eq.${matchedInvoice.id}`
-              : (vnr ? `booking_number.eq.${vnr}` : `invoice_id.eq.${matchedInvoice.id}`);
-
-            const { data: beforeRentals } = await sb
-              .from('rental_requests')
-              .select('id, status')
-              .or(matchFilter);
-
-            const { data: updatedRentals } = await sb.from('rental_requests').update({
-              status: 'paid',
-              is_paid: true,
-              status_raiffeisen: 'fibu_gebucht',
-              datum_raiffeisen: bookingDate,
-              kommentar_raiffeisen: `FIBU gebucht via CAMT (${belegNr})`,
-              updated_at: new Date().toISOString()
-            }).or(matchFilter).select();
-
-            // DB-Trigger trg_log_rental_status protokolliert echte Statuswechsel automatisch;
-            // manueller Eintrag nur nötig, falls Status bereits 'paid' war (Stufe 1 -> Stufe 2).
-            if (updatedRentals && updatedRentals.length > 0) {
-              const prevStatusById = new Map((beforeRentals || []).map(x => [x.id, x.status]));
-              for (const ur of updatedRentals) {
-                if (prevStatusById.get(ur.id) === 'paid') {
-                  await sb.from('rental_status_logs').insert([{
-                    rental_request_id: ur.id,
-                    previous_status: 'paid',
-                    new_status: 'paid',
-                    comment: `Zahlung in FIBU via CAMT verbucht (${belegNr})`,
-                    changed_by: 'FIBU CAMT-Import'
-                  }]);
-                }
-              }
-              console.log(`✅ [FIBU CAMT] rental_requests erfolgreich auf Stufe 2 (fibu_gebucht) aktualisiert.`);
-            }
-          } catch (rentErr) {
-            console.warn('⚠️ Hinweis: rental_requests Aktualisierung bei CAMT-Buchung fehlgeschlagen:', rentErr);
-          }
-        }
-      } catch (invErr) {
-        console.warn('⚠️ Hinweis: Journal gebucht, Rechnungsstatus konnte nicht aktualisiert werden:', invErr);
-      }
-    }
-
-    // 3. Falls Jahresbeitrag: auch im Jahresbeitrags-Modul als bezahlt setzen
-    if (isJahresbeitrag && matchedBeitrag && matchedBeitrag.id) {
-      try {
-        if (sb) {
-          await sb.from('contributions_header').update({
-            status: 'bezahlt',
-            payment_date: bookingDate,
-            payment_method: 'Überweisung',
-            document_ref: belegNr,
-            updated_at: new Date().toISOString()
-          }).eq('id', matchedBeitrag.id);
-        }
-
-        // Cache im Beitragswesen updaten
-        const cachedJb = (window._jbAllBeitraege || []).find(h => String(h.id) === String(matchedBeitrag.id));
-        if (cachedJb) { cachedJb.status = 'bezahlt'; cachedJb.payment_date = bookingDate; }
-      } catch (jbErr) {
-        console.warn('⚠️ Hinweis: Journal gebucht, Beitragsstatus konnte nicht aktualisiert werden:', jbErr);
-      }
-    }
-
-    // 2.3 Falls Zahlungsauftrag gematcht: auf 'ausgefuehrt' setzen und mit journal_id verknüpfen
-    if (prepared.matchedPaymentOrder && prepared.matchedPaymentOrder.id && sb) {
-      try {
-        const jId = createdEntries[0]?.id ? Number(createdEntries[0].id) : null;
-        await sb.from('accounting_payment_orders').update({
-          status: 'ausgefuehrt',
-          journal_id: jId,
-          executed_at: new Date().toISOString()
-        }).eq('id', prepared.matchedPaymentOrder.id);
-
-        prepared.matchedPaymentOrder.status = 'ausgefuehrt';
-        prepared.matchedPaymentOrder.journal_id = jId;
-        prepared.matchedPaymentOrder.executed_at = new Date().toISOString();
-
-        const cachedPo = (window._bhPaymentOrders || []).find(o => String(o.id) === String(prepared.matchedPaymentOrder.id));
-        if (cachedPo) {
-          cachedPo.status = 'ausgefuehrt';
-          cachedPo.journal_id = jId;
-          cachedPo.executed_at = new Date().toISOString();
-        }
-        console.log(`✅ [Zahlungsauftrag] ${prepared.matchedPaymentOrder.order_nr} auf 'ausgefuehrt' gesetzt (Journal-ID: ${jId})`);
-      } catch (poErr) {
-        console.warn('⚠️ Fehler beim Aktualisieren des Zahlungsauftrag-Status:', poErr);
-      }
-    }
+    // 2. Verknüpfte Fachmodule (Rechnungen via RechnungsCore, Vermietung, Jahresbeitrag, Zahlungsauftrag)
+    const linkWarnings = await _bhProcessLinkedModulesAfterBankBooking(prepared, createdEntries, sb);
 
     // Status im UI updaten
     tx._isBooking = false;
@@ -3386,31 +3465,24 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
 
     // Sofort lokal im Kassabuch-Journal registrieren für 100%ige Sofort-Sperre
     window._bhJournal = window._bhJournal || [];
-    if (sbSuccess && createdEntries.length > 0) {
-      createdEntries.forEach(entry => window._bhJournal.push(entry));
-    } else if (isSplit && Array.isArray(jsonBh && jsonBh.data)) {
-      jsonBh.data.forEach(entry => {
-        window._bhJournal.push(entry);
-      });
-    } else {
-      window._bhJournal.push((jsonBh && jsonBh.data) ? jsonBh.data : entries[0]);
-    }
+    createdEntries.forEach(entry => window._bhJournal.push(entry));
 
-    // Sofort Button dauerhaft deaktivieren & Kennzeichnen (noch vor dem Re-Render)
     if (bookBtn) {
       bookBtn.className = 'badge bg-light text-secondary border px-2 py-1.5';
       bookBtn.innerHTML = '<i class="fas fa-check me-1"></i>Gebucht';
       bookBtn.disabled = true;
     }
 
-    // Einzelbuchung bestätigen: unten rechts (bottom-end)
-    if (isSplit) {
+    if (linkWarnings.length > 0) {
+      const msg = `Journal gebucht, aber Nachlauf-Aktualisierung teilweise fehlgeschlagen:\n${linkWarnings.join('\n')}`;
+      if (isBatch) showToast(`⚠️ ${msg}`, 'warning', 'bottom-end', 5000);
+      else if (window.bhAlert) await window.bhAlert('Teilweise gebucht', msg, 'warning');
+    } else if (isSplit) {
       showToast(`✅ Splitbuchung über CHF ${tx.amount.toFixed(2)} (${entries.length} Posten) gebucht!`, 'success', 'bottom-end', 3000);
     } else {
       showToast(`✅ Buchungssatz über CHF ${tx.amount.toFixed(2)} gebucht!`, 'success', 'bottom-end', 2500);
     }
 
-    // Nächste ungebuchte Zeile nach dem Neuladen automatisch fokussieren
     window._bhFocusNextAfterBooking = txIdx + 1;
   } catch(err) {
     tx._isBooking = false;
@@ -3418,8 +3490,8 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
       bookBtn.disabled = false;
       bookBtn.innerHTML = '<i class="fas fa-check me-1"></i>Buchen';
     }
-    if (!isBatch) {
-      alert('Fehler beim Buchen: ' + err.message);
+    if (!isBatch && window.bhAlert) {
+      await window.bhAlert('Buchungsfehler', 'Fehler beim Buchen: ' + err.message, 'danger');
     } else {
       console.error('Fehler beim Batch-Buchen von Transaktion ' + txIdx + ':', err);
       showToast(`❌ Fehler bei Buchung: ${err.message}`, 'danger', 'bottom-end', 4000);
@@ -3432,8 +3504,13 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
 // Batch-Buchung aller sicheren Treffer (1x atomarer Commit)
 // ---------------------------------------------------------------------
 window.bhBankBookAll = async function() {
+  if (window.bhCanWrite && !window.bhCanWrite()) {
+    if (window.bhAlert) await window.bhAlert('Keine Berechtigung', 'Du hast keine Berechtigung zum Verbuchen von Banktransaktionen.', 'warning');
+    return;
+  }
   if (window._bhIsBookingAll) return;
   const allBtn = document.getElementById('bhBtnBookAll') || document.querySelector('button[onclick="bhBankBookAll()"]');
+  const origBtnHtml = allBtn ? allBtn.innerHTML : '';
 
   const results = window._bhBankMatchResults || [];
   const activeYear = Number(window._bhYear || new Date().getFullYear());
@@ -3476,18 +3553,9 @@ window.bhBankBookAll = async function() {
   }
   confirmMsg += '\n\nZugeordnete Rechnungen und Jahresbeiträge werden parallel als bezahlt markiert.';
 
-  let ok = false;
-  if (window.UIConfirmKit && typeof window.UIConfirmKit.confirm === 'function') {
-    ok = await window.UIConfirmKit.confirm({
-      title: 'Bank-Buchungen ausführen',
-      message: confirmMsg,
-      type: 'primary',
-      confirmText: `${toBook.length} Buchungen jetzt eintragen`,
-      cancelText: 'Abbrechen'
-    });
-  } else {
-    ok = confirm(confirmMsg);
-  }
+  const ok = window.bhConfirm
+    ? await window.bhConfirm('Bank-Buchungen ausführen', confirmMsg, { type: 'primary', confirmText: `${toBook.length} Buchungen jetzt eintragen`, cancelText: 'Abbrechen' })
+    : false;
   if (!ok) return;
 
   window._bhIsBookingAll = true;
@@ -3586,7 +3654,7 @@ window.bhBankBookAll = async function() {
             konto_soll: String(e.konto_soll).trim(),
             konto_haben: String(e.konto_haben).trim(),
             betrag: Number(e.betrag || 0),
-            typ: 'Bank',
+            typ: e.typ || 'Bank',
             buchungstyp: e.buchungstyp || ((typeof getBuchungstyp === 'function') ? getBuchungstyp(e.konto_soll, e.konto_haben) : 'TRANSIT'),
             created_at: new Date().toISOString()
           };
@@ -3622,6 +3690,19 @@ window.bhBankBookAll = async function() {
     window._bhJournal = window._bhJournal || [];
     createdBatchEntries.forEach(entry => window._bhJournal.push(entry));
 
+    // 4. Nachgelagerte Modul-Aktualisierungen (RechnungsCore + PDF, Vermietung + Logs, Jahresbeiträge, pain.001)
+    const linkTaskResults = await Promise.allSettled(
+      preparedList.map(item => _bhProcessLinkedModulesAfterBankBooking(item, createdBatchEntries, sb))
+    );
+    const linkWarnings = [];
+    linkTaskResults.forEach(res => {
+      if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+        linkWarnings.push(...res.value);
+      } else if (res.status === 'rejected') {
+        linkWarnings.push(res.reason?.message || String(res.reason));
+      }
+    });
+
     // Alle vorbereiteten Transaktionen im UI als gebucht markieren
     const todayStr = new Date().toLocaleDateString('de-CH');
     preparedList.forEach(({ tx, txIdx, bookBtn }) => {
@@ -3654,102 +3735,18 @@ window.bhBankBookAll = async function() {
     window.bhBankUpdateSelectedBtn();
     window.bhBankUpdateSafeBookingsBtn();
 
-    showToast(`⚡ ${preparedList.length} Bank-Buchungen (${allJournalEntries.length} Buchungssätze) erfolgreich ausgeführt!`, 'success', 'top-end', 4000);
-
-    // 4. Nachgelagerte Modul-Aktualisierungen (Rechnungen & Jahresbeiträge) direkt in Supabase abarbeiten
-    const secondaryTasks = [];
-
-    preparedList.forEach(({ belegNr, bookingDate, matchedInvoice, matchedBeitrag, matchedPaymentOrder, isJahresbeitrag }) => {
-      // a) Rechnungs-Zahlung: lokaler Cache sofort updaten
-      if (matchedInvoice && matchedInvoice.id) {
-        const cachedInv = (window._invoices || []).find(inv => String(inv.id) === String(matchedInvoice.id));
-        if (cachedInv) {
-          cachedInv.status = 'bezahlt';
-          cachedInv.payment_date = bookingDate;
-          cachedInv.payment_method = 'Überweisung';
-          cachedInv.document_ref = belegNr;
-        }
-        if (sb) {
-          secondaryTasks.push(sb.from('invoices').update({
-            status: 'bezahlt',
-            payment_date: bookingDate,
-            payment_method: 'Überweisung',
-            document_ref: belegNr,
-            updated_at: new Date().toISOString()
-          }).eq('id', matchedInvoice.id));
-        }
+    if (linkWarnings.length > 0) {
+      if (window.bhAlert) {
+        await window.bhAlert(
+          'Teilweise synchronisiert',
+          `${preparedList.length} Bank-Buchungen im Journal erfasst, aber folgende Modul-Synchronisationen sind fehlgeschlagen:\n\n${linkWarnings.join('\n')}`,
+          'warning'
+        );
+      } else {
+        showToast(`⚠️ ${preparedList.length} Buchungen erstellt, ${linkWarnings.length} Nachlauf-Fehler`, 'warning', 'top-end', 6000);
       }
-
-      // b) Jahresbeitrags-Zahlung: lokaler Cache sofort updaten
-      if (isJahresbeitrag && matchedBeitrag && matchedBeitrag.id) {
-        const cachedJb = (window._jbAllBeitraege || []).find(h => String(h.id) === String(matchedBeitrag.id));
-        if (cachedJb) {
-          cachedJb.status = 'bezahlt';
-          cachedJb.payment_date = bookingDate;
-        }
-        if (sb) {
-          secondaryTasks.push(sb.from('contributions_header').update({
-            status: 'bezahlt',
-            payment_date: bookingDate,
-            payment_method: 'Überweisung',
-            document_ref: belegNr,
-            updated_at: new Date().toISOString()
-          }).eq('id', matchedBeitrag.id));
-        }
-      }
-
-      // c) Vermietungs-Zahlung: auch in rental_requests auf Stufe 2 (fibu_gebucht via CAMT) setzen
-      if (matchedInvoice && (matchedInvoice.source_module === 'vermietung' || String(matchedInvoice.id || '').startsWith('VM-') || String(matchedInvoice.booking_number || '').startsWith('V-') || String(matchedInvoice.source_id || '').startsWith('V-'))) {
-        if (sb) {
-          const vnr = matchedInvoice.booking_number || matchedInvoice.source_id;
-          let rq = sb.from('rental_requests').update({
-            status: 'paid',
-            is_paid: true,
-            status_raiffeisen: 'fibu_gebucht',
-            datum_raiffeisen: bookingDate,
-            kommentar_raiffeisen: `FIBU gebucht via CAMT (${belegNr})`,
-            updated_at: new Date().toISOString()
-          });
-          if (vnr && matchedInvoice.id) {
-            rq = rq.or(`booking_number.eq.${vnr},invoice_id.eq.${matchedInvoice.id}`);
-          } else if (vnr) {
-            rq = rq.eq('booking_number', vnr);
-          } else {
-            rq = rq.eq('invoice_id', matchedInvoice.id);
-          }
-          secondaryTasks.push(rq);
-        }
-      }
-
-      // d) Zahlungsauftrag (pain.001): auf 'ausgefuehrt' setzen und mit journal_id verknüpfen
-      if (matchedPaymentOrder && matchedPaymentOrder.id) {
-        const matchedJournalRow = createdBatchEntries.find(ce => String(ce.beleg_nr || '').startsWith(String(belegNr)));
-        const jId = matchedJournalRow?.id ? Number(matchedJournalRow.id) : null;
-        const execIso = new Date().toISOString();
-        matchedPaymentOrder.status = 'ausgefuehrt';
-        matchedPaymentOrder.journal_id = jId;
-        matchedPaymentOrder.executed_at = execIso;
-
-        const cachedPo = (window._bhPaymentOrders || []).find(o => String(o.id) === String(matchedPaymentOrder.id));
-        if (cachedPo) {
-          cachedPo.status = 'ausgefuehrt';
-          cachedPo.journal_id = jId;
-          cachedPo.executed_at = execIso;
-        }
-        if (sb) {
-          secondaryTasks.push(sb.from('accounting_payment_orders').update({
-            status: 'ausgefuehrt',
-            journal_id: jId,
-            executed_at: execIso
-          }).eq('id', matchedPaymentOrder.id));
-        }
-      }
-    });
-
-    if (secondaryTasks.length > 0) {
-      Promise.allSettled(secondaryTasks).then(() => {
-        console.log(`✅ ${secondaryTasks.length} nachgelagerte Rechnungs-/Beitrags-Aktualisierungen in Supabase abgeschlossen.`);
-      });
+    } else {
+      showToast(`⚡ ${preparedList.length} Bank-Buchungen (${allJournalEntries.length} Buchungssätze) erfolgreich ausgeführt!`, 'success', 'top-end', 4000);
     }
   } catch (err) {
     console.error('Fehler beim Sammel-Buchen:', err);
@@ -3758,6 +3755,9 @@ window.bhBankBookAll = async function() {
   } finally {
     if (batchToast && batchToast.parentNode) batchToast.remove();
     window._bhIsBookingAll = false;
+    if (allBtn && origBtnHtml) {
+      allBtn.innerHTML = origBtnHtml;
+    }
     (window._bhBankMatchResults || []).forEach(r => {
       if (!r.alreadyBooked) r._isBooking = false;
     });
@@ -3797,8 +3797,13 @@ window.bhBankUpdateSelectedBtn = function() {
 };
 
 window.bhBankBookSelected = async function() {
+  if (window.bhCanWrite && !window.bhCanWrite()) {
+    if (window.bhAlert) await window.bhAlert('Keine Berechtigung', 'Du hast keine Berechtigung zum Verbuchen von Banktransaktionen.', 'warning');
+    return;
+  }
   if (window._bhIsBookingSelected || window._bhIsBookingAll) return;
   const selBtn = document.getElementById('bhBtnBookSelected');
+  const origSelHtml = selBtn ? selBtn.innerHTML : '';
 
   const results = window._bhBankMatchResults || [];
   const activeYear = Number(window._bhYear || new Date().getFullYear());
@@ -3813,7 +3818,14 @@ window.bhBankBookSelected = async function() {
   }
 
   const totalAmount = toBook.reduce((sum, { r }) => sum + (Number(r.amount) || 0), 0);
-  const ok = confirm(`${toBook.length} vorgemerkte Bank-Buchung(en) jetzt zusammenhängend in einem Schritt ins Journal eintragen?\n\nGesamtbetrag: CHF ${totalAmount.toFixed(2)}`);
+  const amtText = typeof window.fmtChf === 'function' ? window.fmtChf(totalAmount) : `CHF ${totalAmount.toFixed(2)}`;
+  const ok = window.bhConfirm
+    ? await window.bhConfirm(
+        'Stapel-Buchung ausführen',
+        `${toBook.length} vorgemerkte Bank-Buchung(en) jetzt zusammenhängend in einem Schritt ins Journal eintragen?\n\nGesamtbetrag: ${amtText}`,
+        { type: 'primary', confirmText: `${toBook.length} Buchungen eintragen`, cancelText: 'Abbrechen' }
+      )
+    : false;
   if (!ok) return;
 
   window._bhIsBookingSelected = true;
@@ -3915,7 +3927,7 @@ window.bhBankBookSelected = async function() {
             konto_soll: String(e.konto_soll).trim(),
             konto_haben: String(e.konto_haben).trim(),
             betrag: Number(e.betrag || 0),
-            typ: 'Bank',
+            typ: e.typ || 'Bank',
             buchungstyp: e.buchungstyp || ((typeof getBuchungstyp === 'function') ? getBuchungstyp(e.konto_soll, e.konto_haben) : 'TRANSIT'),
             created_at: new Date().toISOString()
           };
@@ -3950,6 +3962,19 @@ window.bhBankBookSelected = async function() {
     }
     window._bhJournal = window._bhJournal || [];
     createdBatchEntries.forEach(entry => window._bhJournal.push(entry));
+
+    // 4. Nachgelagerte Modul-Aktualisierungen (RechnungsCore + PDF, Vermietung + Logs, Jahresbeiträge, pain.001)
+    const linkTaskResults = await Promise.allSettled(
+      preparedList.map(item => _bhProcessLinkedModulesAfterBankBooking(item, createdBatchEntries, sb))
+    );
+    const linkWarnings = [];
+    linkTaskResults.forEach(res => {
+      if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+        linkWarnings.push(...res.value);
+      } else if (res.status === 'rejected') {
+        linkWarnings.push(res.reason?.message || String(res.reason));
+      }
+    });
 
     // Alle vorbereiteten Transaktionen im UI als gebucht markieren & aus Stapel entfernen
     const todayStr = new Date().toLocaleDateString('de-CH');
@@ -3986,102 +4011,18 @@ window.bhBankBookSelected = async function() {
     window.bhBankUpdateSelectedBtn();
     window.bhBankUpdateSafeBookingsBtn();
 
-    showToast(`⚡ ${preparedList.length} Bank-Buchung(en) (${allJournalEntries.length} Buchungssätze) erfolgreich ausgeführt!`, 'success', 'top-end', 4000);
-
-    // 4. Nachgelagerte Modul-Aktualisierungen (Rechnungen & Jahresbeiträge) direkt in Supabase abarbeiten
-    const secondaryTasks = [];
-
-    preparedList.forEach(({ belegNr, bookingDate, matchedInvoice, matchedBeitrag, matchedPaymentOrder, isJahresbeitrag }) => {
-      // a) Rechnungs-Zahlung: lokaler Cache sofort updaten
-      if (matchedInvoice && matchedInvoice.id) {
-        const cachedInv = (window._invoices || []).find(inv => String(inv.id) === String(matchedInvoice.id));
-        if (cachedInv) {
-          cachedInv.status = 'bezahlt';
-          cachedInv.payment_date = bookingDate;
-          cachedInv.payment_method = 'Überweisung';
-          cachedInv.document_ref = belegNr;
-        }
-        if (sb) {
-          secondaryTasks.push(sb.from('invoices').update({
-            status: 'bezahlt',
-            payment_date: bookingDate,
-            payment_method: 'Überweisung',
-            document_ref: belegNr,
-            updated_at: new Date().toISOString()
-          }).eq('id', matchedInvoice.id));
-        }
+    if (linkWarnings.length > 0) {
+      if (window.bhAlert) {
+        await window.bhAlert(
+          'Teilweise synchronisiert',
+          `${preparedList.length} Bank-Buchung(en) im Journal erfasst, aber folgende Modul-Synchronisationen sind fehlgeschlagen:\n\n${linkWarnings.join('\n')}`,
+          'warning'
+        );
+      } else {
+        showToast(`⚠️ ${preparedList.length} Buchung(en) erstellt, ${linkWarnings.length} Nachlauf-Fehler`, 'warning', 'top-end', 6000);
       }
-
-      // b) Jahresbeitrags-Zahlung: lokaler Cache sofort updaten
-      if (isJahresbeitrag && matchedBeitrag && matchedBeitrag.id) {
-        const cachedJb = (window._jbAllBeitraege || []).find(h => String(h.id) === String(matchedBeitrag.id));
-        if (cachedJb) {
-          cachedJb.status = 'bezahlt';
-          cachedJb.payment_date = bookingDate;
-        }
-        if (sb) {
-          secondaryTasks.push(sb.from('contributions_header').update({
-            status: 'bezahlt',
-            payment_date: bookingDate,
-            payment_method: 'Überweisung',
-            document_ref: belegNr,
-            updated_at: new Date().toISOString()
-          }).eq('id', matchedBeitrag.id));
-        }
-      }
-
-      // c) Vermietungs-Zahlung: auch in rental_requests auf Stufe 2 (fibu_gebucht via CAMT) setzen
-      if (matchedInvoice && (matchedInvoice.source_module === 'vermietung' || String(matchedInvoice.id || '').startsWith('VM-') || String(matchedInvoice.booking_number || '').startsWith('V-') || String(matchedInvoice.source_id || '').startsWith('V-'))) {
-        if (sb) {
-          const vnr = matchedInvoice.booking_number || matchedInvoice.source_id;
-          let rq = sb.from('rental_requests').update({
-            status: 'paid',
-            is_paid: true,
-            status_raiffeisen: 'fibu_gebucht',
-            datum_raiffeisen: bookingDate,
-            kommentar_raiffeisen: `FIBU gebucht via CAMT (${belegNr})`,
-            updated_at: new Date().toISOString()
-          });
-          if (vnr && matchedInvoice.id) {
-            rq = rq.or(`booking_number.eq.${vnr},invoice_id.eq.${matchedInvoice.id}`);
-          } else if (vnr) {
-            rq = rq.eq('booking_number', vnr);
-          } else {
-            rq = rq.eq('invoice_id', matchedInvoice.id);
-          }
-          secondaryTasks.push(rq);
-        }
-      }
-
-      // d) Zahlungsauftrag (pain.001): auf 'ausgefuehrt' setzen und mit journal_id verknüpfen
-      if (matchedPaymentOrder && matchedPaymentOrder.id) {
-        const matchedJournalRow = createdBatchEntries.find(ce => String(ce.beleg_nr || '').startsWith(String(belegNr)));
-        const jId = matchedJournalRow?.id ? Number(matchedJournalRow.id) : null;
-        const execIso = new Date().toISOString();
-        matchedPaymentOrder.status = 'ausgefuehrt';
-        matchedPaymentOrder.journal_id = jId;
-        matchedPaymentOrder.executed_at = execIso;
-
-        const cachedPo = (window._bhPaymentOrders || []).find(o => String(o.id) === String(matchedPaymentOrder.id));
-        if (cachedPo) {
-          cachedPo.status = 'ausgefuehrt';
-          cachedPo.journal_id = jId;
-          cachedPo.executed_at = execIso;
-        }
-        if (sb) {
-          secondaryTasks.push(sb.from('accounting_payment_orders').update({
-            status: 'ausgefuehrt',
-            journal_id: jId,
-            executed_at: execIso
-          }).eq('id', matchedPaymentOrder.id));
-        }
-      }
-    });
-
-    if (secondaryTasks.length > 0) {
-      Promise.allSettled(secondaryTasks).then(() => {
-        console.log(`✅ ${secondaryTasks.length} nachgelagerte Rechnungs-/Beitrags-Aktualisierungen in Supabase abgeschlossen.`);
-      });
+    } else {
+      showToast(`⚡ ${preparedList.length} Bank-Buchung(en) (${allJournalEntries.length} Buchungssätze) erfolgreich ausgeführt!`, 'success', 'top-end', 4000);
     }
   } catch (err) {
     console.error('Fehler beim Stapel-Buchen:', err);
@@ -4090,9 +4031,9 @@ window.bhBankBookSelected = async function() {
   } finally {
     if (batchToast && batchToast.parentNode) batchToast.remove();
     window._bhIsBookingSelected = false;
-    const selBtn = document.getElementById('bhBtnBookSelected');
     if (selBtn) {
       selBtn.disabled = false;
+      if (origSelHtml) selBtn.innerHTML = origSelHtml;
     }
     (window._bhBankMatchResults || []).forEach(r => {
       if (!r.alreadyBooked) r._isBooking = false;
@@ -4270,6 +4211,10 @@ window.bhBankOpenRuleEditorModal = function(editIdx, prefillObj) {
 
 window.bhBankSaveRuleSubmit = async function(e, editIdx) {
   e.preventDefault();
+  if (window.bhCanWrite && !window.bhCanWrite()) {
+    if (window.bhAlert) await window.bhAlert('Keine Berechtigung', 'Du hast keine Berechtigung zum Speichern von Buchungsregeln.', 'warning');
+    return;
+  }
 
   const label        = document.getElementById('bhr-label').value.trim();
   const patternParty = document.getElementById('bhr-pattern-party').value.trim();
@@ -4311,14 +4256,12 @@ window.bhBankSaveRuleSubmit = async function(e, editIdx) {
   const hasAnyFilter = Boolean(patternParty || patternText || (amountMode !== 'any' && amountMin !== ''));
 
   if (!label || !hasAnyFilter || !soll || !haben) {
-    if (window.UIConfirmKit && typeof window.UIConfirmKit.alert === 'function') {
-      await window.UIConfirmKit.alert({
-        title: 'Pflichtfelder ausfüllen',
-        message: 'Bitte Regel-Bezeichnung, mindestens ein Filterkriterium (Empfänger, Verwendungszweck oder Betrag) sowie Soll- und Haben-Konto angeben.',
-        type: 'warning'
-      });
-    } else {
-      alert('Bitte Regel-Bezeichnung, mindestens ein Filterkriterium (Empfänger, Verwendungszweck oder Betrag) sowie Soll- und Haben-Konto angeben.');
+    if (window.bhAlert) {
+      await window.bhAlert(
+        'Pflichtfelder ausfüllen',
+        'Bitte gib eine Regel-Bezeichnung, mindestens ein Filterkriterium (Empfänger, Verwendungszweck oder Betrag) sowie Soll- und Haben-Konto an.',
+        'warning'
+      );
     }
     return;
   }
@@ -4340,21 +4283,28 @@ window.bhBankSaveRuleSubmit = async function(e, editIdx) {
     amount_max: amountMax
   };
 
-  const rules = window.getBhBankRules();
+  const rules = window.getBhBankRules().slice();
+  const isUpdate = editIdx >= 0 && editIdx < rules.length;
 
-  if (editIdx >= 0 && editIdx < rules.length) {
+  if (isUpdate) {
     const existing = rules[editIdx];
     if (existing && existing.id) {
       ruleObj.id = existing.id;
     }
     rules[editIdx] = ruleObj;
-    showToast(`✅ Regel "${label}" erfolgreich aktualisiert!`, 'success');
   } else {
     rules.push(ruleObj);
-    showToast(`✅ Neue Regel "${label}" gespeichert!`, 'success');
   }
 
-  window.saveBhBankRules(rules);
+  try {
+    await window.saveBhBankRules(rules);
+    showToast(isUpdate ? `✅ Regel "${label}" erfolgreich aktualisiert!` : `✅ Neue Regel "${label}" gespeichert!`, 'success');
+  } catch (saveErr) {
+    if (window.bhAlert) {
+      await window.bhAlert('Speicherfehler', 'Fehler beim Speichern der Buchungsregel: ' + (saveErr.message || saveErr), 'danger');
+    }
+    return;
+  }
 
   const editorModalEl = document.getElementById('bhModalRuleEditor');
   if (editorModalEl) bootstrap.Modal.getInstance(editorModalEl)?.hide();
@@ -4431,6 +4381,7 @@ window.bhToggleManageRulesFullscreen = function() {
 
 window.bhBankManageRulesModal = function() {
   const rules = window.getBhBankRules();
+  const canEdit = window.bhCanWrite ? window.bhCanWrite() : false;
 
   let modalEl = document.getElementById('bhModalManageRules');
   if (!modalEl) {
@@ -4489,12 +4440,14 @@ window.bhBankManageRulesModal = function() {
         <td data-col-id="soll" class="tk-col-soll"><span class="badge bg-primary font-monospace px-2 py-1" title="Soll: ${escHtml(r.soll)}">${escHtml(sollNr)}</span></td>
         <td data-col-id="haben" class="tk-col-haben"><span class="badge bg-success font-monospace px-2 py-1" title="Haben: ${escHtml(r.haben)}">${escHtml(habenNr)}</span></td>
         <td data-col-id="actions" class="text-end tk-col-actions" style="white-space: nowrap;">
-          <button class="btn btn-sm btn-outline-primary py-1 px-2 me-1" onclick="bhBankOpenRuleEditorModal(${i})" title="Regel bearbeiten">
-            <i class="fas fa-edit me-1"></i>Bearbeiten
-          </button>
-          <button class="btn btn-sm btn-outline-danger py-1 px-2" onclick="bhBankDeleteRule(${i})" title="Regel löschen">
-            <i class="fas fa-trash"></i>
-          </button>
+          ${canEdit ? `
+            <button class="btn btn-sm btn-outline-primary py-1 px-2 me-1" onclick="bhBankOpenRuleEditorModal(${i})" title="Regel bearbeiten">
+              <i class="fas fa-edit me-1"></i>Bearbeiten
+            </button>
+            <button class="btn btn-sm btn-outline-danger py-1 px-2" onclick="bhBankDeleteRule(${i})" title="Regel löschen">
+              <i class="fas fa-trash"></i>
+            </button>
+          ` : '<span class="text-muted small">Nur Einsicht</span>'}
         </td>
       </tr>
     `;
@@ -4526,9 +4479,11 @@ window.bhBankManageRulesModal = function() {
             <p class="text-muted small mb-0">Erstelle oder bearbeite Regeln für die automatische Zuordnung von Kontoauszug-Transaktionen (getrennte Kriterien für Empfänger/Zahler, Verwendungszweck und optionale Betragsfilter).</p>
             <div class="d-flex align-items-center gap-2">
               <div id="bh-rules-column-toggle" class="d-inline-block"></div>
-              <button class="btn btn-sm btn-success fw-bold px-3" onclick="bhBankOpenRuleEditorModal(-1)">
-                <i class="fas fa-plus me-1"></i>Neue Regel erstellen
-              </button>
+              ${canEdit ? `
+                <button class="btn btn-sm btn-success fw-bold px-3" onclick="bhBankOpenRuleEditorModal(-1)">
+                  <i class="fas fa-plus me-1"></i>Neue Regel erstellen
+                </button>
+              ` : ''}
             </div>
           </div>
           <div id="bhManageRulesTableWrap" class="table-responsive" style="max-height: ${isFs ? 'calc(100vh - 220px)' : '520px'}; overflow-y: auto;">
@@ -4569,38 +4524,47 @@ window.bhBankManageRulesModal = function() {
 };
 
 window.bhBankDeleteRule = async function(idx) {
-  const rules = window.getBhBankRules();
+  if (window.bhCanWrite && !window.bhCanWrite()) {
+    if (window.bhAlert) await window.bhAlert('Keine Berechtigung', 'Du hast keine Berechtigung zum Löschen von Buchungsregeln.', 'warning');
+    return;
+  }
+
+  const rules = window.getBhBankRules().slice();
   const r = rules[idx];
   if (!r) return;
 
-  let confirmed = false;
-  if (window.UIConfirmKit && typeof window.UIConfirmKit.confirm === 'function') {
-    confirmed = await window.UIConfirmKit.confirm({
-      title: 'Regel löschen?',
-      message: `Möchtest du die Regel "${r.label}" wirklich unwiderruflich löschen?`,
-      type: 'danger',
-      confirmText: 'Löschen',
-      cancelText: 'Abbrechen'
-    });
-  } else {
-    confirmed = confirm(`Regel "${r.label}" wirklich löschen?`);
-  }
+  const confirmed = window.bhConfirm
+    ? await window.bhConfirm(
+        'Regel löschen?',
+        `Möchtest du die Regel "${r.label}" wirklich unwiderruflich löschen?`,
+        { type: 'danger', confirmText: 'Löschen', cancelText: 'Abbrechen' }
+      )
+    : false;
   if (!confirmed) return;
 
   const ruleId = r.id;
   const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
-  if (sb && ruleId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(ruleId))) {
-    sb.from('accounting_bank_rules').delete().eq('id', ruleId)
-      .then(({ error }) => {
-        if (error) console.warn('[Buchhaltung Supabase] Error deleting rule:', error);
-        else console.log('✅ Regel aus Supabase gelöscht.');
-      });
+  if (!sb) {
+    if (window.bhAlert) await window.bhAlert('Fehler', 'Keine Datenbankverbindung verfügbar.', 'danger');
+    return;
   }
 
-  rules.splice(idx, 1);
-  window.saveBhBankRules(rules);
+  try {
+    if (ruleId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(ruleId))) {
+      const { error: delErr } = await sb.from('accounting_bank_rules').delete().eq('id', ruleId);
+      if (delErr) {
+        throw new Error(delErr.message || 'Regel konnte nicht in Supabase gelöscht werden.');
+      }
+    }
 
-  showToast('Regel gelöscht.', 'info');
+    rules.splice(idx, 1);
+    await window.saveBhBankRules(rules);
+
+    showToast('Regel gelöscht.', 'info');
+  } catch (err) {
+    if (window.bhAlert) await window.bhAlert('Löschfehler', 'Fehler beim Löschen der Regel: ' + (err.message || err), 'danger');
+    return;
+  }
 
   if (window._bhBankTransactions && window._bhBankTransactions.length > 0) {
     window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);
@@ -5079,7 +5043,12 @@ window.bhBankRemoveSplitRow = function(idx) {
   }
 };
 
-window.bhBankSaveSplitBooking = function(txIdx, andPrint = false) {
+window.bhBankSaveSplitBooking = async function(txIdx, andPrint = false) {
+  if (window.bhCanWrite && !window.bhCanWrite()) {
+    if (window.bhAlert) await window.bhAlert('Keine Berechtigung', 'Du hast keine Berechtigung zum Speichern von Splitbuchungen.', 'warning');
+    return;
+  }
+
   bhBankUpdateSplitFromInputs();
   const txs = window._bhBankMatchResults || [];
   const tx = txs[txIdx];
@@ -5089,17 +5058,17 @@ window.bhBankSaveSplitBooking = function(txIdx, andPrint = false) {
   const bal = bhBankCalcSplitBalance(tx, splitRows);
 
   if (bal.hasNegative) {
-    alert('⚠️ Buchungsbeträge müssen positiv sein. Die Richtung (Zunahme/Abnahme) wird ausschliesslich über Soll und Haben bestimmt.');
+    if (window.bhAlert) await window.bhAlert('Ungültiger Betrag', 'Buchungsbeträge müssen positiv sein. Die Richtung (Zunahme/Abnahme) wird ausschliesslich über Soll und Haben bestimmt.', 'warning');
     return;
   }
 
   if (splitRows.length === 0) {
-    alert('⚠️ Bitte mindestens eine Position mit Betrag > 0 erfassen.');
+    if (window.bhAlert) await window.bhAlert('Position fehlt', 'Bitte erfasse mindestens eine Position mit Betrag > 0.', 'warning');
     return;
   }
 
   if (!bal.isBalanced) {
-    alert(`⚠️ Die Netto-Aufteilung auf das Bankkonto (CHF ${bal.actualNetBank.toFixed(2)}) entspricht nicht dem Bankbetrag (CHF ${bal.totalAmount.toFixed(2)}). Differenz: CHF ${bal.diff.toFixed(2)}.`);
+    if (window.bhAlert) await window.bhAlert('Aufteilung nicht ausgeglichen', `Die Netto-Aufteilung auf das Bankkonto (CHF ${bal.actualNetBank.toFixed(2)}) entspricht nicht dem Bankbetrag (CHF ${bal.totalAmount.toFixed(2)}). Differenz: CHF ${bal.diff.toFixed(2)}.`, 'warning');
     return;
   }
 
@@ -5116,15 +5085,15 @@ window.bhBankSaveSplitBooking = function(txIdx, andPrint = false) {
   if (splitRows.length === 1) {
     const single = splitRows[0];
     if (!single.kontoSoll || !single.kontoHaben) {
-      alert('Bitte Soll- und Haben-Konto für die Position angeben.');
+      if (window.bhAlert) await window.bhAlert('Konten fehlen', 'Bitte gib Soll- und Haben-Konto für die Position an.', 'warning');
       return;
     }
     if (single.kontoSoll === single.kontoHaben) {
-      alert('Soll- und Haben-Konto dürfen nicht identisch sein.');
+      if (window.bhAlert) await window.bhAlert('Ungültige Kontierung', 'Soll- und Haben-Konto dürfen nicht identisch sein.', 'warning');
       return;
     }
     if (Number(single.betrag) <= 0) {
-      alert('Bitte einen Betrag grösser als 0 eingeben.');
+      if (window.bhAlert) await window.bhAlert('Ungültiger Betrag', 'Bitte gib einen Betrag grösser als 0 ein.', 'warning');
       return;
     }
 
@@ -5189,19 +5158,19 @@ window.bhBankSaveSplitBooking = function(txIdx, andPrint = false) {
   for (let i = 0; i < splitRows.length; i++) {
     const r = splitRows[i];
     if (!r.beschreibung.trim()) {
-      alert(`Bitte Beschreibung für Zeile #${i+1} eingeben.`);
+      if (window.bhAlert) await window.bhAlert('Beschreibung fehlt', `Bitte gib eine Beschreibung für Zeile #${i+1} ein.`, 'warning');
       return;
     }
     if (!r.kontoSoll || !r.kontoHaben) {
-      alert(`Bitte Soll- und Haben-Konto für Zeile #${i+1} angeben.`);
+      if (window.bhAlert) await window.bhAlert('Konten fehlen', `Bitte gib Soll- und Haben-Konto für Zeile #${i+1} an.`, 'warning');
       return;
     }
     if (r.kontoSoll === r.kontoHaben) {
-      alert(`Soll- und Haben-Konto für Zeile #${i+1} dürfen nicht identisch sein.`);
+      if (window.bhAlert) await window.bhAlert('Ungültige Kontierung', `Soll- und Haben-Konto für Zeile #${i+1} dürfen nicht identisch sein.`, 'warning');
       return;
     }
     if (Number(r.betrag) <= 0) {
-      alert(`Zeile #${i+1}: Bitte einen Betrag grösser als 0 eingeben.`);
+      if (window.bhAlert) await window.bhAlert('Ungültiger Betrag', `Zeile #${i+1}: Bitte gib einen Betrag grösser als 0 ein.`, 'warning');
       return;
     }
   }
@@ -5270,6 +5239,7 @@ window.bhBankSaveAndPrintSplitBooking = function(txIdx) {
 };
 
 window.bhBankClearSplit = function(txIdx) {
+  if (window.bhCanWrite && !window.bhCanWrite()) return;
   const rows = window._bhBankMatchResults || [];
   const tx = rows[txIdx];
   if (!tx) return;
@@ -5333,6 +5303,7 @@ window.bhBankClearSplit = function(txIdx) {
 // =====================================================================
 
 window.bhBankRemoveJbAssignment = function(txIdx) {
+  if (window.bhCanWrite && !window.bhCanWrite()) return;
   const rows = window._bhBankMatchResults || [];
   const tx = rows[txIdx];
   if (!tx) return;
@@ -5390,6 +5361,7 @@ window.bhBankRemoveJbAssignment = function(txIdx) {
 };
 
 window.bhBankApplyJbAssignment = function(txIdx, personNumber) {
+  if (window.bhCanWrite && !window.bhCanWrite()) return;
   const rows = window._bhBankMatchResults || [];
   const tx = rows[txIdx];
   if (!tx) return;
@@ -5465,6 +5437,7 @@ window.bhBankApplyJbAssignment = function(txIdx, personNumber) {
 };
 
 window.bhBankApplyInvoiceAssignment = function(txIdx, invoiceId) {
+  if (window.bhCanWrite && !window.bhCanWrite()) return;
   const rows = window._bhBankMatchResults || [];
   const tx = rows[txIdx];
   if (!tx) return;

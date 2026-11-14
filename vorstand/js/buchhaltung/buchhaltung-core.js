@@ -48,7 +48,61 @@ window.bhGetAllocationQuote = function(key, defaultVal = 0) {
   return def ? Number(def.quote_percent) : defaultVal;
 };
 
+window.bhCanWrite = window.bhCanWrite || function() {
+  return typeof window.hasWriteAccess === 'function' ? Boolean(window.hasWriteAccess('buchhaltung')) : false;
+};
+
+window.bhAlert = window.bhAlert || async function(title, message, type = 'info') {
+  if (message === undefined) {
+    message = title;
+    title = type === 'danger' ? 'Fehler' : (type === 'warning' ? 'Hinweis' : 'Information');
+  }
+  const safeHtml = String(message || '').replace(/\n/g, '<br>');
+  if (window.UIConfirmKit && typeof window.UIConfirmKit.alert === 'function') {
+    return await window.UIConfirmKit.alert({ title, message: safeHtml, type });
+  }
+  if (type === 'danger' && typeof window.showError === 'function') {
+    window.showError(String(message || ''));
+  } else if (typeof window.showToast === 'function') {
+    window.showToast(String(message || ''), type === 'danger' ? 'error' : type);
+  }
+};
+
+window.bhConfirm = window.bhConfirm || async function(title, message, options = {}) {
+  const safeHtml = String(message || '').replace(/\n/g, '<br>');
+  if (window.UIConfirmKit && typeof window.UIConfirmKit.confirm === 'function') {
+    return await window.UIConfirmKit.confirm({
+      title: title || 'Bestätigung erforderlich',
+      message: safeHtml,
+      type: options.type || 'primary',
+      confirmText: options.confirmText || 'Bestätigen',
+      cancelText: options.cancelText || 'Abbrechen',
+      focusCancel: Boolean(options.focusCancel)
+    });
+  }
+  return false;
+};
+
+window.bhEscHtml = window.bhEscHtml || function(str) {
+  if (typeof window.escapeHtml === 'function') return window.escapeHtml(str);
+  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+};
+
+window.bhEscJs = window.bhEscJs || function(str) {
+  if (typeof window.escapeJs === 'function') return window.escapeJs(str);
+  return String(str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+};
+
+window.bhFmtDate = window.bhFmtDate || function(val) {
+  if (!val) return '–';
+  if (window.UIFormatKit && typeof window.UIFormatKit.formatDate === 'function') {
+    return window.UIFormatKit.formatDate(val, { fallback: '–' });
+  }
+  return typeof window.isoToDisplay === 'function' ? (window.isoToDisplay(val) || '–') : String(val);
+};
+
 window.bhSetAllocationQuote = function(key, percent) {
+  if (!window.bhCanWrite()) return;
   const num = Math.max(0, Math.min(100, Math.round((parseFloat(percent) || 0) * 10) / 10));
   let found = window._bhCostAllocations.find(a => a.key === key);
   if (found) {
@@ -64,41 +118,53 @@ window.bhSetAllocationQuote = function(key, percent) {
   } catch(_) {}
 };
 
-window.bhSaveCostAllocations = async function() {
+window.bhSaveCostAllocations = async function(btnOrSelector) {
+  if (!window.bhCanWrite()) {
+    await window.bhAlert('Keine Berechtigung', 'Du hast keine Schreibberechtigung für die Buchhaltung.', 'warning');
+    return false;
+  }
   const supa = getBuchhaltungSupabaseClient();
   if (!supa) {
-    alert("Supabase Verbindung nicht verfügbar.");
+    await window.bhAlert('Verbindungsfehler', 'Supabase-Verbindung nicht verfügbar.', 'danger');
     return false;
   }
-  try {
-    const updates = window._bhCostAllocations.map(a => ({
-      key: a.key,
-      bereich: a.bereich,
-      label: a.label,
-      konten: a.konten,
-      quote_percent: Number(a.quote_percent),
-      beschreibung: a.beschreibung || '',
-      updated_at: new Date().toISOString()
-    }));
-    const { error } = await supa.from('accounting_cost_allocations').upsert(updates, { onConflict: 'key' });
-    if (error) throw error;
+  const btn = btnOrSelector || (typeof event !== 'undefined' && event?.currentTarget instanceof HTMLElement ? event.currentTarget : null);
+  const runSave = async () => {
     try {
-      localStorage.setItem('bh_cost_allocations', JSON.stringify(window._bhCostAllocations));
-    } catch(_) {}
-    if (typeof showToast === 'function') {
-      showToast("Zuteilungsquoten erfolgreich in der Datenbank gespeichert!", "success");
-    } else {
-      alert("Zuteilungsquoten erfolgreich in der Datenbank gespeichert!");
+      const updates = window._bhCostAllocations.map(a => ({
+        key: a.key,
+        bereich: a.bereich,
+        label: a.label,
+        konten: a.konten,
+        quote_percent: Number(a.quote_percent),
+        beschreibung: a.beschreibung || '',
+        updated_at: new Date().toISOString()
+      }));
+      const { error } = await supa.from('accounting_cost_allocations').upsert(updates, { onConflict: 'key' });
+      if (error) throw error;
+      try {
+        localStorage.setItem('bh_cost_allocations', JSON.stringify(window._bhCostAllocations));
+      } catch(_) {}
+      if (typeof showToast === 'function') {
+        showToast('Zuteilungsquoten erfolgreich in der Datenbank gespeichert!', 'success');
+      } else {
+        await window.bhAlert('Gespeichert', 'Zuteilungsquoten erfolgreich in der Datenbank gespeichert!', 'success');
+      }
+      return true;
+    } catch (err) {
+      console.error('Fehler beim Speichern der Zuteilungsquoten:', err);
+      await window.bhAlert('Fehler beim Speichern', 'Fehler beim Speichern der Quoten: ' + (err.message || err), 'danger');
+      return false;
     }
-    return true;
-  } catch (err) {
-    console.error("Fehler beim Speichern der Zuteilungsquoten:", err);
-    alert("Fehler beim Speichern der Quoten: " + (err.message || err));
-    return false;
+  };
+  if (btn && window.UIButtonKit && typeof window.UIButtonKit.withLoading === 'function') {
+    return await window.UIButtonKit.withLoading(btn, runSave);
   }
+  return await runSave();
 };
 
 window.bhResetCostAllocations = function() {
+  if (!window.bhCanWrite()) return;
   window._bhCostAllocations = JSON.parse(JSON.stringify(window._bhDefaultAllocations));
   try {
     localStorage.setItem('bh_cost_allocations', JSON.stringify(window._bhCostAllocations));
@@ -118,12 +184,15 @@ window._bhKontenSortAsc = true;
 // Pro Memoria Gewehre Zähler
 window._bhProMemoriaGewehreCount = 0;
 
-// Währungsformatierungs-Hilfsfunktion
-window.fmtChf = window.fmtChf || function(val) {
+// Währungsformatierungs-Hilfsfunktion (delegiert zentral an UIFormatKit)
+window.fmtChf = function(val) {
+  if (window.UIFormatKit && typeof window.UIFormatKit.formatCurrency === 'function') {
+    return window.UIFormatKit.formatCurrency(val, { fallback: 'CHF 0.00' });
+  }
   const num = Number(val || 0);
-  const parts = num.toFixed(2).split('.');
-  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, "'");
-  return 'CHF ' + parts.join('.');
+  const fixed = Math.abs(num).toFixed(2).split('.');
+  fixed[0] = fixed[0].replace(/\B(?=(\d{3})+(?!\d))/g, "'");
+  return (num < 0 ? '- CHF ' : 'CHF ') + fixed.join('.');
 };
 
 // CSS dynamisch für Buchhaltung injizieren
