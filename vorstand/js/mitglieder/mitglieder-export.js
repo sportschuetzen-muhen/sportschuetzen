@@ -322,7 +322,7 @@ function mglUpdateExportFilenamePreview() {
 /**
  * Führt die Datentransformation und den Datei-Download aus
  */
-function mglExecuteExport() {
+async function mglExecuteExport() {
   const scope = document.querySelector('input[name="mglExportScope"]:checked')?.value || 'filtered';
   const format = document.querySelector('input[name="mglExportFormat"]:checked')?.value || 'xlsx';
   let filename = document.getElementById('mglExportFilename')?.value?.trim();
@@ -346,7 +346,13 @@ function mglExecuteExport() {
   }
 
   if (!sourceList.length) {
-    alert('Es wurden keine Datensätze für diesen Export gefunden.');
+    if (window.UIConfirmKit?.alert) {
+      await window.UIConfirmKit.alert({
+        title: 'Keine Daten',
+        message: 'Es wurden keine Datensätze für diesen Export gefunden.',
+        type: 'warning'
+      });
+    }
     return;
   }
 
@@ -401,15 +407,24 @@ function mglExecuteExport() {
       if (bsModal) bsModal.hide();
     }
 
-    // Erfolgsmeldung
     if (typeof showSuccess === 'function') {
       showSuccess(`Export erfolgreich heruntergeladen (${exportRows.length} Zeilen)`);
-    } else {
-      alert(`✅ Export erfolgreich erstellt!\n\nDatei: ${filename}\nAnzahl: ${exportRows.length} Zeilen`);
+    } else if (window.UIConfirmKit?.alert) {
+      await window.UIConfirmKit.alert({
+        title: 'Export erfolgreich erstellt',
+        message: `Datei: ${filename}\nAnzahl: ${exportRows.length} Zeilen`,
+        type: 'info'
+      });
     }
   } catch (err) {
     console.error('❌ Fehler beim Excel-Export:', err);
-    alert('Fehler beim Erstellen der Export-Datei: ' + err.message);
+    if (window.UIConfirmKit?.alert) {
+      await window.UIConfirmKit.alert({
+        title: 'Export fehlgeschlagen',
+        message: 'Fehler beim Erstellen der Export-Datei: ' + (err.message || 'Unbekannter Fehler'),
+        type: 'danger'
+      });
+    }
   }
 }
 
@@ -417,7 +432,7 @@ function mglExecuteExport() {
  * Mappt ein einzelnes Mitgliedsobjekt in die Spaltenstruktur des gewählten Presets
  */
 function mglBuildPresetRow(m, preset) {
-  const addrNum = String(m.AddressNumber || '').padStart(6, '0');
+  const addrNum = m.AddressNumber ? String(m.AddressNumber).padStart(6, '0') : '–';
   const personNum = m.PersonNumber || '';
   const birthDateFmt = mglFmtDate(m.BirthDate);
   const birthYear = m.BirthDate ? new Date(m.BirthDate).getFullYear() : '';

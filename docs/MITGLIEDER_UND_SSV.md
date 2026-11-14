@@ -27,14 +27,10 @@ Die Mitgliederverwaltung ist das zentrale personelle Stammdaten-Rückgrat des ge
   1. *Neu aufzunehmende Mitglieder* (Grün)
   2. *Geänderte Stammdaten / Lizenzen* (Gelb mit Vorher/Nachher-Gegenüberstellung)
   3. *Im SSV nicht mehr geführte Personen* (Rot)
-* **Atomare Massenpersistierung:** Nach Prüfung und Klick auf «Änderungen anwenden» wird das gesamte Datenpaket in einem einzigen RPC-Aufruf an die Stored Procedure `public.apply_ssv_import_batch` übergeben. In PostgreSQL werden `members`, `member_licenses`, `member_functions`, `member_training` und das Revisions-Log `member_history` in einer einzigen ACID-Transaktion in `< 40 ms` synchronisiert.
+* **Atomare Massenpersistierung:** Nach Prüfung und Klick auf «Änderungen anwenden» werden **ausschliesslich** die ausgewählten (`Update`) Mutationen selektiv in einem einzigen RPC-Aufruf an die Stored Procedure `public.apply_ssv_import_batch` übergeben (`NEU`, `ABGANG`, selektive Stammdaten-Felder, genehmigte Disziplinen, Funktionen, Ausbildungen). In PostgreSQL werden `members`, `member_licenses` (inklusive gezielter Deaktivierung weggefallener oder ersetzter Lizenzen via `licenses_to_deactivate`), `member_functions` (inklusive Beendigung weggefallener Funktionen via `functions_to_close`), `member_training` und das Revisions-Log `member_history` in einer einzigen ACID-Transaktion in `< 40 ms` synchronisiert.
 
-### 2.1.1 Einheitlicher TableKit-Standard im gesamten Modul
-* Sämtliche Tabellen des Mitgliederbereichs (Hauptliste `#mgl-table`, Import-Vorschau `#mglImportDiffTable` und Detail-Tabellen für Lizenzen und Funktionen) implementieren den globalen `TableKit`-Standard (`ui-table-kit.js`):
-  - Heller Sticky-Header (`thead.table-light sticky-top small text-muted text-uppercase`) mit `z-index: 10`.
-  - Horizontale Spaltenverschiebung per Drag & Drop via `TableKit.makeColumnReorderable` mit `localStorage`-Persistenz.
-  - Persistente Spaltenbreiten via `TableKit.makeResizable` mit lokalem Browser-Speicher.
-  - Spaltenauswahl via `TableKit.setupColumnToggle`.
+### 2.1.1 Einheitlicher TableKit- & UI-Toolkit-Standard im gesamten Modul
+* Die Tabellen des Mitgliederbereichs (Hauptliste `#mgl-table`, Jubiläen-Rangliste `#mgl-jubilaeen-table`, Import-Vorschau `#mglImportDiffTable` und Detail-Tabellen für Lizenzen und Funktionen) nutzen das globale `TableKit` (`ui-table-kit.js`, u. a. heller Sticky-Header, persistente Spaltenbreiten via `makeResizable`, Spaltenauswahl via `setupColumnToggle` und Spaltensortierung/`initTable` bei Hauptliste und Jubiläen). Dialoge, Ladezustände und Tabellen-Exporte laufen durchgängig über `UIConfirmKit`, `UIButtonKit` und `UIExportKit`.
 
 ### 2.2 Warum zwingender Quellschutz für Passiv- & Ehrenmitglieder?
 * **Invariante:** Der SSV-Export enthält ausschliesslich lizenzierte Aktivschützen. Passivmitglieder, Gönner, Veteranen und Ehrenmitglieder ohne Schiesslizenz tauchen in der Verbandsdatei nicht auf.
@@ -67,8 +63,8 @@ Die Mitgliederverwaltung ist das zentrale personelle Stammdaten-Rückgrat des ge
 
 ## 4. Berechtigungen & RLS
 
-* **Lesen (`members.view`):** Alle authentifizierten Vorstandsmitglieder und Revisoren.
-* **Mutieren (`members.edit`):** Strikt beschränkt auf Rollen `admin`, `vorstand` und die Funktion *Mitgliederverwalter*.
+* **Lesen (`members.view`):** Alle authentifizierten Vorstandsmitglieder und Revisoren mit Lese-Berechtigung (Tab «SSV-Import» und Schreibaktionen sind im Read-Only-Modus ausgeblendet).
+* **Mutieren (`members.manage`):** Strikt beschränkt auf Rollen mit `members.manage`-Berechtigung (`admin`, `vorstand`, `aktuar`). Sowohl die Frontend-Aktionen als auch `public.apply_ssv_import_batch` (via `rbac_allows(ARRAY['members.manage'])`, `anon` gesperrt) erzwingen diese Prüfung server- und clientseitig.
 * **Mitglieder-App:** Angemeldete Mitglieder sehen über ihre eigene Session ausschliesslich ihr eigenes Profil (`auth_user_id = auth.uid()`).
 
 ---
@@ -93,7 +89,7 @@ Die Mitgliederverwaltung ist das zentrale personelle Stammdaten-Rückgrat des ge
      - **Grün:** Neu aufgenommene Personen / neue Lizenzen.
      - **Gelb:** Adressänderungen, Namenskorrekturen, Lizenz-Kategorie-Wechsel.
      - **Rot:** Personen, die im SSV nicht mehr als aktiv geführt werden (Quellschutz beachten: manuelle Ehren- und Passivmitglieder werden nicht gelöscht).
-  3. Beim Anwenden werden Mutationen in `members` und via `ON CONFLICT` in `member_licenses` bzw. `member_functions` eingepflegt und sekundengenau in `member_history` archiviert.
+  3. Beim Anwenden werden Mutationen selektiv in `members` (bei `ABGANG` ohne Überschreiben bestehender Stammdaten inkl. Beendigung offener Lizenzen/Funktionen) und via `ON CONFLICT` in `member_licenses` bzw. `member_functions` eingepflegt. Im Export komplett weggefallene oder durch eine neue Kategorie ersetzte Lizenzen/Funktionen (`Austritt (Export)` bzw. Kategorie-/Stichtagswechsel) werden über `licenses_to_deactivate` bzw. `functions_to_close` sauber inaktiviert (`is_active = false`, `exit_date` gesetzt) und sekundengenau in `member_history` archiviert. Interne Vereinsmitglieder (`>= 990000` / `INTERN`) sind vom SSV-`ABGANG` geschützt.
 
 ### 5.3 Bereinigung synthetischer Test-Personas (Migration 99)
 * **Reiner Verbandsbestand:** Nach Abschluss der Entwicklungs- und RBAC-Testphase wurden sämtliche synthetischen Testkonten (`7777777` Dan Kassier, `8888888` Dan Vorstand, `9999999` Dan Admin) restlos aus `public.members` und allen Fachmodulen bereinigt.
@@ -163,8 +159,8 @@ Die offizielle SSV-Verbandsarbeitsmappe (z. B. `SSV Mitgliederverzeichnis_200920
   - **Eliminierung der leeren Spalte `Kategorie`:** Die zuvor leere Spalte wurde zu Gunsten der aussagekräftigen Lizenzen- und Funktionen-Spalten bereinigt.
 
 ### 7.3 Vollständige Synchronisation von `_kategorien`
-* In `ensureMitgliederLoaded` werden `members`, `member_licenses`, `member_functions` und `member_history` parallel per `Promise.all` synchron geladen.
-* Jedes Mitglied erhält sofort berechnete Attribute: `_aktiveLizenzen`, `_aktiveFunktionen`, `_kategorien`, `_kategorie`, `_altersklasse` und `_alter`.
+* In `ensureMitgliederLoaded` werden `members`, `member_licenses`, `member_functions`, `member_training` und `member_history` parallel per `Promise.all` synchron geladen.
+* Jedes Mitglied erhält sofort berechnete Attribute: `_aktiveLizenzen`, `_aktiveFunktionen`, `_kategorien`, `_kategorie`, `_altersklasse` und `_alter` (sowie für `U21` autoritativ über `BirthDate` bzw. nur falls kein Geburtsdatum vorliegt über aktive Nachwuchslizenzen).
 * Damit greifen auch die Filter in anderen Modulen (z. B. `mail.js` für 50m-/10m-Verteiler und `jahresbeitrag-overview.js`) nahtlos auf die aktiven Schiesskategorien zu.
 
 ### 7.4 SSV-Altersklassen & Jahrgangsberechnung

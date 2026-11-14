@@ -120,7 +120,7 @@ function mglOpenDetail(pn) {
 
     const lizRows = liz.map(l => {
       const aktiv = typeof mglIsLicenseActive === 'function' ? mglIsLicenseActive(l) : ((l.IsActive == 1 || l.IsActive === true || l.IsActive === '1') && !String(l.ExitDate || '').trim());
-      const istMuhen = l.istMuhen || String(l.LicenseInvoicingClubNumber || '').trim() === '1.02.0.01.087';
+      const istMuhen = Boolean(l.istMuhen) || String(l.LicenseInvoicingClubNumber || '').trim() === '1.19.0.01.029';
       return `<tr>
         <td class="tk-col-kat">${escapeHtml(l.MembershipCategory || '–')}</td>
         <td class="tk-col-eintritt">${mglFmtDate(l.EntryDate)}</td>
@@ -167,15 +167,15 @@ function mglOpenDetail(pn) {
       <div class="p-3 p-md-4 bg-light">
         <div class="mgl-profile-head">
           <div class="d-flex flex-wrap gap-3 align-items-center">
-            <div class="mgl-avatar" style="overflow:hidden; padding:0; display:flex; align-items:center; justify-content:center;">${m.AvatarUrl ? `<img src="${m.AvatarUrl}" alt="${m.FirstName || ''}" style="width:100%; height:100%; object-fit:cover;">` : initials}</div>
+            <div class="mgl-avatar" style="overflow:hidden; padding:0; display:flex; align-items:center; justify-content:center;">${m.AvatarUrl ? `<img src="${escapeHtml(m.AvatarUrl)}" alt="${escapeHtml(m.FirstName || '')}" style="width:100%; height:100%; object-fit:cover;">` : escapeHtml(initials)}</div>
             <div class="flex-grow-1">
-              <div class="mgl-profile-name">${m.FirstName || ''} ${m.LastName || ''}</div>
+              <div class="mgl-profile-name">${escapeHtml(m.FirstName || '')} ${escapeHtml(m.LastName || '')}</div>
               <div class="mgl-profile-meta">
-                Mitglied seit ${mitgliedSeit ? mglFmtDate(mitgliedSeit) : '–'} • Lizenz-Nr. ${m.AddressNumber ? String(m.AddressNumber).padStart(6, '0') : '–'} • SSV-Nr. ${m.PersonNumber || '–'}
+                Mitglied seit ${mitgliedSeit ? mglFmtDate(mitgliedSeit) : '–'} • Lizenz-Nr. ${m.AddressNumber ? escapeHtml(String(m.AddressNumber).padStart(6, '0')) : '–'} • SSV-Nr. ${escapeHtml(String(m.PersonNumber || '–'))}
               </div>
               <div class="mgl-badge-row">
                 ${isDeceased ? `<span class="mgl-chip gray">† Verstorben</span>` : (badgeAktiv ? `<span class="mgl-chip green">Aktiv</span>` : `<span class="mgl-chip gray">Inaktiv</span>`)}
-                <span class="mgl-chip blue">${badgeLizenz}</span>
+                <span class="mgl-chip blue">${escapeHtml(badgeLizenz)}</span>
                 ${isU21 ? '<span class="mgl-chip" style="background:#0dcaf0;color:#000;font-weight:600;"><i class="fas fa-child me-1"></i>Jugend (U21)</span>' : ''}
                 ${badgeEhren ? `<span class="mgl-chip gold"><i class="fas fa-medal me-1"></i>Ehrenmitglied${yrEhren ? ' (' + yrEhren + ')' : ''}</span>` : ''}
               </div>
@@ -240,15 +240,15 @@ function mglOpenDetail(pn) {
                 </div>
                 <div class="row border-bottom py-1">
                   <div class="col-5 text-muted small">IBAN</div>
-                  <div class="col-7 small font-monospace">${m.IBAN || '–'}</div>
+                  <div class="col-7 small font-monospace">${m.IBAN ? escapeHtml(window.UIFormatKit?.formatIban ? window.UIFormatKit.formatIban(m.IBAN) : m.IBAN) : '–'}</div>
                 </div>
                 <div class="row border-bottom py-1">
                   <div class="col-5 text-muted small">Kontoinhaber</div>
-                  <div class="col-7 small">${m.Kontoinhaber || '–'}</div>
+                  <div class="col-7 small">${m.Kontoinhaber ? escapeHtml(m.Kontoinhaber) : '–'}</div>
                 </div>
                 <div class="row border-bottom py-1">
                   <div class="col-5 text-muted small">Rechnungsversand</div>
-                  <div class="col-7 small">${m.Rechnungsversand || '–'}</div>
+                  <div class="col-7 small">${m.Rechnungsversand ? escapeHtml(m.Rechnungsversand) : '–'}</div>
                 </div>
                 <div class="row border-bottom py-1">
                   <div class="col-5 text-muted small">Nie mahnen</div>
@@ -256,7 +256,7 @@ function mglOpenDetail(pn) {
                 </div>
                 <div class="row py-1">
                   <div class="col-5 text-muted small">Bemerkung</div>
-                  <div class="col-7 small">${m.Remark || '–'}</div>
+                  <div class="col-7 small">${m.Remark ? escapeHtml(m.Remark) : '–'}</div>
                 </div>
               </div>
             </div>
@@ -464,6 +464,6 @@ function mglOpenDetail(pn) {
       });
     }
   } catch (e) {
-    body.innerHTML = `<div class="alert alert-danger m-3">Fehler: ${e.message}</div>`;
+    body.innerHTML = `<div class="alert alert-danger m-3">Fehler: ${escapeHtml(e.message || 'Unbekannter Fehler')}</div>`;
   }
 }

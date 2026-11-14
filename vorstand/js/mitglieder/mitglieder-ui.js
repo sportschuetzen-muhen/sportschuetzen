@@ -1,6 +1,10 @@
 // === SUB-MODUL: MITGLIEDER - UI ===
 
 function renderMitgliederView(data) {
+  const canEdit = typeof hasWriteAccess !== 'function' || hasWriteAccess('members');
+  if (_mglActiveTab === 'import' && !canEdit) {
+    _mglActiveTab = 'liste';
+  }
   const listTabActive = _mglActiveTab === 'liste' ? 'active' : '';
   const analyseTabActive = _mglActiveTab === 'analyse' ? 'active' : '';
 
@@ -96,9 +100,10 @@ function renderMitgliederView(data) {
       <div class="mgl-pill-tab ${analyseTabActive}" onclick="mglSwitchTab('analyse')">
         <i class="fas fa-chart-pie me-1"></i> Mitglieder-Analyse
       </div>
+      ${canEdit ? `
       <div class="mgl-pill-tab ${_mglActiveTab === 'import' ? 'active' : ''}" onclick="mglSwitchTab('import')">
         <i class="fas fa-file-upload me-1"></i> SSV-Import
-      </div>
+      </div>` : ''}
     </div>
 
     <!-- TAB-INHALTE -->
@@ -175,7 +180,7 @@ function renderMitgliederView(data) {
           </div>
           <div class="modal-footer">
             <button class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
-            <button class="btn btn-primary" onclick="mglSaveNeu()">
+            <button class="btn btn-primary" id="mglBtnSaveNeu" onclick="mglSaveNeu()">
               <i class="fas fa-save"></i> Erstellen
             </button>
           </div>
@@ -197,61 +202,14 @@ function renderMitgliederView(data) {
 }
 
 function mglSwitchTab(tab) {
+  if (tab === 'import' && typeof hasWriteAccess === 'function' && !hasWriteAccess('members')) {
+    tab = 'liste';
+  }
   _mglActiveTab = tab;
   renderMitgliederView(_mglData);
   if (tab === 'liste') {
     mglFilter();
   }
-}
-
-function mglRenderStats(data) {
-  const deceased = data.filter(m => m.Deceased == 1 || m.Deceased === true || m.Deceased === '1');
-  const living = data.filter(m => !(m.Deceased == 1 || m.Deceased === true || m.Deceased === '1'));
-  
-  const totalLiving = living.filter(m => m.IsActive == 1 || m.IsActive === true || m.IsActive === '1').length;
-  const mitLizenz = living.filter(m => Number(m._aktiveLizenzenCount || 0) > 0).length;
-  const ehren = living.filter(m => m._istEhren).length;
-  const vorstand = living.filter(m => Number(m._aktiveFunktionenCount || 0) > 0).length;
-  const inactive = living.filter(m => !(m.IsActive == 1 || m.IsActive === true || m.IsActive === '1')).length;
-
-  const el = document.getElementById('mglStats');
-  if (!el) return;
-
-  el.innerHTML = `
-    <div class="row g-2 w-100 mb-2">
-      <div class="col-6 col-md-3">
-        <div class="mgl-stat-card p-3 h-100">
-          <div class="mgl-stat-title text-uppercase fw-bold mb-1">Bestand</div>
-          <div class="mgl-stat-value text-primary">${totalLiving}</div>
-          <div class="small text-muted" style="font-size:0.7rem">Aktiv/Passiv/Ehren</div>
-        </div>
-      </div>
-      <div class="col-6 col-md-3">
-        <div class="mgl-stat-card p-3 h-100">
-          <div class="mgl-stat-title text-uppercase fw-bold mb-1">Wettkampf</div>
-          <div class="mgl-stat-value text-success">${mitLizenz}</div>
-          <div class="small text-muted" style="font-size:0.7rem">Mit aktiver Lizenz</div>
-        </div>
-      </div>
-      <div class="col-6 col-md-3">
-        <div class="mgl-stat-card p-3 h-100">
-          <div class="mgl-stat-title text-uppercase fw-bold mb-1">Ehrenamt</div>
-          <div class="mgl-stat-value text-warning">${ehren}</div>
-          <div class="small text-muted" style="font-size:0.7rem">Ehrenmitglieder</div>
-        </div>
-      </div>
-      <div class="col-6 col-md-3">
-        <div class="mgl-stat-card p-3 h-100">
-          <div class="mgl-stat-title text-uppercase fw-bold mb-1">Vorstand</div>
-          <div class="mgl-stat-value text-info">${vorstand}</div>
-          <div class="small text-muted" style="font-size:0.7rem">Aktive Funktionen</div>
-        </div>
-      </div>
-    </div>
-    <div class="d-flex flex-wrap gap-2 align-items-center mt-1">
-      <span class="badge bg-secondary px-3 py-2">📁 Ehemalige: ${inactive}</span>
-      <span class="badge bg-dark px-3 py-2">† In Memoriam: ${deceased.length}</span>
-    </div>`;
 }
 
 function mglStatusBadge(m) {
@@ -277,13 +235,14 @@ function mglStatusBadge(m) {
 
 function mglKatBadge(kat) {
   if (!kat) return '<span class="badge bg-light text-dark">–</span>';
-  if (/vorstand/i.test(kat)) return `<span class="badge bg-info text-dark">${kat}</span>`;
-  if (/ehren/i.test(kat)) return `<span class="badge bg-warning text-dark">${kat}</span>`;
-  if (/passiv/i.test(kat)) return `<span class="badge bg-secondary">${kat}</span>`;
-  if (/aktiv.*a/i.test(kat)) return `<span class="badge bg-primary">${kat}</span>`;
-  if (/aktiv.*b/i.test(kat)) return `<span class="badge" style="background:#4a90d9">${kat}</span>`;
-  if (/junior|schüler/i.test(kat)) return `<span class="badge bg-success">${kat}</span>`;
-  return `<span class="badge bg-secondary">${kat}</span>`;
+  const safeKat = escapeHtml(String(kat));
+  if (/vorstand/i.test(kat)) return `<span class="badge bg-info text-dark">${safeKat}</span>`;
+  if (/ehren/i.test(kat)) return `<span class="badge bg-warning text-dark">${safeKat}</span>`;
+  if (/passiv/i.test(kat)) return `<span class="badge bg-secondary">${safeKat}</span>`;
+  if (/aktiv.*a/i.test(kat)) return `<span class="badge bg-primary">${safeKat}</span>`;
+  if (/aktiv.*b/i.test(kat)) return `<span class="badge" style="background:#4a90d9">${safeKat}</span>`;
+  if (/junior|schüler/i.test(kat)) return `<span class="badge bg-success">${safeKat}</span>`;
+  return `<span class="badge bg-secondary">${safeKat}</span>`;
 }
 
 function mglFormatLicenseBadge(licOrCat) {
@@ -895,7 +854,7 @@ function mglRenderAnalyse(data) {
               <ul class="list-group list-group-flush">
                 ${vorstandListe.map(m => {
                   const pn = String(m.PersonNumber || '').trim();
-                  const activeFns = (window._mglFunktionenCache?.[pn] || []).filter(f => !f.OfficialFunctionExitDate);
+                  const activeFns = (window._mglFunktionenCache?.[pn] || []).filter(f => typeof mglIsFunctionActive === 'function' ? mglIsFunctionActive(f) : !f.OfficialFunctionExitDate);
                   const fnList = activeFns.map(f => f.OfficialFunctionCategory).join(', ') || m._kategorie || 'Funktionär';
                   return `
                     <li class="list-group-item d-flex justify-content-between align-items-center px-0">
@@ -1008,10 +967,17 @@ function mglJubileeBadge(milestone, customText) {
 window.mglJubileeBadge = mglJubileeBadge;
 
 function mglExportJubilaeenExcel() {
-  if (window.UIExportKit?.exportTableToExcel) {
-    window.UIExportKit.exportTableToExcel('#mgl-jubilaeen-table', `Vereinsjubilaeen_Sportschuetzen_Muhen_${window._mglJubileeYear}.xlsx`);
-  } else {
-    alert('Excel-Exportmodul nicht bereit.');
+  if (window.UIExportKit?.tableToExcel) {
+    window.UIExportKit.tableToExcel('#mgl-jubilaeen-table', {
+      filename: `Vereinsjubilaeen_Sportschuetzen_Muhen_${window._mglJubileeYear}`,
+      sheetName: `Jubiläen ${window._mglJubileeYear}`
+    });
+  } else if (window.UIConfirmKit?.alert) {
+    window.UIConfirmKit.alert({
+      title: 'Export nicht bereit',
+      message: 'Das Excel-Exportmodul ist aktuell nicht verfügbar.',
+      type: 'warning'
+    });
   }
 }
 window.mglExportJubilaeenExcel = mglExportJubilaeenExcel;
@@ -1047,7 +1013,7 @@ function mglRenderJubilaeen(data) {
     }
 
     const isCelebrator = yearsInTarget && yearsInTarget > 0 && (window.JUBILEE_MILESTONES ? window.JUBILEE_MILESTONES.includes(yearsInTarget) : [10, 20, 25, 30, 40, 50, 60, 65, 70, 75, 80].includes(yearsInTarget)) && (!exitYear || exitYear >= targetYear);
-    const nextJubilee = entryDate ? (window.mglNextJubilee ? window.mglNextJubilee(entryDate, targetYear) : null) : null;
+    const nextJubilee = (!exitYear && entryDate && window.mglNextJubilee) ? window.mglNextJubilee(entryDate, targetYear) : null;
 
     return {
       member: m,
@@ -1300,7 +1266,7 @@ function mglRenderJubilaeen(data) {
                 
                 let nextHtml = '–';
                 if (item.isCelebrator) {
-                  nextHtml = `<span class="badge bg-success shadow-xs"><i class="fas fa-party-horn me-1"></i>Feiert ${item.yearsInTarget} Jahre in ${targetYear}!</span>`;
+                  nextHtml = `<span class="badge bg-success shadow-xs"><i class="fas fa-award me-1"></i>Feiert ${item.yearsInTarget} Jahre in ${targetYear}!</span>`;
                 } else if (next) {
                   const badgeIcon = next.milestone === 50 ? '🥇' : (next.milestone === 25 ? '🥈' : '🎖');
                   const inText = next.inYears === 1 ? 'nächstes Jahr' : `in ${next.inYears} Jahren`;

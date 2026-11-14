@@ -7,6 +7,15 @@ function mglRenderImport() {
   const container = document.getElementById('mglTabContent');
   if (!container) return;
 
+  if (typeof hasWriteAccess === 'function' && !hasWriteAccess('members')) {
+    container.innerHTML = `
+      <div class="alert alert-warning border-0 shadow-sm">
+        <i class="fas fa-lock me-2"></i>
+        <strong>Keine Berechtigung:</strong> Für den SSV-Mitgliederimport benötigst du Schreibrechte im Modul Mitglieder (<code>members.manage</code>).
+      </div>`;
+    return;
+  }
+
   container.innerHTML = `
     <style>
       .import-dropzone {
@@ -185,7 +194,7 @@ function mglProcessImportFile(file) {
       }
 
       loadingText.textContent = "Lade aktuellen Mitgliederbestand zum Abgleich...";
-      await window.ensureMitgliederLoaded(false);
+      await window.ensureMitgliederLoaded(true);
 
       loadingText.textContent = "Berechne Differenzen blitzschnell im Browser...";
       const worksheet = workbook.Sheets[dsSheetName];
@@ -193,13 +202,14 @@ function mglProcessImportFile(file) {
 
       const currentLicenses = Object.values(window._mglLizenzenCache || {}).flat();
       const currentFunctions = Object.values(window._mglFunktionenCache || {}).flat();
+      const currentTraining = Object.values(window._mglTrainingCache || {}).flat();
 
       const resData = window.SSVImportEngine.runClientSSVDiffCalculation(
         rawRows,
         window._mglData || [],
         currentLicenses,
         currentFunctions,
-        []
+        currentTraining
       );
 
       _mglImportId = resData.importId;
@@ -208,7 +218,13 @@ function mglProcessImportFile(file) {
 
       mglDisplayDiffs();
     } catch(err) {
-      alert("Fehler beim Importieren: " + err.message);
+      if (window.UIConfirmKit?.alert) {
+        await window.UIConfirmKit.alert({
+          title: 'Fehler beim Importieren',
+          message: err.message || 'Die Datei konnte nicht verarbeitet werden.',
+          type: 'danger'
+        });
+      }
       mglCancelImport();
     }
   };
@@ -293,10 +309,13 @@ function mglDisplayDiffs() {
     let altDisplay = alt;
     let neuDisplay = neu;
 
-    if (feld === 'EntryDate' || feld === 'LicenseType|LicenseCategory' || feld === 'MembershipCategory') {
-      altDisplay = String(alt).replace('|', ' (ab ') + (String(alt).includes('|') ? ')' : '');
-      neuDisplay = String(neu).replace('|', ' (ab ') + (String(neu).includes('|') ? ')' : '');
-    }
+    const esc = (v) => (typeof escapeHtml === 'function'
+      ? escapeHtml(String(v ?? ''))
+      : String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
+
+    const altEsc = esc(altDisplay || '—');
+    const neuEsc = esc(neuDisplay || '—');
+    const sheetLabel = esc(sheetTrans[sheet] || sheet);
 
     return `
       <tr class="${rowClass}">
@@ -304,18 +323,18 @@ function mglDisplayDiffs() {
           <input type="checkbox" class="mgl-diff-checkbox" data-idx="${idx}" ${defaultChecked} onchange="mglUpdateDiffDecision(${idx}, this.checked)">
         </td>
         <td>
-          <div class="fw-bold">${name}</div>
-          <div class="small text-muted">PN: ${pn}</div>
+          <div class="fw-bold">${esc(name)}</div>
+          <div class="small text-muted">PN: ${esc(pn)}</div>
         </td>
-        <td class="fw-medium">${sheetTrans[sheet] || sheet}</td>
-        <td class="small text-muted font-monospace">${feld}</td>
-        <td class="text-muted" style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${altDisplay || '—'}</td>
-        <td class="fw-bold" style="max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${neuDisplay || '—'}</td>
+        <td class="fw-medium">${sheetLabel}</td>
+        <td class="small text-muted font-monospace">${esc(feld)}</td>
+        <td class="text-muted" style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${altEsc}">${altEsc}</td>
+        <td class="fw-bold" style="max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${neuEsc}">${neuEsc}</td>
         <td>
-          <span class="diff-badge ${displayType.class}">${displayType.label}</span>
+          <span class="diff-badge ${displayType.class}">${esc(displayType.label)}</span>
         </td>
         <td class="small text-secondary" style="max-width: 320px;">
-          ${erlaeuterung || '—'}
+          ${esc(erlaeuterung || '—')}
         </td>
       </tr>
     `;
@@ -347,46 +366,75 @@ function mglToggleSelectAllDiffs(el) {
 async function mglApplyImport() {
   if (!_mglImportId || !_mglImportRows || _mglImportRows.length === 0) return;
 
-  const btn = document.getElementById('mglBtnApplyImport');
+  if (typeof hasWriteAccess === 'function' && !hasWriteAccess('members')) {
+    if (window.UIConfirmKit?.alert) {
+      await window.UIConfirmKit.alert({
+        title: 'Keine Berechtigung',
+        message: 'Du benötigst Schreibrechte im Modul Mitglieder (members.manage), um den Import zu speichern.',
+        type: 'warning'
+      });
+    }
+    return;
+  }
+
   const step2 = document.getElementById('mglImportStep2');
   const loading = document.getElementById('mglImportLoading');
   const loadingText = document.getElementById('mglImportLoadingText');
 
-  btn.disabled = true;
-  step2.classList.add('d-none');
-  loading.classList.remove('d-none');
-  loadingText.textContent = "Wende freigegebene Mutationen in Supabase an...";
+  const runApply = async () => {
+    if (step2) step2.classList.add('d-none');
+    if (loading) loading.classList.remove('d-none');
+    if (loadingText) loadingText.textContent = "Wende freigegebene Mutationen in Supabase an...";
 
-  try {
-    const stats = await window.SSVImportEngine.applySSVDiffClient(
-      _mglImportId,
-      _mglImportRows,
-      _mglImportByPerson,
-      (msg) => { loadingText.textContent = msg; }
-    );
+    try {
+      const stats = await window.SSVImportEngine.applySSVDiffClient(
+        _mglImportId,
+        _mglImportRows,
+        _mglImportByPerson,
+        (msg) => { if (loadingText) loadingText.textContent = msg; }
+      );
 
-    alert(`✅ SSV-Import erfolgreich abgeschlossen!\n\n` +
-          `• In Supabase gespeichert (Atomare Transaktion)\n` +
-          `• Mitglieder aktualisiert: ${stats.updated}\n` +
-          `• Mitglieder neu angelegt: ${stats.created}\n` +
-          `• Lizenzen synchronisiert: ${stats.licenses || 0}\n` +
-          `• Funktionen synchronisiert: ${stats.functions || 0}\n` +
-          `• Trainings synchronisiert: ${stats.training || 0}\n` +
-          `• Audit-Historie protokolliert: ${stats.history || 0}`);
+      const summaryMsg =
+        `• In Supabase gespeichert (Atomare Transaktion)\n` +
+        `• Mitglieder aktualisiert: ${stats.updated}\n` +
+        `• Mitglieder neu angelegt: ${stats.created}\n` +
+        `• Lizenzen synchronisiert: ${stats.licenses || 0} (deaktiviert: ${stats.licensesDeactivated || 0})\n` +
+        `• Funktionen synchronisiert: ${stats.functions || 0} (beendet: ${stats.functionsClosed || 0})\n` +
+        `• Trainings synchronisiert: ${stats.training || 0}\n` +
+        `• Audit-Historie protokolliert: ${stats.history || 0}`;
 
-    // Zurücksetzen und Mitgliederliste neu laden
-    _mglImportId = null;
-    _mglImportRows = [];
-    _mglImportByPerson = {};
-    _mglActiveTab = 'liste';
+      if (window.UIConfirmKit?.alert) {
+        await window.UIConfirmKit.alert({
+          title: 'SSV-Import erfolgreich abgeschlossen',
+          message: summaryMsg,
+          type: 'info'
+        });
+      }
 
-    // Mitglieder neu laden
-    await loadMitgliederData(true);
-  } catch(err) {
-    alert("Fehler beim Abschliessen des Imports: " + err.message);
-    loading.classList.add('d-none');
-    step2.classList.remove('d-none');
-    btn.disabled = false;
+      // Zurücksetzen und Mitgliederliste neu laden
+      _mglImportId = null;
+      _mglImportRows = [];
+      _mglImportByPerson = {};
+      _mglActiveTab = 'liste';
+
+      await loadMitgliederData(true);
+    } catch (err) {
+      if (loading) loading.classList.add('d-none');
+      if (step2) step2.classList.remove('d-none');
+      if (window.UIConfirmKit?.alert) {
+        await window.UIConfirmKit.alert({
+          title: 'Fehler beim Abschliessen des Imports',
+          message: err.message || 'Unbekannter Fehler beim Speichern in Supabase.',
+          type: 'danger'
+        });
+      }
+    }
+  };
+
+  if (window.UIButtonKit?.withLoading && document.getElementById('mglBtnApplyImport')) {
+    await window.UIButtonKit.withLoading('#mglBtnApplyImport', runApply);
+  } else {
+    await runApply();
   }
 }
 

@@ -12,11 +12,11 @@ function mglRenderListe(data) {
 
   const allList = Array.isArray(data) ? data : (Array.isArray(window._mglData) ? window._mglData : []);
   const cntDeceased = allList.filter(m => m.Deceased == 1 || m.Deceased === true || m.Deceased === '1').length;
-  const cntAustritt = allList.filter(m => !(m.Deceased == 1 || m.Deceased === true || m.Deceased === '1') && !m.IsActive && !m._istPassiv).length;
+  const cntAustritt = allList.filter(m => !(m.Deceased == 1 || m.Deceased === true || m.Deceased === '1') && !m.IsActive && !m._istPassiv && !m._istEhren).length;
   const cntAlle = allList.filter(m => !(m.Deceased == 1 || m.Deceased === true || m.Deceased === '1') && (m.IsActive || m._istPassiv || m._istEhren)).length;
   const cntMitLiz = allList.filter(m => !(m.Deceased == 1 || m.Deceased === true || m.Deceased === '1') && m.IsActive && Number(m._aktiveLizenzenCount || 0) > 0).length;
   const cntOhneLiz = allList.filter(m => !(m.Deceased == 1 || m.Deceased === true || m.Deceased === '1') && m.IsActive && Number(m._aktiveLizenzenCount || 0) === 0).length;
-  const cntU21 = allList.filter(m => !(m.Deceased == 1 || m.Deceased === true || m.Deceased === '1') && (typeof mglIsU21 === 'function' ? mglIsU21(m) : !!m._isU21)).length;
+  const cntU21 = allList.filter(m => !(m.Deceased == 1 || m.Deceased === true || m.Deceased === '1') && m.IsActive && (typeof mglIsU21 === 'function' ? mglIsU21(m) : !!m._isU21)).length;
   const cntPassiv = allList.filter(m => !(m.Deceased == 1 || m.Deceased === true || m.Deceased === '1') && m._istPassiv).length;
   const cntEhren = allList.filter(m => !(m.Deceased == 1 || m.Deceased === true || m.Deceased === '1') && m._istEhren).length;
   const cntVorstand = allList.filter(m => !(m.Deceased == 1 || m.Deceased === true || m.Deceased === '1') && Number(m._aktiveFunktionenCount || 0) > 0).length;
@@ -181,16 +181,16 @@ function mglRenderRows(data) {
       <div class="card border-0 shadow-sm p-5 text-center text-muted">
         <i class="fas fa-users fa-3x mb-3 text-muted opacity-50"></i>
         <h5 class="text-dark fw-bold">Keine Mitglieder in der Datenbank vorhanden</h5>
-        <p class="text-muted small mb-4">Die Mitgliederdatenbank ist aktuell leer. Führen Sie den SSV-Verbandsimport durch, um den initialen Mitgliederstamm einzulesen, oder erfassen Sie ein Mitglied manuell.</p>
+        <p class="text-muted small mb-4">Die Mitgliederdatenbank ist aktuell leer. Führe den SSV-Verbandsimport durch, um den initialen Mitgliederstamm einzulesen, oder erfasse ein Mitglied manuell.</p>
+        ${canEdit ? `
         <div class="d-flex justify-content-center gap-2">
           <button class="btn btn-primary btn-sm px-3" onclick="mglSwitchTab('import')">
             <i class="fas fa-file-upload me-1"></i> Zum SSV-Import
           </button>
-          ${canEdit ? `
           <button class="btn btn-outline-secondary btn-sm px-3" onclick="mglNeuesMitglied()">
             <i class="fas fa-plus me-1"></i> Manuell erfassen
-          </button>` : ''}
-        </div>
+          </button>
+        </div>` : ''}
       </div>` : `
       <div class="card border-0 shadow-sm p-5 text-center text-muted">
         <i class="fas fa-users-slash fa-3x mb-3 text-muted opacity-50"></i>
@@ -237,11 +237,13 @@ function mglRenderRows(data) {
                   const phone = escapeHtml(m.PrivateMobilePhone || m.BusinessMobilePhone || '–');
                   const city = escapeHtml(m.City || '');
 
-                  const addrNum = String(m.AddressNumber || '').padStart(6, '0');
+                  const addrNum = m.AddressNumber ? String(m.AddressNumber).padStart(6, '0') : '–';
                   const birthDateStr = mglFmtDate(m.BirthDate);
                   const altersBadge = typeof mglAltersklasseBadge === 'function' ? mglAltersklasseBadge(m) : '';
 
-                  const copyIconLiz = `<i class="fa-regular fa-copy text-muted ms-1 cursor-pointer opacity-50 hover-opacity-100" onclick="navigator.clipboard.writeText('${escapeJs(addrNum)}'); showSuccess('Lizenznummer kopiert: ${escapeJs(addrNum)}'); event.stopPropagation();" title="Lizenznummer (${escapeJs(addrNum)}) kopieren"></i>`;
+                  const copyIconLiz = m.AddressNumber
+                    ? `<i class="fa-regular fa-copy text-muted ms-1 cursor-pointer opacity-50 hover-opacity-100" onclick="navigator.clipboard.writeText('${escapeJs(addrNum)}'); showSuccess('Lizenznummer kopiert: ${escapeJs(addrNum)}'); event.stopPropagation();" title="Lizenznummer (${escapeJs(addrNum)}) kopieren"></i>`
+                    : '';
 
                   // Aktive Lizenzen
                   const activeLics = m._aktiveLizenzen || (window._mglLizenzenCache?.[pn] || []).filter(l => typeof mglIsLicenseActive === 'function' ? mglIsLicenseActive(l) : ((l.IsActive == 1 || l.IsActive === true) && !l.ExitDate));
@@ -340,7 +342,7 @@ function mglRenderRows(data) {
           const phone = escapeHtml(m.PrivateMobilePhone || m.BusinessMobilePhone || '');
           const city = escapeHtml(m.City || '');
           const initials = `${(m.FirstName || '').charAt(0)}${(m.LastName || '').charAt(0)}`.trim() || '??';
-          const addrNum = String(m.AddressNumber || '').padStart(6, '0');
+          const addrNum = m.AddressNumber ? String(m.AddressNumber).padStart(6, '0') : '–';
 
           const birthYear = m.BirthDate ? new Date(m.BirthDate).getFullYear() : null;
           const altersBadge = typeof mglAltersklasseBadge === 'function' ? mglAltersklasseBadge(m) : '';
@@ -365,7 +367,9 @@ function mglRenderRows(data) {
                 <i class="fas fa-phone text-muted"></i>
                </a>` 
             : '';
-          const copyIconLiz = `<i class="fa-regular fa-copy text-muted ms-1 cursor-pointer opacity-50 hover-opacity-100" onclick="navigator.clipboard.writeText('${escapeJs(addrNum)}'); showSuccess('Lizenznummer kopiert: ${escapeJs(addrNum)}'); event.stopPropagation();" title="Lizenznummer (${escapeJs(addrNum)}) kopieren"></i>`;
+          const copyIconLiz = m.AddressNumber
+            ? `<i class="fa-regular fa-copy text-muted ms-1 cursor-pointer opacity-50 hover-opacity-100" onclick="navigator.clipboard.writeText('${escapeJs(addrNum)}'); showSuccess('Lizenznummer kopiert: ${escapeJs(addrNum)}'); event.stopPropagation();" title="Lizenznummer (${escapeJs(addrNum)}) kopieren"></i>`
+            : '';
 
           return `
             <div class="col-sm-6 col-md-4 col-lg-3">
@@ -470,7 +474,7 @@ function mglFilter() {
         : typeMode === 'ohne-lizenz' 
           ? (!isDeceased && isAktiv && aktiveLiz === 0)
         : typeMode === 'u21'
-          ? (!isDeceased && (typeof mglIsU21 === 'function' ? mglIsU21(m) : !!m._isU21))
+          ? (!isDeceased && isAktiv && (typeof mglIsU21 === 'function' ? mglIsU21(m) : !!m._isU21))
         : typeMode === 'passiv' 
           ? (!isDeceased && isPassiv)
         : typeMode === 'ehren' 
@@ -478,7 +482,7 @@ function mglFilter() {
         : typeMode === 'vorstand' 
           ? (!isDeceased && hasFn)
         : typeMode === 'inaktiv' 
-          ? (!isDeceased && !isAktiv && !isPassiv)
+          ? (!isDeceased && !isAktiv && !isPassiv && !isEhren)
         : typeMode === 'verstorben' 
           ? isDeceased
           : true;
@@ -488,7 +492,7 @@ function mglFilter() {
     if (typeMode === 'mit-lizenz' && subLizMode !== 'alle') {
       const pId = String(m.PersonNumber || '').trim();
       const licensesList = window._mglLizenzenCache?.[pId] || [];
-      const activeLicenses = licensesList.filter(l => (l.IsActive == 1 || l.IsActive === true || l.IsActive === '1') && !l.ExitDate);
+      const activeLicenses = licensesList.filter(l => typeof mglIsLicenseActive === 'function' ? mglIsLicenseActive(l) : ((l.IsActive == 1 || l.IsActive === true || l.IsActive === '1') && !l.ExitDate));
 
       const hasG50 = activeLicenses.some(l => String(l.MembershipCategory || '').includes('G50m'));
       const hasG10 = activeLicenses.some(l => String(l.MembershipCategory || '').includes('G10m'));
@@ -512,7 +516,6 @@ function mglFilter() {
   filtered = mglSortData(filtered);
   _mglFiltered = filtered;
 
-  mglRenderStats(filtered);
   mglRenderRows(filtered);
 
   // Spaltensortierungsanzeigen aktualisieren (falls Tabellenansicht)

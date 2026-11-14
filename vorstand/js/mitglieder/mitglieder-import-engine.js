@@ -20,11 +20,41 @@
   const MEMBERSMANUALPROTECTEDFIELDS = ['IsPassive', 'IsHonoraryMember', 'ClubEntryDate', 'HonoraryMemberSince'];
 
   const STAMMDATENFELDER = [
-    'FirstName', 'LastName', 'Street', 'PostCode', 'City', 'PrimaryEmail',
-    'BirthDate', 'Nationality',
+    'AddressNumber', 'Salutation', 'FirstName', 'LastName', 'Street', 'PostCode', 'City',
+    'PrimaryEmail', 'AdditionalEmail', 'Gender', 'BirthDate', 'Nationality',
     'BusinessLandlinePhone', 'BusinessMobilePhone',
     'PrivateLandlinePhone', 'PrivateMobilePhone'
   ];
+
+  const SSV_FIELD_TO_DB = {
+    AddressNumber: 'address_number',
+    Salutation: 'salutation',
+    FirstName: 'first_name',
+    LastName: 'last_name',
+    Company: 'company',
+    Addition: 'addition',
+    Street: 'street',
+    PostCode: 'post_code',
+    City: 'city',
+    Country: 'country',
+    PrimaryEmail: 'primary_email',
+    AdditionalEmail: 'additional_email',
+    Webpage: 'webpage',
+    Gender: 'gender',
+    BirthDate: 'birth_date',
+    InsuranceNumber: 'insurance_number',
+    Language: 'language',
+    Nationality: 'nationality',
+    BusinessLandlinePhone: 'business_landline_phone',
+    BusinessMobilePhone: 'business_mobile_phone',
+    PrivateLandlinePhone: 'private_landline_phone',
+    PrivateMobilePhone: 'private_mobile_phone',
+    IsActive: 'is_active',
+    Deceased: 'deceased',
+    IsPassive: 'is_passive',
+    IsHonoraryMember: 'is_honorary',
+    HonoraryMemberSince: 'honorary_member_since'
+  };
 
   const DATEFIELDS = [
     'BirthDate', 'ClubEntryDate', 'FirstClubEntryDateSSV', 'HonoraryMemberSince',
@@ -230,19 +260,29 @@
     };
   }
 
+  function isFutureDate(isoDate) {
+    const norm = normalizeDateValue(isoDate);
+    if (!norm) return false;
+    const todayIso = new Date().toISOString().split('T')[0];
+    return norm > todayIso;
+  }
+
   function extractAllLicenses(rows) {
     const rawList = rows
       .filter(r => r.MembershipCategory && !r.OfficialFunctionCategory && isLicenseCategory(r.MembershipCategory))
-      .map(r => ({
-        MembershipCategory: String(r.MembershipCategory).trim(),
-        EntryDate: normalizeDateValue(r.EntryDate),
-        ExitDate: normalizeDateValue(r.ExitDate),
-        LicenseCategory: r.LicenseCategory || '',
-        LicenseType: r.LicenseType || '',
-        LicenseInvoicingClubNumber: r.LicenseInvoicingClubNumber || '',
-        LicenseInvoicingClubName: r.LicenseInvoicingClubName || '',
-        IsActive: isTruthy(r.IsActive) && !r.ExitDate ? 1 : 0
-      }));
+      .map(r => {
+        const exitNorm = normalizeDateValue(r.ExitDate);
+        return {
+          MembershipCategory: String(r.MembershipCategory).trim(),
+          EntryDate: normalizeDateValue(r.EntryDate),
+          ExitDate: exitNorm,
+          LicenseCategory: r.LicenseCategory || '',
+          LicenseType: r.LicenseType || '',
+          LicenseInvoicingClubNumber: r.LicenseInvoicingClubNumber || '',
+          LicenseInvoicingClubName: r.LicenseInvoicingClubName || '',
+          IsActive: isTruthy(r.IsActive) && (!exitNorm || isFutureDate(exitNorm)) ? 1 : 0
+        };
+      });
 
     // Nach (MembershipCategory, EntryDate) gruppieren, um Primärschlüsselkonflikte
     // (z.B. inaktive Fremdvereinszeile mit gleichem Eintrittsdatum) zugunsten aktiver Muhen-Lizenzen aufzulösen
@@ -299,11 +339,7 @@
   }
 
   function extractActiveFunctions(rows) {
-    return extractAllFunctions(rows).filter(f => {
-      if (!f.OfficialFunctionExitDate) return true;
-      const t = new Date(f.OfficialFunctionExitDate).getTime();
-      return !isNaN(t) && t > Date.now();
-    });
+    return extractAllFunctions(rows).filter(f => !f.OfficialFunctionExitDate || isFutureDate(f.OfficialFunctionExitDate));
   }
 
   function extractTraining(rows) {
@@ -375,9 +411,17 @@
 
     const diffRows = [];
 
-    // 1. ABGANG-Logik: Lokal aktiv, im Export fehlend
+    // 1. ABGANG-Logik: Lokal aktiv, im Export fehlend (interne 990xxx-, manuelle Passiv- & Ehrenmitglieder geschützt)
     memberMap.forEach((m, pn) => {
-      if (!byPerson[pn] && !pn.startsWith('intern')) {
+      const pnNum = parseInt(pn, 10);
+      const orgNr = String(m.OrganizationNumber || m.organization_number || '').trim().toUpperCase();
+      const orgName = String(m.OrganizationName || m.organization_name || '').trim();
+      const isInternal = pn.startsWith('intern') || (!isNaN(pnNum) && pnNum >= 990000) || orgNr === 'INTERN' || /intern/i.test(orgName);
+      const passiveProt = String(m.IsPassiveSource || m.is_passive_source || '').trim().toLowerCase() === 'manual';
+      const isPassiv = isTruthy(m.IsPassive !== undefined ? m.IsPassive : m.is_passive);
+      const isEhren = isTruthy(m.IsHonoraryMember !== undefined ? m.IsHonoraryMember : m.is_honorary);
+
+      if (!byPerson[pn] && !isInternal && !(passiveProt && isPassiv) && !isEhren) {
         const isActive = isTruthy(m.IsActive !== undefined ? m.IsActive : m.is_active);
         if (isActive) {
           diffRows.push([
@@ -477,12 +521,12 @@
       const ssvLizenzenAktiv = ssvAllLizenzen.filter(l =>
         isLicenseCategory(l.MembershipCategory) &&
         isTruthy(l.IsActive) &&
-        !l.ExitDate
+        (!l.ExitDate || isFutureDate(l.ExitDate))
       );
-      const lokLicAktiv = (licMap[pn] || []).filter(l =>
-        isTruthy(l.IsActive !== undefined ? l.IsActive : l.is_active) &&
-        !(l.ExitDate || l.exit_date)
-      );
+      const lokLicAktiv = (licMap[pn] || []).filter(l => {
+        const exitIso = normalizeDateValue(l.ExitDate || l.exit_date);
+        return isTruthy(l.IsActive !== undefined ? l.IsActive : l.is_active) && (!exitIso || isFutureDate(exitIso));
+      });
 
       const dispSet = new Set();
       ssvAllLizenzen.forEach(l => {
@@ -621,7 +665,10 @@
 
       // 4. FUNKTIONEN-VERGLEICH
       const ssvFunktionenAktiv = extractActiveFunctions(rows);
-      const lokFnAktiv = (fnMap[pn] || []).filter(f => !(f.OfficialFunctionExitDate || f.official_function_exit_date));
+      const lokFnAktiv = (fnMap[pn] || []).filter(f => {
+        const exitIso = normalizeDateValue(f.OfficialFunctionExitDate || f.official_function_exit_date);
+        return !exitIso || isFutureDate(exitIso);
+      });
       const lokFnMap = lokFnAktiv.reduce((acc, f) => {
         const cat = f.OfficialFunctionCategory || f.official_function_category;
         const entry = f.OfficialFunctionEntryDate || f.official_function_entry_date;
@@ -697,22 +744,97 @@
 
   // --- 5. ATOMARE SPEICHERUNG IN SUPABASE POSTGRESQL ---
 
+  function resolveCurrentUserName() {
+    const u = window.currentUser;
+    const raw = typeof u === 'string'
+      ? u
+      : (u ? (u.display_name || u.email || u.name || '') : '');
+    return raw || (typeof localStorage !== 'undefined' ? localStorage.getItem('portal_user') : '') || 'Vorstand Admin';
+  }
+
+  function buildFullMemberPayload(pnNum, base, status) {
+    return {
+      person_number: pnNum,
+      address_number: base.AddressNumber ? String(base.AddressNumber) : null,
+      salutation: base.Salutation || null,
+      first_name: base.FirstName || '',
+      last_name: base.LastName || '',
+      company: base.Company || null,
+      addition: base.Addition || null,
+      street: base.Street || null,
+      post_code: base.PostCode ? String(base.PostCode) : null,
+      city: base.City || null,
+      country: base.Country || 'CH',
+      business_landline_phone: normalizePhone(base.BusinessLandlinePhone) || null,
+      business_mobile_phone: normalizePhone(base.BusinessMobilePhone) || null,
+      private_landline_phone: normalizePhone(base.PrivateLandlinePhone) || null,
+      private_mobile_phone: normalizePhone(base.PrivateMobilePhone) || null,
+      primary_email: base.PrimaryEmail || null,
+      additional_email: base.AdditionalEmail || null,
+      webpage: base.Webpage || null,
+      gender: base.Gender || null,
+      birth_date: normalizeDateValue(base.BirthDate) || null,
+      insurance_number: base.InsuranceNumber || null,
+      language: base.Language || 'de',
+      nationality: base.Nationality || 'Schweiz',
+      organization_number: base.OrganizationNumber || null,
+      organization_name: base.OrganizationName || null,
+      is_active: status.IsActive === 1,
+      is_passive: status.IsPassive === 1,
+      is_honorary: status.IsHonoraryMember === 1,
+      honorary_member_since: normalizeDateValue(status.HonoraryMemberSince) || null,
+      first_club_entry_date_ssv: normalizeDateValue(status.FirstClubEntryDateSSV) || null,
+      deceased: status.Deceased === 1,
+      raw_data: base
+    };
+  }
+
+  function buildPartialMemberPayload(pnNum, base, status, memberDiffs) {
+    const rec = { person_number: pnNum };
+    memberDiffs.forEach(d => {
+      const feld = String(d[4] || '').trim();
+      const dbCol = SSV_FIELD_TO_DB[feld];
+      if (!dbCol) return;
+
+      if (feld === 'IsActive') rec.is_active = status.IsActive === 1;
+      else if (feld === 'Deceased') rec.deceased = status.Deceased === 1;
+      else if (feld === 'IsPassive') rec.is_passive = status.IsPassive === 1;
+      else if (feld === 'IsHonoraryMember') rec.is_honorary = status.IsHonoraryMember === 1;
+      else if (feld === 'HonoraryMemberSince') rec.honorary_member_since = normalizeDateValue(status.HonoraryMemberSince) || null;
+      else if (PHONEFIELDS.includes(feld)) rec[dbCol] = normalizePhone(base[feld]) || null;
+      else if (DATEFIELDS.includes(feld)) rec[dbCol] = normalizeDateValue(base[feld]) || null;
+      else if (feld === 'AddressNumber' || feld === 'PostCode') rec[dbCol] = base[feld] ? String(base[feld]).trim() : null;
+      else rec[dbCol] = base[feld] !== undefined && String(base[feld]).trim() !== '' ? String(base[feld]).trim() : null;
+    });
+    if (status.FirstClubEntryDateSSV) {
+      rec.first_club_entry_date_ssv = normalizeDateValue(status.FirstClubEntryDateSSV) || null;
+    }
+    if (base && Object.keys(base).length > 0) rec.raw_data = base;
+    return rec;
+  }
+
   async function applySSVDiffClient(importId, diffRows, byPerson, onProgress) {
     const supa = window.getSupabaseClient ? window.getSupabaseClient() : null;
     if (!supa) throw new Error('Supabase Client nicht initialisiert.');
 
     const approvedRows = diffRows.filter(r => r[8] === 'Update');
     if (approvedRows.length === 0) {
-      return { created: 0, updated: 0, licenses: 0, functions: 0, training: 0, history: 0, skipped: diffRows.length };
+      return {
+        created: 0, updated: 0, licenses: 0, licensesDeactivated: 0,
+        functions: 0, functionsClosed: 0, training: 0, history: 0, skipped: diffRows.length
+      };
     }
 
     if (onProgress) onProgress('Bereite Datenpaket für atomare Persistierung in Supabase vor...');
 
     const membersToSync = [];
     const licensesToSync = [];
+    const licensesToDeactivate = [];
     const functionsToSync = [];
+    const functionsToClose = [];
     const trainingToSync = [];
     const historyEntries = [];
+    const todayIso = new Date().toISOString().split('T')[0];
 
     // Nach PersonNumber gruppieren
     const approvedByPn = {};
@@ -722,100 +844,155 @@
       approvedByPn[pn].push(row);
     });
 
-    const currentUserStr = (window.currentUser ? window.currentUser.email || window.currentUser.name : 'Vorstand Admin');
+    const currentUserStr = resolveCurrentUserName();
 
     for (const [pn, pDiffs] of Object.entries(approvedByPn)) {
+      const pnNum = parseInt(pn, 10);
+      if (isNaN(pnNum)) continue;
+
       const ssvRows = byPerson[pn] || [];
       const base = ssvRows[0] || {};
       const status = extractMembershipStatus(ssvRows);
-      const isAbgang = pDiffs.some(d => d[7] === 'ABGANG');
 
-      // 1. Stammdaten-Datensatz
-      membersToSync.push({
-        person_number: parseInt(pn, 10),
-        address_number: base.AddressNumber ? String(base.AddressNumber) : null,
-        salutation: base.Salutation || null,
-        first_name: base.FirstName || '',
-        last_name: base.LastName || '',
-        company: base.Company || null,
-        addition: base.Addition || null,
-        street: base.Street || null,
-        post_code: base.PostCode ? String(base.PostCode) : null,
-        city: base.City || null,
-        country: base.Country || 'CH',
-        business_landline_phone: normalizePhone(base.BusinessLandlinePhone) || null,
-        business_mobile_phone: normalizePhone(base.BusinessMobilePhone) || null,
-        private_landline_phone: normalizePhone(base.PrivateLandlinePhone) || null,
-        private_mobile_phone: normalizePhone(base.PrivateMobilePhone) || null,
-        primary_email: base.PrimaryEmail || null,
-        additional_email: base.AdditionalEmail || null,
-        webpage: base.Webpage || null,
-        gender: base.Gender || null,
-        birth_date: normalizeDateValue(base.BirthDate) || null,
-        insurance_number: base.InsuranceNumber || null,
-        language: base.Language || 'de',
-        nationality: base.Nationality || 'Schweiz',
-        organization_number: base.OrganizationNumber || null,
-        organization_name: base.OrganizationName || null,
-        is_active: isAbgang ? false : (status.IsActive === 1),
-        is_passive: status.IsPassive === 1,
-        is_honorary: status.IsHonoraryMember === 1,
-        honorary_member_since: normalizeDateValue(status.HonoraryMemberSince) || null,
-        first_club_entry_date_ssv: normalizeDateValue(status.FirstClubEntryDateSSV) || null,
-        deceased: status.Deceased === 1,
-        raw_data: base
-      });
+      const isNewMember = pDiffs.some(d => d[3] === 'members' && d[7] === 'NEU');
+      const isAbgang = pDiffs.some(d => d[3] === 'members' && d[7] === 'ABGANG');
+      const approvedMemberDiffs = pDiffs.filter(d => d[3] === 'members' && d[7] === 'AENDERUNG');
 
-      // 2. Lizenzen
-      const ssvLicenses = extractAllLicenses(ssvRows);
-      for (const lic of ssvLicenses) {
-        licensesToSync.push({
-          person_number: parseInt(pn, 10),
-          membership_category: lic.MembershipCategory,
-          entry_date: normalizeDateValue(lic.EntryDate) || null,
-          exit_date: normalizeDateValue(lic.ExitDate) || null,
-          license_category: lic.LicenseCategory || null,
-          license_type: lic.LicenseType || null,
-          license_invoicing_club_number: lic.LicenseInvoicingClubNumber || null,
-          license_invoicing_club_name: lic.LicenseInvoicingClubName || null,
-          is_active: lic.IsActive === 1,
-          import_quelle: 'SSV-Import'
+      // 1. Stammdaten / Status selektiv
+      if (isAbgang) {
+        membersToSync.push({ person_number: pnNum, is_active: false, _abgang_only: true });
+      } else if (isNewMember) {
+        membersToSync.push(buildFullMemberPayload(pnNum, base, status));
+      } else if (approvedMemberDiffs.length > 0) {
+        membersToSync.push(buildPartialMemberPayload(pnNum, base, status, approvedMemberDiffs));
+      }
+
+      // 2. Lizenzen selektiv nach genehmigten Disziplinen + Schliessen weggefallener/ersetzter Lizenzen
+      const approvedLicDiffs = pDiffs.filter(d => d[3] === 'memberlicenses');
+      if (approvedLicDiffs.length > 0) {
+        const approvedDisciplines = new Set(approvedLicDiffs.map(d => String(d[4] || '').trim()).filter(Boolean));
+        const ssvAllLizenzen = extractAllLicenses(ssvRows);
+
+        const activeSsvKeysInApprovedDisps = new Set();
+        for (const lic of ssvAllLizenzen) {
+          const disp = getDisciplineKey(lic.MembershipCategory);
+          if (!approvedDisciplines.has(disp)) continue;
+
+          licensesToSync.push({
+            person_number: pnNum,
+            membership_category: lic.MembershipCategory,
+            entry_date: normalizeDateValue(lic.EntryDate) || null,
+            exit_date: normalizeDateValue(lic.ExitDate) || null,
+            license_category: lic.LicenseCategory || null,
+            license_type: lic.LicenseType || null,
+            license_invoicing_club_number: lic.LicenseInvoicingClubNumber || null,
+            license_invoicing_club_name: lic.LicenseInvoicingClubName || null,
+            is_active: lic.IsActive === 1,
+            import_quelle: 'SSV-Import'
+          });
+
+          if (lic.IsActive === 1) {
+            activeSsvKeysInApprovedDisps.add(`${lic.MembershipCategory}|${normalizeDateValue(lic.EntryDate)}`);
+          }
+        }
+
+        // Bestehende aktive lokale Lizenzen in den genehmigten Disziplinen prüfen:
+        // Falls sie im Export fehlen ('Austritt (Export)') oder durch neue Kategorie/Datum ersetzt wurden -> deaktivieren
+        const lokLics = (window._mglLizenzenCache && window._mglLizenzenCache[pn]) || [];
+        lokLics.forEach(lok => {
+          const lokCat = String(lok.MembershipCategory || lok.membership_category || '').trim();
+          const disp = getDisciplineKey(lokCat);
+          if (!approvedDisciplines.has(disp)) return;
+
+          const lokExit = normalizeDateValue(lok.ExitDate || lok.exit_date);
+          const lokWasActive = isTruthy(lok.IsActive !== undefined ? lok.IsActive : lok.is_active) && (!lokExit || isFutureDate(lokExit));
+          if (!lokWasActive) return;
+
+          const lokEntry = normalizeDateValue(lok.EntryDate || lok.entry_date);
+          const key = `${lokCat}|${lokEntry}`;
+          if (activeSsvKeysInApprovedDisps.has(key)) return;
+
+          const diffInDisp = approvedLicDiffs.find(d => String(d[4] || '').trim() === disp);
+          const exitMatch = diffInDisp ? String(diffInDisp[6] || '').match(/ExitDate\s+(\d{4}-\d{2}-\d{2})/) : null;
+          const histLic = ssvAllLizenzen.find(l => getDisciplineKey(l.MembershipCategory) === disp && l.ExitDate);
+          const targetExitDate = (exitMatch && exitMatch[1]) || (histLic && histLic.ExitDate) || todayIso;
+
+          licensesToDeactivate.push({
+            person_number: pnNum,
+            membership_category: lokCat,
+            entry_date: lokEntry || null,
+            exit_date: targetExitDate
+          });
         });
       }
 
-      // 3. Funktionen (alle Funktionen inklusive Austrittsdatum synchronisieren)
-      const ssvFunctions = extractAllFunctions(ssvRows);
-      for (const fn of ssvFunctions) {
-        functionsToSync.push({
-          person_number: parseInt(pn, 10),
-          official_function_category: fn.OfficialFunctionCategory,
-          official_function_remark: fn.OfficialFunctionRemark || null,
-          official_function_entry_date: normalizeDateValue(fn.OfficialFunctionEntryDate) || null,
-          official_function_exit_date: normalizeDateValue(fn.OfficialFunctionExitDate) || null,
-          use_on_board_and_functionary_report: fn.UseOnBoardAndFunctionaryReport === true,
-          import_quelle: 'SSV-Import'
+      // 3. Funktionen selektiv (z. B. Hausmeister bleibt Verworfen) + Beendigung weggefallener Funktionen
+      const approvedFnDiffs = pDiffs.filter(d => d[3] === 'memberfunctions');
+      if (approvedFnDiffs.length > 0) {
+        const approvedNewFnCats = new Set(
+          approvedFnDiffs.filter(d => d[7] === 'FUNKTIONNEU').map(d => String(d[6] || '').trim()).filter(Boolean)
+        );
+        const ssvFunctions = extractAllFunctions(ssvRows);
+
+        for (const fn of ssvFunctions) {
+          const fnActive = !fn.OfficialFunctionExitDate || isFutureDate(fn.OfficialFunctionExitDate);
+          if (fnActive && approvedNewFnCats.has(fn.OfficialFunctionCategory)) {
+            functionsToSync.push({
+              person_number: pnNum,
+              official_function_category: fn.OfficialFunctionCategory,
+              official_function_remark: fn.OfficialFunctionRemark || null,
+              official_function_entry_date: normalizeDateValue(fn.OfficialFunctionEntryDate) || null,
+              official_function_exit_date: normalizeDateValue(fn.OfficialFunctionExitDate) || null,
+              use_on_board_and_functionary_report: fn.UseOnBoardAndFunctionaryReport === true,
+              import_quelle: 'SSV-Import'
+            });
+          }
+        }
+
+        approvedFnDiffs.filter(d => d[7] === 'FUNKTIONWEG').forEach(d => {
+          const rawKey = String(d[5] || '');
+          const sepIdx = rawKey.lastIndexOf('|');
+          const cat = sepIdx >= 0 ? rawKey.slice(0, sepIdx).trim() : rawKey.trim();
+          const entryIso = sepIdx >= 0 ? normalizeDateValue(rawKey.slice(sepIdx + 1)) : '';
+          const exitMatch = String(d[6] || '').match(/ExitDate\s+(\d{4}-\d{2}-\d{2})/);
+          const exitIso = (exitMatch && exitMatch[1]) || todayIso;
+
+          if (cat) {
+            functionsToClose.push({
+              person_number: pnNum,
+              official_function_category: cat,
+              official_function_entry_date: entryIso || null,
+              official_function_exit_date: exitIso
+            });
+          }
         });
       }
 
-      // 4. Training
-      const ssvTraining = extractTraining(ssvRows);
-      for (const tr of ssvTraining) {
-        trainingToSync.push({
-          person_number: parseInt(pn, 10),
-          course_category: tr.CourseCategory || null,
-          module: tr.Module || null,
-          completed_training_date: normalizeDateValue(tr.CompletedTrainingDate) || null,
-          training_status: tr.TrainingStatus || null,
-          completed_training_expiration_date: normalizeDateValue(tr.CompletedTrainingExpirationDate) || null
-        });
+      // 4. Training selektiv
+      const approvedTrDiffs = pDiffs.filter(d => d[3] === 'membertraining');
+      if (approvedTrDiffs.length > 0) {
+        const approvedTrKeys = new Set(approvedTrDiffs.map(d => String(d[6] || '').trim()).filter(Boolean));
+        const ssvTraining = extractTraining(ssvRows);
+        for (const tr of ssvTraining) {
+          if (approvedTrKeys.has(`${tr.CourseCategory}|${tr.Module}`)) {
+            trainingToSync.push({
+              person_number: pnNum,
+              course_category: tr.CourseCategory || null,
+              module: tr.Module || null,
+              completed_training_date: normalizeDateValue(tr.CompletedTrainingDate) || null,
+              training_status: tr.TrainingStatus || null,
+              completed_training_expiration_date: normalizeDateValue(tr.CompletedTrainingExpirationDate) || null
+            });
+          }
+        }
       }
 
-      // 5. Historie-Einträge
+      // 5. Historie-Einträge (nur genehmigte Diffs)
       pDiffs.forEach(diff => {
         historyEntries.push({
-          person_number: parseInt(pn, 10),
+          person_number: pnNum,
           name: diff[2] || getFullName(base),
-          datum: new Date().toISOString().split('T')[0],
+          datum: todayIso,
           ereignistyp: diff[7] || 'AENDERUNG',
           alterwert: String(diff[5] || ''),
           neuerwert: String(diff[6] || ''),
@@ -836,7 +1013,9 @@
       user: currentUserStr,
       members: membersToSync,
       licenses: licensesToSync,
+      licenses_to_deactivate: licensesToDeactivate,
       functions: functionsToSync,
+      functions_to_close: functionsToClose,
       training: trainingToSync,
       history: historyEntries
     };
@@ -851,7 +1030,9 @@
       created: res?.members_created || 0,
       updated: res?.members_updated || 0,
       licenses: res?.licenses_synced || 0,
+      licensesDeactivated: res?.licenses_deactivated || 0,
       functions: res?.functions_synced || 0,
+      functionsClosed: res?.functions_closed || 0,
       training: res?.training_synced || 0,
       history: res?.history_logged || 0,
       skipped: diffRows.length - approvedRows.length
