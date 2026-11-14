@@ -722,7 +722,9 @@ async function jbShowPositionen(headerId) {
 
 function jbRenderModalContent(header, pos, m, name) {
   const modalBody = document.getElementById('jbModalBody');
-  const canEdit = typeof Perms !== 'undefined' ? Perms.can('jahresbeitrag.manage') : true;
+  const canEdit = typeof hasWriteAccess === 'function'
+    ? hasWriteAccess('jahresbeitrag')
+    : (typeof Perms !== 'undefined' && typeof Perms.has === 'function' ? Perms.has('jahresbeitrag.manage') : false);
   const effStatus = jbGetEffectiveStatus(header);
   const lockState = typeof jbGetContributionLockState === 'function'
     ? jbGetContributionLockState(header)
@@ -757,7 +759,7 @@ function jbRenderModalContent(header, pos, m, name) {
       <td class="text-muted small tk-col-nr">${p.position_nr || p.positionnr || '–'}</td>
       <td class="fw-semibold text-dark tk-col-desc">
         ${isGroupWin ? '<i class="fas fa-trophy text-warning me-1.5" title="Gruppengewinn auswärtiges Schiessen (Konto 1301)"></i>' : ''}
-        ${p.beschreibung || p.name || '–'}
+        ${typeof escapeHtml === 'function' ? escapeHtml(p.beschreibung || p.name || '–') : (p.beschreibung || p.name || '–')}
         ${isGroupWin ? `<div class="text-muted small fw-normal d-flex align-items-center flex-wrap gap-2 mt-1" style="font-size: 10px;">
           <span><i class="fas fa-info-circle me-1 text-primary"></i>Auswärtiges Schiessen · Verrechnung via Transitkonto 1301</span>
           <button type="button" class="btn btn-xs btn-outline-primary py-0 px-1.5" style="font-size: 10px;" onclick="if(window.jmOpenShooterGruppengewinnePreviewModal) window.jmOpenShooterGruppengewinnePreviewModal('${header.PersonNumber}', ${header.year || new Date().getFullYear()})">
@@ -788,7 +790,8 @@ function jbRenderModalContent(header, pos, m, name) {
     </tr>
   `;
 
-  const safeName = typeof escHtml === 'function' ? escHtml(name) : name;
+  const safeName = typeof escapeHtml === 'function' ? escapeHtml(name) : (typeof escHtml === 'function' ? escHtml(name) : name);
+  const safeJsName = typeof escapeJs === 'function' ? escapeJs(name || '') : String(name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
   modalBody.innerHTML = `
     <!-- 1. Header-Karte: Mitglieds- und Betragsübersicht -->
@@ -882,7 +885,7 @@ function jbRenderModalContent(header, pos, m, name) {
           </div>
         </div>
         ${(canEdit && Number(header.Gesamt || 0) > 0) ? `
-          <button id="jbModalPayBtn" class="btn btn-sm btn-success fw-bold px-3 shadow-sm" onclick="jbOpenZahlungFromModal('${header.id}', '${safeName}', ${header.Gesamt})">
+          <button id="jbModalPayBtn" class="btn btn-sm btn-success fw-bold px-3 shadow-sm" onclick="jbOpenZahlungFromModal('${header.id}', '${safeJsName}', ${header.Gesamt})">
             <i class="fas fa-check me-1"></i> Zahlung jetzt verbuchen
           </button>
         ` : ''}

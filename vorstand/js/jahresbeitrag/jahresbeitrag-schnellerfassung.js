@@ -719,8 +719,16 @@ function jbRenderDynamicFeeGroupsHTML(m, state) {
   return html;
 }
 
+function jbHasManageAccess() {
+  if (typeof hasWriteAccess === 'function') return hasWriteAccess('jahresbeitrag');
+  if (typeof Perms !== 'undefined' && typeof Perms.has === 'function') {
+    return Perms.has('jahresbeitrag.manage');
+  }
+  return typeof userHasRole === 'function' ? userHasRole('admin') : false;
+}
+
 function jbCheckEntryEditable(pn, showFeedback = true) {
-  if (typeof Perms !== 'undefined' && typeof Perms.can === 'function' && !Perms.can('jahresbeitrag.manage')) {
+  if (!jbHasManageAccess()) {
     if (showFeedback) showToast('Keine Berechtigung zum Bearbeiten (jahresbeitrag.manage erforderlich).', 'warning');
     return false;
   }
@@ -895,9 +903,7 @@ function jbRenderEntryForm(m) {
   const lockState = typeof window.jbGetContributionLockState === 'function'
     ? window.jbGetContributionLockState(m.PersonNumber)
     : { isLocked: false, reason: '' };
-  const canManage = (typeof Perms !== 'undefined' && typeof Perms.can === 'function')
-    ? Perms.can('jahresbeitrag.manage')
-    : true;
+  const canManage = jbHasManageAccess();
   const isReadOnly = !canManage || lockState.isLocked;
   const readOnlyBanner = lockState.isLocked
     ? `<div class="alert alert-warning border-warning d-flex align-items-center gap-2 py-2 px-3 mb-3 small">
@@ -1109,7 +1115,7 @@ async function jbConfirmEntrySchuetzenhaus(chk, pn) {
 // 5. State live synchronisieren & direkt in Supabase speichern
 async function jbSaveSingleMemberDirect(pnClean) {
   const pn = String(pnClean || '').trim();
-  if (typeof Perms !== 'undefined' && typeof Perms.can === 'function' && !Perms.can('jahresbeitrag.manage')) {
+  if (!jbHasManageAccess()) {
     throw new Error('Keine Berechtigung zum Speichern (jahresbeitrag.manage erforderlich).');
   }
   const lockState = typeof window.jbGetContributionLockState === 'function'
@@ -1589,7 +1595,7 @@ function jbUpdateBulkSaveButton() {
 }
 
 async function jbSaveAllBulkLocalChanges() {
-  if (typeof Perms !== 'undefined' && typeof Perms.can === 'function' && !Perms.can('jahresbeitrag.manage')) {
+  if (!jbHasManageAccess()) {
     await UIConfirmKit.alert({
       title: 'Keine Berechtigung',
       message: 'Du hast keine Berechtigung zum Speichern (jahresbeitrag.manage erforderlich).',
@@ -2107,7 +2113,7 @@ window.jbToggleKontoLock = function(key, pn) {
 };
 
 window.jbToggleAllAktiveZusatz = async function(activateState, currentPn) {
-  if (typeof Perms !== 'undefined' && typeof Perms.can === 'function' && !Perms.can('jahresbeitrag.manage')) {
+  if (!jbHasManageAccess()) {
     await UIConfirmKit.alert({
       title: 'Keine Berechtigung',
       message: 'Du hast keine Berechtigung für diese Massenaktion (jahresbeitrag.manage erforderlich).',
