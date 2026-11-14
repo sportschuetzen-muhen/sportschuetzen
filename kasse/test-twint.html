@@ -569,6 +569,7 @@
               </button>
             </div>
           </div>
+          <div id="direct-status-banner" style="display: none; border-radius: 10px; padding: 12px 16px; margin-bottom: 10px; font-weight: 700; font-size: 0.95rem;"></div>
           <div style="background: #ffffff; color: #1e293b; border-radius: 10px; padding: 16px; min-height: 440px; flex: 1; overflow-y: auto;">
             <div id="direct-tamaro-root" class="root">
               <div style="text-align: center; padding: 60px 16px; color: #64748b; font-size: 0.95rem;">
@@ -600,8 +601,12 @@
       <!-- Live Event Logger -->
       <div class="logger-panel">
         <div class="logger-header">
-          <span>📡 LIVE EVENT-MONITOR (postMessage &amp; Druckstatus)</span>
-          <button type="button" onclick="clearLogs()" style="background: none; border: none; color: #94a3b8; cursor: pointer;">Protokoll leeren</button>
+          <span>📡 LIVE EVENT-MONITOR &amp; ABBRUCH-AUFZEICHNUNG (<span id="trace-count">0</span> Einträge)</span>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <button type="button" id="btn-copy-trace" onclick="copyTrace()" style="background: #1d4ed8; border: none; color: #fff; border-radius: 6px; padding: 4px 10px; font-size: 0.78rem; font-weight: 700; cursor: pointer;">📋 Aufzeichnung kopieren</button>
+            <button type="button" onclick="downloadTrace()" style="background: #334155; border: none; color: #e2e8f0; border-radius: 6px; padding: 4px 10px; font-size: 0.78rem; font-weight: 600; cursor: pointer;">💾 JSON laden</button>
+            <button type="button" onclick="clearLogs()" style="background: none; border: none; color: #94a3b8; cursor: pointer;">Protokoll leeren</button>
+          </div>
         </div>
         <div id="log-entries" class="log-entries">
           <div class="log-line">
@@ -631,16 +636,89 @@
     let activeAmount = 1.50;
     let qrInstance = null;
     let lastGeneratedUrl = '';
+    const traceRecords = [];
+    let traceStartedAt = performance.now();
+    let recordersInstalled = false;
+    let stateWatcherTimer = null;
+    let lastStateJson = '';
+
+    function getTamaroSnapshot(api) {
+      if (!api || typeof api !== 'object') return null;
+      return {
+        isPaymentAborted: Boolean(api.isPaymentAborted),
+        hasEpmsPaymentError: Boolean(api.hasEpmsPaymentError),
+        isPaymentResultPage: Boolean(api.isPaymentResultPage),
+        isSpinnerInnerShown: Boolean(api.isSpinnerInnerShown),
+        isSpinnerOuterShown: Boolean(api.isSpinnerOuterShown),
+        navigationSearch: api.navigationSearch ? { ...api.navigationSearch } : null,
+        epmsPaymentInfo: api.epmsPaymentInfo ? {
+          uuid: api.epmsPaymentInfo.uuid,
+          last_status: api.epmsPaymentInfo.last_status,
+          last_status_reason: api.epmsPaymentInfo.last_status_reason,
+          amount: api.epmsPaymentInfo.amount
+        } : null,
+        epmsPaymentResponseError: api.epmsPaymentResponseError || null,
+        hash: window.location.hash
+      };
+    }
+
+    function safeSerialize(value, depth = 0, seen = new WeakSet()) {
+      if (value === null || value === undefined) return value;
+      const t = typeof value;
+      if (t === 'string' || t === 'number' || t === 'boolean') return value;
+      if (t === 'function') return '[Function]';
+      if (value instanceof Error) return { name: value.name, message: value.message };
+      if (t !== 'object') return String(value);
+      if (seen.has(value)) return '[Circular]';
+      if (depth >= 4) return '[MaxDepth]';
+      if ('epmsPaymentInfo' in value && 'paymentForm' in value) {
+        return { _tamaroApiSnapshot: getTamaroSnapshot(value) };
+      }
+      seen.add(value);
+      if (Array.isArray(value)) {
+        return value.slice(0, 20).map(item => safeSerialize(item, depth + 1, seen));
+      }
+      const out = {};
+      for (const k of Object.keys(value).slice(0, 30)) {
+        try {
+          out[k] = safeSerialize(value[k], depth + 1, seen);
+        } catch (e) {
+          out[k] = '[Unreadable]';
+        }
+      }
+      return out;
+    }
+
+    function safeJson(value) {
+      try {
+        return JSON.stringify(safeSerialize(value));
+      } catch (e) {
+        return String(value);
+      }
+    }
 
     // Log-Hilfsfunktion
-    function addLog(tag, type, message) {
+    function addLog(tag, type, message, extraData = null) {
       const logs = document.getElementById('log-entries');
-      const timeStr = new Date().toTimeString().split(' ')[0];
+      const now = new Date();
+      const timeStr = now.toTimeString().split(' ')[0];
+      const elapsedMs = Math.round(performance.now() - traceStartedAt);
+      traceRecords.push({
+        iso: now.toISOString(),
+        tMs: elapsedMs,
+        tag,
+        type,
+        message,
+        ...(extraData !== null ? { data: safeSerialize(extraData) } : {})
+      });
+      const countEl = document.getElementById('trace-count');
+      if (countEl) countEl.textContent = String(traceRecords.length);
+
       const line = document.createElement('div');
       line.className = 'log-line';
       line.innerHTML = `
-        <span class="log-time">${timeStr}</span>
-        <span class="log-tag ${type}">[${tag}]</span>
+        <span class="log-time">${timeStr} (+${elapsedMs}ms)</span>
+        <span class="log-tag ${type}">[${escapeHtml(tag)}]</span>
         <span class="log-text">${escapeHtml(message)}</span>
       `;
       logs.appendChild(line);
@@ -648,8 +726,148 @@
     }
 
     function clearLogs() {
+      traceRecords.length = 0;
+      traceStartedAt = performance.now();
+      const countEl = document.getElementById('trace-count');
+      if (countEl) countEl.textContent = '0';
       document.getElementById('log-entries').innerHTML = '';
-      addLog('SYSTEM', 'info', 'Protokoll geleert.');
+      addLog('SYSTEM', 'info', 'Protokoll & Aufzeichnung geleert.');
+    }
+
+    function buildTracePayload() {
+      return JSON.stringify({
+        recordedAt: new Date().toISOString(),
+        url: window.location.href,
+        userAgent: navigator.userAgent,
+        tamaroSnapshot: getTamaroSnapshot(window.rnw?.tamaro?.instance),
+        records: traceRecords
+      }, null, 2);
+    }
+
+    async function copyTrace() {
+      const text = buildTracePayload();
+      const btn = document.getElementById('btn-copy-trace');
+      try {
+        await navigator.clipboard.writeText(text);
+        if (btn) {
+          btn.textContent = `✓ Kopiert (${traceRecords.length})`;
+          setTimeout(() => { btn.textContent = '📋 Aufzeichnung kopieren'; }, 2500);
+        }
+      } catch (e) {
+        downloadTrace();
+      }
+    }
+
+    function downloadTrace() {
+      const blob = new Blob([buildTracePayload()], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `twint-trace-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function installDiagnosticRecorders() {
+      if (recordersInstalled) return;
+      recordersInstalled = true;
+
+      // 1. Fetch-Mitschnitt für RaiseNow / EPMS / TWINT
+      const origFetch = window.fetch.bind(window);
+      window.fetch = async (input, init) => {
+        const url = typeof input === 'string' ? input : (input?.url || '');
+        const method = init?.method || 'GET';
+        const isInteresting = /raisenow|epms|twint|widget-api|tamaro/i.test(url);
+        const res = await origFetch(input, init);
+        if (isInteresting) {
+          try {
+            const clone = res.clone();
+            const txt = await clone.text();
+            addLog('NET_FETCH', res.ok ? 'info' : 'payment', `${method} ${url} -> ${res.status} | ${txt.slice(0, 500)}`);
+          } catch (e) {
+            addLog('NET_FETCH', 'info', `${method} ${url} -> ${res.status}`);
+          }
+        }
+        return res;
+      };
+
+      // 2. XHR-Mitschnitt
+      const origOpen = XMLHttpRequest.prototype.open;
+      const origSend = XMLHttpRequest.prototype.send;
+      XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+        this._traceMethod = method;
+        this._traceUrl = String(url || '');
+        return origOpen.call(this, method, url, ...rest);
+      };
+      XMLHttpRequest.prototype.send = function(body) {
+        if (/raisenow|epms|twint|widget-api|tamaro/i.test(this._traceUrl || '')) {
+          this.addEventListener('loadend', () => {
+            const resp = typeof this.responseText === 'string' ? this.responseText.slice(0, 500) : '';
+            addLog('NET_XHR', 'info', `${this._traceMethod} ${this._traceUrl} -> ${this.status} | ${resp}`);
+          });
+        }
+        return origSend.call(this, body);
+      };
+
+      // 3. URL-, Hash- & History-Watcher
+      const wrapHistory = (fnName) => {
+        const orig = history[fnName];
+        history[fnName] = function(state, title, url) {
+          addLog('URL_HIST', 'info', `history.${fnName} -> ${url || window.location.href}`);
+          return orig.apply(this, arguments);
+        };
+      };
+      wrapHistory('pushState');
+      wrapHistory('replaceState');
+      window.addEventListener('hashchange', () => addLog('URL_HASH', 'info', `hashchange -> ${window.location.href}`));
+      window.addEventListener('popstate', () => addLog('URL_POP', 'info', `popstate -> ${window.location.href}`));
+
+      // 4. DOM-Overlay Watcher auf document.body & #direct-tamaro-root
+      const bodyObserver = new MutationObserver((mutations) => {
+        mutations.forEach((m) => {
+          m.addedNodes.forEach((n) => {
+            if (n.nodeType === 1) {
+              addLog('DOM_BODY+', 'info', `Body added <${n.tagName.toLowerCase()} class="${n.className || ''}" id="${n.id || ''}">`);
+            }
+          });
+          m.removedNodes.forEach((n) => {
+            if (n.nodeType === 1) {
+              addLog('DOM_BODY-', 'info', `Body removed <${n.tagName.toLowerCase()} class="${n.className || ''}" id="${n.id || ''}">`);
+            }
+          });
+        });
+      });
+      bodyObserver.observe(document.body, { childList: true });
+
+      const rootEl = document.getElementById('direct-tamaro-root');
+      if (rootEl) {
+        let lastRootSummary = '';
+        const rootObserver = new MutationObserver(() => {
+          const btns = Array.from(rootEl.querySelectorAll('button')).map(b => (b.textContent || '').trim()).filter(Boolean).join(' | ');
+          const imgs = rootEl.querySelectorAll('canvas, img, svg, iframe').length;
+          const txt = (rootEl.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 180);
+          const summary = `btns=[${btns}] media=${imgs} txt="${txt}"`;
+          if (summary !== lastRootSummary) {
+            lastRootSummary = summary;
+            addLog('DOM_ROOT', 'info', summary);
+          }
+        });
+        rootObserver.observe(rootEl, { childList: true, subtree: true });
+      }
+    }
+
+    function startStateWatcher(instance) {
+      if (stateWatcherTimer) clearInterval(stateWatcherTimer);
+      lastStateJson = '';
+      stateWatcherTimer = setInterval(() => {
+        if (!instance) return;
+        const snap = getTamaroSnapshot(instance);
+        const snapJson = JSON.stringify(snap);
+        if (snapJson !== lastStateJson) {
+          lastStateJson = snapJson;
+          addLog('STATE', snap.isPaymentAborted || snap.hasEpmsPaymentError ? 'payment' : 'info', `Tamaro State: ${snapJson}`, snap);
+        }
+      }, 250);
     }
 
     function escapeHtml(str) {
@@ -970,40 +1188,57 @@
           featureFlags: []
         });
 
-        // Events abonnieren (inkl. EPMS-Abbruch-Events & Status-Prüfung!)
+        // Events abonnieren (inkl. zirkelsicherem Event-Mitschnitt & EPMS-Status-Prüfung!)
         testTamaroHandled = false;
+        traceStartedAt = performance.now();
+        const statusBanner = document.getElementById('direct-status-banner');
+        if (statusBanner) {
+          statusBanner.style.display = 'none';
+          statusBanner.innerHTML = '';
+        }
+
+        const showTestBanner = (isOk, title, sub) => {
+          if (!statusBanner) return;
+          statusBanner.style.display = 'block';
+          statusBanner.style.background = isOk ? 'rgba(0, 191, 99, 0.16)' : 'rgba(239, 68, 68, 0.16)';
+          statusBanner.style.border = `2px solid ${isOk ? '#00bf63' : '#ef4444'}`;
+          statusBanner.style.color = isOk ? '#34d399' : '#fca5a5';
+          statusBanner.innerHTML = `${isOk ? '✅' : '❌'} <strong>${escapeHtml(title)}</strong><div style="font-size:0.82rem; font-weight:500; margin-top:4px; color:#e2e8f0;">${escapeHtml(sub)}</div>`;
+        };
+
         const showTestCancel = (reason, evt) => {
           if (testTamaroHandled) return;
           testTamaroHandled = true;
-          addLog('ZAHLUNG', 'info', `❌ TWINT-ZAHLUNG ABGEBROCHEN / FEHLGESCHLAGEN (${reason}): ${JSON.stringify(evt?.data || {})}`);
-          if (rootEl) {
-            rootEl.innerHTML = `<div style="text-align:center; padding:32px 16px; color:#dc2626; font-size:15px;">
-              <div style="font-size:48px; margin-bottom:8px;">❌</div>
-              <strong>TWINT-Zahlung abgebrochen (${escapeHtml(reason)})</strong><br>
-              <span style="color:#64748b; font-size:13px;">Es wurde nichts verbucht und kein Bon gedruckt.</span>
-            </div>`;
-          }
+          addLog('ZAHLUNG', 'info', `❌ TWINT-ZAHLUNG ABGEBROCHEN / FEHLGESCHLAGEN (${reason}): ${safeJson(evt?.data || evt || {})}`, evt);
+          showTestBanner(false, `TWINT-Zahlung abgebrochen (${reason})`, 'Es wurde nichts verbucht und kein Bon gedruckt. Nutze oben «📋 Aufzeichnung kopieren» für das vollständige Trace-Protokoll.');
         };
 
-        Object.keys(instance.events || {}).forEach((evtName) => {
-          if (evtName === 'paymentComplete' || evtName === 'paymentValidateError') return;
-          try {
-            instance.events[evtName]?.subscribe?.((evt) => {
-              addLog('EVENT', 'info', `Tamaro event "${evtName}": ${JSON.stringify(evt?.data || {})}`);
-            });
-          } catch (e) {}
-        });
+        const subscribeAllEvents = (sourceName, eventMap) => {
+          Object.keys(eventMap || {}).forEach((evtName) => {
+            if (evtName === 'paymentComplete' || evtName === 'paymentValidateError') return;
+            try {
+              eventMap[evtName]?.subscribe?.((evt) => {
+                addLog('EVENT', 'info', `${sourceName}.${evtName}: ${safeJson(evt?.data || evt || {})}`, evt);
+              });
+            } catch (e) {}
+          });
+        };
+
+        subscribeAllEvents('instance.events', instance.events);
+        subscribeAllEvents('tamaro.events', window.rnw?.tamaro?.events);
 
         instance.events.epmsPaymentStatusPoll?.subscribe?.((evt) => {
-          const st = extractTestTamaroStatus(evt);
-          if (/cancel|abort|declin|fail|error|reject|expired/i.test(st)) {
-            showTestCancel(st, evt);
+          const apiStatus = evt?.data?.api?.epmsPaymentInfo?.last_status || '';
+          const st = extractTestTamaroStatus(evt) || apiStatus;
+          if (/cancel|abort|declin|fail|error|reject|expired/i.test(st) || evt?.data?.api?.isPaymentAborted) {
+            showTestCancel(st || 'epms_poll_aborted', evt);
           }
         });
         instance.events.sendEpmsPaymentEnd?.subscribe?.((evt) => {
-          const st = extractTestTamaroStatus(evt);
-          if (/cancel|abort|declin|fail|error|reject|expired/i.test(st)) {
-            showTestCancel(st, evt);
+          const apiStatus = evt?.data?.api?.epmsPaymentInfo?.last_status || '';
+          const st = extractTestTamaroStatus(evt) || apiStatus;
+          if (/cancel|abort|declin|fail|error|reject|expired/i.test(st) || evt?.data?.api?.isPaymentAborted) {
+            showTestCancel(st || 'epms_end_aborted', evt);
           }
         });
         instance.events.sendEpmsPaymentError?.subscribe?.((evt) => {
@@ -1015,29 +1250,25 @@
 
         instance.events.paymentComplete?.subscribe?.((event) => {
           if (testTamaroHandled) return;
-          const rawStatus = extractTestTamaroStatus(event);
-          const isCancelled = /cancel|abort|declin|fail|error|reject|expired/i.test(rawStatus);
+          const api = event?.data?.api || instance;
+          const apiStatus = api?.epmsPaymentInfo?.last_status || '';
+          const rawStatus = extractTestTamaroStatus(event) || apiStatus;
+          const isCancelled = /cancel|abort|declin|fail|error|reject|expired/i.test(rawStatus) || Boolean(api?.isPaymentAborted);
 
-          addLog('ZAHLUNG', isCancelled ? 'info' : 'payment', `paymentComplete Payload (status="${rawStatus || 'none'}"): ${JSON.stringify(event?.data || {})}`);
+          addLog('ZAHLUNG', isCancelled ? 'info' : 'payment', `paymentComplete (status="${rawStatus || 'none'}", apiAborted=${Boolean(api?.isPaymentAborted)}): ${safeJson(event?.data || {})}`, event);
 
           if (isCancelled) {
-            showTestCancel(rawStatus, event);
+            showTestCancel(rawStatus || 'aborted', event);
             return;
           }
 
           testTamaroHandled = true;
           addLog('ZAHLUNG', 'payment', `✓ ECHTER ZAHLUNGSERFOLG (Tamaro paymentComplete)!`);
-          if (rootEl) {
-            rootEl.innerHTML = `<div style="text-align:center; padding:32px 16px; color:#059669; font-size:15px;">
-              <div style="font-size:48px; margin-bottom:8px;">✅</div>
-              <strong>TWINT-Zahlung erfolgreich (CHF ${amtVal.toFixed(2)})</strong><br>
-              <span style="color:#64748b; font-size:13px;">Status: ${escapeHtml(rawStatus || 'succeeded')}</span>
-            </div>`;
-          }
+          showTestBanner(true, `TWINT-Zahlung erfolgreich (CHF ${amtVal.toFixed(2)})`, `Status: ${rawStatus || 'succeeded'}`);
           handlePaymentSuccess('DIRECT_WIDGET');
         });
-        instance.events.paymentValidateError.subscribe((evt) => {
-          addLog('WIDGET', 'info', `Validierungshinweis: ${JSON.stringify(evt?.data || {})}`);
+        instance.events.paymentValidateError?.subscribe?.((evt) => {
+          addLog('WIDGET', 'info', `Validierungshinweis: ${safeJson(evt?.data || {})}`, evt);
         });
 
         // Widget rendern & Betrag direkt setzen (umgeht twint_qr_simple Sperre!)
@@ -1045,6 +1276,7 @@
         await window.rnw.tamaro.renderWidget(instance, '#direct-tamaro-root');
         directWidgetLoaded = true;
         instance.paymentForm.setAmount(amtVal);
+        startStateWatcher(instance);
 
         const elapsedMs = Math.round(performance.now() - t0);
         addLog('TURBO', 'payment', `✓ Widget in ${elapsedMs}ms gerendert (CHF ${amtVal.toFixed(2)}, Ref: ${ref}).`);
@@ -1176,9 +1408,10 @@
 
     // Initialisierung beim Start
     window.addEventListener('DOMContentLoaded', () => {
+      installDiagnosticRecorders();
       updateUrls();
       reloadPreviewFrame();
-      addLog('INIT', 'info', 'Touchpoint cctmv (Sportschützen Muhen) geladen.');
+      addLog('INIT', 'info', 'Touchpoint cctmv (Sportschützen Muhen) geladen – Diagnose-Rekorder aktiv.');
       prewarmTamaro();
     });
   </script>
