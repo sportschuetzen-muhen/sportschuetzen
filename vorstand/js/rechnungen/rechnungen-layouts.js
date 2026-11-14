@@ -124,12 +124,6 @@ window.renderTabLayouts = function(content) {
 
   if (!window._invoiceLayouts || Object.keys(window._invoiceLayouts).length === 0) {
     window._invoiceLayouts = window.rnGetDefaultLayouts();
-    try {
-      const stored = localStorage.getItem('portal_invoice_layouts');
-      if (stored) {
-        window._invoiceLayouts = { ...window.rnGetDefaultLayouts(), ...JSON.parse(stored) };
-      }
-    } catch (_) {}
   }
 
   const currentType = window._rechnungenSelectedLayoutType || 'Jahresbeitrag';
@@ -161,7 +155,7 @@ window.renderTabLayouts = function(content) {
         <div>
           <h4 class="fw-bold text-primary mb-1"><i class="fas fa-sliders-h me-2"></i>Rechnungslayout & Textbausteine verwalten</h4>
           <p class="text-muted small mb-0">
-            Passen Sie Anschreiben, Titel, Dankesworte und E-Mail-Texte für jeden Rechnungstyp individuell an.
+            Passe Anschreiben, Titel, Dankesworte und E-Mail-Texte für jeden Rechnungstyp individuell an.
           </p>
         </div>
         <button class="btn btn-sm btn-outline-secondary" onclick="rnResetLayoutToDefault('${currentType}')" title="Standard-Texte für diesen Typ wiederherstellen">
@@ -382,6 +376,7 @@ window.rnUpdateLayoutPreview = function() {
   const intro = document.getElementById('rnl-intro') ? document.getElementById('rnl-intro').value : '';
   const outro = document.getElementById('rnl-outro') ? document.getElementById('rnl-outro').value : '';
   const notice = document.getElementById('rnl-notice') ? document.getElementById('rnl-notice').value : '';
+  const mailSubj = document.getElementById('rnl-mail-subject') ? document.getElementById('rnl-mail-subject').value : '';
   const mbEl = document.getElementById('rnl-mail-body');
   const mailBody = (mbEl?._clubWysiwygInstance ? mbEl._clubWysiwygInstance.getCleanHtml() : mbEl?.value) || '';
 
@@ -453,6 +448,10 @@ window.rnInsertShortcode = function(code) {
 };
 
 window.rnResetLayoutToDefault = async function(type) {
+  if (typeof hasWriteAccess === 'function' && !hasWriteAccess('rechnungen')) {
+    if (window.UIConfirmKit) await UIConfirmKit.alert({ title: 'Keine Berechtigung', message: 'Du hast keine Schreibberechtigung für das Rechnungsmodul.', type: 'warning' });
+    return;
+  }
   const ok = await UIConfirmKit.confirm({
     title: 'Standardvorlage wiederherstellen?',
     message: `Möchtest du die Texte für <strong>${escapeHtml(type)}</strong> wirklich auf die Standardvorlage zurücksetzen?`,
@@ -463,17 +462,18 @@ window.rnResetLayoutToDefault = async function(type) {
   const defaults = window.rnGetDefaultLayouts()[type];
   if (defaults) {
     window._invoiceLayouts[type] = { ...defaults };
-    try {
-      localStorage.setItem('portal_invoice_layouts', JSON.stringify(window._invoiceLayouts));
-    } catch (_) {}
     const content = document.getElementById('rn-tab-content-container');
     if (content) window.renderTabLayouts(content);
-    showSuccess(`🎉 Texte für '${type}' auf Standard zurückgesetzt.`);
+    showSuccess(`🎉 Texte für '${type}' auf Standard zurückgesetzt. Klicke auf Speichern, um sie zu übernehmen.`);
   }
 };
 
 window.rnSaveLayout = async function(event, type) {
   event.preventDefault();
+  if (typeof hasWriteAccess === 'function' && !hasWriteAccess('rechnungen')) {
+    if (window.UIConfirmKit) await UIConfirmKit.alert({ title: 'Keine Berechtigung', message: 'Du hast keine Schreibberechtigung für das Rechnungsmodul.', type: 'warning' });
+    return;
+  }
 
   const title = document.getElementById('rnl-title').value.trim();
   const intro = document.getElementById('rnl-intro').value.trim();
@@ -484,29 +484,19 @@ window.rnSaveLayout = async function(event, type) {
   const mail_body = (mbEl?._clubWysiwygInstance ? mbEl._clubWysiwygInstance.getCleanHtml() : mbEl?.value)?.trim() || '';
   const submitBtn = document.getElementById('rnl-submit-btn') || event.target?.querySelector('button[type="submit"]');
 
-  const layoutData = {
-    type: type,
-    title: title,
-    intro: intro,
-    outro: outro,
-    notice: notice,
-    mail_subject: mail_subject,
-    mail_body: mail_body
-  };
-
-  if (!window._invoiceLayouts) window._invoiceLayouts = {};
-  window._invoiceLayouts[type] = layoutData;
-
-  // LocalStorage Fallback
-  try {
-    localStorage.setItem('portal_invoice_layouts', JSON.stringify(window._invoiceLayouts));
-  } catch (_) {}
-
-  // 1. Supabase PostgreSQL Master Write
   const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
-  if (sb) {
+  if (!sb) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({ title: 'Konfigurationsfehler', message: 'Supabase Client ist nicht initialisiert. Layout kann nicht gespeichert werden.', type: 'danger' });
+    } else {
+      showError('Supabase Client ist nicht initialisiert.');
+    }
+    return;
+  }
+
+  const executeSave = async () => {
     try {
-      await sb.from('invoice_layouts').upsert({
+      const { error } = await sb.from('invoice_layouts').upsert({
         type: type,
         title: title || null,
         intro: intro || null,
@@ -516,16 +506,26 @@ window.rnSaveLayout = async function(event, type) {
         mail_body: mail_body || null,
         updated_at: new Date().toISOString()
       });
+      if (error) throw error;
+
+      if (!window._invoiceLayouts) window._invoiceLayouts = {};
+      window._invoiceLayouts[type] = { type, title, intro, outro, notice, mail_subject, mail_body };
+
       showSuccess(`🎉 Layout & Texte für '${type}' erfolgreich gespeichert!`);
       await loadInvoiceLayoutsData();
     } catch (sbErr) {
-      console.warn("⚠️ [Supabase] Layout save warning:", sbErr);
-      showError("Fehler beim Speichern des Layouts in Supabase: " + (sbErr.message || sbErr));
-    } finally {
-      if (submitBtn) {
-        submitBtn.disabled = false;
-        submitBtn.innerHTML = `<i class="fas fa-save me-1.5"></i> Layout für '${type}' speichern`;
+      console.error('❌ [Supabase] Layout save error:', sbErr);
+      if (window.UIConfirmKit) {
+        await UIConfirmKit.alert({ title: 'Speicherfehler', message: `Fehler beim Speichern des Layouts in Supabase: ${escapeHtml(sbErr.message || String(sbErr))}`, type: 'danger' });
+      } else {
+        showError('Fehler beim Speichern des Layouts in Supabase: ' + (sbErr.message || sbErr));
       }
     }
+  };
+
+  if (window.UIButtonKit && submitBtn) {
+    await UIButtonKit.withLoading(submitBtn, executeSave);
+  } else {
+    await executeSave();
   }
 };

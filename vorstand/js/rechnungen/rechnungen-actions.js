@@ -2,6 +2,178 @@
 // MODUL: RECHNUNGEN & PDF-COCKPIT - ACTIONS (INVOICE CRUD & PDF/MAIL)
 // =====================================================================
 
+// Zentrale UI-Dialog-Helfer (konform zu AGENTS.md Regel 9)
+window.rnUiAlert = async function(title, message, type = 'warning') {
+  if (window.UIConfirmKit && typeof window.UIConfirmKit.alert === 'function') {
+    return window.UIConfirmKit.alert({ title, message, type });
+  }
+  const plain = String(message || title || '').replace(/<[^>]+>/g, ' ').trim();
+  if (type === 'danger' && typeof showError === 'function') showError(plain);
+  else if (typeof showSuccess === 'function') showSuccess(plain);
+  else console.warn(`[${title}] ${plain}`);
+};
+
+window.rnUiConfirm = async function(opts) {
+  if (window.UIConfirmKit && typeof window.UIConfirmKit.confirm === 'function') {
+    return window.UIConfirmKit.confirm(opts);
+  }
+  if (typeof showError === 'function') {
+    showError('Bestätigungsdialog (UIConfirmKit) ist nicht verfügbar.');
+  }
+  return false;
+};
+
+window.rnEnsureWriteAccess = async function(actionLabel = 'diese Aktion') {
+  if (typeof window.hasWriteAccess === 'function' && !window.hasWriteAccess('rechnungen')) {
+    await window.rnUiAlert(
+      'Keine Schreibberechtigung',
+      `Du hast für das Rechnungsmodul nur Lesezugriff und kannst ${window.escapeHtml ? window.escapeHtml(actionLabel) : actionLabel} nicht ausführen.`,
+      'danger'
+    );
+    return false;
+  }
+  return true;
+};
+
+window.rnDateToIsoLocal = function(d) {
+  const dt = d instanceof Date ? d : new Date();
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, '0');
+  const day = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+window.rnBuildPdfAttachmentForMail = async function(invoiceId, opts = {}) {
+  const inv = opts.inv || (window._invoices || []).find(i => String(i.id) === String(invoiceId));
+  let pdfUrl = (inv && inv.pdf_url) || '';
+  let pdfStoragePath = null;
+  let pdfBase64 = null;
+
+  const shouldRender = opts.forceRecreate || !pdfUrl;
+  if (shouldRender && window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
+    try {
+      const pdfRes = await window.RechnungsCore.renderPdf(invoiceId, { forceRecreate: Boolean(opts.forceRecreate) });
+      if (pdfRes && pdfRes.success) {
+        pdfUrl = pdfRes.pdfUrl || pdfUrl;
+        pdfStoragePath = pdfRes.storagePath || null;
+        pdfBase64 = pdfRes.pdfBase64 || null;
+        if (inv && pdfUrl) inv.pdf_url = pdfUrl;
+      }
+    } catch (e) {
+      console.warn(`⚠️ PDF-Erstellung für ${invoiceId} im Mailversand:`, e);
+    }
+  } else if (shouldRender && typeof window.generatePdfViaEngine === 'function' && inv) {
+    try {
+      const pdfRes = await window.generatePdfViaEngine({
+        action: 'generate-invoice',
+        invoiceId: invoiceId,
+        recipient: opts.recipient,
+        sender: opts.sender,
+        layout: opts.layout,
+        totalAmount: inv.total_amount,
+        year: inv.year || new Date().getFullYear(),
+        type: inv.type || 'Rechnung',
+        forceRecreate: Boolean(opts.forceRecreate)
+      });
+      if (pdfRes && pdfRes.success) {
+        pdfUrl = pdfRes.pdfUrl || pdfUrl;
+        pdfStoragePath = pdfRes.storagePath || null;
+        pdfBase64 = pdfRes.pdfBase64 || null;
+        if (inv && pdfUrl) inv.pdf_url = pdfUrl;
+      }
+    } catch (e) {
+      console.warn(`⚠️ PDF-Engine für ${invoiceId} im Mailversand:`, e);
+    }
+  }
+
+  const attachments = [];
+  if (pdfStoragePath) {
+    attachments.push({ filename: `Rechnung_${invoiceId}.pdf`, storagePath: pdfStoragePath, contentType: 'application/pdf' });
+  } else if (pdfBase64) {
+    attachments.push({ filename: `Rechnung_${invoiceId}.pdf`, contentBase64: pdfBase64, contentType: 'application/pdf' });
+  } else if (pdfUrl && pdfUrl.includes('/operatives-storage/')) {
+    const parts = pdfUrl.split('/operatives-storage/');
+    if (parts[1]) {
+      attachments.push({
+        filename: `Rechnung_${invoiceId}.pdf`,
+        storagePath: decodeURIComponent(parts[1].split('?')[0]),
+        contentType: 'application/pdf'
+      });
+    }
+  }
+  return { attachments, pdfUrl };
+};
+
+// STORNIERUNG ÜBER RECHNUNGSCORE (INKL. RÜCKSETZUNG QUELLMODUL)
+window.rnCancelInvoicePrompt = async function(invoiceId) {
+  if (!(await window.rnEnsureWriteAccess('Rechnungen stornieren'))) return;
+
+  const inv = (window._invoices || []).find(i => String(i.id).trim() === String(invoiceId).trim());
+  if (!inv) {
+    await window.rnUiAlert('Rechnung nicht gefunden', `Die Rechnung ${escapeHtml(invoiceId)} wurde nicht gefunden.`, 'danger');
+    return;
+  }
+
+  const st = String(inv.status || '').toLowerCase();
+  if (st === 'bezahlt' || Number(inv.total_paid || 0) > 0) {
+    await window.rnUiAlert('Stornierung gesperrt', `Die Rechnung <strong>${escapeHtml(invoiceId)}</strong> weist bereits verbuchte Zahlungen auf und kann nicht storniert werden.`, 'warning');
+    return;
+  }
+  if (st === 'storniert') {
+    await window.rnUiAlert('Bereits storniert', `Die Rechnung <strong>${escapeHtml(invoiceId)}</strong> ist bereits storniert.`, 'info');
+    return;
+  }
+
+  const isJb = inv.type === 'Jahresbeitrag' || inv.source_module === 'jahresbeitrag';
+  const hint = isJb
+    ? `<br><br><span class="text-primary"><strong>Hinweis Jahresbeitrag:</strong> Der verknüpfte Jahresbeitrag wird im Modul «Jahresbeitrag» automatisch wieder auf <strong>berechnet</strong> zurückgesetzt.</span>`
+    : `<br><br>Die Rechnung bleibt als Beleg im Status <strong>storniert</strong> erhalten (und ist standardmässig ausgeblendet).`;
+
+  if (!window.UIConfirmKit || typeof window.UIConfirmKit.prompt !== 'function') {
+    await window.rnUiAlert('Systemfehler', 'UIConfirmKit.prompt ist nicht verfügbar.', 'danger');
+    return;
+  }
+
+  const reason = await window.UIConfirmKit.prompt({
+    title: `Rechnung ${escapeHtml(invoiceId)} stornieren?`,
+    message: `Möchtest du die Rechnung <strong>${escapeHtml(invoiceId)}</strong> (${escapeHtml(inv.name || '')}) wirklich stornieren?${hint}`,
+    type: 'danger',
+    placeholder: 'Grund für die Stornierung (optional)...',
+    defaultValue: '',
+    required: false,
+    confirmText: 'Verbindlich stornieren',
+    cancelText: 'Abbrechen'
+  });
+
+  if (reason === null) return;
+
+  if (!window.RechnungsCore || typeof window.RechnungsCore.cancelInvoice !== 'function') {
+    await window.rnUiAlert('Systemfehler', 'RechnungsCore.cancelInvoice steht nicht zur Verfügung.', 'danger');
+    return;
+  }
+
+  showLoadingOverlay(`Storniere Rechnung ${invoiceId}...`);
+  try {
+    await window.RechnungsCore.cancelInvoice(invoiceId, reason || 'Manuelle Stornierung im Rechnungsmodul');
+    if (isJb && typeof window.loadJahresbeitragData === 'function') {
+      try { await window.loadJahresbeitragData(true, false); } catch (_) {}
+    }
+    if (typeof window.loadRechnungenData === 'function') {
+      await window.loadRechnungenData(true, true);
+    }
+    showSuccess(
+      isJb
+        ? `Rechnung ${invoiceId} storniert. Jahresbeitrag wieder auf «berechnet» gesetzt.`
+        : `Rechnung ${invoiceId} erfolgreich storniert.`
+    );
+  } catch (err) {
+    console.error('❌ Fehler beim Stornieren:', err);
+    await window.rnUiAlert('Fehler bei Stornierung', `Rechnung ${escapeHtml(invoiceId)} konnte nicht storniert werden: ${escapeHtml(err.message)}`, 'danger');
+  } finally {
+    hideLoadingOverlay();
+  }
+};
+
 // ZAHLUNGS ERFASSUNGS MODAL WITH SYNC CHOICE
 window.rnOpenPaymentModal = function(invoiceId, amount) {
   let modalEl = document.getElementById('rnModalPayment');
@@ -90,6 +262,7 @@ window.rnOpenPaymentModal = function(invoiceId, amount) {
 // SAVE PAYMENT
 window.rnSavePayment = async function(event, invoiceId) {
   event.preventDefault();
+  if (!(await window.rnEnsureWriteAccess('Zahlungen zu verbuchen'))) return;
 
   const syncBookkeeping = document.getElementById('rnp-sync-bookkeeping')?.checked ?? true;
   const datum = document.getElementById('rnp-datum').value;
@@ -98,61 +271,55 @@ window.rnSavePayment = async function(event, invoiceId) {
   const payAmt = parseFloat(document.getElementById('rnp-amount')?.value) || 0;
 
   if (payAmt <= 0) {
-    if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Ungültiger Betrag', 'Bitte gib einen gültigen Betrag grösser als CHF 0.00 ein.', 'warning');
-    } else {
-      alert("❌ Bitte gib einen gültigen Betrag grösser als CHF 0.00 ein.");
-    }
+    await window.rnUiAlert('Ungültiger Betrag', 'Bitte gib einen gültigen Betrag grösser als CHF 0.00 ein.', 'warning');
     return;
   }
 
   const runPayment = async () => {
-    // 1. Optimistic Update
+    if (!window.RechnungsCore || typeof window.RechnungsCore.recordPayment !== 'function') {
+      throw new Error('RechnungsCore ist nicht initialisiert. Zahlung konnte nicht verbucht werden.');
+    }
+
+    // 1. Optimistic Update (mit Snapshot für Rollback)
     const invIndex = window._invoices.findIndex(i => String(i.id) === String(invoiceId));
+    const prevSnapshot = invIndex !== -1 ? { ...window._invoices[invIndex] } : null;
     if (invIndex !== -1) {
       const inv = window._invoices[invIndex];
       const prevOpen = (inv.open_amount !== undefined && inv.open_amount !== null) ? Number(inv.open_amount) : Number(inv.total_amount || 0);
       const newOpen = Math.max(0, prevOpen - payAmt);
       inv.status = newOpen <= 0 ? 'bezahlt' : 'teilbezahlt';
       inv.open_amount = newOpen;
+      inv.total_paid = Number(inv.total_paid || 0) + payAmt;
       inv.payment_date = datum;
       inv.payment_method = methode;
       inv.document_ref = beleg || `PAY-${invoiceId}`;
-      window.renderRechnungen(); // Render table instantly!
+      window.renderRechnungen();
     }
-
-    // Close modal
-    const modalEl = document.getElementById('rnModalPayment');
-    if (modalEl) {
-      const modal = bootstrap.Modal.getInstance(modalEl);
-      if (modal) modal.hide();
-    }
-
-    showSuccess(`🎉 Zahlung für Rechnung ${invoiceId} wird verbucht...`);
 
     // 2. Primärspeicher: RechnungsCore (Zahlungseingang -> Rechnungsstatus -> FiBu)
     try {
-      if (window.RechnungsCore && typeof window.RechnungsCore.recordPayment === 'function') {
-        const res = await window.RechnungsCore.recordPayment(invoiceId, {
-          amount: payAmt,
-          paymentDate: datum,
-          paymentMethod: methode,
-          documentRef: beleg || `PAY-${invoiceId}`,
-          syncBookkeeping: syncBookkeeping
+      const res = await window.RechnungsCore.recordPayment(invoiceId, {
+        amount: payAmt,
+        paymentDate: datum,
+        paymentMethod: methode,
+        documentRef: beleg || `PAY-${invoiceId}`,
+        syncBookkeeping: syncBookkeeping
+      });
+
+      // Modal schliessen nach erfolgreicher Buchung
+      const modalEl = document.getElementById('rnModalPayment');
+      if (modalEl) {
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+      }
+
+      showSuccess(`✅ Zahlung für Rechnung ${invoiceId} erfolgreich erfasst (${res.status.toUpperCase()}, Rest: CHF ${window.RechnungsCore.formatSwissAmount(res.openAmount)}).`);
+
+      // Regel 6: PDF im Hintergrund aktualisieren
+      if (typeof window.RechnungsCore.renderPdf === 'function') {
+        window.RechnungsCore.renderPdf(invoiceId, { forceRecreate: true }).catch(pdfErr => {
+          console.warn(`⚠️ [PDF] Hintergrund-Neugenerierung nach Zahlung für ${invoiceId}:`, pdfErr);
         });
-        showSuccess(`✅ Zahlung für Rechnung ${invoiceId} erfolgreich erfasst (${res.status.toUpperCase()}, Rest: CHF ${window.RechnungsCore.formatSwissAmount(res.openAmount)}).`);
-      } else {
-        // Fallback direkt Supabase REST
-        const supa = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : null;
-        if (supa) {
-          await supa.from('invoices').update({
-            status: 'bezahlt',
-            payment_date: datum,
-            payment_method: methode,
-            document_ref: beleg || `PAY-${invoiceId}`,
-            updated_at: new Date().toISOString()
-          }).eq('id', invoiceId);
-        }
       }
 
       const invIdUpper = String(invoiceId || '').toUpperCase();
@@ -160,12 +327,12 @@ window.rnSavePayment = async function(event, invoiceId) {
         window._inventarNeedsReload = true;
       }
     } catch (err) {
-      console.error("❌ Fehler bei Zahlungsverbuchung:", err);
-      if (window.UIConfirmKit) {
-        await UIConfirmKit.alert('Fehler bei der Verbuchung', 'Fehler beim Speichern der Zahlung: ' + err.message, 'danger');
-      } else {
-        alert("❌ Fehler beim Speichern der Zahlung: " + err.message);
+      if (invIndex !== -1 && prevSnapshot) {
+        window._invoices[invIndex] = prevSnapshot;
+        window.renderRechnungen();
       }
+      console.error("❌ Fehler bei Zahlungsverbuchung:", err);
+      await window.rnUiAlert('Fehler bei der Verbuchung', 'Fehler beim Speichern der Zahlung: ' + escapeHtml(err.message), 'danger');
     }
   };
 
@@ -186,6 +353,7 @@ window.rnSavePayment = async function(event, invoiceId) {
 
 // PDF GENERATION ONLY
 window.rnGeneratePDFOnly = async function(invoiceId, name) {
+  if (!(await window.rnEnsureWriteAccess('Rechnungs-PDFs neu zu generieren'))) return;
   showLoadingOverlay(`Generiere QR-Rechnung PDF für ${name || invoiceId}...`);
 
   try {
@@ -193,12 +361,7 @@ window.rnGeneratePDFOnly = async function(invoiceId, name) {
 
     // 1. Primär: Zentraler Aufruf an RechnungsCore (Single Source of Truth, immer forceRecreate)
     if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
-      try {
-        result = await window.RechnungsCore.renderPdf(invoiceId, { forceRecreate: true });
-      } catch (coreErr) {
-        console.warn("⚠️ RechnungsCore.renderPdf Fehler:", coreErr);
-        throw coreErr;
-      }
+      result = await window.RechnungsCore.renderPdf(invoiceId, { forceRecreate: true });
     } else if (typeof window.generatePdfViaEngine === 'function') {
       // 2. Fallback nur wenn RechnungsCore noch nicht initialisiert
       const inv = window._invoices.find(i => String(i.id) === String(invoiceId));
@@ -243,7 +406,7 @@ window.rnGeneratePDFOnly = async function(invoiceId, name) {
     }
   } catch (err) {
     console.error("❌ PDF Fehler:", err);
-    alert("❌ PDF Fehler: " + err.message);
+    await window.rnUiAlert('PDF-Fehler', 'Die PDF-Erstellung ist fehlgeschlagen: ' + escapeHtml(err.message), 'danger');
   } finally {
     hideLoadingOverlay();
   }
@@ -312,7 +475,7 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
     document.body.classList.remove('modal-open');
     document.body.style.overflow = '';
     document.body.style.paddingRight = '';
-    alert("Rechnung nicht gefunden: " + invoiceId);
+    await window.rnUiAlert('Rechnung nicht gefunden', `Die Rechnung ${escapeHtml(invoiceId)} wurde nicht gefunden.`, 'danger');
     return;
   }
 
@@ -346,12 +509,6 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
     if (typeof rnGetDefaultLayouts === 'function') {
       layoutsMap = rnGetDefaultLayouts();
     }
-    try {
-      const stored = localStorage.getItem('portal_invoice_layouts');
-      if (stored) {
-        layoutsMap = { ...(layoutsMap || {}), ...JSON.parse(stored) };
-      }
-    } catch (_) {}
   }
 
   const layout = (layoutsMap && layoutsMap[inv.type]) 
@@ -712,14 +869,12 @@ window.rnmSwitchTab = function(mode) {
 };
 
 window.rnmResetTemplate = async function() {
-  const ok = window.UIConfirmKit
-    ? await UIConfirmKit.confirm({
-        title: 'Vorlage zurücksetzen?',
-        message: 'Möchtest du den E-Mail-Betreff und den Nachrichtentext wirklich auf die Standard-Vorlage zurücksetzen?',
-        type: 'warning',
-        confirmText: 'Zurücksetzen'
-      })
-    : confirm('Möchtest du den E-Mail-Betreff und den Nachrichtentext auf die Standard-Vorlage zurücksetzen?');
+  const ok = await window.rnUiConfirm({
+    title: 'Vorlage zurücksetzen?',
+    message: 'Möchtest du den E-Mail-Betreff und den Nachrichtentext wirklich auf die Standard-Vorlage zurücksetzen?',
+    type: 'warning',
+    confirmText: 'Zurücksetzen'
+  });
   if (!ok) return;
 
   const subjectEl = document.getElementById('rnm-subject');
@@ -840,8 +995,13 @@ window.rnmRenderExtraAttachmentsList = function() {
 };
 
 window.rnExecuteSendMail = async function(invoiceId) {
+  if (!(await window.rnEnsureWriteAccess('Rechnungen per E-Mail zu versenden'))) return;
   const inv = (window._invoices || []).find(i => String(i.id) === String(invoiceId));
   if (!inv) return;
+  if (String(inv.status || '').toLowerCase() === 'storniert') {
+    await window.rnUiAlert('Rechnung storniert', `Die Rechnung ${escapeHtml(invoiceId)} ist storniert und kann nicht versendet werden.`, 'warning');
+    return;
+  }
 
   const emailInput = document.getElementById('rnm-email');
   const subjectInput = document.getElementById('rnm-subject');
@@ -1084,7 +1244,7 @@ window.rnExecuteSendMail = async function(invoiceId) {
     const targetInv = (window._invoices || []).find(x => String(x.id).trim() === String(invoiceId).trim());
     const sendDateStr = (typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH'));
     if (targetInv) {
-      targetInv.mail_status = 'gesendet';
+      targetInv.mail_status = 'versendet';
       targetInv.send_date = sendDateStr;
       if (pdfUrl) targetInv.pdf_url = pdfUrl;
     }
@@ -1092,14 +1252,15 @@ window.rnExecuteSendMail = async function(invoiceId) {
     // 5. Supabase State Update (invoices table)
     const supa = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : null;
     if (supa) {
-      try {
-        await supa.from('invoices').update({
-          mail_status: 'gesendet',
-          send_date: new Date().toISOString(),
-          pdf_url: pdfUrl || targetInv?.pdf_url || '',
-          updated_at: new Date().toISOString()
-        }).eq('id', invoiceId);
-      } catch (e) { console.warn("Supabase mail_status update:", e); }
+      const { error: mailUpErr } = await supa.from('invoices').update({
+        mail_status: 'versendet',
+        send_date: new Date().toISOString(),
+        pdf_url: pdfUrl || targetInv?.pdf_url || '',
+        updated_at: new Date().toISOString()
+      }).eq('id', invoiceId);
+      if (mailUpErr) {
+        console.warn("Supabase mail_status update:", mailUpErr);
+      }
     }
 
     await loadRechnungenData(true);
@@ -1109,7 +1270,7 @@ window.rnExecuteSendMail = async function(invoiceId) {
       errAlert.textContent = 'Fehler beim E-Mail-Versand: ' + err.message;
       errAlert.classList.remove('d-none');
     } else {
-      alert("❌ E-Mail Fehler: " + err.message);
+      await window.rnUiAlert('E-Mail-Fehler', 'Fehler beim E-Mail-Versand: ' + escapeHtml(err.message), 'danger');
     }
   } finally {
     if (submitBtn) {
@@ -1587,7 +1748,11 @@ window.rnUpdateSenderPreview = function(previewElId, personNumber) {
   const loggedInPN = String(localStorage.getItem('portal_personnumber') || '').trim();
   const loggedInUser = String(localStorage.getItem('portal_user') || '').trim();
   const loggedInRole = String(localStorage.getItem('portal_rolle_extern') || '').trim();
-  const loggedInEmail = String(localStorage.getItem('portal_email') || '').trim();
+  const loggedInEmail = String(
+    localStorage.getItem('portal_email') ||
+    localStorage.getItem('portal_mailadresse') ||
+    localStorage.getItem('portal_user_email') || ''
+  ).trim();
   const loggedInStrasse = String(localStorage.getItem('portal_strasse') || '').trim();
   const loggedInPlz = String(localStorage.getItem('portal_plz') || '').trim();
   const loggedInOrt = String(localStorage.getItem('portal_ort') || '').trim();
@@ -1776,7 +1941,11 @@ window.rnOnMahnungSenderChanged = function(invoiceId) {
   const loggedInPN = String(localStorage.getItem('portal_personnumber') || '').trim();
   const loggedInUser = String(localStorage.getItem('portal_user') || '').trim();
   const loggedInRole = String(localStorage.getItem('portal_rolle_extern') || '').trim();
-  const loggedInEmail = String(localStorage.getItem('portal_email') || '').trim();
+  const loggedInEmail = String(
+    localStorage.getItem('portal_email') ||
+    localStorage.getItem('portal_mailadresse') ||
+    localStorage.getItem('portal_user_email') || ''
+  ).trim();
 
   const isLoggedIn = (loggedInPN && String(pn) === loggedInPN) || pn === 'admin' || (loggedInUser && m && `${m.FirstName || ''} ${m.LastName || ''}`.trim().toLowerCase() === loggedInUser.toLowerCase());
 
@@ -2242,13 +2411,14 @@ window.rnOpenCreateModal = async function(btnEl) {
               </div>
               <div class="col-md-4">
                 <label class="form-label fw-bold small text-muted">Rechnungstyp</label>
-                <select class="form-select" id="rnc-type" required onchange="const idEl=document.getElementById('rnc-invoice-id'); if(this.value==='Freier Brief'){ if (typeof window.generateSafeInvoiceId === 'function') idEl.value = window.generateSafeInvoiceId('BR', window._bhYear); } else if(idEl && idEl.value.startsWith('BR-')) { if (typeof window.generateSafeInvoiceId === 'function') idEl.value = window.generateSafeInvoiceId('RE', window._bhYear); }">
+                <select class="form-select" id="rnc-type" required onchange="const idEl=document.getElementById('rnc-invoice-id'); const yr=document.getElementById('rnc-year')?.value||window._bhYear||new Date().getFullYear(); if(this.value==='Freier Brief'){ if(idEl){ idEl.value='BR-'+String(yr).slice(-2)+'-...'; if(window.RechnungsCore?.fetchNextInvoiceNumber) window.RechnungsCore.fetchNextInvoiceNumber('BR', yr).then(v=>{if(v&&idEl)idEl.value=v;}).catch(()=>{}); } } else if(idEl && idEl.value.startsWith('BR-')) { idEl.value='RE-'+String(yr).slice(-2)+'-...'; if(window.RechnungsCore?.fetchNextInvoiceNumber) window.RechnungsCore.fetchNextInvoiceNumber('RE', yr).then(v=>{if(v&&idEl)idEl.value=v;}).catch(()=>{}); }">
                   <option value="Vermietung" selected>Vermietung</option>
                   <option value="Jahresbeitrag">Jahresbeitrag / Mitglieder</option>
                   <option value="Materialverkauf">Materialverkauf</option>
                   <option value="Depot / Pfand">Depot / Pfand</option>
                   <option value="Schulsport">Schulsport</option>
                   <option value="Sponsoring">Sponsoring / Gönner</option>
+                  <option value="Gönnerbeitrag">Gönnerbeitrag</option>
                   <option value="Sonstige">Sonstige / Diverse</option>
                   <option value="Freier Brief">Freier Brief / Mitteilung</option>
                 </select>
@@ -2352,14 +2522,19 @@ window.rnOpenCreateModal = async function(btnEl) {
 
   const idEl = document.getElementById('rnc-invoice-id');
   if (idEl) {
-    idEl.value = (typeof window.generateSafeInvoiceId === 'function')
-      ? window.generateSafeInvoiceId('RE', window._bhYear)
-      : `RE-${String(window._bhYear || new Date().getFullYear()).slice(-2)}-${String(Math.floor(1000 + Math.random() * 9000))}`;
+    idEl.value = `RE-${String(window._bhYear || new Date().getFullYear()).slice(-2)}-...`;
     if (window.RechnungsCore && typeof window.RechnungsCore.fetchNextInvoiceNumber === 'function') {
       window.RechnungsCore.fetchNextInvoiceNumber('RE', window._bhYear).then(atomicId => {
         if (atomicId && idEl) idEl.value = atomicId;
       }).catch(() => {});
     }
+  }
+
+  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
+    window._rncColToggle = window.TableKit.setupColumnToggle('#rnc-positions-table', {
+      container: '#rnc-pos-col-toggle',
+      storageKey: 'rnc_positions_table_cols'
+    });
   }
 
   const defaultTpl = (window._invoiceTemplates || []).find(t => t.desc && (t.desc.toLowerCase().includes('zusatzrechnung') || t.desc.toLowerCase().includes('miete schützenhaus')));
@@ -2384,13 +2559,6 @@ window.rnOpenCreateModal = async function(btnEl) {
   rnMakeModalMovableAndResizable(modalEl);
   const posTable = modalEl.querySelector('#rnc-positions-table');
   if (posTable) rnInitPositionsTableResizable(posTable);
-
-  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
-    window._rncColToggle = window.TableKit.setupColumnToggle('#rnc-positions-table', {
-      container: '#rnc-pos-col-toggle',
-      storageKey: 'rnc_positions_table_cols'
-    });
-  }
 };
 
 window.rnEditCurrentSelectedContact = function() {
@@ -2492,7 +2660,7 @@ window.rnHandleMemberSelect = function(val) {
       document.getElementById('rnc-strasse').value = c.strasse || '';
       if (document.getElementById('rnc-adresszusatz')) document.getElementById('rnc-adresszusatz').value = c.adresszusatz || '';
       document.getElementById('rnc-plz').value = c.plz || '';
-      document.getElementById('rnc-ort').value = c.ort ? `${c.ort}${c.land && c.land !== 'CH' ? ` (${c.land})` : ''}` : '';
+      document.getElementById('rnc-ort').value = c.ort || '';
       
       // Ansprechperson & Abteilung anzeigen
       const cpName = isFirma ? [c.anrede, c.vorname, c.nachname].filter(Boolean).join(' ') : '';
@@ -2531,14 +2699,8 @@ function rncRecalculateTotal() {
 window.rncRecalculateTotal = rncRecalculateTotal;
 
 function getRnKontenDatalistHtml() {
-  let list = window._bhKontenrahmen;
-  if (!list || list.length === 0) {
-    try {
-      const cached = localStorage.getItem('bh_kontenrahmen');
-      if (cached) list = JSON.parse(cached);
-    } catch (e) {}
-  }
-  const options = (list || []).map(k => `<option value="${escapeHtml(k.konto)} | ${escapeHtml(k.bezeichnung)}">`).join('');
+  const list = Array.isArray(window._bhKontenrahmen) ? window._bhKontenrahmen : [];
+  const options = list.map(k => `<option value="${escapeHtml(k.konto)} | ${escapeHtml(k.bezeichnung)}">`).join('');
   return `<datalist id="rn-konten-datalist">${options}</datalist>`;
 }
 window.getRnKontenDatalistHtml = getRnKontenDatalistHtml;
@@ -2555,7 +2717,7 @@ function rncAddPositionRow(desc = "", unitPrice = "", qty = 1, konto = "") {
   tr.innerHTML = `
     <td class="text-center font-monospace text-muted rnc-pos-idx tk-col-idx">${tbody.children.length + 1}</td>
     <td class="tk-col-desc">
-      <input type="text" class="form-control form-control-sm rnc-pos-desc" required value="${desc}" placeholder="z.B. Getränkebezug Süsswasser">
+      <input type="text" class="form-control form-control-sm rnc-pos-desc" required value="${escapeHtml(desc)}" placeholder="z.B. Getränkebezug Süsswasser">
     </td>
     <td class="tk-col-qty">
       <input type="number" step="1" min="1" class="form-control form-control-sm text-end rnc-pos-qty rn-no-spin" required value="${qty}" oninput="rncRecalculateRowTotal('${tr.id}')">
@@ -2616,21 +2778,25 @@ window.rncRemovePositionRow = rncRemovePositionRow;
 // SAVE NEW MANUALLY INVOICE
 window.rnSaveCreateInvoice = async function(event) {
   event.preventDefault();
+  if (!(await window.rnEnsureWriteAccess('Rechnungen zu erstellen'))) return;
 
-  const invoiceId = document.getElementById('rnc-invoice-id').value;
+  let invoiceId = (document.getElementById('rnc-invoice-id')?.value || '').trim();
+  if (invoiceId.includes('...')) invoiceId = ''; // Lassen wir atomar von RechnungsCore vergeben
   const name = document.getElementById('rnc-name').value.trim();
   const email = document.getElementById('rnc-email').value.trim();
   const strasse = document.getElementById('rnc-strasse').value.trim();
   const plz = document.getElementById('rnc-plz').value.trim();
   const ort = document.getElementById('rnc-ort').value.trim();
   const contactId = document.getElementById('rnc-contact-id') ? document.getElementById('rnc-contact-id').value.trim() : '';
-  
+  const invYear = Number(document.getElementById('rnc-year').value);
+  const invType = document.getElementById('rnc-type').value;
+
   let personNumber = document.getElementById('rnc-person-number').value.trim();
   if (!personNumber && contactId) {
     personNumber = 'EXT-' + contactId;
   }
 
-  // Wenn es sich um eine Firma handelt, soll stets und ausschliesslich der Firmenname verwendet werden
+  // Bei Firmen ausschliesslich den Firmennamen als Empfängerbezeichnung verwenden
   let finalInvoiceName = name;
   if (contactId) {
     const existingContact = (window._externalContacts || []).find(c => String(c.id).trim() === String(contactId).trim());
@@ -2642,24 +2808,8 @@ window.rnSaveCreateInvoice = async function(event) {
     }
   }
 
-  const nowStr = typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH');
-
-  const invoiceHeader = {
-    id: invoiceId,
-    PersonNumber: personNumber,
-    name: finalInvoiceName,
-    year: Number(document.getElementById('rnc-year').value),
-    type: document.getElementById('rnc-type').value,
-    total_amount: 0,
-    status: 'offen',
-    created_at: nowStr,
-    updated_at: nowStr
-  };
-
   const posRows = document.querySelectorAll('#rnc-positions-tbody tr');
   const positions = [];
-  let totalAmount = 0;
-
   posRows.forEach((row, index) => {
     const desc = row.querySelector('.rnc-pos-desc').value.trim();
     const qty = Number(row.querySelector('.rnc-pos-qty').value || 1);
@@ -2675,18 +2825,11 @@ window.rnSaveCreateInvoice = async function(event) {
       amount: amt,
       konto: konto
     });
-    totalAmount += amt;
   });
 
-  invoiceHeader.total_amount = totalAmount;
-
-  const isFreierBrief = (invoiceHeader.type === 'Freier Brief');
+  const isFreierBrief = (invType === 'Freier Brief');
   if (positions.length === 0 && !isFreierBrief) {
-    if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Keine Positionen', 'Bitte füge mindestens eine Rechnungsposition hinzu.', 'warning');
-    } else {
-      alert("❌ Bitte füge mindestens eine Rechnungsposition hinzu.");
-    }
+    await window.rnUiAlert('Keine Positionen', 'Bitte füge mindestens eine Rechnungsposition hinzu.', 'warning');
     return;
   }
   if (isFreierBrief && positions.length === 0) {
@@ -2704,229 +2847,176 @@ window.rnSaveCreateInvoice = async function(event) {
   if (!isFreierBrief) {
     for (let i = 0; i < positions.length; i++) {
       if (!positions[i].konto) {
-        const msg = `Position ${positions[i].position_nr} („${positions[i].description || 'Ohne Bezeichnung'}“) hat kein Gegenkonto (Haben).<br><br>Jede Rechnungsposition muss zwingend ein gültiges Gegenkonto aufweisen.<br>Bitte wähle in der Spalte „Konto (Haben)“ ein Konto aus dem Kontenrahmen aus.`;
-        if (window.UIConfirmKit) {
-          await UIConfirmKit.alert('Fehlendes Gegenkonto', msg, 'warning');
-        } else {
-          alert(msg.replace(/<br>/g, '\n'));
-        }
+        const msg = `Position ${positions[i].position_nr} („${escapeHtml(positions[i].description || 'Ohne Bezeichnung')}“) hat kein Gegenkonto (Haben).<br><br>Jede Rechnungsposition muss zwingend ein gültiges Gegenkonto aufweisen.<br>Bitte wähle in der Spalte „Konto (Haben)“ ein Konto aus dem Kontenrahmen aus.`;
+        await window.rnUiAlert('Fehlendes Gegenkonto', msg, 'warning');
         return;
       }
     }
   }
 
-  // 1. Optimistic Update
-  window._invoices.unshift(invoiceHeader);
-
-  // Falls externer Kontakt, Kontaktdaten auch lokal in _externalContacts aktualisieren
-  if (!document.getElementById('rnc-person-number').value.trim() || String(document.getElementById('rnc-person-number').value.trim()).startsWith('EXT')) {
-    const extIdx = contactId ? window._externalContacts.findIndex(c => String(c.id).trim() === String(contactId).trim()) : -1;
-    if (extIdx !== -1) {
-      window._externalContacts[extIdx] = {
-        ...window._externalContacts[extIdx],
-        name: name,
-        email: email,
-        strasse: strasse,
-        plz: plz,
-        ort: ort
-      };
-    } else {
-      window._externalContacts.push({
-        id: contactId || (window._externalContacts.length + 1),
-        name: name,
-        email: email,
-        strasse: strasse,
-        plz: plz,
-        ort: ort
-      });
+  const runCreate = async () => {
+    if (!window.RechnungsCore || typeof window.RechnungsCore.createInvoice !== 'function') {
+      throw new Error('RechnungsCore ist nicht verfügbar. Rechnung konnte nicht angelegt werden.');
     }
-  }
 
-  // Tab & Filter zurücksetzen, damit die Rechnung sofort sichtbar ist
-  window._rechnungenActiveTab = 'archiv';
-  window._invoicesFilterStatus = 'alle';
-  window._invoicesFilterType = 'alle';
-  if (typeof rnRenderTable === 'function') {
-    rnRenderTable();
-  } else {
-    window.renderRechnungen();
-  }
-
-  // Close modal instantly
-  const modalEl = document.getElementById('rnModalCreateInvoice');
-  if (modalEl) {
-    const modal = bootstrap.Modal.getInstance(modalEl);
-    if (modal) modal.hide();
-  }
-
-  showSuccess(`🎉 Rechnung ${invoiceId} erfolgreich erstellt (Hintergrund-Synchronisation läuft)...`);
-
-  // Sofort zur neu erstellten Zeile scrollen und hervorheben
-  setTimeout(() => {
-    const rowEl = document.getElementById(`rn-row-${invoiceId}`);
-    if (rowEl) {
-      rowEl.classList.add('table-success');
-      rowEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      setTimeout(() => rowEl.classList.remove('table-success'), 3000);
+    let recipientPayload = null;
+    if (contactId) {
+      const existingContact = (window._externalContacts || []).find(c => String(c.id).trim() === String(contactId).trim());
+      if (existingContact) {
+        const isF = existingContact.typ === 'firma' || Boolean(existingContact.firma);
+        recipientPayload = {
+          ...existingContact,
+          contactId: String(contactId),
+          personNumber: personNumber || ('EXT-' + contactId),
+          name: finalInvoiceName,
+          typ: isF ? 'firma' : 'privat',
+          type: isF ? 'firma' : 'privat',
+          firma: isF ? (existingContact.firma || finalInvoiceName) : '',
+          strasse: strasse || existingContact.strasse || '',
+          plz: plz || existingContact.plz || '',
+          ort: ort || existingContact.ort || '',
+          email: email || existingContact.email || ''
+        };
+      }
+    } else if (personNumber && !personNumber.startsWith('EXT')) {
+      const members = (typeof window.rnGetMembersList === 'function')
+        ? window.rnGetMembersList()
+        : (window._mglData || []);
+      const m = members.find(x => String(x.PersonNumber || x.person_number).trim() === String(personNumber).trim());
+      if (m) {
+        const fName = m.FirstName || m.first_name || '';
+        const lName = m.LastName || m.last_name || '';
+        const sal = m.Salutation || m.salutation || '';
+        recipientPayload = {
+          type: 'mitglied',
+          typ: 'privat',
+          personNumber: m.PersonNumber || m.person_number,
+          memberId: m.PersonNumber || m.person_number,
+          anrede: sal,
+          salutation: sal,
+          vorname: fName,
+          firstName: fName,
+          nachname: lName,
+          lastName: lName,
+          name: `${fName} ${lName}`.trim() || finalInvoiceName,
+          firma: '',
+          strasse: m.Street || m.street || strasse,
+          street: m.Street || m.street || strasse,
+          adresszusatz: m.Addition || m.addition || '',
+          plz: String(m.PostCode || m.ZipCode || m.post_code || plz),
+          zip: String(m.PostCode || m.ZipCode || m.post_code || plz),
+          ort: m.City || m.city || ort,
+          city: m.City || m.city || ort,
+          land: m.Country || m.country || 'Schweiz',
+          country: m.Country || m.country || 'Schweiz',
+          email: m.PrimaryEmail || m.Email || m.primary_email || email
+        };
+      }
     }
-  }, 100);
-
-  let recipientPayload = null;
-  if (contactId) {
-    const existingContact = (window._externalContacts || []).find(c => String(c.id).trim() === String(contactId).trim());
-    if (existingContact) {
-      recipientPayload = { ...existingContact };
-      const isF = existingContact.typ === 'firma' || Boolean(existingContact.firma);
-      recipientPayload.typ = isF ? 'firma' : 'privat';
-      recipientPayload.type = recipientPayload.typ;
-      if (!isF) recipientPayload.firma = '';
-    }
-  } else if (personNumber && !personNumber.startsWith('EXT')) {
-    const members = (typeof window.rnGetMembersList === 'function')
-      ? window.rnGetMembersList()
-      : (window._mglData || []);
-    const m = members.find(x => String(x.PersonNumber || x.person_number).trim() === String(personNumber).trim());
-    if (m) {
-      const fName = m.FirstName || m.first_name || '';
-      const lName = m.LastName || m.last_name || '';
-      const sal = m.Salutation || m.salutation || '';
+    if (!recipientPayload) {
+      const isFirma = Boolean(finalInvoiceName && finalInvoiceName.match(/\b(AG|GmbH|Genossenschaft|Verein|Verband|Stiftung|Gemeinde)\b/i));
+      const nameParts = finalInvoiceName.split(/\s+/);
+      const vName = !isFirma && nameParts.length > 1 ? nameParts[0] : '';
+      const nName = !isFirma && nameParts.length > 1 ? nameParts.slice(1).join(' ') : (isFirma ? '' : finalInvoiceName);
       recipientPayload = {
-        type: 'mitglied',
-        typ: 'privat',
-        person_number: m.PersonNumber || m.person_number,
-        member_id: m.PersonNumber || m.person_number,
-        anrede: sal,
-        salutation: sal,
-        vorname: fName,
-        first_name: fName,
-        nachname: lName,
-        last_name: lName,
-        name: `${fName} ${lName}`.trim() || name,
-        firma: '',
-        strasse: m.Street || m.street || strasse,
-        street: m.Street || m.street || strasse,
-        adresszusatz: m.Addition || m.addition || '',
-        plz: String(m.PostCode || m.ZipCode || m.post_code || plz),
-        zip: String(m.PostCode || m.ZipCode || m.post_code || plz),
-        ort: m.City || m.city || ort,
-        city: m.City || m.city || ort,
-        land: m.Country || m.country || 'Schweiz',
-        country: m.Country || m.country || 'Schweiz',
-        email: m.PrimaryEmail || m.Email || m.primary_email || email
+        contactId: contactId || null,
+        personNumber: personNumber || null,
+        type: isFirma ? 'firma' : 'privat',
+        typ: isFirma ? 'firma' : 'privat',
+        name: finalInvoiceName,
+        firma: isFirma ? finalInvoiceName : '',
+        anrede: '',
+        vorname: vName,
+        firstName: vName,
+        nachname: nName,
+        lastName: nName,
+        strasse: strasse,
+        plz: plz,
+        ort: ort,
+        land: 'CH',
+        email: email
       };
     }
-  }
-  if (!recipientPayload) {
-    const isFirma = Boolean(name && name.match(/\b(AG|GmbH|Genossenschaft|Verein|Verband|Stiftung|Gemeinde)\b/i));
-    const nameParts = name.split(/\s+/);
-    const vName = !isFirma && nameParts.length > 1 ? nameParts[0] : '';
-    const nName = !isFirma && nameParts.length > 1 ? nameParts.slice(1).join(' ') : (isFirma ? '' : name);
-    recipientPayload = {
-      id: contactId || '',
-      type: isFirma ? 'firma' : 'privat',
-      typ: isFirma ? 'firma' : 'privat',
-      name: name,
-      firma: isFirma ? name : '',
-      anrede: '',
-      vorname: vName,
-      nachname: nName,
-      strasse: strasse,
-      plz: plz,
-      ort: ort,
-      land: 'CH',
-      email: email
-    };
-  }
 
-  const payload = {
-    action: 'createInvoice',
-    invoice: invoiceHeader,
-    positions: positions,
-    recipient: recipientPayload
+    const senderPn = document.getElementById('rnc-sender-select') ? document.getElementById('rnc-sender-select').value : null;
+    const order = {
+      id: invoiceId || undefined,
+      prefix: isFreierBrief ? 'BR' : undefined,
+      source: {
+        module: 'manuell',
+        id: contactId ? ('EXT-' + contactId) : (personNumber || null)
+      },
+      recipient: recipientPayload,
+      sender: senderPn ? { personNumber: senderPn } : null,
+      positions: positions.map(p => ({
+        positionNr: p.position_nr,
+        title: p.description,
+        description: p.description,
+        quantity: p.quantity,
+        unitPrice: p.unit_price,
+        amount: p.amount,
+        accountHaben: p.konto
+      })),
+      options: {
+        year: invYear,
+        type: invType,
+        dueDateDays: 30,
+        autoIssue: true
+      }
+    };
+
+    const res = await window.RechnungsCore.createInvoice(order);
+    const createdId = res?.invoice?.id || invoiceId;
+
+    // PDF automatisch im Hintergrund generieren
+    if (createdId && typeof window.RechnungsCore.renderPdf === 'function') {
+      try {
+        await window.RechnungsCore.renderPdf(createdId, { forceRecreate: true });
+      } catch (pdfErr) {
+        console.warn(`⚠️ [PDF] Automatische PDF-Erstellung für ${createdId} fehlgeschlagen:`, pdfErr);
+      }
+    }
+
+    // Tab & Filter zurücksetzen, damit die Rechnung sofort sichtbar ist
+    window._rechnungenActiveTab = 'archiv';
+    window._invoicesFilterStatus = 'alle';
+    window._invoicesFilterType = 'alle';
+
+    const modalEl = document.getElementById('rnModalCreateInvoice');
+    if (modalEl) {
+      const modal = bootstrap.Modal.getInstance(modalEl);
+      if (modal) modal.hide();
+    }
+
+    showSuccess(`🎉 Rechnung ${createdId} erfolgreich erstellt.`);
+
+    if (typeof loadRechnungenData === 'function') {
+      await loadRechnungenData(true, true);
+    }
+    if (typeof loadInvoiceContactsData === 'function') {
+      await loadInvoiceContactsData();
+    }
+
+    setTimeout(() => {
+      const rowEl = document.getElementById(`rn-row-${createdId}`);
+      if (rowEl) {
+        rowEl.classList.add('table-success');
+        rowEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        setTimeout(() => rowEl.classList.remove('table-success'), 3000);
+      }
+    }, 100);
   };
 
-  // 1. Supabase PostgreSQL Master Write (< 50ms)
-  const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
-  if (sb) {
-    try {
-      const invType = document.getElementById('rnc-type').value;
-      const senderPn = document.getElementById('rnc-sender-select') ? document.getElementById('rnc-sender-select').value : null;
-      const senderSnapshot = (window.RechnungsCore && typeof window.RechnungsCore.resolveSender === 'function')
-        ? await window.RechnungsCore.resolveSender(senderPn ? { personNumber: senderPn } : null, invType)
-        : ((typeof rnGetLoggedInSender === 'function') ? rnGetLoggedInSender(invType) : {});
-
-      // In Memory spiegeln
-      const inMemoryInv = window._invoices.find(i => String(i.id) === String(invoiceId));
-      if (inMemoryInv) inMemoryInv.sender_address = senderSnapshot;
-
-      const sbInv = {
-        id: invoiceId,
-        person_number: personNumber || null,
-        recipient_name: finalInvoiceName,
-        recipient_address: recipientPayload || {},
-        sender_address: senderSnapshot || {},
-        year: Number(document.getElementById('rnc-year').value),
-        type: invType,
-        total_amount: totalAmount,
-        status: 'offen',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      const { error: invErr } = await sb.from('invoices').upsert(sbInv);
-      if (invErr) console.warn("⚠️ [Supabase] Invoice header upsert warning:", invErr);
-
-      if (positions.length > 0) {
-        const sbPositions = positions.map(p => ({
-          invoice_id: invoiceId,
-          position_nr: p.position_nr,
-          description: p.description,
-          quantity: p.quantity,
-          unit_price: p.unit_price,
-          amount: p.amount,
-          konto: p.konto || null
-        }));
-        await sb.from('invoice_positions').delete().eq('invoice_id', invoiceId);
-        const { error: posErr } = await sb.from('invoice_positions').insert(sbPositions);
-        if (posErr) console.warn("⚠️ [Supabase] Positions insert warning:", posErr);
-      }
-
-      if (contactId && recipientPayload) {
-        await sb.from('external_contacts').upsert({
-          id: String(contactId),
-          typ: recipientPayload.typ || 'privat',
-          kategorie: recipientPayload.kategorie || null,
-          firma: recipientPayload.firma || null,
-          vorname: recipientPayload.vorname || null,
-          nachname: recipientPayload.nachname || null,
-          strasse: recipientPayload.strasse || null,
-          plz: recipientPayload.plz || null,
-          ort: recipientPayload.ort || null,
-          email: recipientPayload.email || null,
-          updated_at: new Date().toISOString()
-        });
-      }
-      console.log(`✅ [Supabase] Invoice ${invoiceId} and positions saved to Supabase.`);
-
-      // PDF automatisch im Hintergrund generieren!
-      if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
-        try {
-          await window.RechnungsCore.renderPdf(invoiceId, { forceRecreate: true });
-          console.log(`✅ [PDF] Rechnungs-PDF für ${invoiceId} automatisch generiert.`);
-        } catch (pdfErr) {
-          console.warn("⚠️ [PDF] Automatische PDF-Erstellung fehlgeschlagen:", pdfErr);
-        }
-      }
-    } catch (sbEx) {
-      console.warn("⚠️ [Supabase] Create Invoice error:", sbEx);
+  try {
+    if (window.UIButtonKit) {
+      await UIButtonKit.withLoading('#rnc-submit-btn', runCreate);
+    } else {
+      await runCreate();
     }
+  } catch (err) {
+    console.error('❌ Fehler beim Erstellen der Rechnung:', err);
+    await window.rnUiAlert('Fehler beim Erstellen', 'Die Rechnung konnte nicht erstellt werden: ' + escapeHtml(err.message), 'danger');
   }
-
-  
-  // Schneller UI-Refresh direkt aus Supabase
-  setTimeout(async () => {
-    await loadRechnungenData(true, true);
-    await loadInvoiceContactsData();
-  }, 200);
 };
 
 // EDIT MANUALLY INVOICE MODAL
@@ -2971,33 +3061,34 @@ window.rnOpenEditModal = async function(invoiceId) {
 
     if (!inv) {
       hideLoadingOverlay();
-      if (window.UIConfirmKit) {
-        await UIConfirmKit.alert('Rechnung nicht gefunden', `Rechnung ${invoiceId} wurde nicht gefunden.`, 'danger');
-      } else {
-        alert(`❌ Rechnung ${invoiceId} wurde nicht gefunden.`);
-      }
+      await window.rnUiAlert('Rechnung nicht gefunden', `Rechnung ${escapeHtml(invoiceId)} wurde nicht gefunden.`, 'danger');
       return;
     }
 
-    if (inv.status === 'bezahlt' || (inv.total_paid && Number(inv.total_paid) > 0)) {
+    const editSt = String(inv.status || '').toLowerCase();
+    if (editSt === 'storniert') {
       hideLoadingOverlay();
-      if (window.UIConfirmKit) {
-        await UIConfirmKit.alert('Rechnung gesperrt', `Rechnung ${invoiceId} ist bereits bezahlt und kann nicht mehr bearbeitet werden.`, 'warning');
-      } else {
-        alert(`🔒 Rechnung ${invoiceId} ist bereits bezahlt und kann nicht mehr bearbeitet werden.`);
-      }
+      await window.rnUiAlert('Rechnung storniert', `Rechnung ${escapeHtml(invoiceId)} ist storniert und kann nicht mehr bearbeitet werden.`, 'warning');
       return;
     }
 
-    if (inv.mail_status === 'versendet' || inv.send_date) {
+    if (editSt === 'bezahlt' || (inv.total_paid && Number(inv.total_paid) > 0)) {
+      hideLoadingOverlay();
+      await window.rnUiAlert('Rechnung gesperrt', `Rechnung ${escapeHtml(invoiceId)} weist bereits Zahlungen auf und kann nicht mehr bearbeitet werden.`, 'warning');
+      return;
+    }
+
+    if (inv.type === 'Jahresbeitrag') {
+      hideLoadingOverlay();
+      await window.rnUiAlert('Rechnung gesperrt', `Jahresbeitrags-Rechnungen (${escapeHtml(invoiceId)}) werden ausschliesslich über das Modul «Jahresbeitrag» gesteuert.`, 'warning');
+      return;
+    }
+
+    if (typeof window.rnIsInvoiceSent === 'function' ? window.rnIsInvoiceSent(inv) : (inv.mail_status === 'versendet' || inv.mail_status === 'gesendet' || Boolean(inv.send_date))) {
       hideLoadingOverlay();
       const sendDateDisplay = inv.send_date ? (typeof isoToDisplay === 'function' ? isoToDisplay(inv.send_date) : inv.send_date) : 'bereits';
-      const msg = `Rechnung ${invoiceId} wurde am ${sendDateDisplay} an den Empfänger versandt.<br><br>Zur Vermeidung von Abweichungen beim Debitor können versandte Rechnungen nicht mehr inhaltlich editiert werden.<br><br>Falls die Rechnung fehlerhaft ist, storniere diese bitte und erstelle eine korrigierte Rechnung.`;
-      if (window.UIConfirmKit) {
-        await UIConfirmKit.alert('Rechnung gesperrt', msg, 'warning');
-      } else {
-        alert(msg.replace(/<br>/g, '\n'));
-      }
+      const msg = `Rechnung ${escapeHtml(invoiceId)} wurde am ${escapeHtml(sendDateDisplay)} an den Empfänger versandt.<br><br>Zur Vermeidung von Abweichungen beim Debitor können versandte Rechnungen nicht mehr inhaltlich editiert werden.<br><br>Falls die Rechnung fehlerhaft ist, storniere diese bitte und erstelle eine korrigierte Rechnung.`;
+      await window.rnUiAlert('Rechnung gesperrt', msg, 'warning');
       return;
     }
 
@@ -3013,7 +3104,7 @@ window.rnOpenEditModal = async function(invoiceId) {
   } catch (err) {
     console.warn("⚠️ Fehler beim Laden der Rechnungsdetails:", err);
     hideLoadingOverlay();
-    alert("❌ Fehler beim Laden der Rechnungsdetails: " + err.message);
+    await window.rnUiAlert('Ladefehler', 'Fehler beim Laden der Rechnungsdetails: ' + escapeHtml(err.message), 'danger');
     return;
   }
   hideLoadingOverlay();
@@ -3165,6 +3256,7 @@ window.rnOpenEditModal = async function(invoiceId) {
                   <option value="Depot / Pfand" ${inv.type === 'Depot / Pfand' ? 'selected' : ''}>Depot / Pfand</option>
                   <option value="Schulsport" ${inv.type === 'Schulsport' ? 'selected' : ''}>Schulsport</option>
                   <option value="Sponsoring" ${inv.type === 'Sponsoring' ? 'selected' : ''}>Sponsoring / Gönner</option>
+                  <option value="Gönnerbeitrag" ${inv.type === 'Gönnerbeitrag' ? 'selected' : ''}>Gönnerbeitrag</option>
                   <option value="Sonstige" ${inv.type === 'Sonstige' ? 'selected' : ''}>Sonstige / Diverse</option>
                   <option value="Freier Brief" ${inv.type === 'Freier Brief' ? 'selected' : ''}>Freier Brief / Mitteilung</option>
                 </select>
@@ -3348,6 +3440,13 @@ window.rnOpenEditModal = async function(invoiceId) {
   }
   window.rneRemovePositionRow = rneRemovePositionRow;
 
+  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
+    window._rneColToggle = window.TableKit.setupColumnToggle('#rne-positions-table', {
+      container: '#rne-pos-col-toggle',
+      storageKey: 'rne_positions_table_cols'
+    });
+  }
+
   if (positions.length > 0) {
     positions.forEach(p => {
       if (typeof window.rneAddPositionRow === 'function') {
@@ -3367,35 +3466,31 @@ window.rnOpenEditModal = async function(invoiceId) {
   rnPopulateSenderSelect('rne-sender-select', existingSenderPN, true, 'rne-sender-preview');
   const posTable = modalEl.querySelector('#rne-positions-table');
   if (posTable) rnInitPositionsTableResizable(posTable);
-
-  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
-    window._rneColToggle = window.TableKit.setupColumnToggle('#rne-positions-table', {
-      container: '#rne-pos-col-toggle',
-      storageKey: 'rne_positions_table_cols'
-    });
-  }
 };
 
 // SAVE EDITED INVOICE
 window.rnSaveEditInvoice = async function(event, invoiceId) {
   event.preventDefault();
+  if (!(await window.rnEnsureWriteAccess('Rechnungen zu bearbeiten'))) return;
 
   const existingInv = (window._invoices || []).find(i => String(i.id) === String(invoiceId));
   if (existingInv) {
-    if (existingInv.status === 'bezahlt' || (existingInv.total_paid && Number(existingInv.total_paid) > 0)) {
-      if (window.UIConfirmKit) {
-        await UIConfirmKit.alert('Rechnung gesperrt', `Rechnung ${invoiceId} ist bezahlt und kann nicht mehr geändert werden.`, 'warning');
-      } else {
-        alert(`🔒 Rechnung ${invoiceId} ist bezahlt und kann nicht mehr geändert werden.`);
-      }
+    const existingSt = String(existingInv.status || '').toLowerCase();
+    if (existingSt === 'storniert') {
+      await window.rnUiAlert('Rechnung storniert', `Rechnung ${escapeHtml(invoiceId)} ist storniert und kann nicht mehr geändert werden.`, 'warning');
       return;
     }
-    if (existingInv.mail_status === 'versendet' || existingInv.send_date) {
-      if (window.UIConfirmKit) {
-        await UIConfirmKit.alert('Rechnung gesperrt', `Rechnung ${invoiceId} wurde bereits versandt und kann inhaltlich nicht mehr verändert werden.`, 'warning');
-      } else {
-        alert(`🔒 Rechnung ${invoiceId} wurde bereits versandt und kann inhaltlich nicht mehr verändert werden.`);
-      }
+    if (existingSt === 'bezahlt' || (existingInv.total_paid && Number(existingInv.total_paid) > 0)) {
+      await window.rnUiAlert('Rechnung gesperrt', `Rechnung ${escapeHtml(invoiceId)} weist bereits Zahlungen auf und kann nicht mehr geändert werden.`, 'warning');
+      return;
+    }
+    if (existingInv.type === 'Jahresbeitrag') {
+      await window.rnUiAlert('Rechnung gesperrt', `Jahresbeitrags-Rechnungen (${escapeHtml(invoiceId)}) werden ausschliesslich über das Modul «Jahresbeitrag» gesteuert.`, 'warning');
+      return;
+    }
+    const isSent = typeof window.rnIsInvoiceSent === 'function' ? window.rnIsInvoiceSent(existingInv) : (existingInv.mail_status === 'versendet' || existingInv.mail_status === 'gesendet' || Boolean(existingInv.send_date));
+    if (isSent) {
+      await window.rnUiAlert('Rechnung gesperrt', `Rechnung ${escapeHtml(invoiceId)} wurde bereits versandt und kann inhaltlich nicht mehr verändert werden.`, 'warning');
       return;
     }
   }
@@ -3442,14 +3537,11 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
   });
 
   invoiceHeader.total_amount = totalAmount;
+  invoiceHeader.open_amount = totalAmount;
 
   const isFreierBriefEdit = (invoiceHeader.type === 'Freier Brief');
   if (positions.length === 0 && !isFreierBriefEdit) {
-    if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Keine Positionen', 'Bitte füge mindestens eine Rechnungsposition hinzu.', 'warning');
-    } else {
-      alert("❌ Bitte füge mindestens eine Rechnungsposition hinzu.");
-    }
+    await window.rnUiAlert('Keine Positionen', 'Bitte füge mindestens eine Rechnungsposition hinzu.', 'warning');
     return;
   }
   if (isFreierBriefEdit && positions.length === 0) {
@@ -3467,66 +3559,49 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
   if (!isFreierBriefEdit) {
     for (let i = 0; i < positions.length; i++) {
       if (!positions[i].konto) {
-        const msg = `Position ${positions[i].position_nr} („${positions[i].description || 'Ohne Bezeichnung'}“) hat kein Gegenkonto (Haben).<br><br>Jede Rechnungsposition muss zwingend ein gültiges Gegenkonto aufweisen.<br>Bitte wähle in der Spalte „Konto (Haben)“ ein Konto aus dem Kontenrahmen aus.`;
-        if (window.UIConfirmKit) {
-          await UIConfirmKit.alert('Fehlendes Gegenkonto', msg, 'warning');
-        } else {
-          alert(msg.replace(/<br>/g, '\n'));
-        }
+        const msg = `Position ${positions[i].position_nr} („${escapeHtml(positions[i].description || 'Ohne Bezeichnung')}“) hat kein Gegenkonto (Haben).<br><br>Jede Rechnungsposition muss zwingend ein gültiges Gegenkonto aufweisen.<br>Bitte wähle in der Spalte „Konto (Haben)“ ein Konto aus dem Kontenrahmen aus.`;
+        await window.rnUiAlert('Fehlendes Gegenkonto', msg, 'warning');
         return;
       }
     }
   }
 
-  // 1. Optimistic Update
-  const invIndex = window._invoices.findIndex(i => String(i.id) === String(invoiceId));
-  let oldInv = null;
-  const senderPn = document.getElementById('rne-sender-select') ? document.getElementById('rne-sender-select').value : null;
-  const editType = document.getElementById('rne-type').value;
-  const senderSnapshot = (window.RechnungsCore && typeof window.RechnungsCore.resolveSender === 'function')
-    ? await window.RechnungsCore.resolveSender(senderPn ? { personNumber: senderPn } : null, editType)
-    : ((window._invoices[invIndex] && window._invoices[invIndex].sender_address) || {});
+  const runSaveEdit = async () => {
+    const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
+    if (!sb) {
+      throw new Error('Supabase Client ist nicht verfügbar.');
+    }
 
-  if (invIndex !== -1) {
-    oldInv = { ...window._invoices[invIndex] };
-    window._invoices[invIndex] = { ...window._invoices[invIndex], ...invoiceHeader, sender_address: senderSnapshot };
-    window.renderRechnungen(); // Render table instantly!
-  }
+    const invIndex = window._invoices.findIndex(i => String(i.id) === String(invoiceId));
+    const oldInv = invIndex !== -1 ? { ...window._invoices[invIndex] } : null;
+    const senderPn = document.getElementById('rne-sender-select') ? document.getElementById('rne-sender-select').value : null;
+    const editType = document.getElementById('rne-type').value;
+    const senderSnapshot = (window.RechnungsCore && typeof window.RechnungsCore.resolveSender === 'function')
+      ? await window.RechnungsCore.resolveSender(senderPn ? { personNumber: senderPn } : null, editType)
+      : ((window._invoices[invIndex] && window._invoices[invIndex].sender_address) || {});
 
-  // Close modal instantly
-  const modalEl = document.getElementById('rnModalEditInvoice');
-  if (modalEl) {
-    const modal = bootstrap.Modal.getInstance(modalEl);
-    if (modal) modal.hide();
-  }
+    if (invIndex !== -1) {
+      window._invoices[invIndex] = { ...window._invoices[invIndex], ...invoiceHeader, sender_address: senderSnapshot };
+      window.renderRechnungen();
+    }
 
-  showSuccess(`🎉 Rechnung ${invoiceId} erfolgreich aktualisiert (Hintergrund-Synchronisation läuft)...`);
-
-  // WICHTIG: Kein recipient-Objekt mitsenden! Stammdaten werden ausschliesslich über "Externe Kontakte" verwaltet,
-  // damit Firmennamen/Ansprechpersonen/Stammdaten nicht überschrieben oder fehlerhaft aufgeteilt werden.
-  const payload = {
-    action: 'updateInvoice',
-    invoice: invoiceHeader,
-    positions: positions
-  };
-
-  // 1. Supabase PostgreSQL Master Update (< 50ms)
-  const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
-  if (sb) {
     try {
       const sbInv = {
         recipient_name: name,
         year: Number(document.getElementById('rne-year').value),
         type: editType,
         total_amount: totalAmount,
+        open_amount: totalAmount,
         person_number: personNumber || null,
         sender_address: senderSnapshot || {},
         updated_at: new Date().toISOString()
       };
       const { error: invErr } = await sb.from('invoices').update(sbInv).eq('id', invoiceId);
-      if (invErr) console.warn("⚠️ [Supabase] Invoice update warning:", invErr);
+      if (invErr) throw new Error(`Rechnungskopf konnte nicht aktualisiert werden: ${invErr.message}`);
 
-      await sb.from('invoice_positions').delete().eq('invoice_id', invoiceId);
+      const { error: delPosErr } = await sb.from('invoice_positions').delete().eq('invoice_id', invoiceId);
+      if (delPosErr) throw new Error(`Bisherige Positionen konnten nicht ersetzt werden: ${delPosErr.message}`);
+
       if (positions.length > 0) {
         const sbPositions = positions.map(p => ({
           invoice_id: invoiceId,
@@ -3538,46 +3613,66 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
           konto: p.konto || null
         }));
         const { error: posErr } = await sb.from('invoice_positions').insert(sbPositions);
-        if (posErr) console.warn("⚠️ [Supabase] Positions update warning:", posErr);
+        if (posErr) throw new Error(`Positionen konnten nicht gespeichert werden: ${posErr.message}`);
       }
-      console.log(`✅ [Supabase] Invoice ${invoiceId} and positions updated in Supabase.`);
 
-      // PDF automatisch im Hintergrund neu generieren & Storage aktualisieren!
+      const modalEl = document.getElementById('rnModalEditInvoice');
+      if (modalEl) {
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+      }
+      showSuccess(`✅ Rechnung ${invoiceId} erfolgreich aktualisiert.`);
+
+      // PDF automatisch im Hintergrund neu generieren & Storage aktualisieren
       if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
         try {
           await window.RechnungsCore.renderPdf(invoiceId, { forceRecreate: true });
-          console.log(`✅ [PDF] Rechnungs-PDF für ${invoiceId} nach Bearbeitung automatisch neu generiert.`);
         } catch (pdfErr) {
           console.warn("⚠️ [PDF] Fehler bei automatischer Neugenerierung nach Bearbeitung:", pdfErr);
         }
       }
     } catch (sbEx) {
-      console.warn("⚠️ [Supabase] Update Invoice error:", sbEx);
+      if (invIndex !== -1 && oldInv) {
+        window._invoices[invIndex] = oldInv;
+        window.renderRechnungen();
+      }
+      throw sbEx;
     }
-  }
 
-  // Schneller UI-Refresh direkt aus Supabase
-  setTimeout(async () => {
-    await loadRechnungenData(true, true);
-    await loadInvoiceContactsData();
-  }, 200);
+    if (typeof loadRechnungenData === 'function') await loadRechnungenData(true, true);
+    if (typeof loadInvoiceContactsData === 'function') await loadInvoiceContactsData();
+  };
+
+  try {
+    if (window.UIButtonKit) {
+      await UIButtonKit.withLoading('#rne-submit-btn', runSaveEdit);
+    } else {
+      await runSaveEdit();
+    }
+  } catch (err) {
+    console.error('❌ Fehler beim Speichern der Bearbeitung:', err);
+    await window.rnUiAlert('Speicherfehler', 'Änderungen konnten nicht gespeichert werden: ' + escapeHtml(err.message), 'danger');
+  }
 };
 
 // DELETE INVOICE PROMPT
 window.rnDeleteInvoicePrompt = async function(invoiceId) {
+  if (!(await window.rnEnsureWriteAccess('Rechnungen zu löschen'))) return;
+
   const inv = (window._invoices || []).find(i => String(i.id) === String(invoiceId));
   if (inv) {
-    if (inv.status === 'bezahlt' || (inv.total_paid && Number(inv.total_paid) > 0)) {
-      if (window.UIConfirmKit) {
-        await UIConfirmKit.alert('Löschen gesperrt', `Rechnung ${invoiceId} ist bezahlt und kann aus buchhalterischen Gründen nicht gelöscht werden.`, 'warning');
-      } else {
-        alert(`🔒 Rechnung ${invoiceId} ist bezahlt und kann aus buchhalterischen Gründen nicht gelöscht werden.`);
-      }
+    const delSt = String(inv.status || '').toLowerCase();
+    if (delSt === 'bezahlt' || (inv.total_paid && Number(inv.total_paid) > 0)) {
+      await window.rnUiAlert('Löschen gesperrt', `Rechnung ${escapeHtml(invoiceId)} weist bereits Zahlungen auf und kann aus buchhalterischen Gründen nicht gelöscht werden.`, 'warning');
+      return;
+    }
+    if (delSt === 'storniert') {
+      await window.rnUiAlert('Bereits storniert', `Stornierte Rechnungen wie ${escapeHtml(invoiceId)} bleiben für die Historie als Beleg erhalten.`, 'info');
       return;
     }
   }
 
-  const isSent = inv && (inv.mail_status === 'versendet' || inv.send_date);
+  const isSent = inv && (typeof window.rnIsInvoiceSent === 'function' ? window.rnIsInvoiceSent(inv) : (inv.mail_status === 'versendet' || inv.mail_status === 'gesendet' || Boolean(inv.send_date)));
   const isJb = inv && inv.type === 'Jahresbeitrag';
   const isInv = inv && (inv.source_module === 'inventar' || inv.type === 'Materialverkauf' || inv.type === 'Depot / Pfand' || String(invoiceId).startsWith('DP-') || String(invoiceId).startsWith('INV-VERKAUF'));
   let warnText = '';
@@ -3595,14 +3690,12 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
       `Fortfahren?`;
   }
 
-  const ok = window.UIConfirmKit
-    ? await UIConfirmKit.confirm({
-        title: `Rechnung ${invoiceId} löschen?`,
-        message: warnText.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'),
-        type: 'danger',
-        confirmText: 'Unwiderruflich löschen'
-      })
-    : confirm(warnText);
+  const ok = await window.rnUiConfirm({
+    title: `Rechnung ${escapeHtml(invoiceId)} löschen?`,
+    message: warnText.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'),
+    type: 'danger',
+    confirmText: 'Unwiderruflich löschen'
+  });
 
   if (!ok) {
     return;
@@ -3612,12 +3705,12 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
   const invIndex = window._invoices.findIndex(i => String(i.id) === String(invoiceId));
   let deletedInv = null;
   if (invIndex !== -1) {
-    deletedInv = { ...window._invoices[invIndex], originalIndex: invIndex };
+    deletedInv = { ...window._invoices[invIndex] };
     window._invoices.splice(invIndex, 1);
-    window.renderRechnungen(); // Render table instantly!
+    window.renderRechnungen();
   }
 
-  showSuccess(`🎉 Rechnung ${invoiceId} wird gelöscht (Hintergrund-Synchronisation läuft)...`);
+  showSuccess(`⏳ Rechnung ${invoiceId} wird gelöscht...`);
 
   // Supabase PostgreSQL Master Delete
   const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
@@ -3639,17 +3732,14 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
 
           for (const itemId of itemIds) {
             if (!itemId) continue;
-            // Sowohl Materialverkauf (MV-*) als auch Depot / Pfand (DP-*) stellen den Artikel wieder ins Lager zurück
             if (!inv || inv.type === 'Materialverkauf' || inv.type === 'Depot / Pfand' || !inv.type || inv.type.includes('Verkauf') || String(invoiceId).startsWith('MV-') || String(invoiceId).startsWith('DP-')) {
               await sb.from('inventory_items').update({ status: 'Im Lager', current_owner_id: null, updated_at: new Date().toISOString() }).eq('id', itemId);
             }
           }
 
-          // Primär über invoice_id punktgenau stornieren & entkoppeln
           await sb.from('inventory_transactions').update({ action: 'STORNO', notes: `[STORNO - Rechnung ${invoiceId} gelöscht]`, invoice_id: null }).eq('invoice_id', invoiceId);
           await sb.from('inventory_deposits').update({ status: 'Storniert', updated_at: new Date().toISOString(), invoice_id: null }).eq('invoice_id', invoiceId);
 
-          // Fallback für Altdaten ohne invoice_id
           for (const itemId of itemIds) {
             if (!itemId) continue;
             if (!inv || inv.type === 'Materialverkauf' || !inv.type || inv.type.includes('Verkauf')) {
@@ -3671,18 +3761,25 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
           if (typeof window.loadInventarData === 'function') {
             try { await window.loadInventarData(true); } catch (_) {}
           }
-          console.log(`✅ [Supabase] Inventar-Kopplung für Rechnung ${invoiceId} erfolgreich zurückgestellt.`);
         } catch (invErr) {
           console.warn("⚠️ Fehler beim Inventar-Rollback bei Rechnungs-Löschung:", invErr);
         }
       }
 
-      await sb.from('invoice_positions').delete().eq('invoice_id', invoiceId);
-      await sb.from('invoices').delete().eq('id', invoiceId);
+      const { error: posDelErr } = await sb.from('invoice_positions').delete().eq('invoice_id', invoiceId);
+      if (posDelErr) throw new Error(`Positionen konnten nicht gelöscht werden: ${posDelErr.message}`);
+
+      const { error: invDelErr } = await sb.from('invoices').delete().eq('id', invoiceId);
+      if (invDelErr) throw new Error(`Rechnung konnte nicht gelöscht werden: ${invDelErr.message}`);
+
       // Quellmodul Vermietung entkoppeln falls verknüpft
-      await sb.from('rental_requests').update({ invoice_id: null }).eq('invoice_id', invoiceId);
+      const { error: rentErr } = await sb.from('rental_requests').update({ invoice_id: null }).eq('invoice_id', invoiceId);
+      if (rentErr) console.warn("⚠️ [Supabase] Vermietungs-Entkopplung:", rentErr);
+
       // Quellmodul Jahresbeitrag entkoppeln falls verknüpft
-      await sb.from('contributions_header').update({ invoice_id: null }).eq('invoice_id', invoiceId);
+      const { error: jbErr } = await sb.from('contributions_header').update({ invoice_id: null }).eq('invoice_id', invoiceId);
+      if (jbErr) console.warn("⚠️ [Supabase] Jahresbeitrags-Entkopplung:", jbErr);
+
       if (Array.isArray(window._jbData)) {
         const matchJb = window._jbData.find(j => String(j.invoiceId || j.invoice_id).trim() === String(invoiceId).trim());
         if (matchJb) {
@@ -3707,15 +3804,20 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
           await loadJahresbeitragData(true, false);
         } catch (_) {}
       }
-      console.log(`✅ [Supabase] Invoice ${invoiceId} deleted from Supabase.`);
       if (isJb) {
         showSuccess(`🎉 Rechnung ${invoiceId} gelöscht. Beitrag im Modul Jahresbeitrag auf 'berechnet' zurückgesetzt.`);
       } else if (isInv) {
         showSuccess(`🎉 Rechnung ${invoiceId} gelöscht. Inventar-Artikel automatisch wieder ins Lager zurückgestellt.`);
+      } else {
+        showSuccess(`🎉 Rechnung ${invoiceId} gelöscht.`);
       }
     } catch (sbEx) {
+      if (deletedInv && invIndex !== -1) {
+        window._invoices.splice(invIndex, 0, deletedInv);
+        window.renderRechnungen();
+      }
       console.warn("⚠️ [Supabase] Delete Invoice error:", sbEx);
-      showError(`Fehler beim Löschen der Rechnung ${invoiceId}: ${sbEx.message}`);
+      await window.rnUiAlert('Löschfehler', `Fehler beim Löschen der Rechnung ${escapeHtml(invoiceId)}: ${escapeHtml(sbEx.message)}`, 'danger');
     }
   }
 
@@ -3748,13 +3850,18 @@ function rnGetDaysSince(dateStr) {
 window.rnOpenMahnungModal = async function(invoiceId, name) {
   const inv = (window._invoices || []).find(i => String(i.id) === String(invoiceId));
   if (!inv) {
-    alert("❌ Rechnung nicht gefunden: " + invoiceId);
+    await window.rnUiAlert('Rechnung nicht gefunden', `Die Rechnung ${escapeHtml(invoiceId)} wurde nicht gefunden.`, 'danger');
     return;
   }
 
   // Mahnungen für Vermietungen laufen ausschliesslich über das Vermietungsmodul
   if (inv.source_module === 'vermietung' || String(inv.id || '').startsWith('VM-')) {
-    alert("ℹ️ Mahnungen für Vermietungen (Schützenstube) werden direkt im Modul «Vermietung» über den Vermietungs-Workflow gesteuert und nicht im Rechnungsmodul gemahnt.");
+    await window.rnUiAlert('Hinweis zu Vermietungen', 'Mahnungen für Vermietungen (Schützenstube) werden direkt im Modul «Vermietung» über den Vermietungs-Workflow gesteuert und nicht im Rechnungsmodul gemahnt.', 'info');
+    return;
+  }
+
+  if (String(inv.status || '').toLowerCase() === 'storniert') {
+    await window.rnUiAlert('Rechnung storniert', `Stornierte Rechnungen (${escapeHtml(invoiceId)}) können nicht gemahnt werden.`, 'warning');
     return;
   }
 
@@ -3799,12 +3906,6 @@ window.rnOpenMahnungModal = async function(invoiceId, name) {
     if (typeof rnGetDefaultLayouts === 'function') {
       layoutsMap = rnGetDefaultLayouts();
     }
-    try {
-      const stored = localStorage.getItem('portal_invoice_layouts');
-      if (stored) {
-        layoutsMap = { ...(layoutsMap || {}), ...JSON.parse(stored) };
-      }
-    } catch (_) {}
   }
 
   const replaceMailVars = (str, stufeNum) => {
@@ -4296,14 +4397,12 @@ window.rnSwitchMahnungTab = function(mode) {
 };
 
 window.rnResetMahnungTemplate = async function() {
-  const ok = window.UIConfirmKit
-    ? await UIConfirmKit.confirm({
-        title: 'Mahnvorlage zurücksetzen?',
-        message: 'Möchtest du den E-Mail-Betreff und den Mahnungstext wirklich auf die Standard-Vorlage der aktuellen Stufe zurücksetzen?',
-        type: 'warning',
-        confirmText: 'Zurücksetzen'
-      })
-    : confirm('Möchtest du den E-Mail-Betreff und den Mahnungstext auf die Standard-Vorlage der aktuellen Stufe zurücksetzen?');
+  const ok = await window.rnUiConfirm({
+    title: 'Mahnvorlage zurücksetzen?',
+    message: 'Möchtest du den E-Mail-Betreff und den Mahnungstext wirklich auf die Standard-Vorlage der aktuellen Stufe zurücksetzen?',
+    type: 'warning',
+    confirmText: 'Zurücksetzen'
+  });
   if (!ok) return;
 
   const subjectEl = document.getElementById('rn-mahnung-subject');
@@ -4321,6 +4420,7 @@ window.rnResetMahnungTemplate = async function() {
 // 2. MANUELLE MAHNUNG: VERSAND AUSFÜHREN
 window.rnExecuteSendMahnung = async function(event, invoiceId) {
   if (event) event.preventDefault();
+  if (!(await window.rnEnsureWriteAccess('Mahnungen zu versenden'))) return;
 
   const inv = (window._invoices || []).find(i => String(i.id) === String(invoiceId));
   if (!inv) return;
@@ -4357,15 +4457,12 @@ window.rnExecuteSendMahnung = async function(event, invoiceId) {
   };
   const stufenTitle = stufenLabels[targetStufe] || `Mahnung (Stufe ${targetStufe})`;
 
-  const esc = (window.UIFormatKit?.escapeHtml || window.escapeHtml || (s => s));
-  const ok = window.UIConfirmKit
-    ? await UIConfirmKit.confirm({
-        title: 'Mahnung versenden?',
-        message: `Möchtest du wirklich die <strong>${esc(stufenTitle)}</strong> für Rechnung <strong>${esc(invoiceId)}</strong> (${esc(inv.name || '')}) per E-Mail an <strong>${esc(targetEmail)}</strong> versenden?`,
-        type: 'warning',
-        confirmText: 'Mahnung jetzt senden'
-      })
-    : confirm(`Möchtest du wirklich die "${stufenTitle}" für Rechnung ${invoiceId} (${inv.name || ''}) per E-Mail an "${targetEmail}" versenden?`);
+  const ok = await window.rnUiConfirm({
+    title: 'Mahnung versenden?',
+    message: `Möchtest du wirklich die <strong>${escapeHtml(stufenTitle)}</strong> für Rechnung <strong>${escapeHtml(invoiceId)}</strong> (${escapeHtml(inv.name || '')}) per E-Mail an <strong>${escapeHtml(targetEmail)}</strong> versenden?`,
+    type: 'warning',
+    confirmText: 'Mahnung jetzt senden'
+  });
 
   if (!ok) {
     return;
@@ -4383,9 +4480,16 @@ window.rnExecuteSendMahnung = async function(event, invoiceId) {
       };
   recipient.email = targetEmail;
 
-  const sender = (typeof rnGetLoggedInSender === 'function')
-    ? rnGetLoggedInSender('Mahnung ' + targetStufe)
-    : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType('Mahnung') : null);
+  const selectedSenderPn = document.getElementById('rn-mahnung-sender-select')?.value || null;
+  let sender = null;
+  if (selectedSenderPn && window.RechnungsCore && typeof window.RechnungsCore.resolveSender === 'function') {
+    sender = await window.RechnungsCore.resolveSender({ personNumber: selectedSenderPn }, 'Mahnung ' + targetStufe);
+  }
+  if (!sender) {
+    sender = (typeof rnGetLoggedInSender === 'function')
+      ? rnGetLoggedInSender('Mahnung ' + targetStufe)
+      : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType('Mahnung') : null);
+  }
 
   const layoutKey = `Mahnung ${targetStufe}`;
   const baseLayout = (window._invoiceLayouts && (window._invoiceLayouts[layoutKey] || window._invoiceLayouts['Mahnung']))
@@ -4407,6 +4511,15 @@ window.rnExecuteSendMahnung = async function(event, invoiceId) {
   }
 
   try {
+    // Rechnungs-PDF mit QR-Einzahlungsschein sicherstellen und anhängen
+    const { attachments } = await window.rnBuildPdfAttachmentForMail(invoiceId, {
+      inv,
+      recipient,
+      sender,
+      layout: customLayout,
+      forceRecreate: false
+    });
+
     let finalMahnBodyHtml = '';
     if (/<[a-z][\s\S]*>/i.test(customLayout.mail_body || '')) {
       finalMahnBodyHtml = customLayout.mail_body;
@@ -4433,13 +4546,15 @@ window.rnExecuteSendMahnung = async function(event, invoiceId) {
       throw new Error("Zentrale Mail-Engine (sendMailViaEngine) ist nicht verfügbar.");
     }
 
+    const senderDisplayName = sender?.name || [sender?.vorname, sender?.nachname].filter(Boolean).join(' ') || 'Sportschützen Muhen';
     const mailResult = await window.sendMailViaEngine({
       to: targetEmail,
       subject: customLayout.mail_subject || `${stufenTitle}: Rechnung ${invoiceId} | Sportschützen Muhen`,
       html: emailHtml,
       text: plainTextFallback,
-      senderName: sender?.name || 'Sportschützen Muhen',
+      senderName: senderDisplayName,
       senderEmail: sender?.email || 'sportschuetzen.muhen@gmail.com',
+      attachments: attachments,
       moduleRef: 'rechnung',
       recordId: String(invoiceId)
     });
@@ -4454,34 +4569,33 @@ window.rnExecuteSendMahnung = async function(event, invoiceId) {
       if (bsModal) bsModal.hide();
     }
 
-    // Optimistic Status Update in RAM-Datenbank
-    const nowStr = (typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH'));
+    const nowSwiss = (typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH'));
+    const nowIsoDate = window.rnDateToIsoLocal(new Date());
     inv.status = 'gemahnt';
     inv.mahnstufe = targetStufe;
-    inv.mahn_datum = nowStr;
+    inv.mahn_datum = nowIsoDate;
     window.renderRechnungen();
 
-    // Supabase PostgreSQL Master Update
+    // Supabase PostgreSQL Master Update (DATE-Spalte erwartet YYYY-MM-DD)
     const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
     if (sb) {
+      let hist = [];
       try {
-        let hist = [];
-        try {
-          if (inv.mahn_historie) hist = typeof inv.mahn_historie === 'string' ? JSON.parse(inv.mahn_historie) : inv.mahn_historie;
-        } catch (_) {}
-        if (!Array.isArray(hist)) hist = [];
-        hist.push({ stufe: targetStufe, datum: nowStr, email: targetEmail });
-        inv.mahn_historie = hist;
+        if (inv.mahn_historie) hist = typeof inv.mahn_historie === 'string' ? JSON.parse(inv.mahn_historie) : inv.mahn_historie;
+      } catch (_) {}
+      if (!Array.isArray(hist)) hist = [];
+      hist.push({ stufe: targetStufe, datum: nowSwiss, email: targetEmail });
+      inv.mahn_historie = hist;
 
-        await sb.from('invoices').update({
-          status: 'gemahnt',
-          mahnstufe: targetStufe,
-          mahn_datum: nowStr,
-          mahn_historie: JSON.stringify(hist),
-          updated_at: new Date().toISOString()
-        }).eq('id', invoiceId);
-      } catch (sbErr) {
-        console.warn("⚠️ [Supabase] Dunning update warning:", sbErr);
+      const { error: mahnDbErr } = await sb.from('invoices').update({
+        status: 'gemahnt',
+        mahnstufe: targetStufe,
+        mahn_datum: nowIsoDate,
+        mahn_historie: JSON.stringify(hist),
+        updated_at: new Date().toISOString()
+      }).eq('id', invoiceId);
+      if (mahnDbErr) {
+        console.warn("⚠️ [Supabase] Dunning update warning:", mahnDbErr);
       }
     }
 
@@ -4498,7 +4612,7 @@ window.rnExecuteSendMahnung = async function(event, invoiceId) {
       errAlert.textContent = 'Fehler beim Mahnungs-Versand: ' + err.message;
       errAlert.classList.remove('d-none');
     } else {
-      alert("❌ Mahnung Fehler: " + err.message);
+      await window.rnUiAlert('Mahnung-Fehler', 'Fehler beim Mahnungs-Versand: ' + escapeHtml(err.message), 'danger');
     }
   } finally {
     if (submitBtn) {
@@ -4731,24 +4845,20 @@ window.rnUpdateBatchSelectedCount = function() {
 
 // 4. AUTOMATISCHER SAMMEL-MAHNLAUF: AUSFÜHRUNG
 window.rnExecuteBatchMahnung = async function() {
+  if (!(await window.rnEnsureWriteAccess('den Sammel-Mahnlauf zu starten'))) return;
+
   const checkedBoxes = document.querySelectorAll('.rn-batch-check:checked');
   if (checkedBoxes.length === 0) {
-    if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Keine Auswahl', 'Bitte wähle mindestens eine Rechnung für den Mahnlauf aus.', 'warning');
-    } else {
-      alert("❌ Bitte wähle mindestens eine Rechnung für den Mahnlauf aus.");
-    }
+    await window.rnUiAlert('Keine Auswahl', 'Bitte wähle mindestens eine Rechnung für den Mahnlauf aus.', 'warning');
     return;
   }
 
-  const ok = window.UIConfirmKit
-    ? await UIConfirmKit.confirm({
-        title: 'Sammel-Mahnlauf starten?',
-        message: `Möchtest du wirklich <strong>${checkedBoxes.length}</strong> Mahnungen generieren und per E-Mail versenden?`,
-        type: 'warning',
-        confirmText: 'Mahnlauf starten'
-      })
-    : confirm(`Möchtest du wirklich ${checkedBoxes.length} Mahnungen generieren und per E-Mail versenden?`);
+  const ok = await window.rnUiConfirm({
+    title: 'Sammel-Mahnlauf starten?',
+    message: `Möchtest du wirklich <strong>${checkedBoxes.length}</strong> Mahnungen generieren und per E-Mail versenden?`,
+    type: 'warning',
+    confirmText: 'Mahnlauf starten'
+  });
 
   if (!ok) {
     return;
@@ -4786,6 +4896,7 @@ window.rnExecuteBatchMahnung = async function() {
   try {
     const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
     const nowStr = typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH');
+    const nowIsoDate = window.rnDateToIsoLocal(new Date());
     let successCount = 0;
 
     for (let idx = 0; idx < items.length; idx++) {
@@ -4797,24 +4908,35 @@ window.rnExecuteBatchMahnung = async function() {
       const sender = (typeof rnGetLoggedInSender === 'function') ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag') : null;
       const baseLayout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || {};
 
-      const bodyText = `Guten Tag ${itm.recipient.vorname || ''} ${itm.recipient.nachname || ''},\n\nwir möchten dich freundlich daran erinnern, dass die Rechnung ${itm.invoiceId} über CHF ${Number(inv.total_amount || 0).toFixed(2)} noch zur Zahlung aussteht.\n\nBitte überweise den Betrag in den nächsten Tagen.`;
+      const restBetrag = Number(inv.open_amount !== undefined ? inv.open_amount : (inv.total_amount || 0));
+      const bodyText = `Guten Tag ${itm.recipient.vorname || ''} ${itm.recipient.nachname || ''},\n\nwir möchten dich freundlich daran erinnern, dass die Rechnung ${itm.invoiceId} über CHF ${restBetrag.toFixed(2)} noch zur Zahlung aussteht.\n\nDen QR-Einzahlungsschein findest du im PDF-Anhang. Bitte überweise den Betrag in den nächsten Tagen.`;
       
       const emailHtml = (typeof window.renderClubEmailHtml === 'function')
         ? window.renderClubEmailHtml({
             title: `${stufenTitle}: Rechnung ${itm.invoiceId}`,
             subtitle: inv.type || 'Mahnung',
-            contentHtml: `<p>${bodyText.replace(/\n/g, '<br>')}</p>`
+            contentHtml: `<p>${escapeHtml(bodyText).replace(/\n/g, '<br>')}</p>`
           })
-        : `<p>${bodyText.replace(/\n/g, '<br>')}</p>`;
+        : `<p>${escapeHtml(bodyText).replace(/\n/g, '<br>')}</p>`;
+
+      const { attachments } = await window.rnBuildPdfAttachmentForMail(itm.invoiceId, {
+        inv,
+        recipient: itm.recipient,
+        sender,
+        layout: baseLayout,
+        forceRecreate: false
+      });
 
       if (typeof window.sendMailViaEngine === 'function') {
+        const senderDisplayName = sender?.name || [sender?.vorname, sender?.nachname].filter(Boolean).join(' ') || 'Sportschützen Muhen';
         const mailRes = await window.sendMailViaEngine({
           to: itm.recipient.email,
           subject: `${stufenTitle}: Rechnung ${itm.invoiceId} | Sportschützen Muhen`,
           html: emailHtml,
           text: bodyText,
-          senderName: sender?.name || 'Sportschützen Muhen',
+          senderName: senderDisplayName,
           senderEmail: sender?.email || 'sportschuetzen.muhen@gmail.com',
+          attachments: attachments,
           moduleRef: 'rechnung',
           recordId: String(itm.invoiceId)
         });
@@ -4823,7 +4945,7 @@ window.rnExecuteBatchMahnung = async function() {
           successCount++;
           inv.status = 'gemahnt';
           inv.mahnstufe = itm.mahnstufe;
-          inv.mahn_datum = nowStr;
+          inv.mahn_datum = nowIsoDate;
 
           if (sb) {
             let hist = [];
@@ -4834,13 +4956,14 @@ window.rnExecuteBatchMahnung = async function() {
             hist.push({ stufe: itm.mahnstufe, datum: nowStr, email: itm.recipient.email });
             inv.mahn_historie = hist;
 
-            await sb.from('invoices').update({
+            const { error: batchMahnErr } = await sb.from('invoices').update({
               status: 'gemahnt',
               mahnstufe: itm.mahnstufe,
-              mahn_datum: nowStr,
+              mahn_datum: nowIsoDate,
               mahn_historie: JSON.stringify(hist),
               updated_at: new Date().toISOString()
             }).eq('id', itm.invoiceId);
+            if (batchMahnErr) console.warn(`⚠️ [Supabase] Batch Mahnung Update (${itm.invoiceId}):`, batchMahnErr);
           }
         }
       }
@@ -4856,7 +4979,7 @@ window.rnExecuteBatchMahnung = async function() {
     }, 1000);
   } catch (err) {
     hideLoadingOverlay();
-    alert("❌ Sammel-Mahnlauf Fehler: " + err.message);
+    await window.rnUiAlert('Sammel-Mahnlauf Fehler', 'Der Sammel-Mahnlauf ist fehlgeschlagen: ' + escapeHtml(err.message), 'danger');
   } finally {
     hideLoadingOverlay();
   }
@@ -4917,13 +5040,10 @@ window.rnClearTableSelection = function() {
 
 // Massenversand aus Tabellenauswahl starten
 window.rnStartMassSendFromSelection = async function() {
+  if (!(await window.rnEnsureWriteAccess('den Massenversand zu starten'))) return;
   const ids = rnGetSelectedInvoiceIds();
   if (ids.length === 0) {
-    if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Keine Auswahl', 'Bitte wähle mindestens eine Rechnung in der Tabelle aus.', 'warning');
-    } else {
-      alert("Bitte wähle mindestens eine Rechnung in der Tabelle aus.");
-    }
+    await window.rnUiAlert('Keine Auswahl', 'Bitte wähle mindestens eine Rechnung in der Tabelle aus.', 'warning');
     return;
   }
   rnOpenMassSendModal(ids);
@@ -4931,13 +5051,10 @@ window.rnStartMassSendFromSelection = async function() {
 
 // SAMMELLÖSCHUNG AUS TABELLENAUSWAHL
 window.rnDeleteSelectedInvoices = async function() {
+  if (!(await window.rnEnsureWriteAccess('ausgewählte Rechnungen zu löschen'))) return;
   const selectedIds = rnGetSelectedInvoiceIds();
   if (selectedIds.length === 0) {
-    if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Keine Auswahl', 'Bitte wähle mindestens eine Rechnung in der Tabelle aus.', 'warning');
-    } else {
-      alert("Bitte wähle mindestens eine Rechnung in der Tabelle aus.");
-    }
+    await window.rnUiAlert('Keine Auswahl', 'Bitte wähle mindestens eine Rechnung in der Tabelle aus.', 'warning');
     return;
   }
 
@@ -4946,56 +5063,58 @@ window.rnDeleteSelectedInvoices = async function() {
     .map(id => allInvoices.find(i => String(i.id).trim() === String(id).trim()))
     .filter(Boolean);
 
-  // 1. Trennung: Bezahlt vs. Löschbar
-  const paidInvoices = selectedInvoices.filter(inv => inv.status === 'bezahlt' || (inv.total_paid && Number(inv.total_paid) > 0));
-  const deletableInvoices = selectedInvoices.filter(inv => inv.status !== 'bezahlt' && (!inv.total_paid || Number(inv.total_paid) === 0));
+  // 1. Trennung: Bezahlt / Storniert vs. Löschbar
+  const protectedInvoices = selectedInvoices.filter(inv => {
+    const st = String(inv.status || '').toLowerCase();
+    return st === 'bezahlt' || st === 'storniert' || (inv.total_paid && Number(inv.total_paid) > 0);
+  });
+  const deletableInvoices = selectedInvoices.filter(inv => {
+    const st = String(inv.status || '').toLowerCase();
+    return st !== 'bezahlt' && st !== 'storniert' && (!inv.total_paid || Number(inv.total_paid) === 0);
+  });
 
   if (deletableInvoices.length === 0) {
-    const msg = `Keine der ausgewählten Rechnungen kann gelöscht werden.<br><br>Alle ${paidInvoices.length} ausgewählten Rechnungen sind bereits bezahlt und aus buchhalterischen Gründen geschützt.`;
-    if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Löschen nicht möglich', msg, 'warning');
-    } else {
-      alert(msg.replace(/<br>/g, '\n'));
-    }
+    const msg = `Keine der ausgewählten Rechnungen kann gelöscht werden.<br><br>Alle ${protectedInvoices.length} ausgewählten Rechnungen sind bereits bezahlt/teilbezahlt oder storniert.`;
+    await window.rnUiAlert('Löschen nicht möglich', msg, 'warning');
     return;
   }
 
   // 2. Analyse der löschbaren Rechnungen
-  const draftInvoices = deletableInvoices.filter(inv => (!inv.mail_status || inv.mail_status === 'entwurf') && !inv.send_date);
-  const sentInvoices = deletableInvoices.filter(inv => inv.mail_status === 'versendet' || inv.send_date);
+  const isSentFn = (inv) => typeof window.rnIsInvoiceSent === 'function' ? window.rnIsInvoiceSent(inv) : (inv.mail_status === 'versendet' || inv.mail_status === 'gesendet' || Boolean(inv.send_date));
+  const draftInvoices = deletableInvoices.filter(inv => !isSentFn(inv));
+  const sentInvoices = deletableInvoices.filter(inv => isSentFn(inv));
   const jbInvoices = deletableInvoices.filter(inv => inv.type === 'Jahresbeitrag');
 
   let warnMsg = `⚠️ Möchtest du die ausgewählten ${deletableInvoices.length} Rechnungen wirklich unwiderruflich löschen?\n\n`;
-  warnMsg += `• Entwürfe: ${draftInvoices.length}\n`;
+  warnMsg += `• Entwürfe / unversendet: ${draftInvoices.length}\n`;
   if (sentInvoices.length > 0) {
     warnMsg += `• Bereits versandt: ${sentInvoices.length} ⚠️ (Empfänger haben den Beleg bereits erhalten!)\n`;
   }
   if (jbInvoices.length > 0) {
     warnMsg += `• Jahresbeiträge: ${jbInvoices.length} (Fallen im Fachmodul Jahresbeitrag automatisch auf den Status 'berechnet' zurück)\n`;
   }
-  if (paidInvoices.length > 0) {
-    warnMsg += `\n🔒 Hinweis: ${paidInvoices.length} bezahlte Rechnungen werden übersprungen und verbleiben unverändert im System.\n`;
+  if (protectedInvoices.length > 0) {
+    warnMsg += `\n🔒 Hinweis: ${protectedInvoices.length} bezahlte/stornierte Rechnungen werden übersprungen und verbleiben unverändert im System.\n`;
   }
   warnMsg += `\nFortfahren?`;
 
-  const ok = window.UIConfirmKit
-    ? await UIConfirmKit.confirm({
-        title: `${deletableInvoices.length} Rechnungen löschen?`,
-        message: warnMsg.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'),
-        type: 'danger',
-        confirmText: 'Unwiderruflich löschen'
-      })
-    : confirm(warnMsg);
+  const ok = await window.rnUiConfirm({
+    title: `${deletableInvoices.length} Rechnungen löschen?`,
+    message: warnMsg.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'),
+    type: 'danger',
+    confirmText: 'Unwiderruflich löschen'
+  });
 
   if (!ok) {
     return;
   }
 
   const deletableIds = deletableInvoices.map(i => String(i.id).trim());
+  const prevInvoicesSnapshot = [...(window._invoices || [])];
 
   // 3. Optimistic Update (Sofortiges Entfernen aus lokaler Tabelle & Synchronisation)
   window._invoices = (window._invoices || []).filter(inv => !deletableIds.includes(String(inv.id).trim()));
-  window._jbAllInvoices = window._invoices; // Synchron halten, damit Jahresbeitrag keine alten Belege cached!
+  window._jbAllInvoices = window._invoices;
 
   rnClearTableSelection();
   if (typeof window.renderRechnungen === 'function') {
@@ -5015,25 +5134,29 @@ window.rnDeleteSelectedInvoices = async function() {
   if (Array.isArray(window._jbData)) window._jbData.forEach(clearJbItem);
   if (Array.isArray(window._jbAllBeitraege)) window._jbAllBeitraege.forEach(clearJbItem);
 
-  showSuccess(`⏳ Lösche ${deletableIds.length} Rechnungen (Hintergrund-Synchronisation läuft)...`);
+  showSuccess(`⏳ Lösche ${deletableIds.length} Rechnungen...`);
 
   // 4. Supabase PostgreSQL Batch Delete
   const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
   if (sb) {
     try {
-      // Positionen löschen
-      await sb.from('invoice_positions').delete().in('invoice_id', deletableIds);
-      // Rechnungen löschen
-      await sb.from('invoices').delete().in('id', deletableIds);
+      const { error: posDelErr } = await sb.from('invoice_positions').delete().in('invoice_id', deletableIds);
+      if (posDelErr) throw new Error(`Positionen konnten nicht gelöscht werden: ${posDelErr.message}`);
+
+      const { error: invDelErr } = await sb.from('invoices').delete().in('id', deletableIds);
+      if (invDelErr) throw new Error(`Rechnungen konnten nicht gelöscht werden: ${invDelErr.message}`);
+
       // Quellmodule entkoppeln
-      await sb.from('contributions_header').update({ invoice_id: null }).in('invoice_id', deletableIds);
-      await sb.from('rental_requests').update({ invoice_id: null }).in('invoice_id', deletableIds);
+      const { error: jbUpErr } = await sb.from('contributions_header').update({ invoice_id: null }).in('invoice_id', deletableIds);
+      if (jbUpErr) console.warn('⚠️ [Supabase] Jahresbeitrag-Entkopplung:', jbUpErr);
+
+      const { error: rentUpErr } = await sb.from('rental_requests').update({ invoice_id: null }).in('invoice_id', deletableIds);
+      if (rentUpErr) console.warn('⚠️ [Supabase] Vermietungs-Entkopplung:', rentUpErr);
 
       // In-Memory Cache erneut sicherstellen
       if (Array.isArray(window._jbData)) window._jbData.forEach(clearJbItem);
       if (Array.isArray(window._jbAllBeitraege)) window._jbAllBeitraege.forEach(clearJbItem);
 
-      // Jahresbeitrag-Cockpit live im Hintergrund synchronisieren (verhindert F5-Bedarf!)
       if (jbInvoices.length > 0 && typeof loadJahresbeitragData === 'function') {
         try {
           await loadJahresbeitragData(true, false);
@@ -5042,12 +5165,14 @@ window.rnDeleteSelectedInvoices = async function() {
         }
       }
 
-      console.log(`✅ [Supabase] ${deletableIds.length} Rechnungen gelöscht & Quellmodule entkoppelt.`);
       const jbCountMsg = jbInvoices.length > 0 ? ` (${jbInvoices.length} Jahresbeiträge auf 'berechnet' zurückgesetzt)` : '';
       showSuccess(`🎉 ${deletableIds.length} Rechnungen erfolgreich gelöscht${jbCountMsg}.`);
     } catch (sbEx) {
+      window._invoices = prevInvoicesSnapshot;
+      window._jbAllInvoices = window._invoices;
+      if (typeof window.renderRechnungen === 'function') window.renderRechnungen();
       console.warn("⚠️ [Supabase] Fehler beim Sammellöschen von Rechnungen:", sbEx);
-      showError(`Fehler beim Löschen: ${sbEx.message}`);
+      await window.rnUiAlert('Löschfehler', `Fehler beim Löschen: ${escapeHtml(sbEx.message)}`, 'danger');
     }
   }
 
@@ -5121,19 +5246,24 @@ window.rnRenderMassSendModalContent = function(modalEl) {
       }
     }
 
+    const st = String(inv.status || '').toLowerCase();
+    const isCancelled = st === 'storniert';
+    const isPaid = st === 'bezahlt';
+    const isSent = typeof window.rnIsInvoiceSent === 'function' ? window.rnIsInvoiceSent(inv) : (inv.mail_status === 'versendet' || inv.mail_status === 'gesendet' || Boolean(inv.send_date));
+
     if (currentFilter === 'selection') {
-      return preselected.includes(String(inv.id));
+      return preselected.includes(String(inv.id)) && !isCancelled;
     }
     if (currentFilter === 'unsent') {
-      return inv.mail_status !== 'gesendet';
+      return !isCancelled && !isPaid && !isSent;
     }
     if (currentFilter === 'open') {
-      return String(inv.status || '').toLowerCase() !== 'bezahlt';
+      return !isCancelled && !isPaid;
     }
     if (currentFilter === 'all') {
-      return true;
+      return !isCancelled;
     }
-    return true;
+    return !isCancelled;
   });
 
   // Empfängerdetails für Kandidaten auflösen
@@ -5142,7 +5272,7 @@ window.rnRenderMassSendModalContent = function(modalEl) {
       ? rnGetRecipientForInvoice(inv)
       : { email: '' };
     const hasEmail = Boolean(recipient.email && recipient.email.includes('@'));
-    const isAlreadySent = inv.mail_status === 'gesendet';
+    const isAlreadySent = typeof window.rnIsInvoiceSent === 'function' ? window.rnIsInvoiceSent(inv) : (inv.mail_status === 'versendet' || inv.mail_status === 'gesendet' || Boolean(inv.send_date));
     return {
       invoice: inv,
       recipient: recipient,
@@ -5443,23 +5573,19 @@ window.rnExecuteMassSend = async function() {
     }
   });
 
+  if (!(await window.rnEnsureWriteAccess('den Massenversand zu starten'))) return;
+
   if (itemsToSend.length === 0) {
-    if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Keine Empfänger', 'Bitte wähle mindestens eine Rechnung mit gültiger E-Mail-Adresse aus.', 'warning');
-    } else {
-      alert("❌ Bitte wähle mindestens eine Rechnung mit gültiger E-Mail-Adresse aus.");
-    }
+    await window.rnUiAlert('Keine Empfänger', 'Bitte wähle mindestens eine Rechnung mit gültiger E-Mail-Adresse aus.', 'warning');
     return;
   }
 
-  const ok = window.UIConfirmKit
-    ? await UIConfirmKit.confirm({
-        title: 'Sammelversand starten?',
-        message: `Möchtest du wirklich <strong>${itemsToSend.length}</strong> Rechnungen als PDF mit Schweizer QR-Code generieren und per E-Mail versenden?`,
-        type: 'primary',
-        confirmText: 'Versand starten'
-      })
-    : confirm(`Möchtest du wirklich ${itemsToSend.length} Rechnungen als PDF mit Schweizer QR-Code generieren und per E-Mail versenden?`);
+  const ok = await window.rnUiConfirm({
+    title: 'Sammelversand starten?',
+    message: `Möchtest du wirklich <strong>${itemsToSend.length}</strong> Rechnungen als PDF mit Schweizer QR-Code generieren und per E-Mail versenden?`,
+    type: 'primary',
+    confirmText: 'Versand starten'
+  });
 
   if (!ok) {
     return;
@@ -5636,23 +5762,24 @@ window.rnExecuteMassSend = async function() {
 
       if (mailResult && mailResult.success) {
         successCount++;
-        inv.mail_status = 'gesendet';
+        inv.mail_status = 'versendet';
         inv.send_date = nowSwiss;
         inv.updated_at = nowSwiss;
         if (pdfUrl) inv.pdf_url = pdfUrl;
         if (badge) {
           badge.className = 'badge bg-success text-white py-1.5 px-2.5';
-          badge.innerHTML = `<i class="fas fa-check me-1"></i>Gesendet`;
+          badge.innerHTML = `<i class="fas fa-check me-1"></i>Versendet`;
         }
 
         const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
         if (sb) {
-          sb.from('invoices').update({
-            mail_status: 'gesendet',
+          const { error: massMailUpErr } = await sb.from('invoices').update({
+            mail_status: 'versendet',
             send_date: new Date().toISOString(),
             pdf_url: pdfUrl || inv.pdf_url || '',
             updated_at: new Date().toISOString()
-          }).eq('id', inv.id).then(() => {}).catch(() => {});
+          }).eq('id', inv.id);
+          if (massMailUpErr) console.warn(`⚠️ [Supabase] Massenversand mail_status Update (${inv.id}):`, massMailUpErr);
         }
       } else {
         throw new Error(mailResult?.error || 'Serverfehler beim Versand');
@@ -5981,6 +6108,8 @@ window.rnOpenContactModal = function(contactId = null) {
 
 window.rnSaveContactForm = async function(event) {
   event.preventDefault();
+  if (!(await window.rnEnsureWriteAccess('externe Kontakte zu speichern'))) return;
+
   const id = document.getElementById('rnc-crud-id').value.trim();
   const typ = document.getElementById('rnc-type-firma')?.checked ? 'firma' : 'privat';
   const kategorie = document.getElementById('rnc-crud-kategorie').value.trim();
@@ -5998,15 +6127,21 @@ window.rnSaveContactForm = async function(event) {
   const telefon = document.getElementById('rnc-crud-telefon').value.trim();
   const bemerkungen = document.getElementById('rnc-crud-bemerkungen').value.trim();
 
+  // AGENTS.md Regel 6 Adress-Kontrakt: bei firma ist firma Pflicht, bei privat bleibt firma leer
+  if (typ === 'firma' && !firma) {
+    await window.rnUiAlert('Firmenname fehlt', 'Bitte gib bei einer Firma bzw. Institution zwingend einen Firmennamen an.', 'warning');
+    return;
+  }
+
   // Name für Fallback/Legacy
-  const name = typ === 'firma' ? (firma || [vorname, nachname].join(' ').trim()) : [vorname, nachname].join(' ').trim() || firma;
+  const name = typ === 'firma' ? firma : [vorname, nachname].filter(Boolean).join(' ').trim();
 
   const contactObj = {
     id,
     typ,
     kategorie,
-    firma,
-    abteilung,
+    firma: typ === 'firma' ? firma : '',
+    abteilung: typ === 'firma' ? abteilung : '',
     anrede,
     vorname,
     nachname,
@@ -6033,7 +6168,7 @@ window.rnSaveContactForm = async function(event) {
   const sb = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : (window.supabaseClient || null);
   if (!sb) {
     hideLoadingOverlay();
-    alert('❌ Fehler: Supabase-Client ist nicht verfügbar.');
+    await window.rnUiAlert('Systemfehler', 'Supabase-Client ist nicht verfügbar.', 'danger');
     return;
   }
 
@@ -6128,25 +6263,24 @@ window.rnSaveContactForm = async function(event) {
       }
     }
   } catch (err) {
-    alert('❌ Fehler: ' + err.message);
+    await window.rnUiAlert('Speicherfehler', 'Der Kontakt konnte nicht gespeichert werden: ' + escapeHtml(err.message), 'danger');
   } finally {
     hideLoadingOverlay();
   }
 };
 
 window.rnDeleteContactPrompt = async function(contactId) {
+  if (!(await window.rnEnsureWriteAccess('externe Kontakte zu löschen'))) return;
+
   const c = (window._externalContacts || []).find(x => String(x.id).trim() === String(contactId).trim());
   const label = c ? (window.rnGetContactDisplayName ? window.rnGetContactDisplayName(c) : (c.firma || c.name || `ID ${c.id}`)) : `ID ${contactId}`;
-  const esc = (window.UIFormatKit?.escapeHtml || window.escapeHtml || (s => s));
 
-  const ok = window.UIConfirmKit
-    ? await UIConfirmKit.confirm({
-        title: 'Externen Kontakt löschen?',
-        message: `Möchtest du den externen Kontakt <strong>${esc(label)}</strong> (EXT-${contactId}) wirklich löschen?`,
-        type: 'danger',
-        confirmText: 'Löschen'
-      })
-    : confirm(`Möchtest du den externen Kontakt "${label}" (EXT-${contactId}) wirklich löschen?`);
+  const ok = await window.rnUiConfirm({
+    title: 'Externen Kontakt löschen?',
+    message: `Möchtest du den externen Kontakt <strong>${escapeHtml(label)}</strong> (EXT-${escapeHtml(contactId)}) wirklich löschen?`,
+    type: 'danger',
+    confirmText: 'Löschen'
+  });
   if (!ok) return;
 
   showLoadingOverlay('Lösche Kontakt...');
@@ -6155,11 +6289,7 @@ window.rnDeleteContactPrompt = async function(contactId) {
   const sb = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : (window.supabaseClient || null);
   if (!sb) {
     hideLoadingOverlay();
-    if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Systemfehler', 'Supabase-Client nicht verfügbar.', 'danger');
-    } else {
-      alert('❌ Fehler: Supabase-Client nicht verfügbar.');
-    }
+    await window.rnUiAlert('Systemfehler', 'Supabase-Client ist nicht verfügbar.', 'danger');
     return;
   }
 
@@ -6168,7 +6298,6 @@ window.rnDeleteContactPrompt = async function(contactId) {
     if (sbErr) {
       throw new Error(`Fehler beim Löschen in Supabase: ${sbErr.message}`);
     }
-    console.log(`✅ [Supabase] External contact ${contactId} deleted.`);
 
     showSuccess('Kontakt gelöscht.');
     window._externalContacts = window._externalContacts.filter(x => String(x.id).trim() !== String(contactId).trim());
@@ -6178,7 +6307,7 @@ window.rnDeleteContactPrompt = async function(contactId) {
       }
     }
   } catch (err) {
-    alert('❌ Fehler: ' + err.message);
+    await window.rnUiAlert('Löschfehler', 'Der Kontakt konnte nicht gelöscht werden: ' + escapeHtml(err.message), 'danger');
   } finally {
     hideLoadingOverlay();
   }

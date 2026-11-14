@@ -297,7 +297,15 @@
             }
         } catch (err) {
             console.error("PDF Fehler:", err);
-            alert("❌ PDF Fehler: " + err.message);
+            if (window.UIConfirmKit) {
+                await window.UIConfirmKit.alert({
+                    title: 'PDF Fehler',
+                    message: 'Das Rechnungs-PDF konnte nicht erstellt werden: ' + (err.message || err),
+                    type: 'danger'
+                });
+            } else if (typeof showError === 'function') {
+                showError("PDF Fehler: " + (err.message || err));
+            }
         } finally {
             if (typeof hideLoadingOverlay === 'function') {
                 hideLoadingOverlay();

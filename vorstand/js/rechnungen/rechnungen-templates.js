@@ -3,37 +3,35 @@
 // =====================================================================
 
 window.renderTabTemplates = function(content) {
-  let templates = window._invoiceTemplates;
-  if (!templates || templates.length === 0) {
-    rnInitializeTemplates();
-    templates = JSON.parse(localStorage.getItem('portal_invoice_templates') || '[]');
-  }
-  
+  const templates = Array.isArray(window._invoiceTemplates) ? window._invoiceTemplates : [];
+
   let rowsHtml = '';
   if (templates.length === 0) {
-    rowsHtml = `<tr><td colspan="4" class="text-center text-muted py-4"><i class="fas fa-info-circle me-2"></i>Keine Standard-Positionen erfasst.</td></tr>`;
+    rowsHtml = `<tr><td colspan="5" class="text-center text-muted py-4"><i class="fas fa-info-circle me-2"></i>Keine Standard-Positionen erfasst.</td></tr>`;
   } else {
     // Sort templates by category then description
     const sortedTemplates = [...templates].sort((a, b) => {
-      if (a.category !== b.category) return a.category.localeCompare(b.category);
-      return a.desc.localeCompare(b.desc);
+      if ((a.category || '') !== (b.category || '')) return (a.category || '').localeCompare(b.category || '');
+      return (a.desc || '').localeCompare(b.desc || '');
     });
-    
+
     rowsHtml = sortedTemplates.map((t) => {
-      const priceLabel = t.price ? `CHF ${Number(t.price).toFixed(2)}` : '<span class="text-muted">Flexibler Preis</span>';
-      
+      const priceLabel = t.price
+        ? (window.UIFormatKit ? window.UIFormatKit.formatCurrency(t.price) : `CHF ${Number(t.price).toFixed(2)}`)
+        : '<span class="text-muted">Flexibler Preis</span>';
+
       let catBadge = 'bg-light text-dark border';
       if (t.category === 'Vermietung') catBadge = 'bg-primary-subtle text-primary border border-primary-subtle';
       else if (t.category === 'Konsumationen') catBadge = 'bg-success-subtle text-success border border-success-subtle';
       else if (t.category === 'Schulsport') catBadge = 'bg-danger-subtle text-danger border border-danger-subtle';
-      
-      const tIdStr = t.id ? `'${t.id}'` : 'null';
-      const escapedDesc = String(t.desc).replace(/'/g, "\\'");
-      const escapedCategory = String(t.category).replace(/'/g, "\\'");
+
+      const tIdParam = t.id ? `'${escapeJs(t.id)}'` : 'null';
+      const escapedDesc = escapeJs(t.desc || '');
+      const escapedCategory = escapeJs(t.category || '');
       const kontoVal = t.habenkonto || t.konto || '';
-      const escapedKonto = String(kontoVal).replace(/'/g, "\\'");
+      const escapedKonto = escapeJs(kontoVal);
       const kontoBadge = kontoVal ? `<span class="badge bg-light text-primary font-monospace border">${escapeHtml(kontoVal)}</span>` : '<span class="text-muted small">–</span>';
-      
+
       return `
         <tr class="bh-account-row">
           <td data-col-id="cat" class="tk-col-cat"><span class="badge ${catBadge} px-2.5 py-1.5">${escapeHtml(t.category)}</span></td>
@@ -41,10 +39,10 @@ window.renderTabTemplates = function(content) {
           <td data-col-id="price" class="text-end font-monospace fw-bold tk-col-price">${priceLabel}</td>
           <td data-col-id="konto" class="text-center tk-col-konto">${kontoBadge}</td>
           <td data-col-id="actions" class="text-end tk-col-actions">
-            <button class="btn btn-xs btn-outline-warning me-1 write-protected" onclick="rnOpenTemplateModal(${tIdStr}, '${escapedCategory}', '${escapedDesc}', '${t.price || ''}', '${escapedKonto}')" title="Vorlage bearbeiten">
+            <button class="btn btn-xs btn-outline-warning me-1 write-protected" onclick="rnOpenTemplateModal(${tIdParam}, '${escapedCategory}', '${escapedDesc}', '${escapeJs(String(t.price || ''))}', '${escapedKonto}')" title="Vorlage bearbeiten">
               <i class="fas fa-edit"></i>
             </button>
-            <button class="btn btn-xs btn-outline-danger write-protected" onclick="rnDeleteTemplate(${tIdStr}, '${escapedDesc}')" title="Vorlage löschen">
+            <button class="btn btn-xs btn-outline-danger write-protected" onclick="rnDeleteTemplate(${tIdParam}, '${escapedDesc}')" title="Vorlage löschen">
               <i class="fas fa-trash-alt"></i>
             </button>
           </td>
@@ -66,7 +64,7 @@ window.renderTabTemplates = function(content) {
       </div>
       
       <p class="text-muted small mb-4">
-        Hier können Sie den Artikelstamm und die Standard-Positionen verwalten, die in den Rechnungserstellungs- und Bearbeitungsdialogen unter <strong>„Standard-Positionen“</strong> zur Schnellauswahl angeboten werden.
+        Hier kannst du den Artikelstamm und die Standard-Positionen verwalten, die in den Rechnungserstellungs- und Bearbeitungsdialogen unter <strong>„Standard-Positionen“</strong> zur Schnellauswahl angeboten werden.
       </p>
       
       <div class="table-responsive">
@@ -156,7 +154,7 @@ window.rnOpenTemplateModal = function(templateId = null, cat = 'Vermietung', dsc
                 <span class="input-group-text bg-light text-muted">CHF</span>
                 <input type="number" step="0.05" class="form-control text-end font-monospace" id="rnt-price" value="${t.price || ''}" placeholder="0.00 (Feld leeren für flexiblen Preis)">
               </div>
-              <div class="form-text text-muted small mt-1">Lassen Sie dieses Feld leer, wenn der Betrag bei jeder Rechnung individuell eingegeben werden soll (z.B. Getränkebezug).</div>
+              <div class="form-text text-muted small mt-1">Lasse dieses Feld leer, wenn der Betrag bei jeder Rechnung individuell eingegeben werden soll (z. B. Getränkebezug).</div>
             </div>
 
             <div class="mb-4">
@@ -169,7 +167,7 @@ window.rnOpenTemplateModal = function(templateId = null, cat = 'Vermietung', dsc
             ${typeof getRnKontenDatalistHtml === 'function' ? getRnKontenDatalistHtml() : ''}
             
             <div class="d-grid">
-              <button type="submit" class="btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm">
+              <button type="submit" id="rnt-submit-btn" class="btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm write-protected">
                 <i class="fas fa-save me-1"></i> Speichern
               </button>
             </div>
@@ -185,80 +183,76 @@ window.rnOpenTemplateModal = function(templateId = null, cat = 'Vermietung', dsc
 
 window.rnSaveTemplate = async function(event, templateId) {
   event.preventDefault();
-  
+  if (typeof hasWriteAccess === 'function' && !hasWriteAccess('rechnungen')) {
+    if (window.UIConfirmKit) await UIConfirmKit.alert({ title: 'Keine Berechtigung', message: 'Du hast keine Schreibberechtigung für das Rechnungsmodul.', type: 'warning' });
+    return;
+  }
+
   const category = document.getElementById('rnt-category').value;
   const desc = document.getElementById('rnt-desc').value.trim();
   const priceInput = document.getElementById('rnt-price').value;
-  const price = priceInput !== '' ? parseFloat(priceInput) : '';
+  const parsedPrice = priceInput !== '' ? Number(priceInput) : 0;
   const rawHabenkonto = document.getElementById('rnt-habenkonto') ? document.getElementById('rnt-habenkonto').value.trim() : '';
-  const habenkonto = rawHabenkonto.split('|')[0].trim();
-  
-  const submitBtn = event.target.querySelector('button[type="submit"]');
-  if (submitBtn) {
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Speichere...';
-  }
-  
-  const isNew = templateId === null || templateId === undefined || templateId === '';
-  const newTemplate = { category, desc, price, habenkonto };
+  const habenkonto = rawHabenkonto.split('|')[0].trim() || '3000';
+  const submitBtn = document.getElementById('rnt-submit-btn') || event.target?.querySelector('button[type="submit"]');
 
-  // 1. Supabase PostgreSQL Master Write
+  const isNew = templateId === null || templateId === undefined || templateId === '';
   const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
-  if (sb) {
+  if (!sb) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({ title: 'Konfigurationsfehler', message: 'Supabase Client ist nicht initialisiert. Vorlage kann nicht gespeichert werden.', type: 'danger' });
+    } else {
+      showError('Supabase Client ist nicht initialisiert.');
+    }
+    return;
+  }
+
+  const executeSave = async () => {
     try {
-      const tId = isNew ? (desc.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + Date.now()) : String(templateId);
-      await sb.from('invoice_templates').upsert({
-        id: tId,
+      const payload = {
         category: category,
         description: desc,
-        unit_price: price !== '' ? Number(price) : null,
-        konto: habenkonto || null,
+        price: isNaN(parsedPrice) ? 0 : parsedPrice,
+        habenkonto: habenkonto,
         updated_at: new Date().toISOString()
-      });
-      showSuccess(isNew ? "🎉 Standard-Position erfolgreich hinzugefügt!" : "🎉 Standard-Position aktualisiert!");
+      };
+
+      const { error } = isNew
+        ? await sb.from('invoice_templates').insert([payload])
+        : await sb.from('invoice_templates').update(payload).eq('id', String(templateId));
+
+      if (error) throw error;
+
+      showSuccess(isNew ? '🎉 Standard-Position erfolgreich hinzugefügt!' : '🎉 Standard-Position aktualisiert!');
       const modalEl = document.getElementById('rnModalTemplateEdit');
-      const modal = bootstrap.Modal.getInstance(modalEl);
+      const modal = modalEl ? bootstrap.Modal.getInstance(modalEl) : null;
       if (modal) modal.hide();
-      
-      // Reload from Supabase
+
       await loadInvoiceTemplatesData();
       renderActiveRechnungenTab();
-      return;
     } catch (sbErr) {
-      console.warn("⚠️ [Supabase] Template save warning:", sbErr);
-      showError("Fehler beim Speichern der Vorlage in Supabase: " + (sbErr.message || sbErr));
-      return;
+      console.error('❌ [Supabase] Template save error:', sbErr);
+      if (window.UIConfirmKit) {
+        await UIConfirmKit.alert({ title: 'Speicherfehler', message: `Fehler beim Speichern der Vorlage in Supabase: ${escapeHtml(sbErr.message || String(sbErr))}`, type: 'danger' });
+      } else {
+        showError('Fehler beim Speichern der Vorlage in Supabase: ' + (sbErr.message || sbErr));
+      }
     }
-  }
+  };
 
-  // 2. Fallback: LocalStorage
-  let templates = JSON.parse(localStorage.getItem('portal_invoice_templates') || '[]');
-  if (isNew) {
-    const maxId = templates.reduce((max, t) => Math.max(max, parseInt(t.id) || 0), 0);
-    newTemplate.id = maxId + 1;
-    templates.push(newTemplate);
+  if (window.UIButtonKit && submitBtn) {
+    await UIButtonKit.withLoading(submitBtn, executeSave);
   } else {
-    const idx = templates.findIndex(t => String(t.id) === String(templateId));
-    if (idx !== -1) {
-      templates[idx] = { ...templates[idx], ...newTemplate };
-    } else {
-      newTemplate.id = templateId;
-      templates.push(newTemplate);
-    }
+    await executeSave();
   }
-  
-  localStorage.setItem('portal_invoice_templates', JSON.stringify(templates));
-  window._invoiceTemplates = templates;
-  
-  const modalEl = document.getElementById('rnModalTemplateEdit');
-  const modal = bootstrap.Modal.getInstance(modalEl);
-  if (modal) modal.hide();
-  
-  showSuccess(isNew ? "🎉 Standard-Position lokal gespeichert!" : "🎉 Standard-Position lokal aktualisiert!");
-  renderActiveRechnungenTab();
 };
 
 window.rnDeleteTemplate = async function(templateId, desc) {
+  if (typeof hasWriteAccess === 'function' && !hasWriteAccess('rechnungen')) {
+    if (window.UIConfirmKit) await UIConfirmKit.alert({ title: 'Keine Berechtigung', message: 'Du hast keine Schreibberechtigung für das Rechnungsmodul.', type: 'warning' });
+    return;
+  }
+
   const ok = await UIConfirmKit.confirm({
     title: 'Standard-Position löschen?',
     message: `Möchtest du die Standard-Position <strong>${escapeHtml(desc)}</strong> wirklich aus den Vorlagen löschen?`,
@@ -266,38 +260,37 @@ window.rnDeleteTemplate = async function(templateId, desc) {
     confirmText: 'Löschen'
   });
   if (!ok) return;
-  
+
   const isServerTpl = templateId !== null && templateId !== undefined && templateId !== '';
-  
-  // Supabase PostgreSQL Master Delete
   const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
-  if (sb && isServerTpl) {
-    try {
-      await sb.from('invoice_templates').delete().eq('id', String(templateId));
-      console.log(`✅ [Supabase] Template ${templateId} deleted from Supabase.`);
-      showSuccess("🗑️ Standard-Position erfolgreich gelöscht!");
-      await loadInvoiceTemplatesData();
-      renderActiveRechnungenTab();
-      return;
-    } catch (sbErr) {
-      console.warn("⚠️ [Supabase] Template delete warning:", sbErr);
-      showError("Fehler beim Löschen in Supabase: " + (sbErr.message || sbErr));
-      return;
+  if (!sb) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({ title: 'Konfigurationsfehler', message: 'Supabase Client ist nicht initialisiert. Vorlage kann nicht gelöscht werden.', type: 'danger' });
+    } else {
+      showError('Supabase Client ist nicht initialisiert.');
+    }
+    return;
+  }
+  if (!isServerTpl) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({ title: 'Ungültige Vorlage', message: 'Die Vorlagen-ID fehlt.', type: 'warning' });
+    }
+    return;
+  }
+
+  try {
+    const { error } = await sb.from('invoice_templates').delete().eq('id', String(templateId));
+    if (error) throw error;
+    console.log(`✅ [Supabase] Template ${templateId} deleted from Supabase.`);
+    showSuccess('🗑️ Standard-Position erfolgreich gelöscht!');
+    await loadInvoiceTemplatesData();
+    renderActiveRechnungenTab();
+  } catch (sbErr) {
+    console.error('❌ [Supabase] Template delete error:', sbErr);
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({ title: 'Löschfehler', message: `Fehler beim Löschen der Vorlage in Supabase: ${escapeHtml(sbErr.message || String(sbErr))}`, type: 'danger' });
+    } else {
+      showError('Fehler beim Löschen in Supabase: ' + (sbErr.message || sbErr));
     }
   }
-  
-  // LOCALSTORAGE FALLBACK
-  rnInitializeTemplates();
-  let templates = JSON.parse(localStorage.getItem('portal_invoice_templates') || '[]');
-  
-  const idx = templates.findIndex(t => String(t.id) === String(templateId));
-  if (idx !== -1) {
-    templates.splice(idx, 1);
-  }
-  
-  localStorage.setItem('portal_invoice_templates', JSON.stringify(templates));
-  window._invoiceTemplates = templates;
-  
-  showSuccess("🗑️ Standard-Position lokal gelöscht!");
-  renderActiveRechnungenTab();
 };

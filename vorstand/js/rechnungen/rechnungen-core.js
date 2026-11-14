@@ -8,6 +8,7 @@ window._invoicesSearchCol = 'created_at';
 window._invoicesSearchAsc = false;
 window._invoicesFilterStatus = 'alle';
 window._invoicesFilterType = 'alle';
+window._invoicesShowCancelled = false;
 
 // Standard-Rechnungs-Typen
 const RECHNUNG_TYPES = [
@@ -75,7 +76,7 @@ function rnFmtSwissDate(val) {
 window.rnFmtSwissDate = rnFmtSwissDate;
 
 // --- MAPPING HELPER FÜR SUPABASE POSTGREST ---
-function mapInvoiceFromSupabase(r, posMap = {}) {
+function mapInvoiceFromSupabase(r, posMap = {}, paySumMap = {}) {
   const invId = String(r.id).trim();
   let mahnHist = [];
   try {
@@ -83,6 +84,23 @@ function mapInvoiceFromSupabase(r, posMap = {}) {
       mahnHist = typeof r.mahn_historie === 'string' ? JSON.parse(r.mahn_historie) : r.mahn_historie;
     }
   } catch (_) {}
+
+  const totalAmount = Number(r.total_amount || 0);
+  const openAmount = (r.open_amount !== undefined && r.open_amount !== null) ? Number(r.open_amount) : totalAmount;
+  const statusStr = String(r.status || 'offen').toLowerCase();
+
+  let totalPaid = 0;
+  if (r.total_paid !== undefined && r.total_paid !== null) {
+    totalPaid = Number(r.total_paid);
+  } else if (paySumMap && paySumMap[invId] !== undefined) {
+    totalPaid = Number(paySumMap[invId]);
+  } else if (statusStr === 'storniert') {
+    totalPaid = 0;
+  } else if (statusStr === 'bezahlt') {
+    totalPaid = totalAmount;
+  } else {
+    totalPaid = Math.max(0, Number((totalAmount - openAmount).toFixed(2)));
+  }
 
   return {
     id: invId,
@@ -96,8 +114,9 @@ function mapInvoiceFromSupabase(r, posMap = {}) {
     recipient_address: r.recipient_address || {},
     sender_address: r.sender_address || {},
     status: r.status || 'offen',
-    total_amount: Number(r.total_amount || 0),
-    open_amount: (r.open_amount !== undefined && r.open_amount !== null) ? Number(r.open_amount) : Number(r.total_amount || 0),
+    total_amount: totalAmount,
+    open_amount: openAmount,
+    total_paid: Number(totalPaid.toFixed(2)),
     due_date: r.due_date ? rnFmtSwissDate(r.due_date) : '',
     raw_due_date: r.due_date || '',
     currency: r.currency || 'CHF',
@@ -248,81 +267,74 @@ window.rnEnsureContactsLoaded = async function(force = false) {
 // API Endpoint to fetch template positions (Supabase Single Source of Truth)
 window.loadInvoiceTemplatesData = async function() {
   const supa = getRechnungenSupabaseClient();
-  if (supa) {
-    try {
-      const { data, error } = await supa.from('invoice_templates').select('*').order('sort_order', { ascending: true }).order('description', { ascending: true });
-      if (!error && Array.isArray(data)) {
-        window._invoiceTemplates = data.map(mapTemplateFromSupabase);
-        localStorage.setItem('portal_invoice_templates', JSON.stringify(window._invoiceTemplates));
-        return window._invoiceTemplates;
-      }
-      if (error) throw error;
-    } catch (e) {
-      console.warn("⚠️ Supabase Vorlagen-Abfrage fehlgeschlagen:", e);
-    }
+  if (!supa) {
+    console.error('❌ [Rechnungen] Supabase Client nicht initialisiert (Vorlagen).');
+    window._invoiceTemplates = window._invoiceTemplates || [];
+    return window._invoiceTemplates;
   }
-
-  // Fallback to local storage if offline
-  rnInitializeTemplates();
-  window._invoiceTemplates = JSON.parse(localStorage.getItem('portal_invoice_templates') || '[]');
-  return window._invoiceTemplates || [];
+  try {
+    const { data, error } = await supa
+      .from('invoice_templates')
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('description', { ascending: true });
+    if (error) throw error;
+    window._invoiceTemplates = (data || []).map(mapTemplateFromSupabase);
+    return window._invoiceTemplates;
+  } catch (e) {
+    console.error('❌ Supabase Vorlagen-Abfrage fehlgeschlagen:', e);
+    if (typeof showError === 'function') {
+      showError('Vorlagen konnten nicht aus Supabase geladen werden: ' + (e.message || e));
+    }
+    return window._invoiceTemplates || [];
+  }
 };
 
 // API Endpoint to fetch layout configuration (Supabase Single Source of Truth)
 window.loadInvoiceLayoutsData = async function() {
+  const defaults = (typeof rnGetDefaultLayouts === 'function') ? rnGetDefaultLayouts() : {};
   const supa = getRechnungenSupabaseClient();
-  if (supa) {
-    try {
-      const { data, error } = await supa.from('invoice_layouts').select('*');
-      if (!error && Array.isArray(data)) {
-        const map = {};
-        data.forEach(item => {
-          if (item.type) {
-            map[item.type] = item;
-            const capKey = item.type.charAt(0).toUpperCase() + item.type.slice(1);
-            map[capKey] = item;
-            // Aliase für konsistentes Type-Mapping
-            if (item.type === 'depot_pfand') {
-              map['Depot / Pfand'] = item;
-              map['depot / pfand'] = item;
-            } else if (item.type === 'materialverkauf') {
-              map['Materialverkauf'] = item;
-              map['Material- & Kleiderbezug'] = item;
-            } else if (item.type === 'jahresbeitrag') {
-              map['Jahresbeitrag'] = item;
-            } else if (item.type === 'vermietung') {
-              map['Vermietung'] = item;
-            }
-          }
-        });
-        if (typeof rnGetDefaultLayouts === 'function') {
-          window._invoiceLayouts = { ...rnGetDefaultLayouts(), ...map };
-        } else {
-          window._invoiceLayouts = map;
-        }
-        localStorage.setItem('portal_invoice_layouts', JSON.stringify(window._invoiceLayouts));
-        return window._invoiceLayouts;
-      }
-      if (error) throw error;
-    } catch (e) {
-      console.warn("⚠️ Supabase Layouts-Abfrage fehlgeschlagen:", e);
-    }
-  }
-
-  // Fallback to default layouts / local storage
-  if (typeof rnGetDefaultLayouts === 'function') {
-    window._invoiceLayouts = rnGetDefaultLayouts();
+  if (!supa) {
+    console.error('❌ [Rechnungen] Supabase Client nicht initialisiert (Layouts).');
+    window._invoiceLayouts = window._invoiceLayouts || { ...defaults };
+    return window._invoiceLayouts;
   }
   try {
-    const stored = localStorage.getItem('portal_invoice_layouts');
-    if (stored) {
-      window._invoiceLayouts = { ...window._invoiceLayouts, ...JSON.parse(stored) };
+    const { data, error } = await supa.from('invoice_layouts').select('*');
+    if (error) throw error;
+    const map = {};
+    (data || []).forEach(item => {
+      if (item.type) {
+        map[item.type] = item;
+        const capKey = item.type.charAt(0).toUpperCase() + item.type.slice(1);
+        map[capKey] = item;
+        // Aliase für konsistentes Type-Mapping
+        if (item.type === 'depot_pfand') {
+          map['Depot / Pfand'] = item;
+          map['depot / pfand'] = item;
+        } else if (item.type === 'materialverkauf') {
+          map['Materialverkauf'] = item;
+          map['Material- & Kleiderbezug'] = item;
+        } else if (item.type === 'jahresbeitrag') {
+          map['Jahresbeitrag'] = item;
+        } else if (item.type === 'vermietung') {
+          map['Vermietung'] = item;
+        }
+      }
+    });
+    window._invoiceLayouts = { ...defaults, ...map };
+    return window._invoiceLayouts;
+  } catch (e) {
+    console.error('❌ Supabase Layouts-Abfrage fehlgeschlagen:', e);
+    window._invoiceLayouts = window._invoiceLayouts || { ...defaults };
+    if (typeof showError === 'function') {
+      showError('Layouts & Textbausteine konnten nicht aus Supabase geladen werden: ' + (e.message || e));
     }
-  } catch (_) {}
-  return window._invoiceLayouts || {};
+    return window._invoiceLayouts;
+  }
 };
 
-// Online/Preload Endpoint Trigger (Supabase First mit GAS-Fallback)
+// Online/Preload Endpoint Trigger (Supabase Single Source of Truth)
 window.loadRechnungenData = async function(silent = false, forceReload = false) {
   const container = document.getElementById('rechnungen-container');
   const hasCachedData = window._invoices && window._invoices.length > 0;
@@ -347,9 +359,10 @@ window.loadRechnungenData = async function(silent = false, forceReload = false) 
   const supa = getRechnungenSupabaseClient();
   if (supa) {
     try {
-      const [invRes, posRes] = await Promise.all([
+      const [invRes, posRes, payRes] = await Promise.all([
         supa.from('invoices').select('*').order('created_at', { ascending: false }),
         supa.from('invoice_positions').select('*').order('position_nr', { ascending: true }),
+        supa.from('invoice_payments').select('invoice_id, amount'),
         loadInvoiceTemplatesData(),
         loadInvoiceLayoutsData(),
         loadInvoiceContactsData()
@@ -367,8 +380,20 @@ window.loadRechnungenData = async function(silent = false, forceReload = false) 
           posMap[invId].push(mapPositionFromSupabase(p));
         });
 
+        // Zahlungssummen-Map aufbauen (Basis für exakte Teilzahlungs-/Lebenszyklus-Sperren)
+        const paySumMap = {};
+        if (!payRes.error && Array.isArray(payRes.data)) {
+          payRes.data.forEach(p => {
+            const invId = String(p.invoice_id || '').trim();
+            if (!invId) return;
+            paySumMap[invId] = (paySumMap[invId] || 0) + Number(p.amount || 0);
+          });
+        } else if (payRes.error) {
+          console.warn("⚠️ Zahlungshistorie konnte nicht mitgeladen werden:", payRes.error.message);
+        }
+
         window._invoicePositionsCache = posMap;
-        window._invoices = invRes.data.map(r => mapInvoiceFromSupabase(r, posMap));
+        window._invoices = invRes.data.map(r => mapInvoiceFromSupabase(r, posMap, paySumMap));
         window._jbAllInvoices = window._invoices;
 
         window.rnEnsureMembersLoaded().catch(e => console.warn("Mitglieder Preload:", e));
@@ -436,11 +461,10 @@ window.rnGetInvoicePositions = async function(invoiceId) {
   return [];
 };
 
-// Standard-Vorlagen initialisieren
+// Standard-Vorlagen initialisieren (nur In-Memory-Fallback falls DB noch leer)
 function rnInitializeTemplates() {
-  if (typeof localStorage === 'undefined') return;
-  if (!localStorage.getItem('portal_invoice_templates')) {
-    const defaults = [
+  if (!Array.isArray(window._invoiceTemplates) || window._invoiceTemplates.length === 0) {
+    window._invoiceTemplates = [
       { id: 1, category: 'Vermietung', desc: 'Miete Schützenhaus Muhen', price: 150 },
       { id: 2, category: 'Vermietung', desc: 'Miete Schützenhaus (Einheimische)', price: 120 },
       { id: 3, category: 'Vermietung', desc: 'Reinigungspauschale Schützenhaus', price: 50 },
@@ -457,14 +481,29 @@ function rnInitializeTemplates() {
       { id: 14, category: 'Schulsport', desc: 'Munition 50m', price: '' },
       { id: 15, category: 'Schulsport', desc: 'Miete Schiessjacken', price: '' }
     ];
-    localStorage.setItem('portal_invoice_templates', JSON.stringify(defaults));
   }
 }
 window.rnInitializeTemplates = rnInitializeTemplates;
 
 // Filter Handlers
+window.rnToggleShowCancelled = function() {
+  window._invoicesShowCancelled = !window._invoicesShowCancelled;
+  if (!window._invoicesShowCancelled && window._invoicesFilterStatus === 'storniert') {
+    window._invoicesFilterStatus = 'alle';
+  }
+  const content = document.getElementById('rn-tab-content-container');
+  if (content && window._rechnungenActiveTab === 'archiv' && typeof renderTabArchiv === 'function') {
+    renderTabArchiv(content);
+  } else if (typeof rnRenderTable === 'function') {
+    rnRenderTable();
+  }
+};
+
 window.rnChangeFilterStatus = function(val) {
   window._invoicesFilterStatus = val;
+  if (val === 'storniert') {
+    window._invoicesShowCancelled = true;
+  }
   
   // Sync Select Dropdown falls vorhanden
   const selectEl = document.getElementById('rn-filter-status');
@@ -477,18 +516,20 @@ window.rnChangeFilterStatus = function(val) {
     const isAct = btn.dataset.status === val;
     btn.classList.toggle('active', isAct);
     if (isAct) {
-      btn.classList.remove('btn-outline-secondary', 'btn-outline-danger', 'btn-outline-warning', 'btn-outline-success');
+      btn.classList.remove('btn-outline-secondary', 'btn-outline-danger', 'btn-outline-warning', 'btn-outline-success', 'btn-outline-dark');
       if (val === 'offen') btn.classList.add('btn-danger', 'text-white');
       else if (val === 'faellig') btn.classList.add('btn-warning', 'text-dark');
       else if (val === 'gemahnt') btn.classList.add('btn-warning', 'text-dark');
       else if (val === 'bezahlt') btn.classList.add('btn-success', 'text-white');
+      else if (val === 'storniert') btn.classList.add('btn-dark', 'text-white');
       else btn.classList.add('btn-primary', 'text-white');
     } else {
-      btn.classList.remove('btn-primary', 'btn-danger', 'btn-warning', 'btn-success', 'text-white', 'text-dark');
+      btn.classList.remove('btn-primary', 'btn-danger', 'btn-warning', 'btn-success', 'btn-dark', 'text-white', 'text-dark');
       if (btn.dataset.status === 'offen') btn.classList.add('btn-outline-danger');
       else if (btn.dataset.status === 'faellig') btn.classList.add('btn-outline-warning');
       else if (btn.dataset.status === 'gemahnt') btn.classList.add('btn-outline-warning');
       else if (btn.dataset.status === 'bezahlt') btn.classList.add('btn-outline-success');
+      else if (btn.dataset.status === 'storniert') btn.classList.add('btn-outline-dark');
       else btn.classList.add('btn-outline-secondary');
     }
   });
@@ -1160,20 +1201,15 @@ window.RechnungsCore = {
   async fetchNextInvoiceNumber(prefix = 'RE', year = null) {
     const supa = getRechnungenSupabaseClient();
     const y = Number(year || window._bhYear || new Date().getFullYear());
-    if (supa) {
-      try {
-        const { data: seqId, error: seqErr } = await supa.rpc('next_invoice_number', { p_prefix: prefix, p_year: y });
-        if (!seqErr && seqId) {
-          return seqId;
-        }
-        if (seqErr) {
-          console.warn("⚠️ [RechnungsCore] RPC next_invoice_number fehlgeschlagen:", seqErr);
-        }
-      } catch (err) {
-        console.warn("⚠️ [RechnungsCore] Fehler beim Aufruf von next_invoice_number:", err);
-      }
+    if (!supa) {
+      throw new Error('Supabase Client ist nicht initialisiert. Rechnungsnummer kann nicht vergeben werden.');
     }
-    return window.generateSafeInvoiceId(prefix, y);
+    const { data: seqId, error: seqErr } = await supa.rpc('next_invoice_number', { p_prefix: prefix, p_year: y });
+    if (seqErr || !seqId) {
+      console.error('❌ [RechnungsCore] RPC next_invoice_number fehlgeschlagen:', seqErr);
+      throw new Error(`Atomare Rechnungsnummer konnte nicht vergeben werden: ${seqErr?.message || 'Keine Nummer erhalten'}`);
+    }
+    return seqId;
   },
 
   /**
@@ -1189,13 +1225,17 @@ window.RechnungsCore = {
     }
 
     const sourceModule = (order.source && order.source.module) ? String(order.source.module).toLowerCase() : 'manuell';
-    const sourceId = (order.source && order.source.entityId) ? String(order.source.entityId) : null;
-    const year = Number(order.year || new Date().getFullYear());
+    const sourceId = (order.source && (order.source.id || order.source.entityId))
+      ? String(order.source.id || order.source.entityId)
+      : null;
+    const year = Number((order.options && order.options.year) || order.year || new Date().getFullYear());
+    const orderTypeRaw = (order.options && order.options.type) || order.type || '';
+    const orderNotes = (order.options && order.options.notes !== undefined) ? order.options.notes : (order.notes || null);
 
     // CAMT-konformes Präfix je nach Quellmodul / Vorgangstyp
     let prefix = order.prefix ? String(order.prefix).toUpperCase().trim() : null;
     if (!prefix) {
-      const orderTypeLower = String(order.type || '').toLowerCase();
+      const orderTypeLower = String(orderTypeRaw).toLowerCase();
       if (orderTypeLower.includes('depot') || orderTypeLower.includes('pfand') || orderTypeLower.includes('kaution')) {
         prefix = 'DP';
       } else if (sourceModule === 'inventar') {
@@ -1214,18 +1254,7 @@ window.RechnungsCore = {
     // Atomare Rechnungsnummernvergabe direkt via PostgreSQL Sequence (Schutz vor Race Conditions)
     let invoiceId = order.id || order.invoice_number;
     if (!invoiceId) {
-      try {
-        const { data: seqId, error: seqErr } = await supa.rpc('next_invoice_number', { p_prefix: prefix, p_year: year });
-        if (!seqErr && seqId) {
-          invoiceId = seqId;
-        } else {
-          console.warn("⚠️ [RechnungsCore] RPC next_invoice_number nicht verfügbar, nutze lokales Fallback:", seqErr);
-          invoiceId = window.generateSafeInvoiceId(prefix, year);
-        }
-      } catch (err) {
-        console.warn("⚠️ [RechnungsCore] Fehler beim RPC next_invoice_number:", err);
-        invoiceId = window.generateSafeInvoiceId(prefix, year);
-      }
+      invoiceId = await this.fetchNextInvoiceNumber(prefix, year);
     }
 
     // Totale & Positionen berechnen
@@ -1233,7 +1262,7 @@ window.RechnungsCore = {
 
     // Fälligkeit festlegen
     const issueDate = order.issueDate || new Date().toISOString().split('T')[0];
-    const dueDays = Number(order.dueDays || 30);
+    const dueDays = Number((order.options && order.options.dueDateDays !== undefined) ? order.options.dueDateDays : (order.dueDays !== undefined ? order.dueDays : 30));
     let dueDate = order.dueDate;
     if (!dueDate) {
       const d = new Date(issueDate);
@@ -1320,7 +1349,7 @@ window.RechnungsCore = {
     const initialStatus = (order.options && order.options.autoIssue) ? 'offen' : 'entwurf';
     const nowIso = new Date().toISOString();
 
-    const invoiceType = order.type || (sourceModule === 'inventar' ? 'Materialverkauf' : (sourceModule === 'vermietung' ? 'Vermietung' : (sourceModule === 'jahresbeitrag' ? 'Jahresbeitrag' : 'Sonstige')));
+    const invoiceType = orderTypeRaw || (sourceModule === 'inventar' ? 'Materialverkauf' : (sourceModule === 'vermietung' ? 'Vermietung' : (sourceModule === 'jahresbeitrag' ? 'Jahresbeitrag' : 'Sonstige')));
     const senderSnapshot = await this.resolveSender(order.sender, invoiceType);
 
     const invoiceRow = {
@@ -1338,7 +1367,7 @@ window.RechnungsCore = {
       open_amount: totalAmount,
       due_date: dueDate,
       currency: order.currency || 'CHF',
-      notes: order.notes || null,
+      notes: orderNotes,
       mail_status: 'entwurf',
       created_at: nowIso,
       updated_at: nowIso
@@ -1479,6 +1508,7 @@ window.RechnungsCore = {
         if (cached) {
           cached.status = rpcRes.status;
           cached.open_amount = Number(rpcRes.open_amount || 0);
+          cached.total_paid = Number((Number(cached.total_paid || 0) + amount).toFixed(2));
           cached.payment_date = payDate;
           cached.payment_method = payMethod;
           cached.document_ref = docRef;
@@ -1561,6 +1591,7 @@ window.RechnungsCore = {
     if (cached) {
       cached.status = finalStatus;
       cached.open_amount = finalOpen;
+      cached.total_paid = Math.max(0, Number((Number(cached.total_amount || 0) - finalOpen).toFixed(2)));
       cached.payment_date = payDate;
       cached.payment_method = payMethod;
       cached.document_ref = docRef;
@@ -1613,9 +1644,10 @@ window.RechnungsCore = {
       if (typeof window.renderRechnungen === 'function') window.renderRechnungen();
     }
 
+    const invRow = data;
+
     // Fachmodul-Kopplung Inventar: Transaktionen und Depots stornieren & Gegenstände zurück ins Lager
     try {
-      const invRow = data;
       if (invRow && (invRow.source_module === 'inventar' || String(invoiceId).startsWith('MV-') || String(invoiceId).startsWith('DP-'))) {
         const { data: invTx } = await supa.from('inventory_transactions').select('item_id').eq('invoice_id', invoiceId);
         const { data: posData } = await supa.from('invoice_positions').select('source_field').eq('invoice_id', invoiceId);
@@ -1626,10 +1658,14 @@ window.RechnungsCore = {
 
         for (const itemId of itemIds) {
           if (!itemId) continue;
-          await supa.from('inventory_items').update({ status: 'Im Lager', current_owner_id: null, updated_at: nowIso }).eq('id', itemId);
+          const { error: itemErr } = await supa.from('inventory_items').update({ status: 'Im Lager', current_owner_id: null, updated_at: nowIso }).eq('id', itemId);
+          if (itemErr) console.warn('⚠️ Inventar-Item-Rollback Fehler:', itemErr);
         }
-        await supa.from('inventory_transactions').update({ action: 'STORNO', notes: `[STORNO - Rechnung ${invoiceId} storniert]` }).eq('invoice_id', invoiceId);
-        await supa.from('inventory_deposits').update({ status: 'Storniert', updated_at: nowIso }).eq('invoice_id', invoiceId);
+        const { error: txErr } = await supa.from('inventory_transactions').update({ action: 'STORNO', notes: `[STORNO - Rechnung ${invoiceId} storniert]` }).eq('invoice_id', invoiceId);
+        if (txErr) console.warn('⚠️ Inventar-Tx-Rollback Fehler:', txErr);
+        const { error: depErr } = await supa.from('inventory_deposits').update({ status: 'Storniert', updated_at: nowIso }).eq('invoice_id', invoiceId);
+        if (depErr) console.warn('⚠️ Inventar-Depot-Rollback Fehler:', depErr);
+
         window._inventarNeedsReload = true;
         if (typeof window.loadInventarData === 'function') {
           try { await window.loadInventarData(true); } catch (_) {}
@@ -1638,6 +1674,58 @@ window.RechnungsCore = {
     } catch (invStornoErr) {
       console.warn("⚠️ Fehler beim Inventar-Rollback bei Rechnungs-Storno:", invStornoErr);
     }
+
+    // Fachmodul-Kopplung Jahresbeitrag: Beitrag wieder auf 'berechnet' (unübertragen) zurücksetzen
+    try {
+      if (invRow && (invRow.type === 'Jahresbeitrag' || invRow.source_module === 'jahresbeitrag' || String(invoiceId).startsWith('JB-'))) {
+        const { error: chErr } = await supa
+          .from('contributions_header')
+          .update({ invoice_id: null, status: 'offen', updated_at: nowIso })
+          .eq('invoice_id', invoiceId)
+          .neq('status', 'bezahlt');
+        if (chErr) console.warn('⚠️ Jahresbeitrag-Entkopplung bei Storno fehlgeschlagen:', chErr);
+
+        const resetCache = (arr) => {
+          if (!Array.isArray(arr)) return;
+          const hit = arr.find(j => String(j.invoiceId || j.invoice_id || '').trim() === String(invoiceId).trim());
+          if (hit) {
+            hit.invoiceId = null;
+            hit.invoice_id = null;
+            hit.mail_status = null;
+            hit.send_date = null;
+            hit.pdf_url = null;
+            if (hit.status !== 'bezahlt') hit.status = 'offen';
+          }
+        };
+        resetCache(window._jbData);
+        resetCache(window._jbAllBeitraege);
+        window._jbAllInvoices = window._invoices;
+
+        if (typeof window.loadJahresbeitragData === 'function') {
+          try { await window.loadJahresbeitragData(true, false); } catch (_) {}
+        }
+      }
+    } catch (jbStornoErr) {
+      console.warn("⚠️ Fehler beim Jahresbeitrag-Reset bei Rechnungs-Storno:", jbStornoErr);
+    }
+
+    // Fachmodul-Kopplung Vermietung: Verknüpfung zur stornierten Rechnung lösen
+    try {
+      if (invRow && (invRow.type === 'Vermietung' || invRow.source_module === 'vermietung' || String(invoiceId).startsWith('VM-'))) {
+        const { error: rrErr } = await supa
+          .from('rental_requests')
+          .update({ invoice_id: null })
+          .eq('invoice_id', invoiceId);
+        if (rrErr) console.warn('⚠️ Vermietung-Entkopplung bei Storno fehlgeschlagen:', rrErr);
+      }
+    } catch (vmStornoErr) {
+      console.warn("⚠️ Fehler bei Vermietung-Entkopplung bei Rechnungs-Storno:", vmStornoErr);
+    }
+
+    // Hintergrund-PDF-Synchronisation gemäss AGENTS.md Regel 6
+    this.renderPdf(invoiceId, { forceRecreate: true }).catch(err => {
+      console.warn(`⚠️ Hintergrund-PDF-Neugenerierung nach Storno (${invoiceId}):`, err);
+    });
 
     return { success: true, invoice: data };
   },
@@ -1755,33 +1843,27 @@ window.RechnungsCore = {
     };
 
     let result = null;
-    if (typeof window.generatePdfViaEngine === 'function') {
-      try {
-        result = await window.generatePdfViaEngine(renderPayload);
-      } catch (e) {
-        console.warn("[RechnungsCore] Edge Function Fehler, versuche Browser-Fallback:", e);
-      }
+    if (typeof window.generatePdfViaEngine !== 'function') {
+      throw new Error('Zentrale PDF-Engine (generatePdfViaEngine) ist nicht verfügbar.');
     }
+    result = await window.generatePdfViaEngine(renderPayload);
 
     if (!result || !result.success) {
-      if (typeof window.generatePdfClientFallback === 'function') {
-        result = await window.generatePdfClientFallback(renderPayload);
-      }
-    }
-
-    if (!result || !result.success) {
-      throw new Error(result?.error || "PDF konnte weder serverseitig noch clientseitig erzeugt werden.");
+      throw new Error(result?.error || 'PDF konnte nicht über die Supabase Edge Function erzeugt werden.');
     }
 
     // Storage Links an Rechnung aktualisieren
     if (result.pdfUrl || result.storagePath) {
       const supa = getRechnungenSupabaseClient();
       if (supa) {
-        await supa.from('invoices').update({
+        const { error: urlErr } = await supa.from('invoices').update({
           pdf_url: result.pdfUrl || null,
           pdf_storage_path: result.storagePath || null,
           updated_at: new Date().toISOString()
         }).eq('id', invoiceId);
+        if (urlErr) {
+          console.warn(`⚠️ [RechnungsCore] pdf_url Update für ${invoiceId} fehlgeschlagen:`, urlErr);
+        }
       }
     }
 

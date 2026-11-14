@@ -1173,9 +1173,11 @@ async function ensureRentalInvoice(d) {
       }
     };
 
-    const newInvoice = await window.RechnungsCore.createInvoice(invoiceOrder);
+    const coreRes = await window.RechnungsCore.createInvoice(invoiceOrder);
+    const newInvoice = coreRes?.invoice || coreRes;
     if (newInvoice?.id && d.id) {
-      await supa.from('rental_requests').update({ invoice_id: newInvoice.id }).eq('id', d.id);
+      const { error: linkErr } = await supa.from('rental_requests').update({ invoice_id: newInvoice.id }).eq('id', d.id);
+      if (linkErr) console.warn("⚠️ [Vermietung] Konnte invoice_id auf rental_requests nicht verknüpfen:", linkErr);
     }
     console.log(`✅ [Vermietung] Zentrale Rechnung erfolgreich via RechnungsCore erstellt: ${newInvoice.id}`);
     return newInvoice;

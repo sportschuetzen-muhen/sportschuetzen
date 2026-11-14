@@ -117,17 +117,19 @@ Das Rechnungswesen bildet das zentrale kaufmännische Nervenzentrum des Vereins 
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Positionen / Betrag editieren** | ✅ Ja | ❌ **Gesperrt** | ❌ **Gesperrt** | ❌ **Gesperrt** | ❌ **Gesperrt** |
 | **Rechnung löschen** | ✅ Ja | ⚠️ Nur mit Warnung | ❌ **Gesperrt** | ❌ **Gesperrt** | ❌ **Gesperrt** |
-| **Stornieren (`cancelInvoice`)** | ✅ Ja | ✅ Ja (bevorzugt) | ⚠️ Reststorno | ❌ **Gesperrt** | ❌ Bereits storniert |
+| **Stornieren (`cancelInvoice`)** | ✅ Ja | ✅ Ja (bevorzugt) | ❌ **Gesperrt** (bereits Zahlungen) | ❌ **Gesperrt** | ❌ Bereits storniert |
 | **Zahlung erfassen** | ❌ Erst nach Versand | ✅ Ja | ✅ Ja | ❌ Vollständig bezahlt | ❌ **Gesperrt** |
 | **Mahnung generieren** | ❌ Nicht fällig | ✅ Wenn überfällig | ✅ Für Restsaldo | ❌ **Gesperrt** | ❌ **Gesperrt** |
 | **PDF herunterladen / ansehen** | ✅ Vorschau | ✅ Originalbeleg | ✅ Originalbeleg | ✅ Quittungsbeleg | ✅ Stornobeleg |
 
-### 3.1 Entkoppelung von Quellmodulen beim Löschen (Einzel- & Sammellöschung)
-Wird eine Rechnung im Rechnungsmodul gelöscht – entweder einzeln (`rnDeleteInvoicePrompt`) oder via Multi-Select Tabellenauswahl (`rnDeleteSelectedInvoices`) –, entkoppelt das System die verknüpften Fachmodule atomar:
-- **Jahresbeitrag (`contributions_header`):** Setzt `invoice_id = NULL`. Der Status im Jahresbeitragsmodul fällt von `entwurf` bzw. `versendet` sauber auf `berechnet` zurück. Betroffene Mitglieder können im Jahresbeitrags-Cockpit sofort wieder über «Rechnungen bereitstellen» oder Einzelklick neu fakturiert werden.
+### 3.1 Entkoppelung von Quellmodulen bei Löschung & Stornierung sowie Archiv-Sichtbarkeit
+Wird eine unbezahlte Rechnung im Rechnungsmodul gelöscht (einzeln via `rnDeleteInvoicePrompt` / Multi-Select via `rnDeleteSelectedInvoices`) oder revisionssicher storniert (`RechnungsCore.cancelInvoice`), entkoppelt das System die verknüpften Fachmodule atomar:
+- **Jahresbeitrag (`contributions_header`):** Setzt `invoice_id = NULL` (bzw. bei Stornierung bleiben `storniert`-Rechnungen für die Historie erhalten, während der Beitrag im Jahresbeitragsmodul automatisch wieder den Status `berechnet` annimmt). Betroffene Mitglieder können im Jahresbeitrags-Cockpit sofort neu fakturiert werden.
 - **Vermietung Schützenstube (`rental_requests`):** Setzt `invoice_id = NULL`. Die Buchung bleibt bestätigt und kann neu fakturiert werden.
+- **Stornierte Rechnungen & `total_paid`-Aggregation:** Im Rechnungs-Archiv (`rechnungen-ui.js`) sind stornierte Belege standardmässig ausgeblendet und fliessen nicht in KPI-Summen oder offene Filter ein; über den Toggle **«Stornierte einblenden»** lassen sie sich jederzeit für Prüfungen anzeigen. Die Zahlungssumme `total_paid` pro Rechnung wird beim Laden aus `public.invoice_payments` aggregiert, sodass Sperren auf Teilzahlungen (`total_paid > 0`) konsistent greifen.
+- **Kanonischer Versandstatus (`mail_status`):** Der E-Mail-Versandstatus lautet einheitlich `'entwurf'` oder `'versendet'` (bereinigt durch Migration `131_normalize_invoices_mail_status_versendet.sql`).
 - **In-Memory Cache-Synchronisation:** Die lokalen Datenstrukturen (`window._jbData`, `window._jbAllBeitraege`, `window._invoices`) werden unmittelbar aktualisiert, sodass auch ohne manuellen Reload konsistente Status-Badges und Bereitstellungs-Zähler vorliegen.
-- **Schutz bezahlter Rechnungen:** Rechnungen mit `status === 'bezahlt'` oder `total_paid > 0` werden bei der Sammellöschung automatisch geschützt und übersprungen.
+- **Schutz bezahlter Rechnungen:** Rechnungen mit `status === 'bezahlt'` oder `total_paid > 0` sind bei Bearbeitung, Stornierung, Einzel- und Sammellöschung vollständig gesperrt.
 
 ### 3.2 Zusatzrechnung Wirtschaft/Vermietung & Mahnwesen-Abgrenzung
 * **Grundmiete (vor dem Anlass):** Die Grundmiete wird über den Mietvertrag inklusive Schweizer QR-Zahlteil auf separater Schlussseite fakturiert. Zur automatischen Abstimmung im CAMT-Bankimport generiert das System via RPC `ensure_rental_proforma_invoice` eine Proforma-Rechnung (`invoices`, Typ `Vermietung`, Ertragskonto 3400). Proforma-Mietrechnungen sind im kaufmännischen Mahnwesen des Rechnungsmoduls (`rnOpenMahnungModal`, `rnGetDueDunningInvoices`) **vollständig gesperrt**, da die Terminsicherung ausschliesslich im Fachmodul Vermietung über den dortigen Erinnerungsworkflow geregelt wird.

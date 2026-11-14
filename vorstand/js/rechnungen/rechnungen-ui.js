@@ -2,6 +2,52 @@
 // MODUL: RECHNUNGEN & PDF-COCKPIT - UI
 // =====================================================================
 
+// RBAC-Schutz auf dynamisch gerenderte Container anwenden
+window.rnApplyWriteProtection = function(rootEl) {
+  if (!rootEl || typeof window.applyModuleWriteProtection !== 'function') return;
+  const canWrite = typeof window.hasWriteAccess === 'function' ? window.hasWriteAccess('rechnungen') : true;
+  window.applyModuleWriteProtection(rootEl, canWrite);
+};
+
+// Einheitliche Versand-Prüfung (kanonisch 'versendet', abwärtskompatibel 'gesendet')
+window.rnIsInvoiceSent = function(inv) {
+  if (!inv) return false;
+  const ms = String(inv.mail_status || '').toLowerCase();
+  return ms === 'versendet' || ms === 'gesendet' || Boolean(inv.send_date);
+};
+
+// Überfälligkeit in Tagen berechnen (primär über due_date, sonst > 30 Tage ab created_at)
+window.rnGetOverdueDays = function(inv, nowRef) {
+  if (!inv) return 0;
+  const now = nowRef || new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const parseLocalDate = (raw) => {
+    if (!raw) return null;
+    const part = String(raw).split('T')[0].split(' ')[0].trim();
+    if (part.includes('.')) {
+      const p = part.split('.');
+      if (p.length === 3) return new Date(Number(p[2]), Number(p[1]) - 1, Number(p[0])).getTime();
+    } else if (part.includes('-')) {
+      const p = part.split('-');
+      if (p.length === 3) return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])).getTime();
+    }
+    return null;
+  };
+  if (inv.due_date) {
+    const dueMs = parseLocalDate(inv.due_date);
+    if (dueMs && !isNaN(dueMs) && todayStart > dueMs) {
+      return Math.ceil((todayStart - dueMs) / (1000 * 60 * 60 * 24));
+    }
+    return 0;
+  }
+  const createdMs = parseLocalDate(inv.created_at);
+  if (createdMs && !isNaN(createdMs)) {
+    const ageDays = Math.ceil((todayStart - createdMs) / (1000 * 60 * 60 * 24));
+    if (ageDays > 30) return ageDays - 30;
+  }
+  return 0;
+};
+
 // Tabelle- und UI-Styling sicherstellen
 window.rnEnsureCustomStyles = function() {
   if (document.getElementById('rn-invoices-custom-styles')) return;
@@ -68,13 +114,7 @@ window.rnGetDropdownMenuHtml = function(actionFuncName) {
   if (typeof rnInitializeTemplates === 'function') {
     rnInitializeTemplates();
   }
-  let templates = window._invoiceTemplates;
-  if (!templates || templates.length === 0) {
-    try {
-      templates = JSON.parse(localStorage.getItem('portal_invoice_templates') || '[]');
-      window._invoiceTemplates = templates;
-    } catch (e) {}
-  }
+  const templates = window._invoiceTemplates;
   
   if (!templates || templates.length === 0) {
     return '<li><span class="dropdown-item text-muted small py-2"><i class="fas fa-info-circle me-1"></i>Keine Standard-Vorlagen vorhanden</span></li>';
@@ -176,38 +216,29 @@ window.renderActiveRechnungenTab = function() {
     window._rechnungenActiveTab = 'archiv';
     renderTabArchiv(content);
   }
+  rnApplyWriteProtection(content);
 };
 
 window.renderTabArchiv = function(content) {
-  // 1. Berechne KPIs
-  const totalCount = window._invoices.length;
-  const openInvoices = window._invoices.filter(i => {
-    const st = String(i.status || '').toLowerCase();
-    return st !== 'bezahlt';
-  });
+  // 1. Berechne KPIs (stornierte Rechnungen fliessen nicht in offene/aktive Summen ein)
+  const allRaw = window._invoices || [];
+  const cancelledInvoices = allRaw.filter(i => String(i.status || '').toLowerCase() === 'storniert');
+  const cancelledCount = cancelledInvoices.length;
+  const activeInvoices = allRaw.filter(i => String(i.status || '').toLowerCase() !== 'storniert');
+  const totalCount = activeInvoices.length;
+
+  const openInvoices = activeInvoices.filter(i => String(i.status || '').toLowerCase() !== 'bezahlt');
   const openCount = openInvoices.length;
-  const openSum = openInvoices.reduce((s, i) => s + Number(i.total_amount || 0), 0);
+  const openSum = openInvoices.reduce((s, i) => s + Number(i.open_amount !== undefined ? i.open_amount : (i.total_amount || 0)), 0);
   
-  const paidInvoices = window._invoices.filter(i => String(i.status || '').toLowerCase() === 'bezahlt');
+  const paidInvoices = activeInvoices.filter(i => String(i.status || '').toLowerCase() === 'bezahlt');
   const paidCount = paidInvoices.length;
   const paidSum = paidInvoices.reduce((s, i) => s + Number(i.total_amount || 0), 0);
+  const totalActiveSum = activeInvoices.reduce((s, i) => s + Number(i.total_amount || 0), 0);
 
-  // Überfällige Rechnungen (>30 Tage und unbezahlt)
+  // Überfällige Rechnungen (due_date überschritten bzw. > 30 Tage und unbezahlt)
   const now = new Date();
-  const dueInvoices = openInvoices.filter(item => {
-    if (!item.created_at) return false;
-    const datePart = String(item.created_at).split(' ')[0];
-    let createdDate = null;
-    if (datePart.includes('.')) {
-      const p = datePart.split('.');
-      if (p.length === 3) createdDate = new Date(`${p[2]}-${p[1]}-${p[0]}`);
-    } else if (datePart.includes('-')) {
-      createdDate = new Date(datePart);
-    }
-    if (!createdDate || isNaN(createdDate.getTime())) return false;
-    const diffDays = Math.ceil(Math.abs(now - createdDate) / (1000 * 60 * 60 * 24));
-    return diffDays > 30;
-  });
+  const dueInvoices = openInvoices.filter(item => rnGetOverdueDays(item, now) > 0);
   const dueCount = dueInvoices.length;
 
   const dunningInvoices = openInvoices.filter(i => {
@@ -229,9 +260,9 @@ window.renderTabArchiv = function(content) {
               <i class="fas fa-filter me-1"></i>Filter
             </span>
           </div>
-          <h2 class="fw-bold mt-1 mb-0 text-danger"><span class="currency-label">CHF</span> ${openSum.toFixed(2)}</h2>
+          <h2 class="fw-bold mt-1 mb-0 text-danger">${fmtChf(openSum)}</h2>
           <div class="small text-muted mt-1">
-            ${openCount} offene Rechnungen ${dueCount > 0 ? `<span class="badge bg-danger text-white ms-1" title="${dueCount} Rechnungen älter als 30 Tage"><i class="fas fa-clock me-0.5"></i>${dueCount} überfällig</span>` : ''}
+            ${openCount} offene Rechnungen ${dueCount > 0 ? `<span class="badge bg-danger text-white ms-1" title="${dueCount} überfällige Rechnungen"><i class="fas fa-clock me-0.5"></i>${dueCount} überfällig</span>` : ''}
           </div>
         </div>
       </div>
@@ -244,21 +275,21 @@ window.renderTabArchiv = function(content) {
               <i class="fas fa-filter me-1"></i>Filter
             </span>
           </div>
-          <h2 class="fw-bold mt-1 mb-0 text-success"><span class="currency-label">CHF</span> ${paidSum.toFixed(2)}</h2>
+          <h2 class="fw-bold mt-1 mb-0 text-success">${fmtChf(paidSum)}</h2>
           <div class="small text-muted mt-1">${paidCount} bezahlte Rechnungen</div>
         </div>
       </div>
       <div class="col-md-4">
         <div class="bh-metric-card info shadow-sm rn-kpi-clickable ${window._invoicesFilterStatus === 'alle' ? 'rn-kpi-active' : ''}" 
-             data-kpi-status="alle" onclick="rnToggleFilterKpi('alle')" title="Klicken, um alle Rechnungen anzuzeigen">
+             data-kpi-status="alle" onclick="rnToggleFilterKpi('alle')" title="Klicken, um alle aktiven Rechnungen anzuzeigen">
           <div class="d-flex justify-content-between align-items-center">
             <div class="small text-muted fw-semibold">Gesamte Fakturierung</div>
             <span class="badge bg-primary-subtle text-primary border border-primary-subtle small px-2 py-0.5 rounded-pill">
               <i class="fas fa-list me-1"></i>Alle
             </span>
           </div>
-          <h2 class="fw-bold mt-1 mb-0 text-dark"><span class="currency-label">CHF</span> ${(openSum + paidSum).toFixed(2)}</h2>
-          <div class="small text-muted mt-1">${totalCount} Rechnungen insgesamt</div>
+          <h2 class="fw-bold mt-1 mb-0 text-dark">${fmtChf(totalActiveSum)}</h2>
+          <div class="small text-muted mt-1">${totalCount} aktive Rechnungen${cancelledCount > 0 ? ` (${cancelledCount} storniert)` : ''}</div>
         </div>
       </div>
     </div>
@@ -285,7 +316,7 @@ window.renderTabArchiv = function(content) {
       </div>
 
       <!-- Quick Filter Pills -->
-      <div class="d-flex flex-wrap gap-1.5 mb-3" id="rn-filter-pills">
+      <div class="d-flex flex-wrap gap-1.5 mb-3 align-items-center" id="rn-filter-pills">
         <button type="button" class="btn btn-xs rn-status-pill ${window._invoicesFilterStatus === 'alle' ? 'btn-primary text-white active' : 'btn-outline-secondary'}" data-status="alle" onclick="rnChangeFilterStatus('alle')">
           Alle (${totalCount})
         </button>
@@ -293,7 +324,7 @@ window.renderTabArchiv = function(content) {
           <i class="fas fa-clock me-1"></i>Offen (${openCount})
         </button>
         <button type="button" class="btn btn-xs rn-status-pill ${window._invoicesFilterStatus === 'faellig' ? 'btn-warning text-dark active' : 'btn-outline-warning text-dark'}" data-status="faellig" onclick="rnChangeFilterStatus('faellig')">
-          <i class="fas fa-exclamation-circle me-1 text-danger"></i>Überfällig >30d (${dueCount})
+          <i class="fas fa-exclamation-circle me-1 text-danger"></i>Überfällig (${dueCount})
         </button>
         <button type="button" class="btn btn-xs rn-status-pill ${window._invoicesFilterStatus === 'gemahnt' ? 'btn-warning text-dark active' : 'btn-outline-warning text-dark'}" data-status="gemahnt" onclick="rnChangeFilterStatus('gemahnt')">
           <i class="fas fa-bullhorn me-1"></i>Gemahnt (${dunningCount})
@@ -301,6 +332,16 @@ window.renderTabArchiv = function(content) {
         <button type="button" class="btn btn-xs rn-status-pill ${window._invoicesFilterStatus === 'bezahlt' ? 'btn-success text-white active' : 'btn-outline-success'}" data-status="bezahlt" onclick="rnChangeFilterStatus('bezahlt')">
           <i class="fas fa-check-circle me-1"></i>Bezahlt (${paidCount})
         </button>
+        ${window._invoicesShowCancelled ? `
+          <button type="button" class="btn btn-xs rn-status-pill ${window._invoicesFilterStatus === 'storniert' ? 'btn-dark text-white active' : 'btn-outline-dark'}" data-status="storniert" onclick="rnChangeFilterStatus('storniert')">
+            <i class="fas fa-ban me-1"></i>Storniert (${cancelledCount})
+          </button>
+        ` : ''}
+        ${cancelledCount > 0 ? `
+          <button type="button" id="rn-toggle-cancelled-btn" class="btn btn-xs ${window._invoicesShowCancelled ? 'btn-dark text-white' : 'btn-outline-secondary'} ms-auto" onclick="rnToggleShowCancelled()" title="Stornierte Rechnungen ein- oder ausblenden">
+            <i class="fas fa-ban me-1"></i>${window._invoicesShowCancelled ? 'Stornierte ausblenden' : 'Stornierte einblenden'} (${cancelledCount})
+          </button>
+        ` : ''}
       </div>
 
       <div class="row g-3">
@@ -319,9 +360,10 @@ window.renderTabArchiv = function(content) {
             <select class="form-select" id="rn-filter-status" onchange="rnChangeFilterStatus(this.value)">
               <option value="alle" ${window._invoicesFilterStatus === 'alle' ? 'selected' : ''}>Alle Status</option>
               <option value="offen" ${window._invoicesFilterStatus === 'offen' ? 'selected' : ''}>Offen (alle unbezahlten)</option>
-              <option value="faellig" ${window._invoicesFilterStatus === 'faellig' ? 'selected' : ''}>Überfällig (> 30 Tage)</option>
+              <option value="faellig" ${window._invoicesFilterStatus === 'faellig' ? 'selected' : ''}>Überfällig</option>
               <option value="gemahnt" ${window._invoicesFilterStatus === 'gemahnt' ? 'selected' : ''}>Gemahnt (Stufe 1–3)</option>
               <option value="bezahlt" ${window._invoicesFilterStatus === 'bezahlt' ? 'selected' : ''}>Bezahlt</option>
+              ${window._invoicesShowCancelled ? `<option value="storniert" ${window._invoicesFilterStatus === 'storniert' ? 'selected' : ''}>Storniert</option>` : ''}
             </select>
           </div>
         </div>
@@ -352,7 +394,7 @@ window.renderTabArchiv = function(content) {
           <span class="fw-semibold text-primary">Rechnungen ausgewählt</span>
         </div>
         <div class="d-flex gap-2">
-          <button class="btn btn-sm btn-primary fw-bold shadow-sm" onclick="rnStartMassSendFromSelection()">
+          <button class="btn btn-sm btn-primary fw-bold shadow-sm write-protected" onclick="rnStartMassSendFromSelection()">
             <i class="fas fa-paper-plane me-1"></i> Massenversand für Auswahl starten
           </button>
           <button class="btn btn-sm btn-outline-danger fw-bold shadow-sm write-protected" onclick="rnDeleteSelectedInvoices()">
@@ -414,6 +456,12 @@ window.rnRenderTable = function() {
 
     const st = String(i.status || '').toLowerCase();
     const isPaid = st === 'bezahlt';
+    const isCancelled = st === 'storniert';
+
+    // Standardmässig stornierte Rechnungen ausblenden (ausser explizit eingeblendet oder Status 'storniert' gewählt)
+    if (isCancelled && !window._invoicesShowCancelled && window._invoicesFilterStatus !== 'storniert') {
+      return false;
+    }
 
     let mStufe = Number(i.mahnstufe || 0);
     if (!mStufe) {
@@ -424,31 +472,20 @@ window.rnRenderTable = function() {
     }
 
     // Frist prüfen (für überfällig)
-    let isOverdue = false;
-    if (!isPaid && i.created_at) {
-      const datePart = String(i.created_at).split(' ')[0];
-      let createdDate = null;
-      if (datePart.includes('.')) {
-        const p = datePart.split('.');
-        if (p.length === 3) createdDate = new Date(`${p[2]}-${p[1]}-${p[0]}`);
-      } else if (datePart.includes('-')) {
-        createdDate = new Date(datePart);
-      }
-      if (createdDate && !isNaN(createdDate.getTime())) {
-        const diffDays = Math.ceil(Math.abs(now - createdDate) / (1000 * 60 * 60 * 24));
-        if (diffDays > 30) isOverdue = true;
-      }
-    }
+    const overdueDays = (!isPaid && !isCancelled) ? rnGetOverdueDays(i, now) : 0;
+    const isOverdue = overdueDays > 0;
 
     let matchesStatus = true;
     if (window._invoicesFilterStatus === 'offen') {
-      matchesStatus = !isPaid;
+      matchesStatus = !isPaid && !isCancelled;
     } else if (window._invoicesFilterStatus === 'faellig') {
-      matchesStatus = !isPaid && isOverdue;
+      matchesStatus = !isPaid && !isCancelled && isOverdue;
     } else if (window._invoicesFilterStatus === 'gemahnt') {
-      matchesStatus = (st === 'gemahnt' || mStufe > 0 || st.includes('mahn') || st === '2' || st === '3');
+      matchesStatus = !isPaid && !isCancelled && (st === 'gemahnt' || mStufe > 0 || st.includes('mahn') || st === '2' || st === '3');
     } else if (window._invoicesFilterStatus === 'bezahlt') {
       matchesStatus = isPaid;
+    } else if (window._invoicesFilterStatus === 'storniert') {
+      matchesStatus = isCancelled;
     }
 
     const filterType = String(window._invoicesFilterType || 'alle').toLowerCase();
@@ -503,6 +540,13 @@ window.rnRenderTable = function() {
   tbody.innerHTML = list.map(item => {
     const st = String(item.status || '').toLowerCase();
     const isPaid = st === 'bezahlt';
+    const isCancelled = st === 'storniert';
+    const isSent = rnIsInvoiceSent(item);
+    const hasPayments = Number(item.total_paid || 0) > 0;
+    const restAmount = Number(item.open_amount !== undefined ? item.open_amount : (item.total_amount || 0));
+    const canEdit = !isPaid && !isCancelled && !hasPayments && !isSent && item.type !== 'Jahresbeitrag';
+    const canDelete = !isPaid && !isCancelled && !hasPayments;
+
     let mStufe = Number(item.mahnstufe || 0);
     if (!mStufe) {
       if (st === 'gemahnt') mStufe = 1;
@@ -516,11 +560,11 @@ window.rnRenderTable = function() {
     if (isPaid) {
       statusBadge = '<span class="badge bg-success px-2.5 py-1.5 rounded-pill" style="font-size:12.5px;"><i class="fas fa-check-circle me-1"></i>Bezahlt</span>';
     } else if (st === 'teilbezahlt') {
-      const restChf = fmtChf(item.open_amount !== undefined ? item.open_amount : 0);
+      const restChf = fmtChf(restAmount);
       statusBadge = `<span class="badge bg-info text-dark px-2.5 py-1.5 rounded-pill" style="font-size:12.5px;" title="Restbetrag: ${restChf}"><i class="fas fa-adjust me-1"></i>Teilbezahlt (${restChf})</span>`;
     } else if (st === 'entwurf') {
       statusBadge = '<span class="badge bg-light text-dark border px-2.5 py-1.5 rounded-pill" style="font-size:12.5px;"><i class="fas fa-file-signature me-1"></i>Entwurf</span>';
-    } else if (st === 'storniert') {
+    } else if (isCancelled) {
       statusBadge = '<span class="badge bg-dark text-white px-2.5 py-1.5 rounded-pill" style="font-size:12.5px;"><i class="fas fa-ban me-1"></i>Storniert</span>';
     } else if (st === 'gemahnt' || mStufe > 0 || st.includes('mahn') || st === '2' || st === '3') {
       if (mStufe === 1) {
@@ -536,22 +580,10 @@ window.rnRenderTable = function() {
 
     // Frist prüfen (für überfällig)
     let extraBadge = '';
-    if (!isPaid) {
-      let createdDate = null;
-      if (item.created_at) {
-        const datePart = String(item.created_at).split(' ')[0];
-        if (datePart.includes('.')) {
-          const p = datePart.split('.');
-          if (p.length === 3) createdDate = new Date(`${p[2]}-${p[1]}-${p[0]}`);
-        } else if (datePart.includes('-')) {
-          createdDate = new Date(datePart);
-        }
-      }
-      if (createdDate && !isNaN(createdDate.getTime())) {
-        const diffDays = Math.ceil(Math.abs(now - createdDate) / (1000 * 60 * 60 * 24));
-        if (diffDays > 30 && mStufe === 0) {
-          extraBadge = `<span class="badge bg-danger ms-1" style="font-size:11px;" title="Überfällig seit ${diffDays - 30} Tagen"><i class="fas fa-clock me-0.5"></i>Fällig (${diffDays}d)</span>`;
-        }
+    if (!isPaid && !isCancelled) {
+      const overdueDays = rnGetOverdueDays(item, now);
+      if (overdueDays > 0 && mStufe === 0) {
+        extraBadge = `<span class="badge bg-danger ms-1" style="font-size:11px;" title="Überfällig seit ${overdueDays} Tagen"><i class="fas fa-clock me-0.5"></i>Fällig (${overdueDays}d)</span>`;
       }
     }
 
@@ -565,8 +597,8 @@ window.rnRenderTable = function() {
       }
     }
 
-    const mailSentBadge = item.mail_status === 'gesendet'
-      ? `<span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size:11px;" title="Rechnung wurde per E-Mail versendet${item.send_date ? ' am ' + escapeHtml(item.send_date) : ''}"><i class="fas fa-check me-0.5"></i>Mail gesendet</span>`
+    const mailSentBadge = isSent
+      ? `<span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size:11px;" title="Rechnung wurde per E-Mail versendet${item.send_date ? ' am ' + escapeHtml(item.send_date) : ''}"><i class="fas fa-check me-0.5"></i>Mail versendet</span>`
       : '';
 
     const createdDisplay = typeof isoToDisplay === 'function'
@@ -581,18 +613,21 @@ window.rnRenderTable = function() {
       } else {
         sendDisplay = escapeHtml(sRaw);
       }
-    } else if (item.mail_status === 'gesendet') {
-      sendDisplay = '<span class="text-success small fst-italic" title="Rechnung versendet (Datum nicht hinterlegt)"><i class="fas fa-check me-1"></i>gesendet</span>';
+    } else if (isSent) {
+      sendDisplay = '<span class="text-success small fst-italic" title="Rechnung versendet (Datum nicht hinterlegt)"><i class="fas fa-check me-1"></i>versendet</span>';
     }
 
+    const safeIdHtml = escapeHtml(item.id);
+    const safeIdJs = escapeJs(item.id);
+
     return `
-      <tr class="bh-account-row" id="rn-row-${item.id}">
+      <tr class="bh-account-row ${isCancelled ? 'opacity-75' : ''}" id="rn-row-${safeIdHtml}">
         <td data-col-id="check" class="text-center tk-col-check" onclick="event.stopPropagation()">
-          <input type="checkbox" class="form-check-input rn-table-row-check" data-id="${item.id}" value="${item.id}" onchange="rnOnTableRowSelectChange()">
+          <input type="checkbox" class="form-check-input rn-table-row-check" data-id="${safeIdHtml}" value="${safeIdHtml}" onchange="rnOnTableRowSelectChange()">
         </td>
         <td data-col-id="id" class="tk-col-id">
-          <span class="bh-konto-badge bh-konto-soll-badge rn-id-badge" style="cursor: pointer;" onclick="rnOpenDetailsModal('${item.id}')" title="Klicken für Rechnungsdetails">
-            ${item.id}
+          <span class="bh-konto-badge bh-konto-soll-badge rn-id-badge" style="cursor: pointer;" onclick="rnOpenDetailsModal('${safeIdJs}')" title="Klicken für Rechnungsdetails">
+            ${safeIdHtml}
           </span>
         </td>
         <td data-col-id="name" class="tk-col-name">
@@ -603,14 +638,14 @@ window.rnRenderTable = function() {
           ${numberLabel}
         </td>
         <td data-col-id="created_at" class="text-muted font-monospace tk-col-created_at" style="font-size: 13px;" title="Rechnungsdatum: ${createdDisplay}">${createdDisplay}</td>
-        <td data-col-id="send_date" class="text-muted font-monospace tk-col-send_date" style="font-size: 13px;" title="${item.send_date ? 'Versandt am: ' + escapeHtml(item.send_date) : (item.mail_status === 'gesendet' ? 'Rechnung wurde versendet' : 'Noch nicht versendet')}">
+        <td data-col-id="send_date" class="text-muted font-monospace tk-col-send_date" style="font-size: 13px;" title="${item.send_date ? 'Versandt am: ' + escapeHtml(item.send_date) : (isSent ? 'Rechnung wurde versendet' : 'Noch nicht versendet')}">
           ${item.send_date ? `<span class="text-dark"><i class="fas fa-paper-plane text-success me-1" style="font-size:11px;"></i>${sendDisplay}</span>` : sendDisplay}
         </td>
-        <td data-col-id="year" class="text-muted font-monospace tk-col-year" style="font-size: 14px; font-weight: 500;">${item.year}</td>
+        <td data-col-id="year" class="text-muted font-monospace tk-col-year" style="font-size: 14px; font-weight: 500;">${escapeHtml(item.year)}</td>
         <td data-col-id="type" class="tk-col-type">
           <span class="badge bg-light text-dark border" style="font-size: 12.5px; padding: 5px 10px;">
-            ${item.type}
-            ${item.type === 'Jahresbeitrag' ? '<i class="fas fa-lock text-warning ms-1" title="Jahresbeitrag – synchronisiert über Schnellerfassung"></i>' : ''}
+            ${escapeHtml(item.type)}
+            ${item.type === 'Jahresbeitrag' ? '<i class="fas fa-lock text-warning ms-1" title="Jahresbeitrag – synchronisiert über Jahresbeitragsmodul"></i>' : ''}
           </span>
         </td>
         <td data-col-id="status" class="text-center tk-col-status">
@@ -621,84 +656,87 @@ window.rnRenderTable = function() {
         <td data-col-id="actions" class="text-end tk-col-actions" style="white-space: nowrap; width: 160px;">
           <div class="d-inline-flex align-items-center gap-1.5 justify-content-end">
             ${item.pdf_url ? `
-              <a href="${item.pdf_url}" onclick="rnOpenInvoicePdf('${item.id}', '${escapeJs(item.pdf_url)}', '${escapeJs(item.name)}', event)" target="_blank" class="btn btn-sm btn-outline-danger shadow-xs fw-semibold px-2 py-1" title="PDF QR-Rechnung herunterladen / im Browser ansehen">
+              <a href="${escapeHtml(item.pdf_url)}" onclick="rnOpenInvoicePdf('${safeIdJs}', '${escapeJs(item.pdf_url)}', '${escapeJs(item.name)}', event)" target="_blank" class="btn btn-sm btn-outline-danger shadow-xs fw-semibold px-2 py-1" title="PDF QR-Rechnung herunterladen / im Browser ansehen">
                 <i class="fas fa-file-pdf me-1"></i>PDF
               </a>
-            ` : `
-              <button class="btn btn-sm btn-outline-secondary write-protected shadow-xs px-2 py-1" onclick="rnGeneratePDFOnly('${item.id}', '${escapeJs(item.name)}')" title="PDF QR-Rechnung generieren">
+            ` : (!isCancelled ? `
+              <button class="btn btn-sm btn-outline-secondary write-protected shadow-xs px-2 py-1" onclick="rnGeneratePDFOnly('${safeIdJs}', '${escapeJs(item.name)}')" title="PDF QR-Rechnung generieren">
                 <i class="fas fa-cog me-1"></i>PDF
               </button>
-            `}
+            ` : '')}
 
-            <button class="btn btn-sm btn-outline-primary write-protected shadow-xs px-2 py-1" onclick="rnSendMailPrompt('${item.id}', '${escapeJs(item.name)}')" title="QR-Rechnung per E-Mail versenden">
-              <i class="fas fa-paper-plane"></i>
-            </button>
+            ${!isCancelled ? `
+              <button class="btn btn-sm btn-outline-primary write-protected shadow-xs px-2 py-1" onclick="rnSendMailPrompt('${safeIdJs}', '${escapeJs(item.name)}')" title="QR-Rechnung per E-Mail versenden">
+                <i class="fas fa-paper-plane"></i>
+              </button>
+            ` : ''}
 
             <div class="dropdown d-inline-block">
-              <button class="btn btn-sm btn-light border shadow-xs px-2 py-1" type="button" data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false" title="Weitere Aktionen für ${item.id}">
+              <button class="btn btn-sm btn-light border shadow-xs px-2 py-1" type="button" data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false" title="Weitere Aktionen für ${safeIdHtml}">
                 <i class="fas fa-ellipsis-v text-muted"></i>
               </button>
-              <ul class="dropdown-menu dropdown-menu-end shadow border-0 py-1" style="font-size: 13px; min-width: 220px; z-index: 1055;">
+              <ul class="dropdown-menu dropdown-menu-end shadow border-0 py-1" style="font-size: 13px; min-width: 230px; z-index: 1055;">
                 <li>
-                  <a class="dropdown-item py-2" href="#" onclick="rnOpenDetailsModal('${item.id}'); return false;">
+                  <a class="dropdown-item py-2" href="#" onclick="rnOpenDetailsModal('${safeIdJs}'); return false;">
                     <i class="fas fa-eye text-primary me-2 fa-fw"></i>Details einsehen
                   </a>
                 </li>
-                ${!isPaid ? `
+                ${(!isPaid && !isCancelled) ? `
                   <li>
-                    <a class="dropdown-item py-2 write-protected" href="#" onclick="rnOpenPaymentModal('${item.id}', ${item.total_amount}); return false;">
+                    <a class="dropdown-item py-2 write-protected" href="#" onclick="rnOpenPaymentModal('${safeIdJs}', ${restAmount}); return false;">
                       <i class="fas fa-coins text-success me-2 fa-fw"></i>Zahlung erfassen...
                     </a>
                   </li>
                   <li>
-                    <a class="dropdown-item py-2 write-protected" href="#" onclick="rnOpenMahnungModal('${item.id}', '${escapeJs(item.name)}'); return false;">
+                    <a class="dropdown-item py-2 write-protected" href="#" onclick="rnOpenMahnungModal('${safeIdJs}', '${escapeJs(item.name)}'); return false;">
                       <i class="fas fa-exclamation-triangle text-warning me-2 fa-fw"></i>Mahnung verwalten...
                     </a>
                   </li>
                 ` : ''}
-                <li><hr class="dropdown-divider my-1"></li>
-                <li>
-                  <a class="dropdown-item py-2 write-protected" href="#" onclick="rnGeneratePDFOnly('${item.id}', '${escapeJs(item.name)}'); return false;">
-                    <i class="fas fa-sync text-secondary me-2 fa-fw"></i>PDF neu generieren
-                  </a>
-                </li>
+                ${!isCancelled ? `
+                  <li><hr class="dropdown-divider my-1"></li>
+                  <li>
+                    <a class="dropdown-item py-2 write-protected" href="#" onclick="rnGeneratePDFOnly('${safeIdJs}', '${escapeJs(item.name)}'); return false;">
+                      <i class="fas fa-sync text-secondary me-2 fa-fw"></i>PDF neu generieren
+                    </a>
+                  </li>
+                ` : ''}
                 ${item.type === 'Jahresbeitrag' ? `
                   <li>
-                    <a class="dropdown-item py-2" href="#" onclick="rnJumpToJahresbeitrag('${item.PersonNumber}'); return false;">
+                    <a class="dropdown-item py-2" href="#" onclick="rnJumpToJahresbeitrag('${escapeJs(item.PersonNumber || '')}'); return false;">
                       <i class="fas fa-lock text-warning me-2 fa-fw"></i>In Jahresbeitrag öffnen
                     </a>
                   </li>
-                  ${!isPaid ? `
-                    <li><hr class="dropdown-divider my-1"></li>
-                    <li>
-                      <a class="dropdown-item py-2 text-danger write-protected" href="#" onclick="rnDeleteInvoicePrompt('${item.id}'); return false;">
-                        <i class="fas fa-trash-alt me-2 fa-fw"></i>Rechnung löschen
-                      </a>
-                    </li>
-                  ` : ''}
                 ` : `
-                  ${!isPaid ? `
-                    ${(!item.mail_status || item.mail_status === 'entwurf' || !item.send_date) ? `
-                      <li>
-                        <a class="dropdown-item py-2 write-protected" href="#" onclick="rnOpenEditModal('${item.id}'); return false;">
-                          <i class="fas fa-edit text-info me-2 fa-fw"></i>Rechnung bearbeiten
-                        </a>
-                      </li>
-                    ` : `
-                      <li>
-                        <span class="dropdown-item py-2 text-muted" title="Rechnung wurde bereits am ${item.send_date ? (typeof isoToDisplay === 'function' ? isoToDisplay(item.send_date) : item.send_date) : 'Empfänger'} versandt und kann inhaltlich nicht mehr verändert werden.">
-                          <i class="fas fa-lock text-muted me-2 fa-fw"></i>Bearbeiten gesperrt (versandt)
-                        </span>
-                      </li>
-                    `}
-                    <li><hr class="dropdown-divider my-1"></li>
+                  ${(!isPaid && !isCancelled) ? (canEdit ? `
                     <li>
-                      <a class="dropdown-item py-2 text-danger write-protected" href="#" onclick="rnDeleteInvoicePrompt('${item.id}'); return false;">
-                        <i class="fas fa-trash-alt me-2 fa-fw"></i>Rechnung löschen
+                      <a class="dropdown-item py-2 write-protected" href="#" onclick="rnOpenEditModal('${safeIdJs}'); return false;">
+                        <i class="fas fa-edit text-info me-2 fa-fw"></i>Rechnung bearbeiten
                       </a>
                     </li>
-                  ` : ''}
+                  ` : `
+                    <li>
+                      <span class="dropdown-item py-2 text-muted" title="${hasPayments ? 'Rechnung hat bereits erfasste Zahlungen und ist gesperrt.' : 'Rechnung wurde bereits versandt und kann inhaltlich nicht mehr verändert werden.'}">
+                        <i class="fas fa-lock text-muted me-2 fa-fw"></i>Bearbeiten gesperrt (${hasPayments ? 'Teilzahlung' : 'versandt'})
+                      </span>
+                    </li>
+                  `) : ''}
                 `}
+                ${(!isPaid && !isCancelled && !hasPayments) ? `
+                  <li><hr class="dropdown-divider my-1"></li>
+                  <li>
+                    <a class="dropdown-item py-2 text-warning-emphasis write-protected" href="#" onclick="rnCancelInvoicePrompt('${safeIdJs}'); return false;">
+                      <i class="fas fa-ban text-warning me-2 fa-fw"></i>Rechnung stornieren...
+                    </a>
+                  </li>
+                ` : ''}
+                ${canDelete ? `
+                  <li>
+                    <a class="dropdown-item py-2 text-danger write-protected" href="#" onclick="rnDeleteInvoicePrompt('${safeIdJs}'); return false;">
+                      <i class="fas fa-trash-alt me-2 fa-fw"></i>Rechnung löschen
+                    </a>
+                  </li>
+                ` : ''}
               </ul>
             </div>
           </div>
@@ -706,6 +744,8 @@ window.rnRenderTable = function() {
       </tr>
     `;
   }).join('');
+
+  rnApplyWriteProtection(tbody);
 
   if (typeof rnOnTableRowSelectChange === 'function') {
     rnOnTableRowSelectChange();
@@ -771,7 +811,7 @@ window.rnOpenDetailsModal = async function(invoiceId) {
     <div class="modal-dialog modal-dialog-centered modal-lg">
       <div class="modal-content border-0 rounded-4 shadow">
         <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
-          <h5 class="modal-title fw-bold"><i class="fas fa-receipt me-2"></i>Rechnungsdetails (ID: ${invoiceId})</h5>
+          <h5 class="modal-title fw-bold"><i class="fas fa-receipt me-2"></i>Rechnungsdetails (ID: ${escapeHtml(invoiceId)})</h5>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body p-4" id="rn-details-modal-body">
@@ -828,7 +868,18 @@ window.rnOpenDetailsModal = async function(invoiceId) {
     }
 
     if (true) {
-      
+      const invSt = String(inv.status || '').toLowerCase();
+      const invIsPaid = invSt === 'bezahlt';
+      const invIsCancelled = invSt === 'storniert';
+      const invIsSent = rnIsInvoiceSent(inv);
+      const invHasPayments = Number(inv.total_paid || 0) > 0;
+      const invRestAmount = Number(inv.open_amount !== undefined ? inv.open_amount : (inv.total_amount || 0));
+      const invCanEdit = !invIsPaid && !invIsCancelled && !invHasPayments && !invIsSent && inv.type !== 'Jahresbeitrag';
+      const invCanDelete = !invIsPaid && !invIsCancelled && !invHasPayments;
+      const safeInvIdJs = escapeJs(inv.id);
+      const safeInvNameJs = escapeJs(inv.name);
+      const statusPillClass = invIsPaid ? 'bg-success' : (invIsCancelled ? 'bg-dark text-white' : (invSt === 'teilbezahlt' ? 'bg-info text-dark' : 'bg-warning text-dark'));
+
       const posRows = positions.map(p => {
         const qty = Number(p.quantity || 1);
         const up = Number(p.unit_price || p.amount || 0);
@@ -838,12 +889,12 @@ window.rnOpenDetailsModal = async function(invoiceId) {
         }
         return `
         <tr>
-          <td class="font-monospace text-muted tk-col-pos" style="width: 50px;">#${p.position_nr}</td>
+          <td class="font-monospace text-muted tk-col-pos" style="width: 50px;">#${escapeHtml(p.position_nr)}</td>
           <td class="fw-semibold tk-col-desc">
             ${escapeHtml(p.description)}
             ${qtyStr}
           </td>
-          <td class="text-muted text-center tk-col-type">${p.type}</td>
+          <td class="text-muted text-center tk-col-type">${escapeHtml(p.type)}</td>
           <td class="text-end fw-bold text-dark font-monospace tk-col-amount">${fmtChf(p.amount)}</td>
         </tr>
       `;
@@ -854,13 +905,13 @@ window.rnOpenDetailsModal = async function(invoiceId) {
           <div class="col-6">
             <div class="small text-muted fw-semibold">Rechnungsempfänger:</div>
             <h5 class="fw-bold text-dark mt-1 mb-0">${escapeHtml(inv.name)}</h5>
-            ${inv.PersonNumber ? `<span class="badge bg-secondary mt-1">Mitglieds-Nr: ${inv.PersonNumber}</span>` : ''}
+            ${inv.PersonNumber ? `<span class="badge bg-secondary mt-1">Mitglieds-Nr: ${escapeHtml(inv.PersonNumber)}</span>` : ''}
           </div>
           <div class="col-6 text-end">
             <div class="small text-muted fw-semibold">Status:</div>
-            <span class="badge ${inv.status === 'bezahlt' ? 'bg-success' : 'bg-warning text-dark'} px-2.5 py-1.5 rounded-pill mt-1 fw-bold">${inv.status}</span>
-            <div class="text-muted small mt-1 font-monospace" style="font-size:11px;">Rechnungsdatum: ${inv.created_at || '–'}</div>
-            <div class="text-muted small font-monospace" style="font-size:11px;">Versanddatum: ${inv.send_date ? escapeHtml(inv.send_date) : (inv.mail_status === 'gesendet' ? '<span class="text-success"><i class="fas fa-check me-0.5"></i>gesendet</span>' : '–')}</div>
+            <span class="badge ${statusPillClass} px-2.5 py-1.5 rounded-pill mt-1 fw-bold">${escapeHtml(inv.status)}</span>
+            <div class="text-muted small mt-1 font-monospace" style="font-size:11px;">Rechnungsdatum: ${escapeHtml(inv.created_at || '–')}</div>
+            <div class="text-muted small font-monospace" style="font-size:11px;">Versanddatum: ${inv.send_date ? escapeHtml(inv.send_date) : (invIsSent ? '<span class="text-success"><i class="fas fa-check me-0.5"></i>versendet</span>' : '–')}</div>
           </div>
         </div>
 
@@ -924,11 +975,11 @@ window.rnOpenDetailsModal = async function(invoiceId) {
             <div>
               <i class="fas fa-check-circle text-success me-2 fs-5"></i>
               <strong class="text-success-emphasis">Zahlungseingang verbucht</strong>
-              <div class="small text-muted mt-0.5">Methode: ${inv.payment_method || 'Überweisung'}</div>
+              <div class="small text-muted mt-0.5">Methode: ${escapeHtml(inv.payment_method || 'Überweisung')}</div>
             </div>
             <div class="text-end text-success-emphasis font-monospace" style="font-size:12px;">
-              Datum: ${isoToDisplay(inv.payment_date)}<br>
-              Beleg: ${inv.document_ref || 'unbekannt'}
+              Datum: ${escapeHtml(isoToDisplay(inv.payment_date))}<br>
+              Beleg: ${escapeHtml(inv.document_ref || 'unbekannt')}
             </div>
           </div>
         ` : ''}
@@ -940,29 +991,41 @@ window.rnOpenDetailsModal = async function(invoiceId) {
         footerEl.innerHTML = `
           <div class="d-flex flex-wrap gap-2 align-items-center">
             ${inv.pdf_url ? `
-              <a href="${inv.pdf_url}" onclick="rnOpenInvoicePdf('${inv.id}', '${escapeJs(inv.pdf_url)}', '${escapeJs(inv.name)}', event)" target="_blank" class="btn btn-sm btn-outline-danger fw-semibold">
+              <a href="${escapeHtml(inv.pdf_url)}" onclick="rnOpenInvoicePdf('${safeInvIdJs}', '${escapeJs(inv.pdf_url)}', '${safeInvNameJs}', event)" target="_blank" class="btn btn-sm btn-outline-danger fw-semibold">
                 <i class="fas fa-file-pdf me-1.5"></i>PDF öffnen
               </a>
-            ` : `
-              <button class="btn btn-sm btn-outline-secondary write-protected" onclick="rnGeneratePDFOnly('${inv.id}', '${escapeJs(inv.name)}')">
+            ` : (!invIsCancelled ? `
+              <button class="btn btn-sm btn-outline-secondary write-protected" onclick="rnGeneratePDFOnly('${safeInvIdJs}', '${safeInvNameJs}')">
                 <i class="fas fa-cog me-1.5"></i>PDF erstellen
               </button>
-            `}
-            <button class="btn btn-sm btn-outline-primary write-protected" onclick="rnTransitionFromDetails(() => rnSendMailPrompt('${inv.id}', '${escapeJs(inv.name)}'))">
-              <i class="fas fa-envelope me-1.5"></i>E-Mail senden
-            </button>
-            ${inv.status !== 'bezahlt' ? `
-              <button class="btn btn-sm btn-success write-protected" onclick="rnTransitionFromDetails(() => rnOpenPaymentModal('${inv.id}', ${inv.total_amount}))">
+            ` : '')}
+            ${!invIsCancelled ? `
+              <button class="btn btn-sm btn-outline-primary write-protected" onclick="rnTransitionFromDetails(() => rnSendMailPrompt('${safeInvIdJs}', '${safeInvNameJs}'))">
+                <i class="fas fa-envelope me-1.5"></i>E-Mail senden
+              </button>
+            ` : ''}
+            ${(!invIsPaid && !invIsCancelled) ? `
+              <button class="btn btn-sm btn-success write-protected" onclick="rnTransitionFromDetails(() => rnOpenPaymentModal('${safeInvIdJs}', ${invRestAmount}))">
                 <i class="fas fa-coins me-1.5"></i>Zahlung erfassen
               </button>
             ` : ''}
+            ${invCanEdit ? `
+              <button class="btn btn-sm btn-outline-info write-protected" onclick="rnTransitionFromDetails(() => rnOpenEditModal('${safeInvIdJs}'))">
+                <i class="fas fa-edit me-1.5"></i>Bearbeiten
+              </button>
+            ` : ''}
             ${inv.type === 'Jahresbeitrag' ? `
-              <button class="btn btn-sm btn-light border text-muted" onclick="rnTransitionFromDetails(() => rnJumpToJahresbeitrag('${inv.PersonNumber}'))">
+              <button class="btn btn-sm btn-light border text-muted" onclick="rnTransitionFromDetails(() => rnJumpToJahresbeitrag('${escapeJs(inv.PersonNumber || '')}'))">
                 <i class="fas fa-lock text-warning me-1.5"></i>In Jahresbeitrag
               </button>
             ` : ''}
-            ${inv.status !== 'bezahlt' && (!inv.total_paid || Number(inv.total_paid) === 0) ? `
-              <button class="btn btn-sm btn-outline-danger write-protected" onclick="rnTransitionFromDetails(() => rnDeleteInvoicePrompt('${inv.id}'))" title="Rechnung löschen">
+            ${(!invIsPaid && !invIsCancelled && !invHasPayments) ? `
+              <button class="btn btn-sm btn-outline-warning text-dark write-protected" onclick="rnTransitionFromDetails(() => rnCancelInvoicePrompt('${safeInvIdJs}'))" title="Rechnung stornieren">
+                <i class="fas fa-ban me-1.5"></i>Stornieren
+              </button>
+            ` : ''}
+            ${invCanDelete ? `
+              <button class="btn btn-sm btn-outline-danger write-protected" onclick="rnTransitionFromDetails(() => rnDeleteInvoicePrompt('${safeInvIdJs}'))" title="Rechnung löschen">
                 <i class="fas fa-trash-alt me-1.5"></i>Löschen
               </button>
             ` : ''}
@@ -970,6 +1033,7 @@ window.rnOpenDetailsModal = async function(invoiceId) {
           <button type="button" class="btn btn-sm btn-secondary px-3" data-bs-dismiss="modal">Schliessen</button>
         `;
       }
+      rnApplyWriteProtection(modalEl);
 
       if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
         window.TableKit.setupColumnToggle('#rn-detail-positions-table', {
@@ -1005,8 +1069,8 @@ window.rnExportArchivToExcel = function() {
     });
   } else if (window.UIConfirmKit) {
     window.UIConfirmKit.alert({ title: 'Export-Fehler', message: 'Das UIExportKit steht derzeit nicht zur Verfügung.', type: 'danger' });
-  } else {
-    alert('UIExportKit steht nicht zur Verfügung.');
+  } else if (typeof showError === 'function') {
+    showError('Das UIExportKit steht derzeit nicht zur Verfügung.');
   }
 };
 
@@ -1029,8 +1093,8 @@ window.rnExportRevisionToExcel = function() {
     });
   } else if (window.UIConfirmKit) {
     window.UIConfirmKit.alert({ title: 'Export-Fehler', message: 'Das UIExportKit steht derzeit nicht zur Verfügung.', type: 'danger' });
-  } else {
-    alert('UIExportKit steht nicht zur Verfügung.');
+  } else if (typeof showError === 'function') {
+    showError('Das UIExportKit steht derzeit nicht zur Verfügung.');
   }
 };
 
@@ -1119,8 +1183,8 @@ window.rnExportRevisionDetailExcel = function() {
   if (!detailRows.length) {
     if (window.UIConfirmKit) {
       window.UIConfirmKit.alert({ title: 'Keine Daten', message: 'Für die gewählten Filter sind keine Positionen vorhanden.', type: 'warning' });
-    } else {
-      alert('Keine Positionen für den Export vorhanden.');
+    } else if (typeof showError === 'function') {
+      showError('Für die gewählten Filter sind keine Positionen vorhanden.');
     }
     return;
   }
@@ -1130,8 +1194,10 @@ window.rnExportRevisionDetailExcel = function() {
       filename: `Revision_Artikel_Positionen_${currentFilter}_${reportStatus}`,
       sheetName: 'Positionen'
     });
-  } else {
-    alert('UIExportKit steht nicht zur Verfügung.');
+  } else if (window.UIConfirmKit) {
+    window.UIConfirmKit.alert({ title: 'Export-Fehler', message: 'Das UIExportKit steht derzeit nicht zur Verfügung.', type: 'danger' });
+  } else if (typeof showError === 'function') {
+    showError('Das UIExportKit steht derzeit nicht zur Verfügung.');
   }
 };
 
@@ -1169,7 +1235,11 @@ window.rnPrintRevisionReport = function() {
 
   const printWindow = window.open('', '_blank');
   if (!printWindow) {
-    alert('Druckfenster konnte nicht geöffnet werden. Bitte Pop-up-Blocker deaktivieren.');
+    if (window.UIConfirmKit) {
+      window.UIConfirmKit.alert({ title: 'Pop-up blockiert', message: 'Das Druckfenster konnte nicht geöffnet werden. Bitte deaktiviere deinen Pop-up-Blocker.', type: 'warning' });
+    } else if (typeof showError === 'function') {
+      showError('Das Druckfenster konnte nicht geöffnet werden. Bitte Pop-up-Blocker deaktivieren.');
+    }
     return;
   }
 
@@ -1863,6 +1933,7 @@ window.rnFilterContacts = function(query) {
   const tbody = document.getElementById('rn-contacts-tbody');
   if (tbody) {
     tbody.innerHTML = rnRenderContactsRows();
+    rnApplyWriteProtection(tbody);
     if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
       window.TableKit.setupColumnToggle('#rn-contacts-table', {
         container: '#rn-contacts-col-toggle',
@@ -1960,13 +2031,13 @@ window.rnRenderContactsRows = function() {
         </td>
         <td data-col-id="actions" class="text-end tk-col-actions" style="width: 150px;">
           <div class="btn-group btn-group-sm shadow-sm">
-            <button class="btn btn-outline-primary" onclick="rnOpenCreateModal(); setTimeout(() => { const sel = document.getElementById('rnc-member-select'); if(sel) { sel.value = 'EXT:${c.id}'; rnHandleMemberSelect(sel.value); } }, 200);" title="Rechnung an diesen Kontakt erstellen">
+            <button class="btn btn-outline-primary write-protected" onclick="rnOpenCreateModal(); setTimeout(() => { const sel = document.getElementById('rnc-member-select'); if(sel) { sel.value = 'EXT:${escapeJs(c.id)}'; rnHandleMemberSelect(sel.value); } }, 200);" title="Rechnung an diesen Kontakt erstellen">
               <i class="fas fa-file-invoice-dollar"></i>
             </button>
-            <button class="btn btn-outline-secondary" onclick="rnOpenContactModal('${c.id}')" title="Kontakt bearbeiten">
+            <button class="btn btn-outline-secondary write-protected" onclick="rnOpenContactModal('${escapeJs(c.id)}')" title="Kontakt bearbeiten">
               <i class="fas fa-edit"></i>
             </button>
-            <button class="btn btn-outline-danger" onclick="rnDeleteContactPrompt('${c.id}')" title="Kontakt löschen">
+            <button class="btn btn-outline-danger write-protected" onclick="rnDeleteContactPrompt('${escapeJs(c.id)}')" title="Kontakt löschen">
               <i class="fas fa-trash-alt"></i>
             </button>
           </div>
@@ -1994,7 +2065,7 @@ window.renderTabContacts = function(content) {
         </div>
         <div class="d-flex gap-2 align-items-center">
           <div id="rn-contacts-col-toggle"></div>
-          <button class="btn btn-primary fw-bold px-3 py-2 rounded-3 shadow-sm" onclick="rnOpenContactModal()">
+          <button class="btn btn-primary fw-bold px-3 py-2 rounded-3 shadow-sm write-protected" onclick="rnOpenContactModal()">
             <i class="fas fa-plus me-1.5"></i> Neuer Kontakt erfassen
           </button>
         </div>
@@ -2010,7 +2081,7 @@ window.renderTabContacts = function(content) {
         </div>
         <div class="col-md-7 text-md-end text-muted small">
           <span class="badge bg-primary px-2.5 py-1.5 me-2">${totalContacts} Kontakt(e) erfasst</span>
-          <span>Tabelle: <code>kontakte_extern</code></span>
+          <span>Tabelle: <code>external_contacts</code></span>
         </div>
       </div>
 
