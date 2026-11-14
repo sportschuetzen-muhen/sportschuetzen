@@ -214,6 +214,7 @@ Fehler beim Speichern: insert or update on table "admin_profiles" violates forei
 
 ### 9.1 Passwortloses Universal-SSO (Magic Link & 6-stelliger OTP-Code)
 * **Ablauf:** Vereinsmitglieder können sich in der Web-App und auf der Website passwortlos via E-Mail anmelden. Die RPC `resolve_login_identifier` löst Name, SSV-Nummer oder E-Mail serverseitig auf. Supabase versendet eine E-Mail mit 1-Klick-Link und 6-stelligem Zahlencode.
+* **Passivmitglieder-Zulassung (Migration 100):** `resolve_login_identifier` lässt neben `is_active = true` auch lebende Passivmitglieder (`is_passive = true`, `deceased = false`) ohne verstrichenes Austrittsdatum (`club_exit_date IS NULL` oder in der Zukunft) zu. Damit bleiben Passivmitglieder auch dann anmeldefähig, wenn ein SSV-Export `is_active = false` liefert, während Verstorbene und Ausgetretene gesperrt bleiben.
 * **Inline-Code-Verifikation:** Der 6-stellige Code kann direkt im Modal via `supabase.auth.verifyOtp()` eingegeben werden, ohne dass das mobile Gerät die aktuelle Seite verlassen muss.
 * **Session-Dauer & Persistenz:** Die Sitzung wird für 60 Tage im Browser persistiert und synchronisiert automatisch zwischen Web-App (`sportschuetzen_user`) und Website (`sm_member_session`).
 
