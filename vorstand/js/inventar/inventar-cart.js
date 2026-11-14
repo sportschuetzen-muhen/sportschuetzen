@@ -663,9 +663,6 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId, txId
                 sender: {
                     bereich: 'Materialverkauf',
                     funktion: 'Materialwart'
-                },
-                options: {
-                    autoIssue: true // Status direkt auf 'offen'
                 }
             };
 
@@ -893,9 +890,6 @@ async function verarbeitePfandRechnungen(cart, mitgliedId, depositIds = [], txId
             sender: {
                 bereich: 'Depot & Kautionen',
                 funktion: 'Materialwart'
-            },
-            options: {
-                autoIssue: true
             }
         };
 

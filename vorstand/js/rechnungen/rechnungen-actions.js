@@ -1243,21 +1243,25 @@ window.rnExecuteSendMail = async function(invoiceId) {
     showSuccess(`🎉 E-Mail erfolgreich an ${targetEmail} versandt!`);
     const targetInv = (window._invoices || []).find(x => String(x.id).trim() === String(invoiceId).trim());
     const sendDateStr = (typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH'));
+    const wasDraft = String(targetInv?.status || '').toLowerCase() === 'entwurf';
     if (targetInv) {
       targetInv.mail_status = 'versendet';
       targetInv.send_date = sendDateStr;
+      if (wasDraft) targetInv.status = 'offen';
       if (pdfUrl) targetInv.pdf_url = pdfUrl;
     }
 
     // 5. Supabase State Update (invoices table)
     const supa = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : null;
     if (supa) {
-      const { error: mailUpErr } = await supa.from('invoices').update({
+      const mailUpdatePayload = {
         mail_status: 'versendet',
         send_date: new Date().toISOString(),
         pdf_url: pdfUrl || targetInv?.pdf_url || '',
         updated_at: new Date().toISOString()
-      }).eq('id', invoiceId);
+      };
+      if (wasDraft) mailUpdatePayload.status = 'offen';
+      const { error: mailUpErr } = await supa.from('invoices').update(mailUpdatePayload).eq('id', invoiceId);
       if (mailUpErr) {
         console.warn("Supabase mail_status update:", mailUpErr);
       }
@@ -5762,9 +5766,11 @@ window.rnExecuteMassSend = async function() {
 
       if (mailResult && mailResult.success) {
         successCount++;
+        const wasDraft = String(inv.status || '').toLowerCase() === 'entwurf';
         inv.mail_status = 'versendet';
         inv.send_date = nowSwiss;
         inv.updated_at = nowSwiss;
+        if (wasDraft) inv.status = 'offen';
         if (pdfUrl) inv.pdf_url = pdfUrl;
         if (badge) {
           badge.className = 'badge bg-success text-white py-1.5 px-2.5';
@@ -5773,12 +5779,14 @@ window.rnExecuteMassSend = async function() {
 
         const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
         if (sb) {
-          const { error: massMailUpErr } = await sb.from('invoices').update({
+          const massUpdatePayload = {
             mail_status: 'versendet',
             send_date: new Date().toISOString(),
             pdf_url: pdfUrl || inv.pdf_url || '',
             updated_at: new Date().toISOString()
-          }).eq('id', inv.id);
+          };
+          if (wasDraft) massUpdatePayload.status = 'offen';
+          const { error: massMailUpErr } = await sb.from('invoices').update(massUpdatePayload).eq('id', inv.id);
           if (massMailUpErr) console.warn(`⚠️ [Supabase] Massenversand mail_status Update (${inv.id}):`, massMailUpErr);
         }
       } else {
