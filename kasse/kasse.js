@@ -89,7 +89,8 @@ const KasseModule = (function () {
     KassenAbschluss.init();
     KellnerHandheld.init();
 
-    // 8. RaiseNow Tamaro 1-Klick-Turbo im Hintergrund vorladen & alte URL-Reste bereinigen
+    // 8. RaiseNow Tamaro Redirect-Rückkehr prüfen (#?rnw-view=payment_result&epms_payment_uuid=...)
+    await handleTamaroRedirectReturn();
     cleanupTamaroUrl();
     if (navigator.onLine) {
       prewarmTamaro();
@@ -696,14 +697,100 @@ const KasseModule = (function () {
   }
 
   // ── TWINT BEZAHLUNG (RAISENOW 1-KLICK-TURBO & AUTO-BONDRUCK) ──
+  const PENDING_TWINT_STORAGE_KEY = 'festkasse_pending_twint';
   const tamaroConfigCache = {};
   let turboSubmitTimer = null;
   let twintResultTimer = null;
   let activeTwintHandled = false;
 
+  function savePendingTwintCheckout(payload) {
+    try {
+      sessionStorage.setItem(PENDING_TWINT_STORAGE_KEY, JSON.stringify(payload));
+    } catch (e) {}
+  }
+
+  function consumePendingTwintCheckout() {
+    try {
+      const raw = sessionStorage.getItem(PENDING_TWINT_STORAGE_KEY);
+      sessionStorage.removeItem(PENDING_TWINT_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function clearPendingTwintCheckout() {
+    try {
+      sessionStorage.removeItem(PENDING_TWINT_STORAGE_KEY);
+    } catch (e) {}
+  }
+
+  /** Liest #?rnw-view=payment_result&epms_payment_uuid=... aus Hash oder Query aus. */
+  function parseTamaroReturnParams() {
+    try {
+      const url = new URL(window.location.href);
+      const hashRaw = (url.hash || '').replace(/^#\??/, '');
+      const hashParams = new URLSearchParams(hashRaw.includes('=') ? hashRaw : '');
+      const epmsPaymentUuid = hashParams.get('epms_payment_uuid') || url.searchParams.get('epms_payment_uuid') || '';
+      const rnwView = hashParams.get('rnw-view') || url.searchParams.get('rnw-view') || '';
+      if (!epmsPaymentUuid && rnwView !== 'payment_result') return null;
+      return { epmsPaymentUuid, rnwView };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /** Fragt den finalen RaiseNow-EPMS-Status nach Redirect-Rückkehr direkt ab. */
+  async function fetchRaiseNowEpmsStatus(epmsPaymentUuid) {
+    if (!epmsPaymentUuid) return { outcome: 'cancelled', status: 'missing_uuid' };
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      let status = '';
+      let amountMinor = 0;
+      let reason = '';
+
+      try {
+        const res = await fetch(`https://widget-api.raisenow.com/epms/payments/${encodeURIComponent(epmsPaymentUuid)}`);
+        if (res.ok) {
+          const data = await res.json();
+          status = String(data.last_status || data.status || '').trim();
+          amountMinor = Number(data.amount || 0);
+          reason = String(data.last_status_reason || '');
+        }
+      } catch (e) {}
+
+      if (!status) {
+        try {
+          const stRes = await fetch(`https://payment.raisenow.com/statuses/payments/${encodeURIComponent(epmsPaymentUuid)}`);
+          if (stRes.ok) {
+            const stData = await stRes.json();
+            status = String(stData.status || '').trim();
+          }
+        } catch (e) {}
+      }
+
+      const norm = status.toLowerCase();
+      if (norm === 'succeeded' || norm === 'paid') {
+        return { outcome: 'succeeded', status: norm, amountMinor, reason };
+      }
+      if (norm && norm !== 'pending') {
+        return { outcome: 'cancelled', status: norm, amountMinor, reason };
+      }
+      if (attempt < 2) {
+        await new Promise(r => setTimeout(r, 1200));
+      }
+    }
+
+    return { outcome: 'cancelled', status: 'pending_or_aborted', amountMinor: 0, reason: '' };
+  }
+
   /** Wertet das Tamaro paymentComplete-/EPMS-Event sicher aus (Erfolg vs. Abbruch/Fehler). */
   function classifyTamaroPaymentEvent(event) {
     const data = event?.data || event || {};
+    const api = data.api;
+    if (api?.isPaymentAborted || api?.hasEpmsPaymentError) {
+      return { outcome: 'cancelled', status: api?.epmsPaymentInfo?.last_status || 'aborted' };
+    }
     const rawStatus = [
       data.epmsPaymentStatus,
       data.epms_payment_status,
@@ -715,12 +802,13 @@ const KasseModule = (function () {
       data.payment?.epmsPaymentStatus,
       data.payment?.epms_payment_status,
       data.payment?.status,
+      api?.epmsPaymentInfo?.last_status,
       event?.epmsPaymentStatus,
       event?.status
     ].find(val => typeof val === 'string' && val.trim().length > 0) || '';
 
     const normalized = rawStatus.trim().toLowerCase();
-    if (/cancel|abort|declin|fail|error|reject|expired/.test(normalized)) {
+    if (/cancel|abort|declin|fail|error|reject|expired|timeout/.test(normalized)) {
       return { outcome: 'cancelled', status: rawStatus };
     }
     return { outcome: 'succeeded', status: rawStatus || 'succeeded' };
@@ -864,11 +952,13 @@ const KasseModule = (function () {
     try {
       const url = new URL(window.location.href);
       let changed = false;
-      if (url.searchParams.has('terminal_mode')) {
-        url.searchParams.delete('terminal_mode');
-        changed = true;
-      }
-      if (url.hash && url.hash.includes('tamaro')) {
+      ['terminal_mode', 'rnw-view', 'epms_payment_uuid', 'epms_payment_agreement_uuid', 'epms_subscription_uuid', 'epms_payment_source_uuid', 'epp_transaction_id', 'epp_error_details'].forEach(param => {
+        if (url.searchParams.has(param)) {
+          url.searchParams.delete(param);
+          changed = true;
+        }
+      });
+      if (url.hash && /tamaro|rnw-view|epms_payment_uuid|epp_transaction_id/i.test(url.hash)) {
         url.hash = '';
         changed = true;
       }
@@ -1085,6 +1175,60 @@ const KasseModule = (function () {
     }, 2600);
   }
 
+  async function handleTamaroRedirectReturn() {
+    const params = parseTamaroReturnParams();
+    if (!params) return;
+
+    cleanupTamaroUrl();
+    const pending = consumePendingTwintCheckout();
+    const epmsRes = await fetchRaiseNowEpmsStatus(params.epmsPaymentUuid);
+
+    if (pending?.mode === 'kellner' && typeof KellnerHandheld !== 'undefined' && typeof KellnerHandheld.handleTwintRedirectResult === 'function') {
+      switchView('kellner');
+      await KellnerHandheld.handleTwintRedirectResult(epmsRes, pending);
+      return;
+    }
+
+    if (Array.isArray(pending?.cart) && pending.cart.length > 0) {
+      cart = pending.cart;
+      renderCart();
+    }
+
+    const total = Number(pending?.total || (epmsRes.amountMinor ? epmsRes.amountMinor / 100 : 0));
+    const displayOrderNumber = pending?.displayOrderNumber || ('#' + String(printerSettings.orderSequence || 1).padStart(2, '0'));
+
+    const amtEl = document.getElementById('twint-modal-amount');
+    const refEl = document.getElementById('twint-modal-bon-ref');
+    if (amtEl) amtEl.textContent = formatCHF(total);
+    if (refEl) refEl.textContent = `Bestellung ${displayOrderNumber}${cart.length ? ` (${cart.length} Positionen)` : ''}`;
+
+    const modal = document.getElementById('twint-payment-modal');
+    if (modal) modal.classList.add('active');
+
+    if (epmsRes.outcome === 'succeeded') {
+      if (cart.length > 0) {
+        await completePayment('twint');
+      }
+      showMainTwintSuccess(total, displayOrderNumber);
+      return;
+    }
+
+    showToast('TWINT-Zahlung abgebrochen – nichts verbucht.');
+    renderTwintResultScreen({
+      qrWrapSelector: '#twint-modal-qr-wrap',
+      resultSelector: '#twint-modal-result-screen',
+      footerSelector: '#twint-modal-footer',
+      type: 'cancelled',
+      amount: total,
+      reference: `Bestellung ${displayOrderNumber}`,
+      detail: cart.length > 0
+        ? `Die TWINT-Zahlung wurde abgebrochen (${epmsRes.status}). Es wurde nichts verbucht – dein Warenkorb wurde wiederhergestellt.`
+        : `Die TWINT-Zahlung wurde abgebrochen (${epmsRes.status}). Es wurde nichts verbucht.`,
+      onRetry: cart.length > 0 ? startTwintPayment : closeTwintModal,
+      onClose: closeTwintModal
+    });
+  }
+
   function startTwintPayment() {
     const total = cart.reduce((sum, it) => sum + (it.price * it.qty), 0);
     if (total <= 0) {
@@ -1094,6 +1238,14 @@ const KasseModule = (function () {
 
     const seq = printerSettings.orderSequence || 1;
     const displayOrderNumber = '#' + String(seq).padStart(2, '0');
+
+    savePendingTwintCheckout({
+      mode: 'kasse',
+      cart: cart.map(it => ({ ...it })),
+      total,
+      displayOrderNumber,
+      timestamp: Date.now()
+    });
 
     const amtEl = document.getElementById('twint-modal-amount');
     const refEl = document.getElementById('twint-modal-bon-ref');
@@ -1114,10 +1266,12 @@ const KasseModule = (function () {
       amount: total,
       reference: displayOrderNumber,
       onComplete: async () => {
+        clearPendingTwintCheckout();
         await completePayment('twint');
         showMainTwintSuccess(total, displayOrderNumber);
       },
       onCancel: () => {
+        clearPendingTwintCheckout();
         cleanupTamaroWidget();
         showToast('TWINT-Zahlung abgebrochen – nichts verbucht.');
         renderTwintResultScreen({
@@ -1136,6 +1290,7 @@ const KasseModule = (function () {
   }
 
   function closeTwintModal() {
+    clearPendingTwintCheckout();
     if (twintResultTimer) {
       clearTimeout(twintResultTimer);
       twintResultTimer = null;
@@ -1651,7 +1806,9 @@ const KasseModule = (function () {
     launchTamaroTwint,
     cleanupTamaroWidget,
     renderTwintResultScreen,
-    resetTwintModalView
+    resetTwintModalView,
+    savePendingTwintCheckout,
+    clearPendingTwintCheckout
   };
 })();
 

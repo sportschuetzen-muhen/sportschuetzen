@@ -363,16 +363,28 @@ const KellnerHandheld = (function () {
 
     modal.classList.add('active');
 
+    if (typeof KasseModule !== 'undefined' && typeof KasseModule.savePendingTwintCheckout === 'function') {
+      KasseModule.savePendingTwintCheckout({
+        mode: 'kellner',
+        cart: cart.map(it => ({ ...it })),
+        total,
+        selectedTable,
+        timestamp: Date.now()
+      });
+    }
+
     if (typeof KasseModule !== 'undefined' && typeof KasseModule.launchTamaroTwint === 'function') {
       KasseModule.launchTamaroTwint({
         rootSelector: '#kellner-twint-tamaro-root',
         amount: total,
         reference: selectedTable,
         onComplete: () => {
+          if (typeof KasseModule.clearPendingTwintCheckout === 'function') KasseModule.clearPendingTwintCheckout();
           executeCheckout('twint', total, 0);
           showKellnerTwintSuccess(total);
         },
         onCancel: () => {
+          if (typeof KasseModule.clearPendingTwintCheckout === 'function') KasseModule.clearPendingTwintCheckout();
           KasseModule.cleanupTamaroWidget();
           if (typeof KasseModule.showToast === 'function') {
             KasseModule.showToast('TWINT-Zahlung abgebrochen – nichts verbucht.');
@@ -395,7 +407,55 @@ const KellnerHandheld = (function () {
     }
   }
 
+  async function handleTwintRedirectResult(epmsRes, pending) {
+    if (pending?.selectedTable) {
+      selectedTable = pending.selectedTable;
+    }
+    if (Array.isArray(pending?.cart) && pending.cart.length > 0) {
+      cart = pending.cart;
+    }
+    renderUI();
+
+    const total = Number(pending?.total || (epmsRes.amountMinor ? epmsRes.amountMinor / 100 : 0));
+    const modal = document.getElementById('kellner-twint-modal');
+    const tableNameEl = document.getElementById('kellner-twint-table-name');
+    const totalEl = document.getElementById('kellner-twint-total-display');
+    if (tableNameEl) tableNameEl.textContent = selectedTable;
+    if (totalEl) totalEl.textContent = formatCHF(total);
+    if (modal) modal.classList.add('active');
+
+    if (epmsRes.outcome === 'succeeded') {
+      if (cart.length > 0) {
+        await executeCheckout('twint', total, 0);
+      }
+      showKellnerTwintSuccess(total);
+      return;
+    }
+
+    if (typeof KasseModule !== 'undefined' && typeof KasseModule.showToast === 'function') {
+      KasseModule.showToast('TWINT-Zahlung abgebrochen – nichts verbucht.');
+    }
+    if (typeof KasseModule !== 'undefined' && typeof KasseModule.renderTwintResultScreen === 'function') {
+      KasseModule.renderTwintResultScreen({
+        qrWrapSelector: '#kellner-twint-qr-wrap',
+        resultSelector: '#kellner-twint-result-screen',
+        footerSelector: '#kellner-twint-footer',
+        type: 'cancelled',
+        amount: total,
+        reference: selectedTable,
+        detail: cart.length > 0
+          ? `Die TWINT-Zahlung wurde abgebrochen (${epmsRes.status}). Es wurde nichts verbucht – deine Tischbestellung wurde wiederhergestellt.`
+          : `Die TWINT-Zahlung wurde abgebrochen (${epmsRes.status}). Es wurde nichts verbucht.`,
+        onRetry: cart.length > 0 ? () => openTwintModal(total) : closeTwintModal,
+        onClose: closeTwintModal
+      });
+    }
+  }
+
   function closeTwintModal() {
+    if (typeof KasseModule !== 'undefined' && typeof KasseModule.clearPendingTwintCheckout === 'function') {
+      KasseModule.clearPendingTwintCheckout();
+    }
     if (kellnerTwintTimer) {
       clearTimeout(kellnerTwintTimer);
       kellnerTwintTimer = null;
@@ -638,6 +698,7 @@ const KellnerHandheld = (function () {
     openTwintModal,
     closeTwintModal,
     confirmTwintPayment,
+    handleTwintRedirectResult,
     openTableModal,
     selectTable
   };

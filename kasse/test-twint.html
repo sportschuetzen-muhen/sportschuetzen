@@ -1123,6 +1123,10 @@
       const autoSubmit = document.getElementById('direct-auto-submit')?.checked ?? true;
       const t0 = performance.now();
 
+      try {
+        sessionStorage.setItem('festkasse_test_twint_pending', JSON.stringify({ amount: amtVal, ref, ts: Date.now() }));
+      } catch (e) {}
+
       if (rootEl) {
         rootEl.innerHTML = `<div style="text-align:center; padding:48px; color:#64748b;">⚡ Erzeuge TWINT QR-Code für <strong>CHF ${amtVal.toFixed(2)}</strong>...</div>`;
       }
@@ -1406,12 +1410,91 @@
       }
     }
 
+    async function handleTestRedirectReturn() {
+      try {
+        const url = new URL(window.location.href);
+        const hashRaw = (url.hash || '').replace(/^#\??/, '');
+        const hashParams = new URLSearchParams(hashRaw.includes('=') ? hashRaw : '');
+        const epmsUuid = hashParams.get('epms_payment_uuid') || url.searchParams.get('epms_payment_uuid') || '';
+        const rnwView = hashParams.get('rnw-view') || url.searchParams.get('rnw-view') || '';
+        if (!epmsUuid && rnwView !== 'payment_result') return;
+
+        switchTab('direct');
+        url.hash = '';
+        ['terminal_mode', 'rnw-view', 'epms_payment_uuid'].forEach(p => url.searchParams.delete(p));
+        window.history.replaceState(null, '', url.toString());
+
+        let pending = null;
+        try {
+          const raw = sessionStorage.getItem('festkasse_test_twint_pending');
+          sessionStorage.removeItem('festkasse_test_twint_pending');
+          pending = raw ? JSON.parse(raw) : null;
+        } catch (e) {}
+
+        addLog('REDIRECT_BACK', 'info', `Rückkehr von TWINT erkannt (uuid=${epmsUuid}, view=${rnwView}). Frage RaiseNow-Status ab...`);
+
+        let status = '';
+        let paymentData = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const res = await fetch(`https://widget-api.raisenow.com/epms/payments/${encodeURIComponent(epmsUuid)}`);
+            if (res.ok) {
+              paymentData = await res.json();
+              status = String(paymentData.last_status || paymentData.status || '').trim();
+            }
+          } catch (e) {}
+          if (!status) {
+            try {
+              const stRes = await fetch(`https://payment.raisenow.com/statuses/payments/${encodeURIComponent(epmsUuid)}`);
+              if (stRes.ok) {
+                const stData = await stRes.json();
+                status = String(stData.status || '').trim();
+                if (!paymentData) paymentData = stData;
+              }
+            } catch (e) {}
+          }
+          if (status && status.toLowerCase() !== 'pending') break;
+          if (attempt < 2) await new Promise(r => setTimeout(r, 1200));
+        }
+
+        const norm = status.toLowerCase();
+        const isOk = norm === 'succeeded' || norm === 'paid';
+        const amt = pending?.amount || (paymentData?.amount ? Number(paymentData.amount) / 100 : parseFloat(document.getElementById('amount-input').value || 1.50));
+        if (pending?.amount) {
+          document.getElementById('amount-input').value = Number(pending.amount).toFixed(2);
+        }
+        if (pending?.ref) {
+          document.getElementById('ref-input').value = pending.ref;
+        }
+
+        addLog('REDIRECT_BACK', isOk ? 'payment' : 'info', `RaiseNow EPMS Status="${status || 'unknown'}": ${safeJson(paymentData || {})}`, paymentData);
+
+        const statusBanner = document.getElementById('direct-status-banner');
+        if (statusBanner) {
+          statusBanner.style.display = 'block';
+          statusBanner.style.background = isOk ? 'rgba(0, 191, 99, 0.16)' : 'rgba(239, 68, 68, 0.16)';
+          statusBanner.style.border = `2px solid ${isOk ? '#00bf63' : '#ef4444'}`;
+          statusBanner.style.color = isOk ? '#34d399' : '#fca5a5';
+          statusBanner.innerHTML = isOk
+            ? `✅ <strong>TWINT-Zahlung erfolgreich (CHF ${amt.toFixed(2)})</strong><div style="font-size:0.82rem; font-weight:500; margin-top:4px; color:#e2e8f0;">Status: ${escapeHtml(status)} · Bon ${escapeHtml(pending?.ref || '#01')}</div>`
+            : `❌ <strong>TWINT-Zahlung abgebrochen (${escapeHtml(status || 'cancelled')})</strong><div style="font-size:0.82rem; font-weight:500; margin-top:4px; color:#e2e8f0;">Rückkehr über TWINT-Redirect erkannt. Es wurde nichts verbucht.</div>`;
+        }
+
+        if (isOk) {
+          await handlePaymentSuccess('REDIRECT_BACK');
+        }
+      } catch (e) {
+        addLog('REDIRECT_BACK', 'info', `Fehler bei Redirect-Auswertung: ${e.message || e}`);
+      }
+    }
+
     // Initialisierung beim Start
-    window.addEventListener('DOMContentLoaded', () => {
+    window.addEventListener('DOMContentLoaded', async () => {
       installDiagnosticRecorders();
       updateUrls();
       reloadPreviewFrame();
       addLog('INIT', 'info', 'Touchpoint cctmv (Sportschützen Muhen) geladen – Diagnose-Rekorder aktiv.');
+      await handleTestRedirectReturn();
       prewarmTamaro();
     });
   </script>
