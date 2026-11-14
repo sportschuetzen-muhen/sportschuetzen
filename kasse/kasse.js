@@ -699,6 +699,7 @@ const KasseModule = (function () {
   const tamaroConfigCache = {};
   let turboSubmitTimer = null;
   let twintResultTimer = null;
+  let tamaroCancelObserver = null;
   let activeTwintHandled = false;
 
   /** Wertet das Tamaro paymentComplete-Event sicher aus (Erfolg vs. Abbruch/Fehler). */
@@ -877,6 +878,10 @@ const KasseModule = (function () {
       clearInterval(turboSubmitTimer);
       turboSubmitTimer = null;
     }
+    if (tamaroCancelObserver) {
+      try { tamaroCancelObserver.disconnect(); } catch (e) {}
+      tamaroCancelObserver = null;
+    }
     try {
       if (window.rnw?.tamaro?.removeWidget) {
         window.rnw.tamaro.removeWidget();
@@ -886,7 +891,60 @@ const KasseModule = (function () {
     cleanupTamaroUrl();
   }
 
-  function autoTriggerEinkassieren(rootEl, expectedAmt) {
+  function findTamaroSubmitButton(rootEl) {
+    if (!rootEl) return null;
+    return rootEl.querySelector('button[type="submit"], button[data-testid="submit-button"]')
+      || Array.from(rootEl.querySelectorAll('button')).find(b => /einkassieren|bezahlen|weiter|pay|charge/i.test(b.textContent || ''));
+  }
+
+  /** Erkennt, wenn Tamaro nach Abbruch in der TWINT-App ohne paymentComplete zurück ins Formular springt. */
+  function watchTamaroReturnToForm(rootEl, onCancel) {
+    if (tamaroCancelObserver) {
+      try { tamaroCancelObserver.disconnect(); } catch (e) {}
+      tamaroCancelObserver = null;
+    }
+    if (!rootEl || typeof MutationObserver === 'undefined') return;
+
+    const clickedAt = Date.now();
+    let qrStageEntered = false;
+
+    const evaluateState = () => {
+      if (activeTwintHandled) {
+        if (tamaroCancelObserver) {
+          tamaroCancelObserver.disconnect();
+          tamaroCancelObserver = null;
+        }
+        return;
+      }
+
+      const submitBtn = findTamaroSubmitButton(rootEl);
+      const isSubmitVisible = Boolean(submitBtn && submitBtn.offsetParent !== null);
+
+      if (!isSubmitVisible) {
+        qrStageEntered = true;
+        return;
+      }
+
+      if (qrStageEntered && (Date.now() - clickedAt > 800) && !submitBtn.disabled) {
+        activeTwintHandled = true;
+        if (tamaroCancelObserver) {
+          tamaroCancelObserver.disconnect();
+          tamaroCancelObserver = null;
+        }
+        console.log('[TWINT Cancel] Tamaro ist nach QR-Anzeige ohne paymentComplete ins Formular zurückgekehrt.');
+        if (typeof onCancel === 'function') {
+          onCancel({ outcome: 'cancelled', status: 'returned_to_form' });
+        }
+      }
+    };
+
+    tamaroCancelObserver = new MutationObserver(evaluateState);
+    tamaroCancelObserver.observe(rootEl, { childList: true, subtree: true, attributes: true });
+    setTimeout(evaluateState, 400);
+    setTimeout(evaluateState, 1200);
+  }
+
+  function autoTriggerEinkassieren(rootEl, expectedAmt, onCancel) {
     if (turboSubmitTimer) clearInterval(turboSubmitTimer);
     const start = Date.now();
     let amountConfirmedAt = 0;
@@ -912,12 +970,12 @@ const KasseModule = (function () {
 
       if (Date.now() - amountConfirmedAt < 120) return;
 
-      const btn = rootEl.querySelector('button[type="submit"], button[data-testid="submit-button"]')
-        || Array.from(rootEl.querySelectorAll('button')).find(b => /einkassieren|bezahlen|weiter|pay|charge/i.test(b.textContent || ''));
+      const btn = findTamaroSubmitButton(rootEl);
 
       if (btn && !btn.disabled && btn.offsetParent !== null) {
         clearInterval(turboSubmitTimer);
         turboSubmitTimer = null;
+        watchTamaroReturnToForm(rootEl, onCancel);
         btn.click();
       }
     }, 60);
@@ -1014,7 +1072,7 @@ const KasseModule = (function () {
       rootEl.innerHTML = '';
       await window.rnw.tamaro.renderWidget(instance, rootSelector);
       instance.paymentForm.setAmount(amount);
-      autoTriggerEinkassieren(rootEl, amount);
+      autoTriggerEinkassieren(rootEl, amount, onCancel);
     } catch (err) {
       console.warn('[TWINT Turbo Fehler]', err);
       rootEl.innerHTML = `<div style="text-align:center; padding:28px 16px; color:#b91c1c; font-size:13px; line-height:1.5;">

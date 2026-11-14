@@ -819,6 +819,60 @@
       }
     }
 
+    let testTamaroHandled = false;
+    let testTamaroObserver = null;
+
+    function findTestSubmitBtn(rootEl) {
+      if (!rootEl) return null;
+      return rootEl.querySelector('button[type="submit"], button[data-testid="submit-button"]')
+        || Array.from(rootEl.querySelectorAll('button')).find(b => /einkassieren|bezahlen|weiter|pay|charge/i.test(b.textContent || ''));
+    }
+
+    function watchTestTamaroReturnToForm(rootEl) {
+      if (testTamaroObserver) {
+        try { testTamaroObserver.disconnect(); } catch (e) {}
+        testTamaroObserver = null;
+      }
+      if (!rootEl || typeof MutationObserver === 'undefined') return;
+
+      const clickedAt = Date.now();
+      let qrStageEntered = false;
+
+      const evaluateState = () => {
+        if (testTamaroHandled) {
+          if (testTamaroObserver) {
+            testTamaroObserver.disconnect();
+            testTamaroObserver = null;
+          }
+          return;
+        }
+        const submitBtn = findTestSubmitBtn(rootEl);
+        const isSubmitVisible = Boolean(submitBtn && submitBtn.offsetParent !== null);
+        if (!isSubmitVisible) {
+          qrStageEntered = true;
+          return;
+        }
+        if (qrStageEntered && (Date.now() - clickedAt > 800) && !submitBtn.disabled) {
+          testTamaroHandled = true;
+          if (testTamaroObserver) {
+            testTamaroObserver.disconnect();
+            testTamaroObserver = null;
+          }
+          addLog('ZAHLUNG', 'info', '❌ TWINT-ZAHLUNG ABGEBROCHEN (Tamaro ist ohne paymentComplete ins Formular zurückgekehrt)!');
+          rootEl.innerHTML = `<div style="text-align:center; padding:32px 16px; color:#dc2626; font-size:15px;">
+            <div style="font-size:48px; margin-bottom:8px;">❌</div>
+            <strong>TWINT-Zahlung abgebrochen</strong><br>
+            <span style="color:#64748b; font-size:13px;">Tamaro ist ohne Erfolgsmeldung zurückgekehrt. Es wurde nichts verbucht.</span>
+          </div>`;
+        }
+      };
+
+      testTamaroObserver = new MutationObserver(evaluateState);
+      testTamaroObserver.observe(rootEl, { childList: true, subtree: true, attributes: true });
+      setTimeout(evaluateState, 400);
+      setTimeout(evaluateState, 1200);
+    }
+
     function autoTriggerEinkassieren(rootEl, expectedAmt) {
       if (turboSubmitTimer) clearInterval(turboSubmitTimer);
       const start = Date.now();
@@ -847,13 +901,13 @@
         // Kurz warten bis React/MobX den Button nach Betragsänderung aktiv gerendert hat
         if (Date.now() - amountConfirmedAt < 120) return;
 
-        const btn = rootEl.querySelector('button[type="submit"], button[data-testid="submit-button"]')
-          || Array.from(rootEl.querySelectorAll('button')).find(b => /einkassieren|bezahlen|weiter|pay|charge/i.test(b.textContent || ''));
+        const btn = findTestSubmitBtn(rootEl);
 
         if (btn && !btn.disabled && btn.offsetParent !== null) {
           clearInterval(turboSubmitTimer);
           turboSubmitTimer = null;
           addLog('TURBO', 'payment', `⚡ Auto-Klick auf "${(btn.textContent || '').trim()}" -> fordere TWINT QR-Code an...`);
+          watchTestTamaroReturnToForm(rootEl);
           btn.click();
         }
       }, 60);
@@ -951,7 +1005,26 @@
         });
 
         // Events abonnieren (inkl. Status-Prüfung: Erfolg vs. Abbruch/Fehler!)
+        testTamaroHandled = false;
+        if (testTamaroObserver) {
+          try { testTamaroObserver.disconnect(); } catch (e) {}
+          testTamaroObserver = null;
+        }
+        Object.keys(instance.events || {}).forEach((evtName) => {
+          if (evtName === 'paymentComplete' || evtName === 'paymentValidateError') return;
+          try {
+            instance.events[evtName]?.subscribe?.((evt) => {
+              addLog('EVENT', 'info', `Tamaro event "${evtName}": ${JSON.stringify(evt?.data || {})}`);
+            });
+          } catch (e) {}
+        });
         instance.events.paymentComplete.subscribe((event) => {
+          if (testTamaroHandled) return;
+          testTamaroHandled = true;
+          if (testTamaroObserver) {
+            try { testTamaroObserver.disconnect(); } catch (e) {}
+            testTamaroObserver = null;
+          }
           const data = event?.data || event || {};
           const rawStatus = [
             data.epmsPaymentStatus,
