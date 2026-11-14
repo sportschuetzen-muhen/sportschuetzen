@@ -950,9 +950,41 @@
           featureFlags: []
         });
 
-        // Events abonnieren (inkl. Echtzeit-Zahlungserfolg!)
-        instance.events.paymentComplete.subscribe(() => {
+        // Events abonnieren (inkl. Status-Prüfung: Erfolg vs. Abbruch/Fehler!)
+        instance.events.paymentComplete.subscribe((event) => {
+          const data = event?.data || event || {};
+          const rawStatus = [
+            data.epmsPaymentStatus,
+            data.paymentStatus,
+            data.status,
+            data.result,
+            event?.epmsPaymentStatus,
+            event?.status
+          ].find(val => typeof val === 'string' && val.trim().length > 0) || '';
+          const isCancelled = /cancel|abort|declin|fail|error|reject|expired/i.test(rawStatus);
+
+          addLog('ZAHLUNG', isCancelled ? 'info' : 'payment', `paymentComplete Payload (status="${rawStatus || 'none'}"): ${JSON.stringify(data)}`);
+
+          if (isCancelled) {
+            addLog('ZAHLUNG', 'info', `❌ TWINT-ZAHLUNG ABGEBROCHEN / FEHLGESCHLAGEN (${rawStatus}) – nichts verbucht!`);
+            if (rootEl) {
+              rootEl.innerHTML = `<div style="text-align:center; padding:32px 16px; color:#dc2626; font-size:15px;">
+                <div style="font-size:48px; margin-bottom:8px;">❌</div>
+                <strong>TWINT-Zahlung abgebrochen (${escapeHtml(rawStatus)})</strong><br>
+                <span style="color:#64748b; font-size:13px;">Es wurde nichts verbucht und kein Bon gedruckt.</span>
+              </div>`;
+            }
+            return;
+          }
+
           addLog('ZAHLUNG', 'payment', `✓ ECHTER ZAHLUNGSERFOLG (Tamaro paymentComplete)!`);
+          if (rootEl) {
+            rootEl.innerHTML = `<div style="text-align:center; padding:32px 16px; color:#059669; font-size:15px;">
+              <div style="font-size:48px; margin-bottom:8px;">✅</div>
+              <strong>TWINT-Zahlung erfolgreich (CHF ${amtVal.toFixed(2)})</strong><br>
+              <span style="color:#64748b; font-size:13px;">Status: ${escapeHtml(rawStatus || 'succeeded')}</span>
+            </div>`;
+          }
           handlePaymentSuccess('DIRECT_WIDGET');
         });
         instance.events.paymentValidateError.subscribe((evt) => {

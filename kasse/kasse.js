@@ -698,7 +698,104 @@ const KasseModule = (function () {
   // ── TWINT BEZAHLUNG (RAISENOW 1-KLICK-TURBO & AUTO-BONDRUCK) ──
   const tamaroConfigCache = {};
   let turboSubmitTimer = null;
+  let twintResultTimer = null;
   let activeTwintHandled = false;
+
+  /** Wertet das Tamaro paymentComplete-Event sicher aus (Erfolg vs. Abbruch/Fehler). */
+  function classifyTamaroPaymentEvent(event) {
+    const data = event?.data || event || {};
+    const rawStatus = [
+      data.epmsPaymentStatus,
+      data.paymentStatus,
+      data.status,
+      data.result,
+      event?.epmsPaymentStatus,
+      event?.status
+    ].find(val => typeof val === 'string' && val.trim().length > 0) || '';
+
+    const normalized = rawStatus.trim().toLowerCase();
+    if (/cancel|abort|declin|fail|error|reject|expired/.test(normalized)) {
+      return { outcome: 'cancelled', status: rawStatus };
+    }
+    return { outcome: 'succeeded', status: rawStatus || 'succeeded' };
+  }
+
+  /** Setzt das TWINT-Modal zurück auf die QR-Code-Ansicht. */
+  function resetTwintModalView({ qrWrapSelector, resultSelector, footerSelector }) {
+    if (twintResultTimer) {
+      clearTimeout(twintResultTimer);
+      twintResultTimer = null;
+    }
+    const qrWrap = document.querySelector(qrWrapSelector);
+    const resultEl = document.querySelector(resultSelector);
+    const footerEl = document.querySelector(footerSelector);
+    if (qrWrap) qrWrap.style.display = 'flex';
+    if (footerEl) footerEl.style.display = 'flex';
+    if (resultEl) {
+      resultEl.style.display = 'none';
+      resultEl.innerHTML = '';
+    }
+  }
+
+  /** Zeigt ein eindeutiges Erfolgs- oder Abbruch-Bild direkt im TWINT-Modal an. */
+  function renderTwintResultScreen({
+    qrWrapSelector,
+    resultSelector,
+    footerSelector,
+    type,
+    amount,
+    reference,
+    detail,
+    onRetry,
+    onClose
+  }) {
+    const qrWrap = document.querySelector(qrWrapSelector);
+    const resultEl = document.querySelector(resultSelector);
+    const footerEl = document.querySelector(footerSelector);
+
+    if (qrWrap) qrWrap.style.display = 'none';
+    if (footerEl) footerEl.style.display = 'none';
+    if (!resultEl) return;
+
+    const isSuccess = type === 'success';
+    const borderColor = isSuccess ? '#00bf63' : '#ef4444';
+    const bgColor = isSuccess ? 'rgba(0, 191, 99, 0.14)' : 'rgba(239, 68, 68, 0.14)';
+    const titleColor = isSuccess ? '#00bf63' : '#f87171';
+    const icon = isSuccess ? '✅' : '❌';
+    const title = isSuccess ? 'TWINT-Zahlung erfolgreich' : 'TWINT-Zahlung abgebrochen';
+
+    resultEl.innerHTML = `
+      <div style="background: ${bgColor}; border: 2px solid ${borderColor}; border-radius: 14px; padding: 24px 16px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;">
+        <div style="font-size: 56px; line-height: 1;">${icon}</div>
+        <div style="font-size: 20px; font-weight: 900; color: ${titleColor};">${title}</div>
+        <div style="font-size: 26px; font-weight: 900; font-family: monospace; color: var(--text-main);">${formatCHF(amount || 0)}</div>
+        ${reference ? `<div style="font-size: 14px; font-weight: 700; color: #93c5fd;">${escapeHtml(reference)}</div>` : ''}
+        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.4; max-width: 320px;">
+          ${escapeHtml(detail || '')}
+        </div>
+        <div style="display: flex; gap: 10px; width: 100%; margin-top: 10px; flex-wrap: wrap;">
+          ${!isSuccess ? `
+            <button type="button" data-twint-action="retry" class="btn-primary" style="flex: 1; min-height: 46px; font-weight: 800; background: #00bf63; border-color: #00bf63; color: #000;">
+              🔄 Neuen QR-Code laden
+            </button>
+          ` : ''}
+          <button type="button" data-twint-action="close" class="${isSuccess ? 'btn-primary' : 'btn-secondary'}" style="flex: 1; min-height: 46px; font-weight: 800; ${isSuccess ? 'background: #00bf63; border-color: #00bf63; color: #000;' : ''}">
+            ${isSuccess ? '✓ Weiter' : '← Zurück zur Kasse'}
+          </button>
+        </div>
+      </div>
+    `;
+    resultEl.style.display = 'block';
+
+    const retryBtn = resultEl.querySelector('[data-twint-action="retry"]');
+    const closeBtn = resultEl.querySelector('[data-twint-action="close"]');
+    if (retryBtn && typeof onRetry === 'function') {
+      retryBtn.addEventListener('click', () => onRetry());
+    }
+    if (closeBtn && typeof onClose === 'function') {
+      closeBtn.addEventListener('click', () => onClose());
+    }
+  }
 
   function extractShortId(urlOrId) {
     const m = String(urlOrId || '').trim().match(/([a-zA-Z0-9]{5})\/?(?:\?.*)?$/);
@@ -826,7 +923,7 @@ const KasseModule = (function () {
     }, 60);
   }
 
-  async function launchTamaroTwint({ rootSelector, amount, reference, onComplete }) {
+  async function launchTamaroTwint({ rootSelector, amount, reference, onComplete, onCancel }) {
     const rootEl = document.querySelector(rootSelector);
     if (!rootEl) return;
 
@@ -901,11 +998,17 @@ const KasseModule = (function () {
         featureFlags: []
       });
 
-      // Echtzeit-Zahlungsbestätigung abonnieren
-      instance.events.paymentComplete.subscribe(() => {
+      // Echtzeit-Zahlungsbestätigung abonnieren (Erfolg vs. Abbruch/Fehler sauber trennen)
+      instance.events.paymentComplete.subscribe((event) => {
         if (activeTwintHandled) return;
         activeTwintHandled = true;
-        if (typeof onComplete === 'function') onComplete();
+        const classified = classifyTamaroPaymentEvent(event);
+        console.log('[TWINT paymentComplete]', classified.outcome, classified.status, event);
+        if (classified.outcome === 'cancelled') {
+          if (typeof onCancel === 'function') onCancel(classified);
+          return;
+        }
+        if (typeof onComplete === 'function') onComplete(classified);
       });
 
       rootEl.innerHTML = '';
@@ -920,6 +1023,24 @@ const KasseModule = (function () {
         <span style="color:#475569;">Du kannst den Betrag bei Bedarf über euer Reserve-Schild kassieren und unten manuell bestätigen.</span>
       </div>`;
     }
+  }
+
+  function showMainTwintSuccess(total, displayOrderNumber) {
+    cleanupTamaroWidget();
+    renderTwintResultScreen({
+      qrWrapSelector: '#twint-modal-qr-wrap',
+      resultSelector: '#twint-modal-result-screen',
+      footerSelector: '#twint-modal-footer',
+      type: 'success',
+      amount: total,
+      reference: `Bestellung ${displayOrderNumber}`,
+      detail: 'Bon wurde verbucht und wird bei aktiviertem Sofortdruck gedruckt.',
+      onClose: closeTwintModal
+    });
+    if (twintResultTimer) clearTimeout(twintResultTimer);
+    twintResultTimer = setTimeout(() => {
+      closeTwintModal();
+    }, 2600);
   }
 
   function startTwintPayment() {
@@ -937,6 +1058,12 @@ const KasseModule = (function () {
     if (amtEl) amtEl.textContent = formatCHF(total);
     if (refEl) refEl.textContent = `Bestellung ${displayOrderNumber} (${cart.length} Positionen)`;
 
+    resetTwintModalView({
+      qrWrapSelector: '#twint-modal-qr-wrap',
+      resultSelector: '#twint-modal-result-screen',
+      footerSelector: '#twint-modal-footer'
+    });
+
     const modal = document.getElementById('twint-payment-modal');
     if (modal) modal.classList.add('active');
 
@@ -945,24 +1072,50 @@ const KasseModule = (function () {
       amount: total,
       reference: displayOrderNumber,
       onComplete: async () => {
-        showToast(`✓ TWINT-Zahlung bestätigt (${formatCHF(total)}) – drucke Bon...`);
-        closeTwintModal();
         await completePayment('twint');
+        showMainTwintSuccess(total, displayOrderNumber);
+      },
+      onCancel: () => {
+        cleanupTamaroWidget();
+        showToast('TWINT-Zahlung abgebrochen – nichts verbucht.');
+        renderTwintResultScreen({
+          qrWrapSelector: '#twint-modal-qr-wrap',
+          resultSelector: '#twint-modal-result-screen',
+          footerSelector: '#twint-modal-footer',
+          type: 'cancelled',
+          amount: total,
+          reference: `Bestellung ${displayOrderNumber}`,
+          detail: 'Die Zahlung wurde in TWINT abgebrochen. Es wurde nichts verbucht – dein Warenkorb bleibt erhalten.',
+          onRetry: startTwintPayment,
+          onClose: closeTwintModal
+        });
       }
     });
   }
 
   function closeTwintModal() {
+    if (twintResultTimer) {
+      clearTimeout(twintResultTimer);
+      twintResultTimer = null;
+    }
     const modal = document.getElementById('twint-payment-modal');
     if (modal) modal.classList.remove('active');
     cleanupTamaroWidget();
+    resetTwintModalView({
+      qrWrapSelector: '#twint-modal-qr-wrap',
+      resultSelector: '#twint-modal-result-screen',
+      footerSelector: '#twint-modal-footer'
+    });
   }
 
   async function confirmTwintPayment() {
     if (activeTwintHandled) return;
     activeTwintHandled = true;
-    closeTwintModal();
+    const total = cart.reduce((sum, it) => sum + (it.price * it.qty), 0);
+    const seq = printerSettings.orderSequence || 1;
+    const displayOrderNumber = '#' + String(seq).padStart(2, '0');
     await completePayment('twint');
+    showMainTwintSuccess(total, displayOrderNumber);
   }
 
   // 1-Klick-Ausdruck des letzten getätigten Bons
@@ -1454,7 +1607,9 @@ const KasseModule = (function () {
     closeTwintModal,
     confirmTwintPayment,
     launchTamaroTwint,
-    cleanupTamaroWidget
+    cleanupTamaroWidget,
+    renderTwintResultScreen,
+    resetTwintModalView
   };
 })();
 

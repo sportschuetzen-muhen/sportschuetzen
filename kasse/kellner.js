@@ -311,6 +311,30 @@ const KellnerHandheld = (function () {
     }
   }
 
+  let kellnerTwintTimer = null;
+
+  function showKellnerTwintSuccess(total) {
+    if (typeof KasseModule === 'undefined' || typeof KasseModule.renderTwintResultScreen !== 'function') {
+      closeTwintModal();
+      return;
+    }
+    KasseModule.cleanupTamaroWidget();
+    KasseModule.renderTwintResultScreen({
+      qrWrapSelector: '#kellner-twint-qr-wrap',
+      resultSelector: '#kellner-twint-result-screen',
+      footerSelector: '#kellner-twint-footer',
+      type: 'success',
+      amount: total,
+      reference: selectedTable,
+      detail: 'Tisch-Bon verbucht und bei aktiviertem Sofortdruck gedruckt.',
+      onClose: closeTwintModal
+    });
+    if (kellnerTwintTimer) clearTimeout(kellnerTwintTimer);
+    kellnerTwintTimer = setTimeout(() => {
+      closeTwintModal();
+    }, 2600);
+  }
+
   function openTwintModal(total) {
     const modal = document.getElementById('kellner-twint-modal');
     if (!modal) {
@@ -318,11 +342,24 @@ const KellnerHandheld = (function () {
       return;
     }
 
+    if (kellnerTwintTimer) {
+      clearTimeout(kellnerTwintTimer);
+      kellnerTwintTimer = null;
+    }
+
     const tableNameEl = document.getElementById('kellner-twint-table-name');
     if (tableNameEl) tableNameEl.textContent = selectedTable;
 
     const totalEl = document.getElementById('kellner-twint-total-display');
     if (totalEl) totalEl.textContent = formatCHF(total);
+
+    if (typeof KasseModule !== 'undefined' && typeof KasseModule.resetTwintModalView === 'function') {
+      KasseModule.resetTwintModalView({
+        qrWrapSelector: '#kellner-twint-qr-wrap',
+        resultSelector: '#kellner-twint-result-screen',
+        footerSelector: '#kellner-twint-footer'
+      });
+    }
 
     modal.classList.add('active');
 
@@ -332,25 +369,55 @@ const KellnerHandheld = (function () {
         amount: total,
         reference: selectedTable,
         onComplete: () => {
-          closeTwintModal();
           executeCheckout('twint', total, 0);
+          showKellnerTwintSuccess(total);
+        },
+        onCancel: () => {
+          KasseModule.cleanupTamaroWidget();
+          if (typeof KasseModule.showToast === 'function') {
+            KasseModule.showToast('TWINT-Zahlung abgebrochen – nichts verbucht.');
+          }
+          if (typeof KasseModule.renderTwintResultScreen === 'function') {
+            KasseModule.renderTwintResultScreen({
+              qrWrapSelector: '#kellner-twint-qr-wrap',
+              resultSelector: '#kellner-twint-result-screen',
+              footerSelector: '#kellner-twint-footer',
+              type: 'cancelled',
+              amount: total,
+              reference: selectedTable,
+              detail: 'Die Zahlung wurde in TWINT abgebrochen. Es wurde nichts verbucht – deine Tischbestellung bleibt erhalten.',
+              onRetry: () => openTwintModal(total),
+              onClose: closeTwintModal
+            });
+          }
         }
       });
     }
   }
 
   function closeTwintModal() {
+    if (kellnerTwintTimer) {
+      clearTimeout(kellnerTwintTimer);
+      kellnerTwintTimer = null;
+    }
     const modal = document.getElementById('kellner-twint-modal');
     if (modal) modal.classList.remove('active');
     if (typeof KasseModule !== 'undefined' && typeof KasseModule.cleanupTamaroWidget === 'function') {
       KasseModule.cleanupTamaroWidget();
     }
+    if (typeof KasseModule !== 'undefined' && typeof KasseModule.resetTwintModalView === 'function') {
+      KasseModule.resetTwintModalView({
+        qrWrapSelector: '#kellner-twint-qr-wrap',
+        resultSelector: '#kellner-twint-result-screen',
+        footerSelector: '#kellner-twint-footer'
+      });
+    }
   }
 
   function confirmTwintPayment() {
-    closeTwintModal();
     const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
     executeCheckout('twint', total, 0);
+    showKellnerTwintSuccess(total);
   }
 
   function openCashModal(total) {
