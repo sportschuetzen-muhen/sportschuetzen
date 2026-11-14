@@ -725,6 +725,33 @@ Deno.serve(async (req: Request) => {
 
       if (delPhotosErr) throw delPhotosErr;
 
+      // b2) Duplikat-Check: Prüfen, welche Medien bereits in anderen publizierten Alben vorkommen
+      let duplicateCount = 0;
+      let duplicateAlbums: string[] = [];
+      if (formattedPhotos.length > 0) {
+        const assetIds = formattedPhotos.map((p: any) => p.id);
+        const dupAssetSet = new Set<string>();
+        const dupAlbumSet = new Set<string>();
+        const checkChunkSize = 100;
+        for (let i = 0; i < assetIds.length; i += checkChunkSize) {
+          const idChunk = assetIds.slice(i, i + checkChunkSize);
+          const { data: existingDups, error: dupCheckErr } = await supabase
+            .from("gallery_photos")
+            .select("id, album")
+            .in("id", idChunk)
+            .neq("album_id", albumId);
+
+          if (!dupCheckErr && Array.isArray(existingDups)) {
+            existingDups.forEach((row: any) => {
+              if (row.id) dupAssetSet.add(row.id);
+              if (row.album) dupAlbumSet.add(row.album);
+            });
+          }
+        }
+        duplicateCount = dupAssetSet.size;
+        duplicateAlbums = Array.from(dupAlbumSet);
+      }
+
       // c) Neue Fotos im Batch einfügen
       if (formattedPhotos.length > 0) {
         // Chunked in Schritten von 100 Datensätzen
@@ -743,7 +770,9 @@ Deno.serve(async (req: Request) => {
         count: formattedPhotos.length,
         album: effectiveAlbumName,
         visibility: effectiveVisibility,
-        category: effectiveCategory
+        category: effectiveCategory,
+        duplicateCount,
+        duplicateAlbums
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });

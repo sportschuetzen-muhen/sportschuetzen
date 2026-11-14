@@ -128,7 +128,7 @@ Für das Sichten und Einsortieren von Mitglieder-Fotos steht im Vorstandsportal 
 4. **1-Klick-Auslösung:** Ein Klick auf **«Album jetzt synchronisieren & publizieren»** startet den automatischen API-Prozess:
    * Edge Function generiert bei Bedarf vollautomatisch den Immich Share-Link per API.
    * Sämtliche Assets werden bereinigt (Titel, EXIF, Personenerkennung, Tags).
-   * Schreibt die Daten unmittelbar in `public.gallery_albums` und `public.gallery_photos` (Single Source of Truth).
+   * Schreibt die Daten unmittelbar in `public.gallery_albums` und `public.gallery_photos` (Single Source of Truth). Durch den zusammengesetzten Primärschlüssel `(album_id, id)` in `public.gallery_photos` kann dasselbe Immich-Asset problemlos in mehreren publizierten Alben gleichzeitig vorkommen; existieren Medien bereits in anderen Alben, liefert `immich-sync` zusätzlich einen Duplikat-Hinweis (`duplicateCount`, `duplicateAlbums`) ans Frontend.
    * Das Album ist sofort auf der Website und im Mitgliederbereich live.
 
 ### 6.3 Automatische Titulierung & Personenerkennung (Namens-Mapping)

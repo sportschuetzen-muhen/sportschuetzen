@@ -1192,6 +1192,12 @@ async function triggerAlbumSync() {
         const visLabel = (visibility === 'public') ? 'Öffentlich und Mitglieder' : 'Nur Mitglieder';
         if (typeof showToast === 'function') {
             showToast(`Album «${data.album}» (${data.count} Medien) erfolgreich synchronisiert! (${visLabel})`, 'success');
+            if (data.duplicateCount > 0) {
+                const albumList = Array.isArray(data.duplicateAlbums) && data.duplicateAlbums.length > 0
+                    ? ` (${data.duplicateAlbums.join(', ')})`
+                    : '';
+                showToast(`Hinweis: ${data.duplicateCount} Foto(s) aus diesem Album sind bereits in anderen publizierten Alben vorhanden${albumList}.`, 'warning');
+            }
         } else {
             alert(`Album «${data.album}» (${data.count} Medien) erfolgreich synchronisiert!`);
         }
