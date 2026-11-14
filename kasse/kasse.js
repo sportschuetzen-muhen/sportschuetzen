@@ -699,17 +699,22 @@ const KasseModule = (function () {
   const tamaroConfigCache = {};
   let turboSubmitTimer = null;
   let twintResultTimer = null;
-  let tamaroCancelObserver = null;
   let activeTwintHandled = false;
 
-  /** Wertet das Tamaro paymentComplete-Event sicher aus (Erfolg vs. Abbruch/Fehler). */
+  /** Wertet das Tamaro paymentComplete-/EPMS-Event sicher aus (Erfolg vs. Abbruch/Fehler). */
   function classifyTamaroPaymentEvent(event) {
     const data = event?.data || event || {};
     const rawStatus = [
       data.epmsPaymentStatus,
+      data.epms_payment_status,
       data.paymentStatus,
+      data.payment_status,
       data.status,
+      data.state,
       data.result,
+      data.payment?.epmsPaymentStatus,
+      data.payment?.epms_payment_status,
+      data.payment?.status,
       event?.epmsPaymentStatus,
       event?.status
     ].find(val => typeof val === 'string' && val.trim().length > 0) || '';
@@ -878,10 +883,6 @@ const KasseModule = (function () {
       clearInterval(turboSubmitTimer);
       turboSubmitTimer = null;
     }
-    if (tamaroCancelObserver) {
-      try { tamaroCancelObserver.disconnect(); } catch (e) {}
-      tamaroCancelObserver = null;
-    }
     try {
       if (window.rnw?.tamaro?.removeWidget) {
         window.rnw.tamaro.removeWidget();
@@ -897,54 +898,7 @@ const KasseModule = (function () {
       || Array.from(rootEl.querySelectorAll('button')).find(b => /einkassieren|bezahlen|weiter|pay|charge/i.test(b.textContent || ''));
   }
 
-  /** Erkennt, wenn Tamaro nach Abbruch in der TWINT-App ohne paymentComplete zurück ins Formular springt. */
-  function watchTamaroReturnToForm(rootEl, onCancel) {
-    if (tamaroCancelObserver) {
-      try { tamaroCancelObserver.disconnect(); } catch (e) {}
-      tamaroCancelObserver = null;
-    }
-    if (!rootEl || typeof MutationObserver === 'undefined') return;
-
-    const clickedAt = Date.now();
-    let qrStageEntered = false;
-
-    const evaluateState = () => {
-      if (activeTwintHandled) {
-        if (tamaroCancelObserver) {
-          tamaroCancelObserver.disconnect();
-          tamaroCancelObserver = null;
-        }
-        return;
-      }
-
-      const submitBtn = findTamaroSubmitButton(rootEl);
-      const isSubmitVisible = Boolean(submitBtn && submitBtn.offsetParent !== null);
-
-      if (!isSubmitVisible) {
-        qrStageEntered = true;
-        return;
-      }
-
-      if (qrStageEntered && (Date.now() - clickedAt > 800) && !submitBtn.disabled) {
-        activeTwintHandled = true;
-        if (tamaroCancelObserver) {
-          tamaroCancelObserver.disconnect();
-          tamaroCancelObserver = null;
-        }
-        console.log('[TWINT Cancel] Tamaro ist nach QR-Anzeige ohne paymentComplete ins Formular zurückgekehrt.');
-        if (typeof onCancel === 'function') {
-          onCancel({ outcome: 'cancelled', status: 'returned_to_form' });
-        }
-      }
-    };
-
-    tamaroCancelObserver = new MutationObserver(evaluateState);
-    tamaroCancelObserver.observe(rootEl, { childList: true, subtree: true, attributes: true });
-    setTimeout(evaluateState, 400);
-    setTimeout(evaluateState, 1200);
-  }
-
-  function autoTriggerEinkassieren(rootEl, expectedAmt, onCancel) {
+  function autoTriggerEinkassieren(rootEl, expectedAmt) {
     if (turboSubmitTimer) clearInterval(turboSubmitTimer);
     const start = Date.now();
     let amountConfirmedAt = 0;
@@ -975,7 +929,6 @@ const KasseModule = (function () {
       if (btn && !btn.disabled && btn.offsetParent !== null) {
         clearInterval(turboSubmitTimer);
         turboSubmitTimer = null;
-        watchTamaroReturnToForm(rootEl, onCancel);
         btn.click();
       }
     }, 60);
@@ -1056,23 +1009,54 @@ const KasseModule = (function () {
         featureFlags: []
       });
 
-      // Echtzeit-Zahlungsbestätigung abonnieren (Erfolg vs. Abbruch/Fehler sauber trennen)
-      instance.events.paymentComplete.subscribe((event) => {
+      const handleCancel = (reason, evt) => {
         if (activeTwintHandled) return;
         activeTwintHandled = true;
+        console.log('[TWINT Cancel]', reason, evt);
+        if (typeof onCancel === 'function') {
+          onCancel({ outcome: 'cancelled', status: reason, event: evt });
+        }
+      };
+
+      // Echtzeit-Zahlungsbestätigung & EPMS-Abbruch-Events abonnieren
+      instance.events.paymentComplete?.subscribe?.((event) => {
+        if (activeTwintHandled) return;
         const classified = classifyTamaroPaymentEvent(event);
         console.log('[TWINT paymentComplete]', classified.outcome, classified.status, event);
         if (classified.outcome === 'cancelled') {
-          if (typeof onCancel === 'function') onCancel(classified);
+          handleCancel(classified.status, event);
           return;
         }
+        activeTwintHandled = true;
         if (typeof onComplete === 'function') onComplete(classified);
+      });
+
+      instance.events.epmsPaymentStatusPoll?.subscribe?.((event) => {
+        const classified = classifyTamaroPaymentEvent(event);
+        if (classified.outcome === 'cancelled') {
+          handleCancel(classified.status, event);
+        }
+      });
+
+      instance.events.sendEpmsPaymentEnd?.subscribe?.((event) => {
+        const classified = classifyTamaroPaymentEvent(event);
+        if (classified.outcome === 'cancelled') {
+          handleCancel(classified.status, event);
+        }
+      });
+
+      instance.events.sendEpmsPaymentError?.subscribe?.((event) => {
+        handleCancel('send_epms_payment_error', event);
+      });
+
+      instance.events.retryPayment?.subscribe?.((event) => {
+        handleCancel('retry_payment', event);
       });
 
       rootEl.innerHTML = '';
       await window.rnw.tamaro.renderWidget(instance, rootSelector);
       instance.paymentForm.setAmount(amount);
-      autoTriggerEinkassieren(rootEl, amount, onCancel);
+      autoTriggerEinkassieren(rootEl, amount);
     } catch (err) {
       console.warn('[TWINT Turbo Fehler]', err);
       rootEl.innerHTML = `<div style="text-align:center; padding:28px 16px; color:#b91c1c; font-size:13px; line-height:1.5;">
