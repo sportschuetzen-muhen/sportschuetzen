@@ -2035,7 +2035,8 @@ async function checkUserPendenzenBadge() {
 
     // Für reguläre Mitglieder: Persönliche Pendenzen (RSVPs + offene Rechnungen)
     const memberBadge = document.getElementById('member-pendenzen-badge');
-    const memberTotal = (rpcData.member_rsvps || 0) + (rpcData.member_invoices || 0);
+    const memberInvoicesCount = rpcData.member_invoices || 0;
+    const memberTotal = (rpcData.member_rsvps || 0) + memberInvoicesCount;
     if (memberBadge) {
         if (!isBoard && memberTotal > 0) {
             memberBadge.textContent = memberTotal > 99 ? '99+' : String(memberTotal);
@@ -2045,10 +2046,93 @@ async function checkUserPendenzenBadge() {
         }
     }
 
+    // Offene persönliche Rechnungen (>= 45 Tage ab Versand) auf der Startseite anzeigen
+    if (memberInvoicesCount > 0 && lizenz) {
+        loadAndRenderOpenInvoicesHero(lizenz);
+    } else {
+        const heroInv = document.getElementById('hero-open-invoices');
+        if (heroInv) heroInv.innerHTML = '';
+    }
+
     // Gesamter App-Badge auf dem iOS/Android Homescreen
     // Setzt sich aus allen persönlichen Pendenzen (RSVPs + Rechnungen) plus allfälligen Vorstands-Pendenzen zusammen
     const totalAppBadge = (rpcData.total || 0) + (isBoard ? galCount : 0);
     updateAppIconBadge(totalAppBadge);
+}
+
+async function loadAndRenderOpenInvoicesHero(lizenz) {
+    const container = document.getElementById('hero-open-invoices');
+    if (!container) return;
+
+    try {
+        const res = await fetch(`${SUPABASE_REST_URL}/rpc/get_member_open_invoices`, {
+            method: 'POST',
+            headers: {
+                ...getSupabaseHeaders(),
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                p_lizenz: lizenz,
+                p_min_age_days: 45
+            })
+        });
+        if (!res.ok) return;
+        const invoices = await res.json();
+        if (!Array.isArray(invoices) || invoices.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        const formatChDate = (val) => {
+            if (!val) return '';
+            const d = new Date(val);
+            if (isNaN(d.getTime())) return '';
+            const dd = String(d.getDate()).padStart(2, '0');
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const yyyy = d.getFullYear();
+            return `${dd}.${mm}.${yyyy}`;
+        };
+
+        const cardsHtml = invoices.map((inv) => {
+            const amountNum = Number(inv.open_amount ?? inv.total_amount ?? 0);
+            const amountStr = `CHF ${amountNum.toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            const sentStr = formatChDate(inv.send_date);
+            const dueStr = formatChDate(inv.due_date);
+            const titleLabel = [inv.type, inv.year].filter(Boolean).join(' ');
+            let pdfBtnHtml = '';
+            if (inv.pdf_url) {
+                const sep = inv.pdf_url.includes('?') ? '&' : '?';
+                const pdfHref = `${inv.pdf_url}${sep}t=${Date.now()}`;
+                pdfBtnHtml = `
+                    <a href="${escapeHtml(pdfHref)}" target="_blank" rel="noopener noreferrer"
+                       style="display:inline-flex; align-items:center; justify-content:center; gap:6px; margin-top:10px; padding:8px 14px; background:#dc2626; color:#ffffff; border-radius:8px; font-size:0.84rem; font-weight:600; text-decoration:none;">
+                        <span>📄</span> <span>Rechnung öffnen (PDF)</span>
+                    </a>`;
+            }
+
+            return `
+                <div style="margin:0 auto 14px auto; max-width:420px; padding:14px 16px; background:#fef2f2; border:1px solid #fecaca; border-left:4px solid #dc2626; border-radius:12px; text-align:left; box-shadow:0 2px 6px rgba(220,38,38,0.08);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:4px;">
+                        <span style="font-weight:700; color:#991b1b; font-size:0.9rem;">💳 Offene Rechnung</span>
+                        <span style="font-weight:700; color:#991b1b; font-size:0.95rem;">${escapeHtml(amountStr)}</span>
+                    </div>
+                    <div style="font-size:0.85rem; color:#7f1d1d; font-weight:600;">
+                        ${escapeHtml(titleLabel)} (${escapeHtml(inv.id)})
+                    </div>
+                    <div style="font-size:0.78rem; color:#991b1b; margin-top:3px; opacity:0.9;">
+                        ${sentStr ? `Versendet am ${escapeHtml(sentStr)}` : ''}${sentStr && dueStr ? ' · ' : ''}${dueStr ? `Fällig am ${escapeHtml(dueStr)}` : ''}
+                    </div>
+                    <div style="font-size:0.8rem; color:#7f1d1d; margin-top:6px; line-height:1.35;">
+                        Diese Rechnung ist noch offen. Falls du sie bereits bezahlt hast, kann es ein paar Tage dauern, bis der Zahlungseingang verbucht ist.
+                    </div>
+                    ${pdfBtnHtml}
+                </div>`;
+        }).join('');
+
+        container.innerHTML = cardsHtml;
+    } catch (_) {
+        // Stille Unterdrückung bei Netzwerkproblemen
+    }
 }
 window.checkUserPendenzenBadge = checkUserPendenzenBadge;
 window.checkBoardPendenzenBadge = checkUserPendenzenBadge; // Rückwärtskompatibilität
