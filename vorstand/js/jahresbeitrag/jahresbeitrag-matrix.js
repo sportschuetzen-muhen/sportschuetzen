@@ -7,6 +7,7 @@ let _jbMatrixSearch = '';
 let _jbMatrixCategoryFilter = new Set(); // leer = Alle Kategorien aktiv
 let _jbMatrixStatusFilter = new Set();   // leer = Alle Status aktiv
 let _jbMatrixSelected = new Set();
+let _jbMatrixKnownPns = new Set();
 let _jbMatrixInitializedYear = null;
 let _jbMatrixSortCol = 'name';
 let _jbMatrixSortAsc = true;
@@ -129,161 +130,8 @@ function jbMatrixUpdateStatusDropdownUI() {
   }
 }
 
-// ============================================================
-// HILFSFUNKTIONEN: MULTI-KATEGORIE EINES MITGLIEDS (FÜR FILTER & HOVER)
-// ============================================================
-function jbGetMemberCategories(m, r) {
-  const cats = [];
-  const addCat = (c) => {
-    if (c && !cats.includes(c)) cats.push(c);
-  };
-
-  const positions = (r && r.id && _jbPositionsCache[r.id]) || [];
-  const posKeys = new Set(positions.map(p => String(p.source_field || p.sourcefield || p.key || '').trim().toUpperCase()));
-
-  // 1. Ehrenmitglied
-  if (m?.is_honorary || m?.IsHonoraryMember == 1 || m?._istEhren || posKeys.has('JB003') || posKeys.has('RA003')) {
-    addCat('Ehrenmitglied');
-  }
-
-  // 2. Vorstand
-  if (m?._istVorstand || (m?._aktiveFunktionenCount > 0) || posKeys.has('JB004')) {
-    addCat('Vorstand');
-  }
-
-  // 3. Junior (U21)
-  const age = m?.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
-  if ((age > 0 && age <= 20) || posKeys.has('JB006') || posKeys.has('JB007') || posKeys.has('KOSTENUEBERNAHME_JUGEND')) {
-    addCat('Junior');
-  }
-
-  // 4. Veteran (60+)
-  if (age >= 60) {
-    addCat('Veteran');
-  }
-
-  // 5. Passiv
-  if (m?.is_passive || m?.IsPassive == 1 || m?._istPassiv || posKeys.has('JB005')) {
-    addCat('Passiv');
-  }
-
-  // 6. Lizenzen (Disziplinen & A/B)
-  const lics = [
-    ...(m?._aktiveLizenzen || []),
-    ...(m?._lizenzen || [])
-  ];
-  const seenLics = new Set();
-
-  lics.forEach(lic => {
-    const rawCat = String(lic?.MembershipCategory || lic?.membership_category || '').trim();
-    if (!rawCat || seenLics.has(rawCat)) return;
-    seenLics.add(rawCat);
-
-    const isB = /aktiv.*b/i.test(rawCat) || lic?.LicenseCategory === 'B';
-    const isAuflage = /auflage/i.test(rawCat);
-    const is50m = /50m/i.test(rawCat);
-    const is10m = /10m/i.test(rawCat);
-
-    if (is50m && isAuflage) {
-      addCat(`G50m Aufl. (${isB ? 'B' : 'A'})`);
-    } else if (is50m) {
-      addCat(`G50m (${isB ? 'B' : 'A'})`);
-    } else if (is10m && isAuflage) {
-      addCat(`G10m Aufl. (${isB ? 'B' : 'A'})`);
-    } else if (is10m) {
-      addCat(`G10m (${isB ? 'B' : 'A'})`);
-    } else {
-      addCat(rawCat.replace('Aktiv-', 'Aktiv '));
-    }
-  });
-
-  // Falls in _kategorien noch Strings vorliegen
-  if (Array.isArray(m?._kategorien)) {
-    m._kategorien.forEach(k => {
-      const s = String(k || '').trim();
-      if (!s || seenLics.has(s)) return;
-      seenLics.add(s);
-      if (/50m/i.test(s)) addCat(/b/i.test(s) ? 'G50m (B)' : 'G50m (A)');
-      else if (/10m/i.test(s)) addCat(/b/i.test(s) ? 'G10m (B)' : 'G10m (A)');
-      else addCat(s.replace('Aktiv-', 'Aktiv '));
-    });
-  }
-
-  // Position-basierte Ergänzungen (falls keine Lizenzen im Mitglied gepflegt sind)
-  if (posKeys.has('JB001') && !cats.some(c => c.includes('G50m') || c.includes('Aktiv A'))) {
-    addCat('Aktiv A');
-  }
-  if (posKeys.has('JB002') && !cats.some(c => c.includes('G50m') || c.includes('Aktiv B'))) {
-    addCat('Aktiv B');
-  }
-  if (posKeys.has('LI001') && !cats.some(c => c.includes('G50m'))) {
-    addCat('G50m (A)');
-  }
-  if (posKeys.has('LI002') && !cats.some(c => c.includes('G10m'))) {
-    addCat('G10m (A)');
-  }
-
-  // Fallback
-  if (cats.length === 0) {
-    const fb = (r?._kategorie || m?._kategorie || 'Aktiv').replace('Aktiv-', 'Aktiv ');
-    addCat(fb);
-  }
-
-  return cats;
-}
-
-function jbGetMemberCategoryLabel(m, r) {
-  const cats = jbGetMemberCategories(m, r);
-  return cats.join(', ');
-}
-
-function jbMemberMatchesCategory(m, r, filterVal) {
-  if (!filterVal) return true;
-  const cats = jbGetMemberCategories(m, r);
-  const target = filterVal.toLowerCase().trim();
-
-  return cats.some(c => {
-    const cLow = c.toLowerCase().trim();
-    if (cLow === target) return true;
-    if (target === 'aktiv a') {
-      return cLow.includes('(a)') || cLow.includes('aktiv a') || cLow.includes('aktiv-a');
-    }
-    if (target === 'aktiv b') {
-      return cLow.includes('(b)') || cLow.includes('aktiv b') || cLow.includes('aktiv-b');
-    }
-    if (target === 'g50m (a)') {
-      return cLow.includes('g50m') && cLow.includes('(a)') && !cLow.includes('aufl');
-    }
-    if (target === 'g50m (b)') {
-      return cLow.includes('g50m') && cLow.includes('(b)');
-    }
-    if (target === 'g10m (a)') {
-      return cLow.includes('g10m') && cLow.includes('(a)') && !cLow.includes('aufl');
-    }
-    if (target === 'g10m (b)') {
-      return cLow.includes('g10m') && cLow.includes('(b)');
-    }
-    if (target.includes('aufl')) {
-      return cLow.includes('aufl');
-    }
-    if (target === 'ehrenmitglied') {
-      return cLow.includes('ehren');
-    }
-    if (target === 'junior') {
-      return cLow.includes('junior') || cLow.includes('schüler');
-    }
-    if (target === 'veteran') {
-      return cLow.includes('veteran');
-    }
-    if (target === 'passiv') {
-      return cLow.includes('passiv');
-    }
-    if (target === 'vorstand') {
-      return cLow.includes('vorstand');
-    }
-    return cLow.includes(target);
-  });
-}
+// Kategorien-Logik (jbGetMemberCategories, jbGetMemberCategoryLabel, jbMemberMatchesCategory)
+// wird zentral aus jahresbeitrag-core.js bezogen (keine lokale Überschreibung).
 
 // ============================================================
 // HAUPT-RENDERER DES MATRIX-TABS
@@ -635,11 +483,21 @@ function renderMatrixTab(canEdit, years) {
 // ============================================================
 function jbInitMatrixTab() {
   const currentYear = Number(_jbYear);
+  const currentPns = (_jbData || []).map(r => String(r.PersonNumber).trim());
 
   // Standardmässig beim ersten Laden des Jahres: ALLE Mitglieder in die Pickliste aufnehmen
   if (_jbMatrixInitializedYear !== currentYear) {
-    _jbMatrixSelected = new Set((_jbData || []).map(r => String(r.PersonNumber).trim()));
+    _jbMatrixSelected = new Set(currentPns);
+    _jbMatrixKnownPns = new Set(currentPns);
     _jbMatrixInitializedYear = currentYear;
+  } else {
+    // Neu hinzugekommene Mitglieder nach späteren Berechnungen automatisch mit selektieren
+    currentPns.forEach(pn => {
+      if (!_jbMatrixKnownPns.has(pn)) {
+        _jbMatrixKnownPns.add(pn);
+        _jbMatrixSelected.add(pn);
+      }
+    });
   }
 
   jbMatrixUpdateCategoryDropdownUI();
@@ -1119,7 +977,9 @@ function jbCalculateMatrixTotals(rowsData, columns) {
   }
 
   // Sichtbarkeit der Spalten auf neu gerenderten Footer anwenden
-  if (window._jbMatrixColToggle && typeof window._jbMatrixColToggle.apply === 'function') {
+  if (window._jbMatrixTableController?.columnToggle && typeof window._jbMatrixTableController.columnToggle.apply === 'function') {
+    window._jbMatrixTableController.columnToggle.apply();
+  } else if (window._jbMatrixColToggle && typeof window._jbMatrixColToggle.apply === 'function') {
     window._jbMatrixColToggle.apply();
   }
 
@@ -1258,9 +1118,11 @@ function jbMatrixSort(col) {
 function jbExportMatrixExcel() {
   if (typeof XLSX === 'undefined') {
     if (window.UIConfirmKit) {
-      UIConfirmKit.alert('Bibliothek fehlt', 'Die SheetJS (XLSX) Export-Bibliothek ist noch nicht geladen.', 'warning');
-    } else {
-      alert("Fehler: SheetJS (XLSX) Bibliothek ist nicht geladen.");
+      UIConfirmKit.alert({
+        title: 'Bibliothek fehlt',
+        message: 'Die SheetJS (XLSX) Export-Bibliothek ist noch nicht geladen.',
+        type: 'warning'
+      });
     }
     return;
   }
@@ -1296,9 +1158,11 @@ function jbExportMatrixExcel() {
 
   if (rowsData.length === 0) {
     if (window.UIConfirmKit) {
-      UIConfirmKit.alert('Keine Daten', 'Es sind keine passenden Daten für den Excel-Export vorhanden.', 'warning');
-    } else {
-      alert("Keine Daten für den Excel-Export vorhanden.");
+      UIConfirmKit.alert({
+        title: 'Keine Daten',
+        message: 'Es sind keine passenden Daten für den Excel-Export vorhanden.',
+        type: 'warning'
+      });
     }
     return;
   }
@@ -1413,12 +1277,14 @@ function jbExportMatrixExcel() {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, `Beitragsmatrix_${_jbYear}`);
 
-  // Spaltenbreiten optimieren
+  // Spaltenbreiten optimieren (exakt passend zu exportColumns und isStatusVisible / isGesamtVisible)
   const colWidths = [
-    { wch: 12 }, { wch: 15 }, { wch: 18 }, { wch: 18 }, { wch: 15 }, { wch: 10 }, { wch: 12 }, { wch: 15 }, { wch: 15 }
+    { wch: 12 }, { wch: 15 }, { wch: 18 }, { wch: 18 }, { wch: 15 }
   ];
-  columns.forEach(() => colWidths.push({ wch: 14 }));
-  colWidths.push({ wch: 14 });
+  if (isStatusVisible) colWidths.push({ wch: 14 });
+  colWidths.push({ wch: 12 }, { wch: 15 }, { wch: 15 });
+  exportColumns.forEach(() => colWidths.push({ wch: 14 }));
+  if (isGesamtVisible) colWidths.push({ wch: 14 });
   ws['!cols'] = colWidths;
 
   const fileName = `Sportschuetzen_Muhen_Beitragsmatrix_${_jbYear}_${new Date().toISOString().split('T')[0]}.xlsx`;

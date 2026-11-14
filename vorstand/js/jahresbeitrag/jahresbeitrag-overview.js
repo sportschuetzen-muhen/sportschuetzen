@@ -433,7 +433,7 @@ function jbEnsureOverviewModals() {
           </div>
           <div class="modal-footer bg-light border-top px-4 py-3 rounded-bottom-4 d-flex justify-content-between">
             <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Abbrechen</button>
-            <button type="button" class="btn btn-success fw-bold px-4 shadow-sm" onclick="jbSaveZahlung()">
+            <button type="button" id="jbZahlungSaveBtn" class="btn btn-success fw-bold px-4 shadow-sm" onclick="jbSaveZahlung()">
               <i class="fas fa-check me-1"></i> Zahlung speichern
             </button>
           </div>
@@ -501,7 +501,8 @@ function jbRenderRows(data) {
       katHtml = typeof mglKatBadge === 'function' ? mglKatBadge(fallbackKat) : `<span class="badge bg-secondary">${fallbackKat || '–'}</span>`;
     }
     
-    const age = m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+    const refYear = Number((typeof _jbYear !== 'undefined' && _jbYear) ? _jbYear : new Date().getFullYear());
+    const age = m.BirthDate ? (refYear - new Date(m.BirthDate).getFullYear()) : 0;
     const isJunior = age > 0 && age <= 20;
     if (isJunior && !katHtml.toLowerCase().includes('junior') && !katHtml.toLowerCase().includes('schüler')) {
       if (typeof mglKatBadge === 'function') {
@@ -545,7 +546,8 @@ function jbRenderRows(data) {
     const rowBg = isPaid ? 'table-light text-muted' : (effStatus === 'befreit' ? 'table-light text-muted' : '');
     const rowStyle = (isPaid || effStatus === 'befreit') ? 'style="opacity: 0.85;"' : '';
 
-    const safeName = (name || '').replace(/'/g, "\\'");
+    const safeName = typeof escapeJs === 'function' ? escapeJs(name || '') : (name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const escName = typeof escapeHtml === 'function' ? escapeHtml(name || '') : (name || '');
     const isSent = effStatus === 'versendet';
 
     // Gruppengewinn-Abzug (Konto 1301) ermitteln
@@ -559,7 +561,7 @@ function jbRenderRows(data) {
     return `<tr class="${rowBg}" ${rowStyle}>
       <td class="align-middle py-2 tk-col-name" data-col-id="name">
         <a href="#" class="text-decoration-none fw-semibold ${isOffen ? 'text-primary' : 'text-secondary'}"
-           onclick="jbShowPositionen('${r.id}'); return false;">${name}</a>
+           onclick="jbShowPositionen('${r.id}'); return false;">${escName}</a>
         <div class="text-muted small" style="font-size: 11px;">
           ${r.PersonNumber}
           ${r.invoiceId ? `· <span class="font-monospace text-primary">${r.invoiceId}</span>` : ''}
@@ -720,9 +722,14 @@ async function jbShowPositionen(headerId) {
 
 function jbRenderModalContent(header, pos, m, name) {
   const modalBody = document.getElementById('jbModalBody');
+  const canEdit = typeof Perms !== 'undefined' ? Perms.can('jahresbeitrag.manage') : true;
   const effStatus = jbGetEffectiveStatus(header);
+  const lockState = typeof jbGetContributionLockState === 'function'
+    ? jbGetContributionLockState(header)
+    : { isLocked: (effStatus === 'versendet' || effStatus === 'bezahlt' || effStatus === 'teilbezahlt') };
   const isPaid = effStatus === 'bezahlt';
-  const age = m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+  const refYear = Number((typeof _jbYear !== 'undefined' && _jbYear) ? _jbYear : new Date().getFullYear());
+  const age = m.BirthDate ? (refYear - new Date(m.BirthDate).getFullYear()) : 0;
   const isJunior = age > 0 && age <= 20;
 
   // Kategorien-Badges
@@ -874,9 +881,11 @@ function jbRenderModalContent(header, pos, m, name) {
             <div class="small text-muted">Offener Betrag: ${fmtChf(header.Gesamt)}</div>
           </div>
         </div>
-        <button class="btn btn-sm btn-success fw-bold px-3 shadow-sm" onclick="jbOpenZahlungFromModal('${header.id}', '${safeName}', ${header.Gesamt})">
-          <i class="fas fa-check me-1"></i> Zahlung jetzt verbuchen
-        </button>
+        ${(canEdit && Number(header.Gesamt || 0) > 0) ? `
+          <button id="jbModalPayBtn" class="btn btn-sm btn-success fw-bold px-3 shadow-sm" onclick="jbOpenZahlungFromModal('${header.id}', '${safeName}', ${header.Gesamt})">
+            <i class="fas fa-check me-1"></i> Zahlung jetzt verbuchen
+          </button>
+        ` : ''}
       </div>
     `}
 
@@ -891,16 +900,16 @@ function jbRenderModalContent(header, pos, m, name) {
             <a href="${header.pdf_url}" onclick="jbOpenInvoicePdfSafe('${escapeJs(header.pdf_url)}', event)" target="_blank" class="btn btn-sm btn-outline-danger shadow-sm fw-semibold">
               <i class="fas fa-file-pdf me-1"></i> PDF-Rechnung öffnen
             </a>
-          ` : `
-            <button class="btn btn-sm btn-outline-secondary shadow-sm fw-semibold" onclick="jbGenerateInvoicePdfRemote('${header.id}', '${header.PersonNumber}')">
+          ` : ((canEdit && Number(header.Gesamt || 0) > 0) ? `
+            <button id="jbModalPdfBtn" class="btn btn-sm btn-outline-secondary shadow-sm fw-semibold" onclick="jbGenerateInvoicePdfRemote('${header.id}', '${header.PersonNumber}')">
               <i class="fas fa-file-invoice me-1"></i> PDF generieren
             </button>
-          `}
-          ${m.PrimaryEmail ? `
-            <button class="btn btn-sm ${header.mail_status === 'gesendet' ? 'btn-success text-white' : 'btn-outline-primary'} shadow-sm fw-semibold"
-                    onclick="jbSendInvoiceEmailRemote('${header.id}', '${header.PersonNumber}', '${m.PrimaryEmail}')">
-              <i class="fas ${header.mail_status === 'gesendet' ? 'fa-envelope-open-text' : 'fa-paper-plane'} me-1"></i>
-              ${header.mail_status === 'gesendet' ? 'Erneut senden' : 'Per E-Mail senden'}
+          ` : '')}
+          ${(canEdit && m.PrimaryEmail && Number(header.Gesamt || 0) > 0 && !isPaid) ? `
+            <button id="jbModalMailBtn" class="btn btn-sm ${(header.mail_status === 'versendet' || header.mail_status === 'gesendet') ? 'btn-success text-white' : 'btn-outline-primary'} shadow-sm fw-semibold"
+                    onclick="jbSendInvoiceEmailRemote('${header.id}', '${header.PersonNumber}', '${typeof escapeJs === 'function' ? escapeJs(m.PrimaryEmail) : m.PrimaryEmail}')">
+              <i class="fas ${(header.mail_status === 'versendet' || header.mail_status === 'gesendet') ? 'fa-envelope-open-text' : 'fa-paper-plane'} me-1"></i>
+              ${(header.mail_status === 'versendet' || header.mail_status === 'gesendet') ? 'Erneut senden' : 'Per E-Mail senden'}
             </button>
           ` : ''}
         </div>
@@ -910,9 +919,11 @@ function jbRenderModalContent(header, pos, m, name) {
     <!-- 5. Modal Footer / Schnellwechsel -->
     <div class="d-flex justify-content-between align-items-center pt-2 border-top">
       <button class="btn btn-secondary" data-bs-dismiss="modal">Schliessen</button>
-      <button class="btn btn-primary fw-bold px-3 shadow-sm" onclick="jbSwitchToSchnellerfassung('${header.PersonNumber}')">
-        <i class="fas fa-edit me-1"></i> In Schnellerfassung bearbeiten
-      </button>
+      ${canEdit ? `
+        <button class="btn ${lockState.isLocked ? 'btn-outline-secondary' : 'btn-primary'} fw-bold px-3 shadow-sm" onclick="jbSwitchToSchnellerfassung('${header.PersonNumber}')">
+          <i class="fas ${lockState.isLocked ? 'fa-eye' : 'fa-edit'} me-1"></i> ${lockState.isLocked ? 'In Schnellerfassung ansehen' : 'In Schnellerfassung bearbeiten'}
+        </button>
+      ` : ''}
     </div>
   `;
 
@@ -971,131 +982,123 @@ async function jbSaveZahlung() {
 
   if (!datum) {
     if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Fehlendes Datum', 'Bitte gib ein gültiges Zahlungsdatum an.', 'warning');
-    } else {
-      alert('Bitte Datum angeben');
+      await UIConfirmKit.alert({
+        title: 'Fehlendes Datum',
+        message: 'Bitte gib ein gültiges Zahlungsdatum an.',
+        type: 'warning'
+      });
     }
     return;
   }
 
-  const btn = document.querySelector('#jbModalZahlung .btn-success');
-  btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-
-  try {
+  const runSave = async () => {
     const r = _jbData.find(x => String(x.id) === String(id));
+    if (!r) throw new Error('Beitragseintrag wurde nicht gefunden.');
+    const docRef = String(beleg || '').trim() || `PAY-${r.invoiceId || id}`;
 
-    // 1. In Supabase verbuchen (< 50 ms)
     const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
-    if (supa) {
-      try {
-        await supa.from('contributions_header').update({
-          status: 'bezahlt',
-          payment_date: datum,
-          payment_method: methode,
-          document_ref: beleg || `PAY-${id}`,
-          updated_at: new Date().toISOString()
-        }).eq('id', id);
+    if (!supa) throw new Error('Supabase Client nicht verfügbar.');
 
-        if (r && r.invoiceId) {
-          if (window.RechnungsCore && typeof window.RechnungsCore.recordPayment === 'function') {
-            try {
-              await window.RechnungsCore.recordPayment(r.invoiceId, {
-                amount: Number(r.Gesamt || r.betrag || 0),
-                paymentDate: datum,
-                method: methode || 'Bank',
-                reference: beleg || `PAY-${r.invoiceId}`,
-                notes: `Jahresbeitrag Zahlung ${r.year} (${r.PersonNumber})`
-              });
-            } catch (corePayErr) {
-              console.warn("⚠️ RechnungsCore Zahlungseingang Jahresbeitrag:", corePayErr);
-            }
-          } else {
-            await supa.from('invoices').update({
-              status: 'bezahlt',
-              payment_date: datum,
-              payment_method: methode,
-              document_ref: beleg || `PAY-${r.invoiceId}`,
-              updated_at: new Date().toISOString()
-            }).eq('id', r.invoiceId);
-          }
-        }
-        console.log(`✅ [Supabase] Zahlung für Beitrag ${id} (und ggf. Rechnung ${r?.invoiceId}) direkt verbucht.`);
-      } catch (errSup) {
-        console.warn("⚠️ Fehler bei direkter Supabase Beitragszahlung:", errSup);
+    // 1. Zahlung in RechnungsCore erfassen (ohne automatische FiBu-Buchung, da nachfolgend exakt nach Konten gesplittet gebucht wird)
+    if (r.invoiceId) {
+      if (window.RechnungsCore && typeof window.RechnungsCore.recordPayment === 'function') {
+        await window.RechnungsCore.recordPayment(r.invoiceId, {
+          amount: Number(r.Gesamt || r.betrag || 0),
+          paymentDate: datum,
+          paymentMethod: methode || 'Bank',
+          documentRef: docRef,
+          syncBookkeeping: false,
+          notes: `Jahresbeitrag Zahlung ${r.year} (${r.PersonNumber})`
+        });
+      } else {
+        throw new Error('RechnungsCore.recordPayment ist nicht verfügbar.');
       }
     }
 
+    // 2. contributions_header als bezahlt markieren
+    const { error: hdrPayErr } = await supa.from('contributions_header').update({
+      status: 'bezahlt',
+      payment_date: datum,
+      payment_method: methode,
+      document_ref: docRef,
+      updated_at: new Date().toISOString()
+    }).eq('id', id);
+    if (hdrPayErr) {
+      throw new Error(`Fehler beim Aktualisieren des Beitragsstatus: ${hdrPayErr.message}`);
+    }
 
-
-    // 3. In Buchhaltung_GAS verbuchen via Splitbuchung
+    // 3. In Finanzbuchhaltung (accounting_journal) exakt per Splitbuchung verbuchen (einmalig)
     if (typeof window.jbGetSplitBookings === 'function') {
-      try {
-        const isBar = String(methode || '').toLowerCase().includes('bar');
-        const bankKonto = isBar ? '1000' : '1020';
-        const member = _jbMemberMap ? _jbMemberMap[String(r?.PersonNumber)] : null;
-        const splits = window.jbGetSplitBookings({
-          headerId: id,
-          member: member,
-          paidAmount: Number(r?.Gesamt || 0),
-          bookingDate: datum,
-          belegNr: beleg || `PAY-${id}`,
-          bankAccount: bankKonto,
-          year: Number(r?.year || new Date().getFullYear())
+      const isBar = String(methode || '').toLowerCase().includes('bar');
+      const bankKonto = isBar ? '1000' : '1020';
+      const member = _jbMemberMap ? _jbMemberMap[String(r.PersonNumber)] : null;
+      const bookingYear = Number(r.year || _jbYear || new Date().getFullYear());
+      const splits = window.jbGetSplitBookings({
+        headerId: id,
+        member: member,
+        paidAmount: Number(r.Gesamt || 0),
+        bookingDate: datum,
+        belegNr: docRef,
+        bankAccount: bankKonto,
+        year: bookingYear
+      });
+      if (splits && splits.length > 0) {
+        const rowsToInsert = splits.map(s => {
+          const row = {
+            jahr: bookingYear,
+            datum: datum,
+            beleg_nr: docRef,
+            beschreibung: s.beschreibung,
+            konto_soll: String(s.konto_soll).trim(),
+            konto_haben: String(s.konto_haben).trim(),
+            betrag: Number(s.betrag || 0),
+            typ: isBar ? 'Kassa' : 'Bank',
+            buchungstyp: s.buchungstyp || ((typeof getBuchungstyp === 'function') ? getBuchungstyp(s.konto_soll, s.konto_haben) : 'ERTRAG'),
+            created_at: new Date().toISOString()
+          };
+          if (typeof s.id === 'number') row.id = s.id;
+          return row;
         });
-        if (splits && splits.length > 0) {
-          if (supa) {
-            const rowsToInsert = splits.map((s, sIdx) => {
-              const row = {
-                jahr: Number(r?.year || new Date().getFullYear()),
-                datum: datum,
-                beleg_nr: beleg || `PAY-${id}`,
-                beschreibung: s.beschreibung,
-                konto_soll: String(s.konto_soll).trim(),
-                konto_haben: String(s.konto_haben).trim(),
-                betrag: Number(s.betrag || 0),
-                typ: isBar ? 'Kassa' : 'Bank',
-                buchungstyp: s.buchungstyp || ((typeof getBuchungstyp === 'function') ? getBuchungstyp(s.konto_soll, s.konto_haben) : 'ERTRAG'),
-                created_at: new Date().toISOString()
-              };
-              if (typeof s.id === 'number') row.id = s.id;
-              return row;
-            });
-            supa.from('accounting_journal').insert(rowsToInsert)
-              .then(({ error }) => {
-                if (error) console.warn('[Jahresbeitrag -> FiBu] Supabase journal insert error:', error);
-                else console.log('✅ Jahresbeitrag Split-Zahlung in Supabase FiBu gebucht.');
-              }).catch(e => console.warn('[Jahresbeitrag -> FiBu] Journal insert exception:', e));
-          }
-
+        const { error: journalErr } = await supa.from('accounting_journal').insert(rowsToInsert);
+        if (journalErr) {
+          throw new Error(`Zahlung gespeichert, aber FiBu-Journalbuchung fehlgeschlagen: ${journalErr.message}`);
         }
-      } catch (bhErr) {
-        console.warn("⚠️ Fehler bei Buchhaltung Splitbuchung:", bhErr);
       }
     }
 
     jbCleanupModals('jbModalZahlung');
 
-    // Optimistisches lokales Update des Beleg-Status
     const header = _jbData.find(x => String(x.id) === String(id));
     if (header) {
       header.status = 'bezahlt';
       header.payment_date = datum;
       header.payment_method = methode;
-      header.document_ref = beleg || `PAY-${id}`;
+      header.document_ref = docRef;
+    }
+    if (typeof showToast === 'function') {
+      showToast('✅ Zahlung erfolgreich verbucht!');
     }
     if (typeof renderJahresbeitragView === 'function') {
       renderJahresbeitragView();
     }
+    await loadJahresbeitragData(true, false);
+  };
 
-    await loadJahresbeitragData(true, false); // showSpinner = false
+  try {
+    const saveBtn = document.getElementById('jbZahlungSaveBtn') || document.querySelector('#jbModalZahlung .btn-success');
+    if (window.UIButtonKit && saveBtn) {
+      await UIButtonKit.withLoading(saveBtn, runSave);
+    } else {
+      await runSave();
+    }
   } catch(e) {
     if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Fehler bei der Zahlung', 'Fehler: ' + e.message, 'danger');
-    } else {
-      alert('Fehler: ' + e.message);
+      await UIConfirmKit.alert({
+        title: 'Fehler bei der Zahlung',
+        message: 'Fehler: ' + (e.message || e),
+        type: 'danger'
+      });
     }
-  } finally {
-    btn.disabled = false; btn.innerHTML = '<i class="fas fa-check"></i> Zahlung speichern';
   }
 }
 
@@ -1215,182 +1218,97 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
     };
   });
 
-  // 1. Wenn Rechnung bereits existiert: Entwurf synchronisieren falls nicht versendet/bezahlt
+  // 1. Wenn Rechnung bereits existiert: offenen Entwurf synchronisieren (Revisionssicherheit wahren)
   if (existingInv) {
-    const headTotal = Number(r.Gesamt || 0);
-    const isDraft = (!existingInv.mail_status || existingInv.mail_status === 'entwurf') && (!existingInv.total_paid || Number(existingInv.total_paid) === 0);
-    
-    if (isDraft) {
-      const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
-      if (supa) {
-        await supa.from('invoices').update({
-          total_amount: headTotal,
-          open_amount: headTotal,
-          pdf_url: null,
-          pdf_storage_path: null,
-          updated_at: new Date().toISOString()
-        }).eq('id', existingInv.id);
-
-        if (positions.length > 0) {
-          const sbPositions = positions.map(p => ({
-            invoice_id: existingInv.id,
-            position_nr: p.position_nr,
-            description: p.description,
-            quantity: p.quantity,
-            unit_price: p.unit_price,
-            amount: p.amount,
-            konto: p.konto || '3000',
-            source_field: p.source_field || null
-          }));
-          await supa.from('invoice_positions').delete().eq('invoice_id', existingInv.id);
-          await supa.from('invoice_positions').insert(sbPositions);
-        }
-        await supa.from('contributions_header').update({ invoice_id: existingInv.id }).eq('id', r.id);
-      }
-      existingInv.total_amount = headTotal;
-      existingInv.open_amount = headTotal;
-      existingInv.pdf_url = null;
-      existingInv.positions = positions;
-      r.pdf_url = null;
-      if (window._invoicePositionsCache) {
-        delete window._invoicePositionsCache[String(existingInv.id).trim()];
-      }
-      if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
-        window.RechnungsCore.renderPdf(existingInv.id, { forceRecreate: true }).then(res => {
-          if (res && res.pdfUrl) {
-            existingInv.pdf_url = res.pdfUrl;
-            r.pdf_url = res.pdfUrl;
-          }
-        }).catch(err => {
-          console.warn("⚠️ [Jahresbeitrag] Hintergrund-PDF-Neugenerierung Hinweis:", err);
-        });
+    const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+    if (typeof window.jbSyncOpenDraftInvoice === 'function') {
+      const syncRes = await window.jbSyncOpenDraftInvoice(supa, existingInv, {
+        totalAmount: Number(r.Gesamt || 0),
+        positions: positions,
+        headerId: r.id,
+        backgroundPdf: true
+      });
+      if (syncRes && syncRes.synced) {
+        r.pdf_url = null;
       }
     }
     r.invoiceId = existingInv.id;
     return existingInv.id;
   }
 
-  // 2. RechnungsCore-Integration für Neuanlage (Single Source of Truth)
-  if (window.RechnungsCore && typeof window.RechnungsCore.createInvoice === 'function') {
-    try {
-      const invoiceOrder = {
-        source: {
-          module: 'jahresbeitrag',
-          id: String(r.id),
-          entityId: String(r.id)
-        },
-        year: Number(r.year),
-        prefix: 'JB',
-        type: 'Jahresbeitrag',
-        recipient: {
-          memberId: m.id || null,
-          personNumber: String(r.PersonNumber || '').trim(),
-          name: name,
-          firstName: m.FirstName || m.Vorname || '',
-          lastName: m.LastName || m.Nachname || '',
-          salutation: m.Salutation || m.Anrede || '',
-          street: m.Street || m.Strasse || '',
-          zip: String(m.PostCode || m.PLZ || '5037'),
-          city: m.City || m.Ort || 'Muhen',
-          email: m.PrimaryEmail || m.Email || ''
-        },
-        sender: {
-          bereich: 'Jahresbeitrag',
-          funktion: 'Kassier'
-        },
-        positions: positions.map(p => ({
-          title: p.description,
-          quantity: p.quantity,
-          unitPrice: p.unit_price,
-          total: p.amount,
-          amount: p.amount,
-          konto: String(p.konto || '3000').trim(),
-          accountHaben: String(p.konto || '3000').trim(),
-          account: String(p.konto || '3000').trim(),
-          sourceField: p.source_field || null
-        })),
-        options: {
-          dueDateDays: 30,
-          type: 'Jahresbeitrag',
-          year: Number(r.year),
-          notes: `Jahresbeitrag ${r.year} (${name})`
-        }
-      };
-
-      const createdRes = await window.RechnungsCore.createInvoice(invoiceOrder);
-      const actualInv = (createdRes && createdRes.invoice) ? createdRes.invoice : createdRes;
-      const createdId = actualInv ? (actualInv.id || actualInv.invoice_number) : null;
-      
-      if (createdId) {
-        r.invoiceId = createdId;
-        const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
-        if (supa) {
-          await supa.from('contributions_header').update({ invoice_id: createdId }).eq('id', r.id);
-        }
-        console.log(`✅ [RechnungsCore] Jahresbeitrags-Rechnung ${createdId} erstellt & verknüpft.`);
-        return createdId;
-      }
-    } catch (coreErr) {
-      console.warn("⚠️ RechnungsCore Fehler bei Jahresbeitrag, nutze Fallback:", coreErr);
-    }
+  // 2. RechnungsCore-Integration für Neuanlage (verbindlicher Standard ohne Direkt-Insert-Fallback)
+  if (!window.RechnungsCore || typeof window.RechnungsCore.createInvoice !== 'function') {
+    throw new Error("RechnungsCore.createInvoice ist nicht verfügbar. Rechnung kann nicht angelegt werden.");
   }
 
-  // 3. Fallback: Direkt in Supabase neu anlegen
+  const invoiceOrder = {
+    source: {
+      module: 'jahresbeitrag',
+      id: String(r.id),
+      entityId: String(r.id)
+    },
+    year: Number(r.year),
+    prefix: 'JB',
+    type: 'Jahresbeitrag',
+    recipient: {
+      memberId: m.id || null,
+      personNumber: String(r.PersonNumber || '').trim(),
+      name: name,
+      firstName: m.FirstName || m.Vorname || '',
+      lastName: m.LastName || m.Nachname || '',
+      salutation: m.Salutation || m.Anrede || '',
+      street: m.Street || m.Strasse || '',
+      zip: String(m.PostCode || m.PLZ || '5037'),
+      city: m.City || m.Ort || 'Muhen',
+      email: m.PrimaryEmail || m.Email || ''
+    },
+    sender: {
+      bereich: 'Jahresbeitrag',
+      funktion: 'Kassier'
+    },
+    positions: positions.map(p => ({
+      title: p.description,
+      quantity: p.quantity,
+      unitPrice: p.unit_price,
+      total: p.amount,
+      amount: p.amount,
+      konto: String(p.konto || '3000').trim(),
+      accountHaben: String(p.konto || '3000').trim(),
+      account: String(p.konto || '3000').trim(),
+      sourceField: p.source_field || null
+    })),
+    options: {
+      dueDateDays: 30,
+      type: 'Jahresbeitrag',
+      year: Number(r.year),
+      notes: `Jahresbeitrag ${r.year} (${name})`
+    }
+  };
+
+  const createdRes = await window.RechnungsCore.createInvoice(invoiceOrder);
+  const actualInv = (createdRes && createdRes.invoice) ? createdRes.invoice : createdRes;
+  const createdId = actualInv ? (actualInv.id || actualInv.invoice_number) : null;
+
+  if (!createdId) {
+    throw new Error("RechnungsCore.createInvoice hat keine gültige Rechnungs-ID zurückgegeben.");
+  }
+
+  r.invoiceId = createdId;
   const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
   if (supa) {
-    try {
-      const sbInv = {
-        id: invoiceId,
-        person_number: String(r.PersonNumber || '').trim(),
-        recipient_name: name,
-        year: Number(r.year),
-        type: 'Jahresbeitrag',
-        total_amount: Number(r.Gesamt || 0),
-        open_amount: Number(r.Gesamt || 0),
-        source_module: 'jahresbeitrag',
-        source_id: String(r.id),
-        status: r.status || 'offen',
-        updated_at: new Date().toISOString()
-      };
-      await supa.from('invoices').insert([sbInv]);
-
-      if (positions.length > 0) {
-        const sbPositions = positions.map(p => ({
-          invoice_id: invoiceId,
-          position_nr: p.position_nr,
-          description: p.description,
-          quantity: p.quantity,
-          unit_price: p.unit_price,
-          amount: p.amount,
-          konto: p.konto || '3000',
-          source_field: p.source_field || null
-        }));
-        await supa.from('invoice_positions').delete().eq('invoice_id', invoiceId);
-        await supa.from('invoice_positions').insert(sbPositions);
-      }
-
-      await supa.from('contributions_header').update({ invoice_id: invoiceId }).eq('id', r.id);
-      console.log(`✅ [Supabase] Jahresbeitrags-Rechnung ${invoiceId} gespeichert & in contributions_header verknüpft.`);
-    } catch (errSup) {
-      console.warn("⚠️ Fehler bei direkter Supabase Rechnungs-Speicherung:", errSup);
+    const { error: linkErr } = await supa.from('contributions_header').update({ invoice_id: createdId }).eq('id', r.id);
+    if (linkErr) {
+      throw new Error(`Rechnung ${createdId} erstellt, aber Verknüpfung in contributions_header fehlgeschlagen: ${linkErr.message}`);
     }
   }
-
-  r.invoiceId = invoiceId;
-  return r.invoiceId;
+  console.log(`✅ [RechnungsCore] Jahresbeitrags-Rechnung ${createdId} erstellt & verknüpft.`);
+  return createdId;
 }
 
 // Einzelnes Mitglied in Rechnungsmodul übertragen (Rechnungsentwurf anlegen)
 async function jbTransferSingleInvoice(rId, pn) {
   const btn = document.getElementById(`btn-transfer-${rId}`);
-  let oldHtml = '';
-  if (btn) {
-    oldHtml = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm" style="width: 14px; height: 14px;"></span>';
-  }
-  
-  try {
+  const runTransfer = async () => {
     const r = _jbData.find(x => String(x.id) === String(rId));
     if (!r) throw new Error("Beitrags-Eintrag nicht gefunden.");
     const m = _jbMemberMap[String(pn)] || {};
@@ -1404,17 +1322,22 @@ async function jbTransferSingleInvoice(rId, pn) {
     if (typeof loadRechnungenData === 'function') {
       await loadRechnungenData(true, true);
     }
+  };
+
+  try {
+    if (window.UIButtonKit && btn) {
+      await UIButtonKit.withLoading(btn, runTransfer);
+    } else {
+      await runTransfer();
+    }
   } catch (err) {
     console.error("Fehler bei Rechnungs-Übertrag:", err);
     if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Fehler beim Rechnungs-Übertrag', err.message, 'danger');
-    } else {
-      alert("Fehler bei Rechnungs-Übertrag: " + err.message);
-    }
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = oldHtml;
+      await UIConfirmKit.alert({
+        title: 'Fehler beim Rechnungs-Übertrag',
+        message: err.message || String(err),
+        type: 'danger'
+      });
     }
   }
 }
@@ -1422,23 +1345,17 @@ window.jbTransferSingleInvoice = jbTransferSingleInvoice;
 
 // PDF Rechnung auf Knopfdruck generieren & anzeigen
 async function jbGenerateInvoicePdfRemote(rId, pn) {
-  const btn = document.getElementById(`btn-pdf-${rId}`);
-  let oldHtml = '';
-  if (btn) {
-    oldHtml = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm" style="width: 14px; height: 14px;"></span>';
-  }
-  
-  try {
+  const btn = document.getElementById(`btn-pdf-${rId}`) || document.getElementById('jbModalPdfBtn');
+  const runPdf = async () => {
     const r = _jbData.find(x => String(x.id) === String(rId));
     if (!r) throw new Error("Rechnungs-Eintrag nicht gefunden in Memory.");
     const m = _jbMemberMap[String(pn)] || {};
     const name = m.FirstName ? `${m.FirstName} ${m.LastName}` : pn;
-    
+    const totalVal = Number(r.Gesamt ?? r.total_amount ?? r.betrag ?? 0);
+
     // 1. Sicherstellen, dass die Rechnung existiert
     const invoiceId = await ensureInvoiceCreatedRemote(r, m, name);
-    
+
     // 2. Primär: Zentrale RechnungsCore.renderPdf-Methode (mit forceRecreate: true gemäss Richtlinie 6)
     let engineRes = null;
     if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
@@ -1464,8 +1381,8 @@ async function jbGenerateInvoicePdfRemote(rId, pn) {
           ort: m.City || '',
           email: m.PrimaryEmail || ''
         },
-        totalAmount: r.total_amount || r.betrag || 0,
-        year: r.year || new Date().getFullYear(),
+        totalAmount: totalVal,
+        year: r.year || _jbYear || new Date().getFullYear(),
         type: 'Jahresbeitrag'
       });
       if (!engineRes || !engineRes.success) {
@@ -1481,8 +1398,8 @@ async function jbGenerateInvoicePdfRemote(rId, pn) {
               ort: m.City || '',
               email: m.PrimaryEmail || ''
             },
-            totalAmount: r.total_amount || r.betrag || 0,
-            year: r.year || new Date().getFullYear(),
+            totalAmount: totalVal,
+            year: r.year || _jbYear || new Date().getFullYear(),
             type: 'Jahresbeitrag'
           });
         }
@@ -1506,19 +1423,23 @@ async function jbGenerateInvoicePdfRemote(rId, pn) {
         }
       }
       return;
+    }
+    throw new Error(engineRes?.error || "Fehler bei PDF-Generierung");
+  };
+
+  try {
+    if (window.UIButtonKit && btn) {
+      await UIButtonKit.withLoading(btn, runPdf);
     } else {
-      throw new Error(engineRes?.error || "Fehler bei PDF-Generierung");
+      await runPdf();
     }
   } catch (err) {
     if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Fehler bei PDF-Erstellung', err.message, 'danger');
-    } else {
-      alert("Fehler bei PDF-Erstellung: " + err.message);
-    }
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = oldHtml;
+      await UIConfirmKit.alert({
+        title: 'Fehler bei PDF-Erstellung',
+        message: err.message || String(err),
+        type: 'danger'
+      });
     }
   }
 }
@@ -1528,9 +1449,11 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
   const r = _jbData.find(x => String(x.id) === String(rId));
   if (!r) {
     if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Eintrag nicht gefunden', 'Der Beitragseintrag wurde nicht gefunden.', 'danger');
-    } else {
-      alert("Eintrag nicht gefunden.");
+      await UIConfirmKit.alert({
+        title: 'Eintrag nicht gefunden',
+        message: 'Der Beitragseintrag wurde nicht gefunden.',
+        type: 'danger'
+      });
     }
     return;
   }
@@ -1545,24 +1468,17 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
         type: 'primary',
         confirmText: 'Rechnung senden'
       })
-    : confirm(`Möchtest du die Jahresbeitrag-Rechnung für ${name} an die E-Mail-Adresse "${email}" senden?`);
+    : false;
 
   if (!ok) {
     return;
   }
-  
-  const btn = document.getElementById(`btn-mail-${rId}`);
-  let oldHtml = '';
-  if (btn) {
-    oldHtml = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm" style="width: 14px; height: 14px;"></span>';
-  }
-  
-  try {
+
+  const btn = document.getElementById('jbModalMailBtn') || document.getElementById(`btn-mail-${rId}`);
+  const runMail = async () => {
     // 1. Sicherstellen, dass die Rechnung existiert
     const invoiceId = await ensureInvoiceCreatedRemote(r, m, name);
-    
+
     // 2. Absender ermitteln
     const sender = (typeof rnGetLoggedInSender === 'function')
       ? rnGetLoggedInSender('Jahresbeitrag')
@@ -1588,7 +1504,7 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
             email: email
           },
           totalAmount: r.total_amount || r.betrag || r.Gesamt || 0,
-          year: r.year || new Date().getFullYear(),
+          year: r.year || _jbYear || new Date().getFullYear(),
           type: 'Jahresbeitrag'
         });
         if (engineRes && engineRes.success) {
@@ -1620,14 +1536,14 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
     }
 
     const totalBetrag = Number(r.total_amount || r.betrag || r.Gesamt || 0);
-    const senderDisplayName = sender ? [sender.vorname, sender.nachname].filter(Boolean).join(' ') : 'Daniel Hunziker';
+    const senderDisplayName = sender ? [sender.vorname, sender.nachname].filter(Boolean).join(' ') : (window.currentUserName || window.currentUser || 'Vorstand');
     const senderRole = sender?.funktion || 'Kassier';
 
     // Persönliche Einzelberechnung Gruppengewinne (Konto 1301) inkl. 180-Tage-Links + PDF «Zusammensetzung_Gruppengewinne_<Jahr>.pdf» ermitteln
     let ggSupp = null;
     if (typeof window.jmBuildShooterGruppengewinneMailSupplement === 'function') {
       try {
-        ggSupp = await window.jmBuildShooterGruppengewinneMailSupplement(pn, r.year || new Date().getFullYear());
+        ggSupp = await window.jmBuildShooterGruppengewinneMailSupplement(pn, r.year || _jbYear || new Date().getFullYear());
         if (ggSupp && ggSupp.hasCredits && ggSupp.pdfAttachment && ggSupp.pdfAttachment.contentBase64) {
           attachments.push({
             filename: ggSupp.pdfAttachment.filename,
@@ -1642,12 +1558,13 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
 
     const ggHtml = (ggSupp && ggSupp.hasCredits) ? ggSupp.htmlBlock : '';
     const ggText = (ggSupp && ggSupp.hasCredits) ? `\n\n${ggSupp.textBlock}\n` : '';
+    const billingYear = r.year || _jbYear || new Date().getFullYear();
 
-    const bodyHtml = `<p>Guten Tag ${name},</p><p>anbei senden wir dir die Rechnung für den Jahresbeitrag ${r.year || new Date().getFullYear()} mit der Rechnungsnummer <strong>${invoiceId}</strong> über CHF ${totalBetrag.toFixed(2)} inkl. beiliegender QR-Rechnung.</p>${ggHtml}<p>Vielen Dank für deine wertvolle Unterstützung als Mitglied!</p><p>Freundliche Grüsse<br><strong>Sportschützen Muhen</strong><br>${senderDisplayName}<br>${senderRole}</p>`;
+    const bodyHtml = `<p>Guten Tag ${esc(name)},</p><p>anbei senden wir dir die Rechnung für den Jahresbeitrag ${billingYear} mit der Rechnungsnummer <strong>${esc(invoiceId)}</strong> über CHF ${totalBetrag.toFixed(2)} inkl. beiliegender QR-Rechnung.</p>${ggHtml}<p>Vielen Dank für deine wertvolle Unterstützung als Mitglied!</p><p>Freundliche Grüsse<br><strong>Sportschützen Muhen</strong><br>${esc(senderDisplayName)}<br>${esc(senderRole)}</p>`;
 
     const emailHtml = (typeof window.renderClubEmailHtml === 'function')
       ? window.renderClubEmailHtml({
-          title: `Rechnung Jahresbeitrag ${r.year || new Date().getFullYear()}`,
+          title: `Rechnung Jahresbeitrag ${billingYear}`,
           subtitle: 'Jahresbeitrag',
           contentHtml: bodyHtml
         })
@@ -1655,9 +1572,9 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
 
     const mailRes = await window.sendMailViaEngine({
       to: email,
-      subject: `Rechnung Jahresbeitrag ${r.year || new Date().getFullYear()} – ${invoiceId} | Sportschützen Muhen`,
+      subject: `Rechnung Jahresbeitrag ${billingYear} – ${invoiceId} | Sportschützen Muhen`,
       html: emailHtml,
-      text: `Guten Tag ${name},\n\nanbei die Rechnung für den Jahresbeitrag ${r.year || new Date().getFullYear()} (${invoiceId}).${ggText}\nVielen Dank für deine wertvolle Unterstützung als Mitglied!\n\nFreundliche Grüsse\nSportschützen Muhen\n${senderDisplayName}\n${senderRole}`,
+      text: `Guten Tag ${name},\n\nanbei die Rechnung für den Jahresbeitrag ${billingYear} (${invoiceId}).${ggText}\nVielen Dank für deine wertvolle Unterstützung als Mitglied!\n\nFreundliche Grüsse\nSportschützen Muhen\n${senderDisplayName}\n${senderRole}`,
       senderName: sender?.name || 'Sportschützen Muhen',
       senderEmail: sender?.email || 'sportschuetzen.muhen@gmail.com',
       attachments: attachments,
@@ -1669,33 +1586,34 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
       throw new Error(mailRes.error || "E-Mail-Versand fehlgeschlagen.");
     }
 
-    // Status lokal sofort aktualisieren
+    // Status lokal & in Supabase verbindlich auf 'versendet' (Regel 6) setzen
     const nowSwissStr = (typeof formatSwissDate === 'function') ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH');
-    r.mail_status = 'gesendet';
+    r.mail_status = 'versendet';
     r.send_date = nowSwissStr;
     const allInvs = window._invoices || window._jbAllInvoices || [];
     const targetInv = allInvs.find(i => String(i.id).trim() === String(invoiceId).trim());
     if (targetInv) {
-      targetInv.mail_status = 'gesendet';
+      targetInv.mail_status = 'versendet';
       targetInv.send_date = nowSwissStr;
       targetInv.updated_at = nowSwissStr;
       if (pdfUrl) targetInv.pdf_url = pdfUrl;
     }
 
-    // In Supabase Master invoices Tabelle spiegeln
-    const supa = (typeof window.getSupabaseClient === 'function') ? window.getSupabaseClient() : null;
+    const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
     if (supa) {
-      supa.from('invoices').update({
-        mail_status: 'gesendet',
+      const { error: invUpdErr } = await supa.from('invoices').update({
+        mail_status: 'versendet',
         send_date: new Date().toISOString(),
         pdf_url: pdfUrl || r.pdf_url || '',
         updated_at: new Date().toISOString()
-      }).eq('id', invoiceId).then(() => {}).catch(() => {});
+      }).eq('id', invoiceId);
+      if (invUpdErr) {
+        throw new Error(`E-Mail gesendet, aber Versandstatus in Supabase konnte nicht gespeichert werden: ${invUpdErr.message}`);
+      }
     }
-    
+
     showToast(`✉️ E-Mail-Rechnung erfolgreich an ${name} (${email}) gesendet!`);
-    
-    // Rechnungs-Modul & Jahresbeitrag neu laden und synchronisieren
+
     if (typeof loadRechnungenData === 'function') {
       await loadRechnungenData(true, true);
     }
@@ -1704,7 +1622,6 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
     }
     await loadJahresbeitragData(true, false);
 
-    // Falls Modal noch offen ist, Inhalt live aktualisieren (damit Status & Badges stimmen)
     const modalEl = document.getElementById('jbModalPositionen');
     if (modalEl && modalEl.classList.contains('show')) {
       const updatedHeader = _jbData.find(x => String(x.id) === String(rId));
@@ -1713,16 +1630,21 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
         jbRenderModalContent(updatedHeader, updatedPos, m, name);
       }
     }
-  } catch (err) {
-    jbCleanupModals();
-    if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Fehler beim E-Mail-Versand', err.message, 'danger');
+  };
+
+  try {
+    if (window.UIButtonKit && btn) {
+      await UIButtonKit.withLoading(btn, runMail);
     } else {
-      alert("Fehler bei E-Mail-Versand: " + err.message);
+      await runMail();
     }
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = oldHtml;
+  } catch (err) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Fehler beim E-Mail-Versand',
+        message: err.message || String(err),
+        type: 'danger'
+      });
     }
   }
 }
@@ -1737,12 +1659,12 @@ window.jbRechnungenBereitstellenBatch = async function(silent = false) {
   });
 
   if (toProcess.length === 0) {
-    if (!silent) {
-      if (window.UIConfirmKit) {
-        await UIConfirmKit.alert('Rechnungen bereits bereitgestellt', `Alle beitragspflichtigen Mitglieder für das Jahr ${_jbYear} besitzen bereits einen Rechnungsentwurf im RechnungsCore!`, 'info');
-      } else {
-        alert(`Alle beitragspflichtigen Mitglieder für das Jahr ${_jbYear} besitzen bereits einen Rechnungsentwurf im RechnungsCore!`);
-      }
+    if (!silent && window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Rechnungen bereits bereitgestellt',
+        message: `Alle beitragspflichtigen Mitglieder für das Jahr ${_jbYear} besitzen bereits einen Rechnungsentwurf im RechnungsCore!`,
+        type: 'info'
+      });
     }
     return 0;
   }
@@ -1755,7 +1677,7 @@ window.jbRechnungenBereitstellenBatch = async function(silent = false) {
           type: 'primary',
           confirmText: 'Entwürfe anlegen'
         })
-      : confirm(`Möchtest du für ${toProcess.length} berechnete Mitglieder offizielle Rechnungsentwürfe im RechnungsCore anlegen?\n\nDie Rechnungen erhalten eine fortlaufende JB-Nummer und Schweizer QR-Referenz, verbleiben aber im Status 'Entwurf' (noch nicht an Mitglieder versendet).`);
+      : false;
 
     if (!ok) {
       return 0;
@@ -1797,12 +1719,20 @@ window.jbRechnungenBereitstellenBatch = async function(silent = false) {
   await loadJahresbeitragData(true, false);
 
   if (!silent) {
-    if (typeof showToast === 'function') {
-      showToast(`🎉 ${createdCount} Rechnungsentwürfe erfolgreich im RechnungsCore bereitgestellt!${failCount > 0 ? ` (${failCount} Fehler)` : ''}`);
+    if (failCount > 0 && window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Bereitstellung teilweise fehlgeschlagen',
+        message: `${createdCount} Rechnungsentwurf/-würfe erstellt, <strong>${failCount}</strong> Fehler aufgetreten. Details findest du in der Konsole.`,
+        type: 'warning'
+      });
+    } else if (typeof showToast === 'function') {
+      showToast(`🎉 ${createdCount} Rechnungsentwürfe erfolgreich im RechnungsCore bereitgestellt!`);
     } else if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Rechnungsentwürfe bereitgestellt', `🎉 ${createdCount} Rechnungsentwürfe erfolgreich im RechnungsCore bereitgestellt!`, 'success');
-    } else {
-      alert(`🎉 ${createdCount} Rechnungsentwürfe erfolgreich im RechnungsCore bereitgestellt!`);
+      await UIConfirmKit.alert({
+        title: 'Rechnungsentwürfe bereitgestellt',
+        message: `🎉 ${createdCount} Rechnungsentwürfe erfolgreich im RechnungsCore bereitgestellt!`,
+        type: 'success'
+      });
     }
   }
   return createdCount;
@@ -1812,13 +1742,15 @@ window.jbRechnungenBereitstellenBatch = async function(silent = false) {
 window.jbOpenSammelversandModal = async function() {
   if (typeof rnOpenMassSendModal !== 'function') {
     if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Modul nicht verfügbar', 'Das Massenversand-Modul steht momentan nicht zur Verfügung.', 'warning');
-    } else {
-      alert("Das Massenversand-Modul steht momentan nicht zur Verfügung.");
+      await UIConfirmKit.alert({
+        title: 'Modul nicht verfügbar',
+        message: 'Das Massenversand-Modul steht momentan nicht zur Verfügung.',
+        type: 'warning'
+      });
     }
     return;
   }
-  
+
   // Stelle sicher, dass die Rechnungen geladen sind
   if (typeof loadRechnungenData === 'function') {
     await loadRechnungenData(true, true);
@@ -1839,10 +1771,7 @@ window.jbOpenSammelversandModal = async function() {
           type: 'warning',
           confirmText: 'Jetzt anlegen'
         })
-      : confirm(
-          `Es gibt noch ${uncreated.length} berechnete Mitglieder ohne Rechnungsentwurf im RechnungsCore.\n\n` +
-          `Sollen diese jetzt automatisch als Entwurf angelegt werden, damit sie für den Sammelversand verfügbar sind?`
-        );
+      : false;
     if (doCreate) {
       await window.jbRechnungenBereitstellenBatch(true);
       if (typeof loadRechnungenData === 'function') {
@@ -1850,23 +1779,26 @@ window.jbOpenSammelversandModal = async function() {
       }
     }
   }
-  
+
   // Filter auf Jahresbeitrag setzen
   window._rnMassSendTypeFilter = 'Jahresbeitrag';
-  
+
   // Alle Rechnungs-IDs des aktuellen Jahres filtern
-  const jbInvs = (window._invoices || []).filter(inv => 
-    String(inv.type || '').toLowerCase() === 'jahresbeitrag' && 
-    Number(inv.year) === Number(_jbYear)
+  const jbInvs = (window._invoices || []).filter(inv =>
+    String(inv.type || '').toLowerCase() === 'jahresbeitrag' &&
+    Number(inv.year) === Number(_jbYear) &&
+    inv.status !== 'storniert'
   );
-  
+
   const jbIds = jbInvs.map(i => i.id);
   if (jbIds.length === 0) {
     const msg = `Keine Rechnungen für das Jahr ${_jbYear} gefunden. Bitte zuerst «Beiträge berechnen» und «Rechnungen bereitstellen».`;
     if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Keine Rechnungen gefunden', msg, 'warning');
-    } else {
-      alert(msg);
+      await UIConfirmKit.alert({
+        title: 'Keine Rechnungen gefunden',
+        message: msg,
+        type: 'warning'
+      });
     }
     return;
   }
@@ -1878,23 +1810,22 @@ async function jbBerechnen() {
   const ok = window.UIConfirmKit
     ? await UIConfirmKit.confirm({
         title: 'Beiträge berechnen?',
-        message: `Möchtest du die Jahresbeiträge für <strong>${_jbYear}</strong> berechnen?<br><br>Bereits berechnete Mitglieder werden übersprungen.`,
+        message: `Möchtest du die Jahresbeiträge für <strong>${_jbYear}</strong> berechnen?<br><br>Bereits versendete oder bezahlte Rechnungen werden geschützt und übersprungen.`,
         type: 'primary',
         confirmText: 'Beiträge berechnen'
       })
-    : confirm(`Beiträge für ${_jbYear} berechnen? Bereits berechnete werden übersprungen.`);
+    : false;
 
   if (!ok) return;
 
   const btn = document.querySelector('button[onclick="jbBerechnen()"]');
   const runCalc = async () => {
-    // 1. Supabase atomare Backend-Berechnung (RPC)
     const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
     if (!supa) throw new Error("Supabase Client nicht verfügbar");
 
     const yr = Number(_jbYear);
     console.log(`🤖 Starte serverseitige Beitragsberechnung für ${yr} via Supabase RPC...`);
-    
+
     const { data: rpcRes, error: rpcErr } = await supa.rpc('calculate_member_contributions', {
       p_year: yr,
       p_target_pns: null
@@ -1912,9 +1843,11 @@ async function jbBerechnen() {
     if (typeof showToast === 'function') {
       showToast(`✅ ${msg}`, 'success');
     } else if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Berechnung abgeschlossen', msg, 'success');
-    } else {
-      alert(`✅ ${msg}`);
+      await UIConfirmKit.alert({
+        title: 'Berechnung abgeschlossen',
+        message: msg,
+        type: 'success'
+      });
     }
     await loadJahresbeitragData(true, false);
   };
@@ -1923,84 +1856,135 @@ async function jbBerechnen() {
     if (window.UIButtonKit && btn) {
       await UIButtonKit.withLoading(btn, runCalc);
     } else {
-      if (btn) {
-        btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Berechne…';
-      }
       await runCalc();
     }
   } catch(e) {
     if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Fehler bei der Beitragsberechnung', e.message, 'danger');
-    } else {
-      alert('Fehler: ' + e.message);
-    }
-  } finally {
-    if (!window.UIButtonKit && btn) {
-      btn.disabled = false; btn.innerHTML = '<i class="fas fa-calculator"></i> Alle Beiträge berechnen';
+      await UIConfirmKit.alert({
+        title: 'Fehler bei der Beitragsberechnung',
+        message: e.message || String(e),
+        type: 'danger'
+      });
     }
   }
 }
 
 async function jbResetYear(mode) {
-  const modeText = mode === 'all' 
-    ? 'alle Rechnungen, Posten SOWIE ALLE Turnierteilnahmen und manuellen Gebührenüberschreibungen' 
-    : 'alle Beitragsrechnungen und Posten (Turnierteilnahmen bleiben erhalten)';
-  
+  const yr = Number(_jbYear);
+  const supa = typeof getJahresbeitragSupabaseClient === 'function' ? getJahresbeitragSupabaseClient() : null;
+  if (!supa) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Verbindungsfehler',
+        message: 'Supabase Client nicht verfügbar.',
+        type: 'danger'
+      });
+    }
+    return;
+  }
+
+  // Revisions-Check vor Bestätigung: Sind bereits versendete oder (teil-)bezahlte Rechnungen für dieses Jahr vorhanden?
+  const { data: yearInvs, error: invCheckErr } = await supa
+    .from('invoices')
+    .select('id, status, mail_status, send_date, open_amount, total_amount')
+    .eq('year', yr)
+    .eq('type', 'Jahresbeitrag');
+
+  if (invCheckErr) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Prüfung fehlgeschlagen',
+        message: `Bestehende Rechnungen für ${yr} konnten nicht geprüft werden: ${invCheckErr.message}`,
+        type: 'danger'
+      });
+    }
+    return;
+  }
+
+  const protectedInvs = (yearInvs || []).filter(i => {
+    const st = String(i.status || '').toLowerCase();
+    const mst = String(i.mail_status || '').toLowerCase();
+    const paidByDiff = Number(i.total_amount || 0) > 0 && Number(i.open_amount ?? i.total_amount) < (Number(i.total_amount) - 0.01);
+    return st === 'bezahlt' || st === 'teilbezahlt' || mst === 'versendet' || mst === 'gesendet' || Boolean(i.send_date) || paidByDiff;
+  });
+
+  if (protectedInvs.length > 0) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: `Beitragsjahr ${yr} gesperrt`,
+        message: `Für das Jahr ${yr} existieren bereits <strong>${protectedInvs.length} versendete oder (teil-)bezahlte Rechnungen</strong> (z. B. ${protectedInvs.slice(0, 3).map(x => x.id).join(', ')}).<br><br>Aus Gründen der Revisionssicherheit ist das Komplett-Zurücksetzen gesperrt. Storniere betroffene Rechnungen bei Bedarf einzeln im Rechnungsmodul.`,
+        type: 'warning'
+      });
+    }
+    return;
+  }
+
+  const modeText = mode === 'all'
+    ? 'alle Berechnungen, offenen Entwurfs-Rechnungen SOWIE ALLE Turnierteilnahmen und manuellen Gebührenüberschreibungen'
+    : 'alle Berechnungen, Posten und noch unversendeten Rechnungsentwürfe (Turnierteilnahmen bleiben erhalten)';
+
   const ok = window.UIConfirmKit
     ? await UIConfirmKit.confirm({
-        title: `Beitragsjahr ${_jbYear} zurücksetzen?`,
-        message: `Möchtest du wirklich <strong>${modeText}</strong> für das Beitragsjahr ${_jbYear} unwiderruflich zurücksetzen?<br><br>Vorjahre bleiben unberührt. Diese Aktion kann <strong>nicht</strong> rückgängig gemacht werden!`,
+        title: `Beitragsjahr ${yr} zurücksetzen?`,
+        message: `Möchtest du wirklich <strong>${modeText}</strong> für das Beitragsjahr ${yr} unwiderruflich zurücksetzen?<br><br>Vorjahre bleiben unberührt. Diese Aktion kann <strong>nicht</strong> rückgängig gemacht werden!`,
         type: 'danger',
         confirmText: 'Unwiderruflich zurücksetzen'
       })
-    : (confirm(`⚠️ ACHTUNG: Möchtest du wirklich ${modeText} für das Beitragsjahr ${_jbYear} zurücksetzen?\n\nVorjahre bleiben unberührt. Diese Aktion kann nicht rückgängig gemacht werden!`) && confirm(`Bist du absolut sicher?`));
+    : false;
 
   if (!ok) {
     return;
   }
-  
-  showLoadingOverlay(`Setze das Jahr ${_jbYear} in Supabase zurück (${mode === 'all' ? 'Alles' : 'Rechnungen'})…`);
-  
+
+  showLoadingOverlay(`Setze das Jahr ${yr} in Supabase zurück (${mode === 'all' ? 'Alles' : 'Berechnungen & Entwürfe'})…`);
+
   try {
-    const supa = typeof getJahresbeitragSupabaseClient === 'function' ? getJahresbeitragSupabaseClient() : null;
-    if (!supa) throw new Error("Supabase Client nicht verfügbar");
+    // 1. Offene (nicht versendete/bezahlte, nicht stornierte? alle ungeschützten Entwürfe dieses Jahres) Rechnungen sauber mitlöschen, damit keine Waisen entstehen
+    const draftInvIds = (yearInvs || []).map(i => i.id).filter(Boolean);
+    if (draftInvIds.length > 0) {
+      const { error: invPosDelErr } = await supa.from('invoice_positions').delete().in('invoice_id', draftInvIds);
+      if (invPosDelErr) throw new Error(`Fehler beim Löschen der Entwurfs-Positionen: ${invPosDelErr.message}`);
 
-    const yr = Number(_jbYear);
-    // Positionen für das Jahr löschen
+      const { error: invDelErr } = await supa.from('invoices').delete().in('id', draftInvIds);
+      if (invDelErr) throw new Error(`Fehler beim Löschen der Entwurfs-Rechnungen: ${invDelErr.message}`);
+    }
+
+    // 2. Beitragspositionen & Header löschen
     const { error: posErr } = await supa.from('contributions_positions').delete().eq('year', yr);
-    if (posErr) console.warn("Supabase positions delete warning:", posErr);
+    if (posErr) throw new Error(`Fehler beim Löschen der Beitragspositionen: ${posErr.message}`);
 
-    // Beitrags-Header für das Jahr löschen
     const { error: headErr } = await supa.from('contributions_header').delete().eq('year', yr);
-    if (headErr) console.warn("Supabase header delete warning:", headErr);
+    if (headErr) throw new Error(`Fehler beim Löschen der Beitrags-Header: ${headErr.message}`);
 
     if (mode === 'all') {
       const { error: partErr } = await supa.from('member_participations').delete().eq('year', yr);
-      if (partErr) console.warn("Supabase participations delete warning:", partErr);
+      if (partErr) throw new Error(`Fehler beim Löschen der Turnierteilnahmen: ${partErr.message}`);
     }
 
-    // Verrechnete Gruppengewinne für dieses Jahr wieder auf 'offen' zurücksetzen
-    try {
-      const { data: compRows } = await supa.from('group_competitions').select('id').eq('jahr', yr);
-      if (compRows && compRows.length > 0) {
-        const compIds = compRows.map(c => c.id);
-        await supa.from('group_competition_members')
-          .update({ status: 'offen', contribution_position_id: null, updated_at: new Date().toISOString() })
-          .in('competition_id', compIds)
-          .eq('status', 'verrechnet');
-        console.log(`[Jahresbeitrag Reset] Gruppengewinne für Jahr ${yr} wieder auf 'offen' zurückgestellt.`);
-      }
-    } catch (resetGgErr) {
-      console.warn("Konnte Gruppengewinne bei Reset nicht zurücksetzen:", resetGgErr);
+    // 3. Verrechnete Gruppengewinne für dieses Jahr wieder auf 'offen' zurücksetzen
+    const { data: compRows, error: compErr } = await supa.from('group_competitions').select('id').eq('jahr', yr);
+    if (compErr) throw new Error(`Fehler beim Laden der Gruppenwettkämpfe: ${compErr.message}`);
+    if (compRows && compRows.length > 0) {
+      const compIds = compRows.map(c => c.id);
+      const { error: gcmErr } = await supa.from('group_competition_members')
+        .update({ status: 'offen', contribution_position_id: null, updated_at: new Date().toISOString() })
+        .in('competition_id', compIds)
+        .eq('status', 'verrechnet');
+      if (gcmErr) throw new Error(`Fehler beim Zurücksetzen der Gruppengewinne: ${gcmErr.message}`);
     }
-    
-    showToast(`🎉 Zurücksetzen des Jahres ${_jbYear} in Supabase erfolgreich abgeschlossen!`);
+
+    if (typeof loadRechnungenData === 'function') {
+      await loadRechnungenData(true, true);
+    }
+    showToast(`🎉 Zurücksetzen des Jahres ${yr} in Supabase erfolgreich abgeschlossen!`);
     await loadJahresbeitragData(true, false);
   } catch (e) {
     if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Fehler beim Zurücksetzen', e.message, 'danger');
-    } else {
-      alert("Fehler beim Zurücksetzen: " + e.message);
+      await UIConfirmKit.alert({
+        title: 'Fehler beim Zurücksetzen',
+        message: e.message || String(e),
+        type: 'danger'
+      });
     }
   } finally {
     hideLoadingOverlay();

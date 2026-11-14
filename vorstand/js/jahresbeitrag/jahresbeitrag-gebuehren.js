@@ -20,7 +20,7 @@ function renderGebuehrenConfigTab() {
             <i class="fas fa-sliders-h me-2"></i>Gebühren-Konfiguration
           </h4>
           <p class="text-muted small mb-0">
-            Verwalten Sie alle Tarife, Wettkampfgebühren und UI-Darstellungstypen (Members100 <code>gebuehrenconfig</code>).
+            Verwalte hier alle Tarife, Wettkampfgebühren und UI-Darstellungstypen (<code>gebuehren_config</code>).
           </p>
         </div>
         <div class="d-flex gap-2">
@@ -85,10 +85,18 @@ function renderGebuehrenConfigTab() {
       </div>
 
     </div>
-
-    <!-- Modals für Bearbeitung -->
-    ${renderGebuehrenConfigModals()}
   `;
+}
+
+function jbEnsureGebuehrModals() {
+  if (document.getElementById('jbModalGebuehrEdit')) return;
+  let host = document.getElementById('jbGebuehrModalsContainer');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'jbGebuehrModalsContainer';
+    document.body.appendChild(host);
+  }
+  host.innerHTML = renderGebuehrenConfigModals();
 }
 
 function renderGebuehrenConfigModals() {
@@ -744,7 +752,9 @@ function jbUpdateGebuehrLivePreview() {
   const betrag = parseFloat(document.getElementById('g_betrag')?.value) || 0;
   const konto = document.getElementById('g_konto')?.value?.trim() || '3000';
   const zielgruppe = document.getElementById('g_zielgruppe')?.value || 'Alle';
-  const ui_sort = parseInt(document.getElementById('g_ui_sort')?.value, 10) || 10;
+  const rawSort = document.getElementById('g_ui_sort')?.value;
+  const parsedSort = parseInt(rawSort, 10);
+  const ui_sort = Number.isNaN(parsedSort) ? 10 : parsedSort;
   const aktiv = document.getElementById('g_aktiv')?.checked !== false;
 
   if (badge) {
@@ -1002,6 +1012,7 @@ window.jbMovePreviewItem = jbMovePreviewItem;
 window.jbUpdateGebuehrLivePreview = jbUpdateGebuehrLivePreview;
 
 function jbOpenEditGebuehrModal(key) {
+  if (typeof jbEnsureGebuehrModals === 'function') jbEnsureGebuehrModals();
   const modalEl = document.getElementById('jbModalGebuehrEdit');
   if (!modalEl) return;
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
@@ -1149,7 +1160,9 @@ async function jbSaveGebuehrFromModal() {
   const fldSelect = document.getElementById('g_ui_feld_select');
   const ui_feld = (fldInput?.value || fldSelect?.value || bezeichnungfrontend).trim();
 
-  const ui_sort = parseInt(document.getElementById('g_ui_sort')?.value, 10) || 10;
+  const rawSort = document.getElementById('g_ui_sort')?.value;
+  const parsedSort = parseInt(rawSort, 10);
+  const ui_sort = Number.isNaN(parsedSort) ? 10 : parsedSort;
   const aktiv = document.getElementById('g_aktiv')?.checked !== false;
   const bem = (document.getElementById('g_bem')?.value || '').trim();
 
@@ -1220,7 +1233,7 @@ async function jbSaveGebuehrFromModal() {
         <div class="alert alert-danger shadow-sm border-danger border-2 rounded-3 mb-3 p-3">
           <div class="d-flex align-items-center mb-2">
             <i class="fas fa-exclamation-triangle fa-lg text-danger me-2"></i>
-            <h6 class="mb-0 fw-bold text-danger">Bitte korrigieren Sie die folgenden ${errors.length} Eingaben:</h6>
+            <h6 class="mb-0 fw-bold text-danger">Bitte korrigiere die folgenden ${errors.length} Eingaben:</h6>
           </div>
           <ul class="mb-0 ps-3 small" style="line-height: 1.6;">
             ${errors.map(err => `<li>${err}</li>`).join('')}
@@ -1236,18 +1249,12 @@ async function jbSaveGebuehrFromModal() {
     return;
   }
 
-  // Alles valide -> Speichern!
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Speichere…';
-  }
-
-  try {
+  // Alles valide -> Speichern mit UIButtonKit Double-Submit-Schutz!
+  const runSave = async () => {
     const existingIdx = (window._jbGebuehren || []).findIndex(x => String(x.key || '').trim().toUpperCase() === key);
     const prevFee = existingIdx >= 0 ? { ...window._jbGebuehren[existingIdx] } : null;
 
     const payload = {
-      action: 'saveGebuehr',
       key,
       kategorie,
       zielgruppe,
@@ -1266,51 +1273,49 @@ async function jbSaveGebuehrFromModal() {
       ui_sort,
       aktiv,
       bem,
-      bemerkung: bem,
-      user: window.currentUser || 'frontend'
+      bemerkung: bem
     };
 
     const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
-    if (supa) {
-      const { error: supaErr } = await supa.from('gebuehren_config').upsert({
-        key: key,
-        bezeichnung: bezeichnung,
-        bezeichnung_frontend: bezeichnungfrontend,
-        betrag: Number(betrag || 0),
-        konto_haben: konto,
-        kategorie: kategorie,
-        sort_order: Number(ui_sort || 10),
-        ui_gruppe: ui_gruppe,
-        ui_feld: ui_feld,
-        ui_typ: ui_typ,
-        zielgruppe: zielgruppe,
-        aktiv: aktiv,
-        bemerkung: bem,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'key' });
+    if (!supa) throw new Error('Supabase Client nicht verfügbar.');
 
-      if (supaErr) throw supaErr;
-      console.log(`✅ [Supabase] Gebühr ${key} erfolgreich mit allen UI-Spalten gespeichert.`);
+    const { error: supaErr } = await supa.from('gebuehren_config').upsert({
+      key: key,
+      bezeichnung: bezeichnung,
+      bezeichnung_frontend: bezeichnungfrontend,
+      betrag: Number(betrag || 0),
+      konto_haben: konto,
+      kategorie: kategorie,
+      sort_order: ui_sort,
+      ui_gruppe: ui_gruppe,
+      ui_feld: ui_feld,
+      ui_typ: ui_typ,
+      zielgruppe: zielgruppe,
+      aktiv: aktiv,
+      bemerkung: bem,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'key' });
 
-      // 2. Falls Geschwister-Elemente per Drag & Drop umsortiert wurden: Batch-Update!
-      const siblingEntries = Object.entries(_jbModalSiblingSortChanges);
-      if (siblingEntries.length > 0) {
-        for (const [sKey, sSort] of siblingEntries) {
-          const { error: sibErr } = await supa.from('gebuehren_config')
-            .update({ sort_order: Number(sSort), updated_at: new Date().toISOString() })
-            .eq('key', sKey);
-          if (sibErr) {
-            console.warn(`Warnung beim Sortier-Update für ${sKey}:`, sibErr);
-          } else {
-            const sibInMem = (window._jbGebuehren || []).find(x => String(x.key || '').trim().toUpperCase() === sKey.toUpperCase());
-            if (sibInMem) {
-              sibInMem.sort_order = Number(sSort);
-              sibInMem.ui_sort = Number(sSort);
-            }
-          }
+    if (supaErr) throw supaErr;
+    console.log(`✅ [Supabase] Gebühr ${key} erfolgreich mit allen UI-Spalten gespeichert.`);
+
+    // 2. Falls Geschwister-Elemente per Drag & Drop umsortiert wurden: Batch-Update!
+    const siblingEntries = Object.entries(_jbModalSiblingSortChanges);
+    if (siblingEntries.length > 0) {
+      for (const [sKey, sSort] of siblingEntries) {
+        const { error: sibErr } = await supa.from('gebuehren_config')
+          .update({ sort_order: Number(sSort), updated_at: new Date().toISOString() })
+          .eq('key', sKey);
+        if (sibErr) {
+          throw new Error(`Sortier-Update für ${sKey} fehlgeschlagen: ${sibErr.message}`);
         }
-        console.log(`✅ [Supabase] ${siblingEntries.length} Geschwister-Gebühren mit neuer Sortierung synchronisiert.`);
+        const sibInMem = (window._jbGebuehren || []).find(x => String(x.key || '').trim().toUpperCase() === sKey.toUpperCase());
+        if (sibInMem) {
+          sibInMem.sort_order = Number(sSort);
+          sibInMem.ui_sort = Number(sSort);
+        }
       }
+      console.log(`✅ [Supabase] ${siblingEntries.length} Geschwister-Gebühren mit neuer Sortierung synchronisiert.`);
     }
 
     _jbModalSiblingSortChanges = {};
@@ -1333,7 +1338,7 @@ async function jbSaveGebuehrFromModal() {
     jbRenderGebuehrenTable();
 
     // 3. Offene Beitragspositionen & Rechnungsentwürfe (noch nicht versendet/bezahlt) abgleichen
-    if (supa && prevFee && !_jbGebuehrIsNewModal) {
+    if (prevFee && !_jbGebuehrIsNewModal) {
       const syncResult = await jbSyncUpdatedFeeToOpenDrafts(supa, key, prevFee, payload);
       if (syncResult && (syncResult.updatedPositions > 0 || syncResult.updatedInvoices > 0)) {
         showToast(
@@ -1341,22 +1346,20 @@ async function jbSaveGebuehrFromModal() {
         );
       }
     }
+  };
 
-  } catch(err) {
-    if (window.UIConfirmKit) {
-      await UIConfirmKit.alert({
-        title: 'Fehler beim Speichern',
-        message: 'Fehler beim Speichern der Gebühr: ' + err.message,
-        type: 'danger'
-      });
+  try {
+    if (window.UIButtonKit && typeof window.UIButtonKit.withLoading === 'function') {
+      await window.UIButtonKit.withLoading(btn || '#btnSaveGebuehr', runSave);
     } else {
-      console.error('Fehler beim Speichern der Gebühr:', err);
+      await runSave();
     }
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = '<i class="fas fa-save me-1"></i> Gebühr speichern';
-    }
+  } catch (err) {
+    await UIConfirmKit.alert({
+      title: 'Fehler beim Speichern',
+      message: 'Fehler beim Speichern der Gebühr: ' + err.message,
+      type: 'danger'
+    });
   }
 }
 
@@ -1496,7 +1499,8 @@ async function jbSyncUpdatedFeeToOpenDrafts(supa, key, prevFee, nextFee) {
         if (!hasRa002 && sum < 0) sum = 0;
         sum = Number(sum.toFixed(2));
         updatedHeaderTotals[hid] = sum;
-        await supa.from('contributions_header').update({ gesamt: sum, updated_at: new Date().toISOString() }).eq('id', hid);
+        const { error: hdrUpdErr } = await supa.from('contributions_header').update({ gesamt: sum, updated_at: new Date().toISOString() }).eq('id', hid);
+        if (hdrUpdErr) throw hdrUpdErr;
       }
     }
   }
@@ -1539,7 +1543,8 @@ async function jbSyncUpdatedFeeToOpenDrafts(supa, key, prevFee, nextFee) {
         invPatch.total_amount = updatedHeaderTotals[hdrForInv.id];
         invPatch.open_amount = updatedHeaderTotals[hdrForInv.id];
       }
-      await supa.from('invoices').update(invPatch).eq('id', invId);
+      const { error: invUpdErr } = await supa.from('invoices').update(invPatch).eq('id', invId);
+      if (invUpdErr) throw invUpdErr;
       if (window._invoicePositionsCache) delete window._invoicePositionsCache[String(invId).trim()];
       if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
         window.RechnungsCore.renderPdf(invId, { forceRecreate: true }).catch(err => {

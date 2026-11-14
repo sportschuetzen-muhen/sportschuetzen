@@ -109,18 +109,19 @@ function jbGetMemberCategories(m, r) {
   const positions = (r && r.id && window._jbPositionsCache && window._jbPositionsCache[r.id]) || [];
   const posKeys = new Set(positions.map(p => String(p.source_field || p.sourcefield || p.key || '').trim().toUpperCase()));
 
-  // 1. Ehrenmitglied
-  if (m?.is_honorary || m?.IsHonoraryMember == 1 || m?._istEhren || posKeys.has('JB003') || posKeys.has('RA003')) {
+  // 1. Ehrenmitglied (JB004 = Ehrenmitglied, RA003 = Rabatt Ehrenmitgliedschaft)
+  if (m?.is_honorary || m?.IsHonoraryMember == 1 || m?._istEhren || posKeys.has('JB004') || posKeys.has('RA003')) {
     addCat('Ehrenmitglied');
   }
 
-  // 2. Vorstand
-  if (m?._istVorstand || (m?._aktiveFunktionenCount > 0) || posKeys.has('JB004')) {
+  // 2. Vorstand (RA001 = Vorstandsrabatt)
+  if (m?._istVorstand || (m?._aktiveFunktionenCount > 0) || posKeys.has('RA001')) {
     addCat('Vorstand');
   }
 
-  // 3. Junior (U21)
-  const age = m?.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+  // 3. Junior (U21 bezogen auf das aktive Beitragsjahr _jbYear)
+  const refYear = Number((typeof _jbYear !== 'undefined' && _jbYear) ? _jbYear : new Date().getFullYear());
+  const age = m?.BirthDate ? (refYear - new Date(m.BirthDate).getFullYear()) : 0;
   if ((age > 0 && age <= 20) || posKeys.has('JB006') || posKeys.has('JB007') || posKeys.has('KOSTENUEBERNAHME_JUGEND')) {
     addCat('Junior');
   }
@@ -150,7 +151,8 @@ function jbGetMemberCategories(m, r) {
     const is50m = /50m/i.test(rawCat) || /g50/i.test(rawCat);
     const is10m = /10m/i.test(rawCat) || /g10/i.test(rawCat);
     const isAuflage = /aufl/i.test(rawCat);
-    const isB = /b/i.test(rawCat) && !/a/i.test(rawCat.replace(/auflage/i, ''));
+    const licCat = String(lic?.LicenseCategory || lic?.license_category || '').trim().toUpperCase();
+    const isB = licCat === 'B' || /aktiv[\s-]*b|status[\s-]*b/i.test(rawCat);
 
     if (is50m && isAuflage) {
       addCat(`G50m Aufl. (${isB ? 'B' : 'A'})`);
@@ -256,6 +258,142 @@ function jbMemberMatchesCategory(m, r, filterVal) {
 window.jbGetMemberCategories = jbGetMemberCategories;
 window.jbGetMemberCategoryLabel = jbGetMemberCategoryLabel;
 window.jbMemberMatchesCategory = jbMemberMatchesCategory;
+
+/**
+ * Prüft für einen Beitrags-Header oder eine Personennummer, ob aufgrund des
+ * Rechnungs-Lebenszyklus eine Bearbeitungssperre (versendet / (teil-)bezahlt) vorliegt.
+ */
+function jbGetContributionLockState(headerOrPn) {
+  let header = null;
+  if (headerOrPn && typeof headerOrPn === 'object') {
+    header = headerOrPn;
+  } else if (headerOrPn !== undefined && headerOrPn !== null) {
+    const pnStr = String(headerOrPn).trim();
+    header = (_jbData || []).find(x => String(x.PersonNumber || '').trim() === pnStr) || null;
+  }
+
+  const invoicesList = window._invoices || window._jbAllInvoices || [];
+  let inv = null;
+  if (header && (header.invoiceId || header.invoice_id)) {
+    const iid = String(header.invoiceId || header.invoice_id).trim();
+    inv = invoicesList.find(i => String(i.id).trim() === iid) || null;
+  } else if (header && header.PersonNumber) {
+    inv = invoicesList.find(i =>
+      String(i.PersonNumber || i.person_number || '').trim() === String(header.PersonNumber).trim() &&
+      Number(i.year) === Number(header.year || _jbYear) &&
+      String(i.type || '').toLowerCase() === 'jahresbeitrag' &&
+      i.status !== 'storniert'
+    ) || null;
+  }
+
+  const hStatus = String(header?.status || '').toLowerCase();
+  const invStatus = String(inv?.status || '').toLowerCase();
+  const invMail = String(inv?.mail_status || header?.mail_status || '').toLowerCase();
+  const totalPaid = Number(inv?.total_paid || 0);
+  const openAmt = (inv && inv.open_amount !== undefined && inv.open_amount !== null) ? Number(inv.open_amount) : null;
+  const totalAmt = (inv && inv.total_amount !== undefined && inv.total_amount !== null) ? Number(inv.total_amount) : null;
+  const hasPartialViaAmounts = (totalAmt !== null && totalAmt > 0 && openAmt !== null && openAmt < (totalAmt - 0.01));
+
+  if (hStatus === 'bezahlt' || invStatus === 'bezahlt') {
+    return { isLocked: true, reason: 'bezahlt', label: 'Bezahlt (revisionsgesperrt)', header, invoice: inv };
+  }
+  if (hStatus === 'teilbezahlt' || invStatus === 'teilbezahlt' || totalPaid > 0 || hasPartialViaAmounts) {
+    return { isLocked: true, reason: 'teilbezahlt', label: 'Teilbezahlt (revisionsgesperrt)', header, invoice: inv };
+  }
+  if (hStatus === 'versendet' || hStatus === 'gesendet' || invMail === 'versendet' || invMail === 'gesendet' || Boolean(inv?.send_date)) {
+    return { isLocked: true, reason: 'versendet', label: 'Bereits versendet (revisionsgesperrt)', header, invoice: inv };
+  }
+  return { isLocked: false, reason: '', label: '', header, invoice: inv };
+}
+window.jbGetContributionLockState = jbGetContributionLockState;
+
+/**
+ * Synchronisiert Positionen & Gesamtbetrag eines noch offenen Rechnungsentwurfs
+ * (mail_status === 'entwurf', nicht storniert, nicht (teil-)bezahlt) nach Supabase
+ * und stösst die Hintergrund-Neugenerierung des PDFs mit forceRecreate: true an.
+ */
+async function jbSyncOpenDraftInvoice(supa, invoiceObjOrId, { totalAmount, positions, headerId = null, backgroundPdf = true } = {}) {
+  const invoicesList = window._invoices || window._jbAllInvoices || [];
+  let inv = null;
+  let invId = '';
+  if (invoiceObjOrId && typeof invoiceObjOrId === 'object') {
+    inv = invoiceObjOrId;
+    invId = String(inv.id || '').trim();
+  } else {
+    invId = String(invoiceObjOrId || '').trim();
+    inv = invoicesList.find(i => String(i.id).trim() === invId) || null;
+  }
+  if (!invId) return { synced: false, reason: 'missing_id' };
+
+  const mailSt = String(inv?.mail_status || 'entwurf').toLowerCase();
+  const invSt = String(inv?.status || 'offen').toLowerCase();
+  const paid = Number(inv?.total_paid || 0);
+  if (mailSt !== 'entwurf' || invSt === 'storniert' || invSt === 'bezahlt' || invSt === 'teilbezahlt' || paid > 0 || Boolean(inv?.send_date)) {
+    return { synced: false, reason: 'locked_or_cancelled' };
+  }
+
+  const headTotal = Number(Number(totalAmount || 0).toFixed(2));
+  const normalizedPositions = (positions || []).map((p, idx) => ({
+    invoice_id: invId,
+    position_nr: p.position_nr || (idx + 1),
+    description: p.description || p.beschreibung || p.name || 'Position',
+    quantity: Number(p.quantity || 1),
+    unit_price: Number(p.unit_price ?? p.betrag ?? 0),
+    amount: Number(p.amount ?? p.betrag ?? 0),
+    konto: String(p.konto || '3000').trim(),
+    type: p.type || p.typ || 'Debit',
+    source_field: p.source_field || p.sourcefield || p.key || null
+  }));
+
+  if (supa) {
+    const { error: invErr } = await supa.from('invoices').update({
+      total_amount: headTotal,
+      open_amount: headTotal,
+      pdf_url: null,
+      pdf_storage_path: null,
+      updated_at: new Date().toISOString()
+    }).eq('id', invId);
+    if (invErr) throw new Error(`Fehler beim Aktualisieren des Rechnungsentwurfs ${invId}: ${invErr.message}`);
+
+    const { error: delPosErr } = await supa.from('invoice_positions').delete().eq('invoice_id', invId);
+    if (delPosErr) throw new Error(`Fehler beim Ersetzen der Rechnungspositionen (${invId}): ${delPosErr.message}`);
+
+    if (normalizedPositions.length > 0) {
+      const { error: insPosErr } = await supa.from('invoice_positions').insert(normalizedPositions);
+      if (insPosErr) throw new Error(`Fehler beim Speichern der Rechnungspositionen (${invId}): ${insPosErr.message}`);
+    }
+
+    if (headerId) {
+      const { error: hdrLinkErr } = await supa.from('contributions_header').update({ invoice_id: invId }).eq('id', headerId);
+      if (hdrLinkErr) throw new Error(`Fehler beim Verknüpfen der Rechnung (${invId}): ${hdrLinkErr.message}`);
+    }
+  }
+
+  if (inv) {
+    inv.total_amount = headTotal;
+    inv.open_amount = headTotal;
+    inv.pdf_url = null;
+    inv.positions = normalizedPositions;
+  }
+  if (window._invoicePositionsCache) {
+    delete window._invoicePositionsCache[invId];
+  }
+
+  if (backgroundPdf && window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
+    window.RechnungsCore.renderPdf(invId, { forceRecreate: true }).then(res => {
+      if (res && res.pdfUrl && inv) {
+        inv.pdf_url = res.pdfUrl;
+      }
+      const hdr = (_jbData || []).find(h => String(h.invoiceId || h.invoice_id || '').trim() === invId);
+      if (hdr && res && res.pdfUrl) hdr.pdf_url = res.pdfUrl;
+    }).catch(err => {
+      console.warn(`⚠️ [Jahresbeitrag] Hintergrund-PDF-Neugenerierung (${invId}):`, err);
+    });
+  }
+
+  return { synced: true, invoiceId: invId };
+}
+window.jbSyncOpenDraftInvoice = jbSyncOpenDraftInvoice;
 
 // Supabase Client Access & State
 function getJahresbeitragSupabaseClient() {
@@ -689,43 +827,8 @@ function renderJahresbeitragView() {
     } else {
       jbRenderRows(_jbData);
     }
-    if (typeof TableKit !== 'undefined') {
-      setTimeout(() => {
-        if (typeof TableKit.setupColumnToggle === 'function' && document.getElementById('jbTableColToggleContainer')) {
-          TableKit.setupColumnToggle('#jbTable', {
-            container: '#jbTableColToggleContainer',
-            storageKey: 'portal_jb_overview_cols'
-          });
-        }
-        if (typeof TableKit.makeResizable === 'function' && document.getElementById('jbTable')) {
-          TableKit.makeResizable('#jbTable', {
-            storageKey: 'jb_overview_col_widths',
-            minWidth: 50,
-            columns: {
-              actions: { minWidth: 100, defaultWidth: 140 }
-            }
-          });
-        }
-      }, 50);
-    }
   } else if (_jbActiveTab === 'matrix') {
     if (typeof jbInitMatrixTab === 'function') jbInitMatrixTab();
-    if (typeof TableKit !== 'undefined') {
-      setTimeout(() => {
-        if (typeof TableKit.setupColumnToggle === 'function' && document.getElementById('jbMatrixColToggleDropdown')) {
-          window._jbMatrixColToggle = TableKit.setupColumnToggle('#jbMatrixTable', {
-            container: '#jbMatrixColToggleDropdown',
-            storageKey: 'portal_jb_matrix_cols'
-          });
-        }
-        if (typeof TableKit.makeResizable === 'function' && document.getElementById('jbMatrixTable')) {
-          TableKit.makeResizable('#jbMatrixTable', {
-            storageKey: 'jb_matrix_col_widths',
-            minWidth: 40
-          });
-        }
-      }, 50);
-    }
   } else if (_jbActiveTab === 'entry') {
     jbRenderEntryList();
     jbAddScrollSupport();

@@ -7,7 +7,8 @@ function jbCalculateLiveTotal(m, settings) {
   const isPassiv = m._istPassiv || false;
   const isIntern = String(m.PersonNumber || '').startsWith('INT-');
   
-  const age = m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+  const refYear = Number((typeof _jbYear !== 'undefined' && _jbYear) ? _jbYear : new Date().getFullYear());
+  const age = m.BirthDate ? (refYear - new Date(m.BirthDate).getFullYear()) : 0;
   const isJunior = age > 0 && age <= 20;
   
   const configErrors = [];
@@ -437,12 +438,21 @@ function jbCalculateLiveTotal(m, settings) {
 }
 
 // ============================================================
-// FORMAT HELPERS
+// FORMAT HELPERS (Delegation an globales UIFormatKit)
 // ============================================================
 function fmtChf(val) {
-  return 'CHF ' + Number(val || 0).toFixed(2);
+  if (window.UIFormatKit && typeof window.UIFormatKit.money === 'function') {
+    return window.UIFormatKit.money(Number(val || 0), { fallback: 'CHF 0.00' });
+  }
+  const num = Number(val || 0);
+  const absFixed = Math.abs(num).toFixed(2).split('.');
+  absFixed[0] = absFixed[0].replace(/\B(?=(\d{3})+(?!\d))/g, "'");
+  return (num < 0 ? '- CHF ' : 'CHF ') + absFixed.join('.');
 }
 function fmtDate(val) {
+  if (window.UIFormatKit && typeof window.UIFormatKit.date === 'function') {
+    return window.UIFormatKit.date(val, { fallback: '–' });
+  }
   if (!val || val === '') return '–';
   const d = new Date(val);
   return isNaN(d) ? val : d.toLocaleDateString('de-CH');

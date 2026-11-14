@@ -7,7 +7,7 @@ function renderExcelImportTab() {
     <div class="card border-0 shadow-sm p-4 bg-white">
       <h4 class="mb-3 text-primary"><i class="fas fa-file-excel me-2"></i>Excel Turnier-Import</h4>
       <p class="text-muted small">
-        Hier können Sie die rohen Resultatsblätter aus dem <strong>Vereinswettschiessen</strong>, 
+        Hier kannst du die rohen Resultatsblätter aus dem <strong>Vereinswettschiessen</strong>, 
         <strong>Verbandsschiessen</strong> oder <strong>Dez-Import</strong> direkt hochladen. 
         Das System liest die Lizenzen aus und trägt die Teilnahmen vollautomatisch ein.
       </p>
@@ -95,18 +95,22 @@ function jbHandleExcelUpload(file, type) {
   const reader = new FileReader();
 
   if (isCsv) {
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
       try {
         const text = e.target.result;
         const parsedRows = jbParseCSV(text);
-        jbProcessExcelRows(parsedRows, type);
+        await jbProcessExcelRows(parsedRows, type);
       } catch(err) {
-        alert("Fehler beim Lesen der CSV-Datei: " + err.message);
+        await UIConfirmKit.alert({
+          title: 'CSV-Fehler',
+          message: 'Fehler beim Lesen der CSV-Datei: ' + (err.message || err),
+          type: 'danger'
+        });
       }
     };
     reader.readAsText(file, 'UTF-8');
   } else {
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
       try {
         const data = new Uint8Array(e.target.result);
         const workbook = XLSX.read(data, { type: 'array' });
@@ -150,9 +154,13 @@ function jbHandleExcelUpload(file, type) {
         const worksheet = workbook.Sheets[bestSheet];
         const jsonRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-        jbProcessExcelRows(jsonRows, type);
+        await jbProcessExcelRows(jsonRows, type);
       } catch(err) {
-        alert("Fehler beim Lesen der Excel-Datei: " + err.message);
+        await UIConfirmKit.alert({
+          title: 'Excel-Fehler',
+          message: 'Fehler beim Lesen der Excel-Datei: ' + (err.message || err),
+          type: 'danger'
+        });
       }
     };
     reader.readAsArrayBuffer(file);
@@ -182,18 +190,22 @@ async function jbHandleExcelUploadMulti(files, type) {
       const isCsv = file.name.toLowerCase().endsWith('.csv');
       const reader = new FileReader();
       if (isCsv) {
-        reader.onload = function(e) {
+        reader.onload = async function(e) {
           try {
             const parsedRows = jbParseCSV(e.target.result);
-            jbProcessExcelRows(parsedRows, type, isAppend);
+            await jbProcessExcelRows(parsedRows, type, isAppend);
           } catch(err) {
-            alert('Fehler in Datei ' + file.name + ': ' + err.message);
+            await UIConfirmKit.alert({
+              title: 'Dateifehler',
+              message: `Fehler in Datei ${file.name}: ${err.message || err}`,
+              type: 'danger'
+            });
           }
           resolve();
         };
         reader.readAsText(file, 'UTF-8');
       } else {
-        reader.onload = function(e) {
+        reader.onload = async function(e) {
           try {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
@@ -221,9 +233,13 @@ async function jbHandleExcelUploadMulti(files, type) {
             }
             const ws = workbook.Sheets[bestSheet];
             const jsonRows = XLSX.utils.sheet_to_json(ws, { header: 1 });
-            jbProcessExcelRows(jsonRows, type, isAppend);
+            await jbProcessExcelRows(jsonRows, type, isAppend);
           } catch(err) {
-            alert('Fehler in Datei ' + file.name + ': ' + err.message);
+            await UIConfirmKit.alert({
+              title: 'Dateifehler',
+              message: `Fehler in Datei ${file.name}: ${err.message || err}`,
+              type: 'danger'
+            });
           }
           resolve();
         };
@@ -251,9 +267,13 @@ function jbParseCSV(text) {
   });
 }
 
-function jbProcessExcelRows(rows, type, appendMode) {
+async function jbProcessExcelRows(rows, type, appendMode) {
   if (!rows || rows.length < 5) {
-    alert("Die Import-Datei enthält keine brauchbaren Zeilen oder ist leer.");
+    await UIConfirmKit.alert({
+      title: 'Leere Datei',
+      message: 'Die Import-Datei enthält keine brauchbaren Zeilen oder ist leer.',
+      type: 'warning'
+    });
     return;
   }
 
@@ -278,41 +298,8 @@ function jbProcessExcelRows(rows, type, appendMode) {
   });
   console.groupEnd();
 
-  let debugHtml = `
-    <div id="jbDebugPanel" style="
-      background: #1e1e2e; color: #cdd6f4; font-family: monospace; font-size: 11px;
-      padding: 12px; border-radius: 8px; margin-top: 16px; max-height: 350px;
-      overflow-y: auto; border: 2px solid #89b4fa;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-        <strong style="color:#89dceb">🔍 DEBUG: Rohdaten Excel-Import (Typ: <span style="color:#a6e3a1">${type}</span>)</strong>
-        <button onclick="document.getElementById('jbDebugPanel').remove()" 
-                style="background:#f38ba8; color:#1e1e2e; border:none; border-radius:4px; padding:2px 8px; cursor:pointer; font-size:10px;">✕ Schliessen</button>
-      </div>
-      <div style="color:#f9e2af; margin-bottom:6px">Gesamtzeilen: <strong>${rows.length}</strong> | Erste 30 Zeilen angezeigt:</div>
-      <table style="width:100%; border-collapse:collapse; font-size:10px;">
-        <thead><tr style="background:#313244; color:#89b4fa; position:sticky; top:0;">
-          <th style="padding:3px 6px; text-align:left; border-bottom:1px solid #45475a">Zeile #</th>
-          <th style="padding:3px 6px; text-align:left; border-bottom:1px solid #45475a">Zellen-Inhalt (alle Spalten)</th>
-        </tr></thead>
-        <tbody>
-  `;
-  rows.slice(0, 30).forEach((row, i) => {
-    const cellsHtml = (row || []).map((cell, ci) => {
-      const v = String(cell ?? '');
-      const highlight = v.length > 0 ? 'color:#a6e3a1;' : 'color:#6c7086;';
-      return `<span style="${highlight}" title="Spalte ${ci}">[${ci}]:${v || '–'}</span>`;
-    }).join(' &nbsp; ');
-    const rowBg = i % 2 === 0 ? 'background:#1e1e2e' : 'background:#181825';
-    debugHtml += `<tr style="${rowBg}">
-      <td style="padding:2px 6px; color:#cba6f7; white-space:nowrap">${i}</td>
-      <td style="padding:2px 6px; white-space:pre-wrap; word-break:break-all">${cellsHtml || '<span style="color:#6c7086">–leer–</span>'}</td>
-    </tr>`;
-  });
-  debugHtml += `</tbody></table></div>`;
-
   const existingDebug = document.getElementById('jbDebugPanel');
   if (existingDebug) existingDebug.remove();
-  previewContainer.insertAdjacentHTML('beforebegin', debugHtml);
 
   // DYNAMISCHE SPALTENERKENNUNG (Erweiterte Keywords)
   let colLizenzIdx = 1;
@@ -568,38 +555,39 @@ function jbProcessExcelRows(rows, type, appendMode) {
     previewContainer.classList.remove('d-none');
     showToast(`✅ ${detectedCount} Turnierteilnahmen erfolgreich analysiert!`);
   } else {
-    const debugMsg = `Es wurden keine gültigen Einträge gefunden.\n\n` +
-      `Erkannte Parameter:\n` +
-      `  • Lizenz-Spalte: [${colLizenzIdx}]\n` +
-      `  • Prüfwert-Spalte: [${colPruefIdx}]\n` +
-      `  • Daten ab Zeile: ${startRowIdx}\n` +
-      `  • Gesamtzeilen: ${rows.length}\n\n` +
-      `Bitte Debug-Panel prüfen: Ist die Lizenznummer in Spalte [${colLizenzIdx}]? ` +
-      `Hat Spalte [${colPruefIdx}] Zahlenwerte > 0?`;
-    alert(debugMsg);
+    const debugMsg = `Es wurden keine gültigen Einträge gefunden.<br><br>` +
+      `<strong>Erkannte Parameter:</strong><br>` +
+      `• Lizenz-Spalte: <code>[${colLizenzIdx}]</code><br>` +
+      `• Prüfwert-Spalte: <code>[${colPruefIdx}]</code><br>` +
+      `• Daten ab Zeile: <code>${startRowIdx}</code><br>` +
+      `• Gesamtzeilen: <code>${rows.length}</code><br><br>` +
+      `Prüfe in der Browser-Konsole, ob die Lizenznummer in Spalte <code>[${colLizenzIdx}]</code> steht und Spalte <code>[${colPruefIdx}]</code> Zahlenwerte &gt; 0 enthält.`;
+    await UIConfirmKit.alert({
+      title: 'Keine gültigen Einträge gefunden',
+      message: debugMsg,
+      type: 'warning'
+    });
   }
 }
 
 async function jbSubmitExcelImport() {
   if (!_jbImportData || !_jbImportData.length) return;
 
-  const btn = document.querySelector('button[onclick="jbSubmitExcelImport()"]');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Übertrage…';
+  const validList = _jbImportData.filter(x => x.pn !== null && x.pn !== '');
+  const skippedCount = _jbImportData.length - validList.length;
+  if (skippedCount > 0) {
+    console.warn(`⚠️ ${skippedCount} Einträge ohne Mitglieder-Match (AddressNumber nicht gefunden) werden übersprungen.`);
+  }
+  if (!validList.length) {
+    await UIConfirmKit.alert({
+      title: 'Keine Treffer',
+      message: 'Keine gültigen Einträge zum Importieren (kein Mitglied via AddressNumber gefunden).',
+      type: 'warning'
+    });
+    return;
+  }
 
-  try {
-    const validList = _jbImportData.filter(x => x.pn !== null && x.pn !== '');
-    const skippedCount = _jbImportData.length - validList.length;
-    if (skippedCount > 0) {
-      console.warn(`⚠️ ${skippedCount} Einträge ohne Mitglieder-Match (AddressNumber nicht gefunden) werden übersprungen.`);
-    }
-    if (!validList.length) {
-      alert('Keine gültigen Einträge zum Importieren (kein Mitglied via AddressNumber gefunden).');
-      btn.disabled = false;
-      btn.innerHTML = '<i class="fas fa-cloud-upload-alt me-1"></i> Import nach Supabase starten';
-      return;
-    }
-
+  const runImport = async () => {
     // DEDUPLIZIERUNG: PostgreSQL ON CONFLICT DO UPDATE verbietet doppelte Zielzeilen im selben Batch!
     const dedupMap = new Map();
     validList.forEach(item => {
@@ -616,7 +604,7 @@ async function jbSubmitExcelImport() {
     showLoadingOverlay(`Importiere Excel-Daten für ${deduplicatedList.length} Teilnahmen in Supabase und berechne Beiträge neu…`);
 
     const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
-    if (!supa) throw new Error("Supabase Client nicht verfügbar");
+    if (!supa) throw new Error('Supabase Client nicht verfügbar');
 
     const dbParts = deduplicatedList.map(item => ({
       id: `${item.pn}-${item.year}-${item.eventkey}`,
@@ -634,14 +622,15 @@ async function jbSubmitExcelImport() {
       const chunk = dbParts.slice(i, i + 50);
       const { error: partErr } = await supa.from('member_participations').upsert(chunk, { onConflict: 'person_number,year,event_key' });
       if (partErr) {
-        console.error("Supabase member_participations import error:", partErr);
-        throw new Error("Fehler beim Speichern der Teilnahmen in Supabase: " + (partErr.message || JSON.stringify(partErr)));
+        console.error('Supabase member_participations import error:', partErr);
+        throw new Error('Fehler beim Speichern der Teilnahmen in Supabase: ' + (partErr.message || JSON.stringify(partErr)));
       }
     }
 
     const uniquePns = [...new Set(deduplicatedList.map(x => String(x.pn).trim()))];
+    let skippedLockedCount = 0;
 
-    // Für alle betroffenen Schützen den Beitrag serverseitig neu berechnen
+    // Für alle betroffenen Schützen den Beitrag serverseitig neu berechnen (gesperrte Rechnungen werden von der RPC geschützt)
     if (uniquePns.length > 0) {
       console.log(`🤖 Berechne ${uniquePns.length} Schützen nach Excel-Import via Supabase RPC neu...`);
       const { data: rpcRes, error: rpcErr } = await supa.rpc('calculate_member_contributions', {
@@ -649,29 +638,38 @@ async function jbSubmitExcelImport() {
         p_target_pns: uniquePns
       });
       if (rpcErr) {
-        console.error("⚠️ Fehler bei RPC Neuberechnung nach Import:", rpcErr);
-        throw new Error("Fehler bei Neuberechnung der Beiträge: " + (rpcErr.message || JSON.stringify(rpcErr)));
-      } else {
-        console.log(`✅ [Supabase RPC] ${rpcRes?.message || 'Neuberechnung abgeschlossen'}`);
+        console.error('⚠️ Fehler bei RPC Neuberechnung nach Import:', rpcErr);
+        throw new Error('Fehler bei Neuberechnung der Beiträge: ' + (rpcErr.message || JSON.stringify(rpcErr)));
       }
+      skippedLockedCount = Number(rpcRes?.skipped_locked_count || 0);
+      console.log(`✅ [Supabase RPC] ${rpcRes?.message || 'Neuberechnung abgeschlossen'}`);
     }
 
-    showToast(`🎉 ${deduplicatedList.length} Teilnahmen für ${uniquePns.length} Schützen erfolgreich in Supabase importiert!`);
+    let toastMsg = `🎉 ${deduplicatedList.length} Teilnahmen für ${uniquePns.length} Schützen erfolgreich in Supabase importiert!`;
+    if (skippedLockedCount > 0) {
+      toastMsg += ` (${skippedLockedCount} bereits versendete/bezahlte Rechnung(en) unverändert geschützt)`;
+    }
+    showToast(toastMsg);
     document.getElementById('jbImportPreviewContainer').classList.add('d-none');
     _jbImportData = null;
 
     // Reload Jahresbeitrag details from Supabase
     await loadJahresbeitragData(true, false);
 
-    // Sync invoices with Rechnungen module
+    // Nur offene Entwurfsrechnungen synchronisieren
     for (const pn of uniquePns) {
       const cleanPn = pn.trim();
       const updatedHeader = _jbData.find(x => String(x.PersonNumber).trim() === cleanPn);
       if (updatedHeader && updatedHeader.invoiceId) {
+        const lockState = typeof window.jbGetContributionLockState === 'function'
+          ? window.jbGetContributionLockState(updatedHeader)
+          : { isLocked: false };
+        if (lockState.isLocked) continue;
+
         const updatedM = _jbMemberMap[cleanPn] || {};
         const updatedName = updatedM.FirstName ? `${updatedM.FirstName} ${updatedM.LastName}` : cleanPn;
         try {
-          console.log(`🤖 Synchronisiere Rechnung für ${cleanPn} nach Excel-Import...`);
+          console.log(`🤖 Synchronisiere Rechnungsentwurf für ${cleanPn} nach Excel-Import...`);
           if (typeof ensureInvoiceCreatedRemote === 'function') {
             await ensureInvoiceCreatedRemote(updatedHeader, updatedM, updatedName);
           }
@@ -693,11 +691,21 @@ async function jbSubmitExcelImport() {
     if (typeof renderJahresbeitragView === 'function') {
       renderJahresbeitragView();
     }
-  } catch(e) {
-    alert("Fehler beim Hochladen der Daten: " + e.message);
+  };
+
+  try {
+    if (window.UIButtonKit && typeof window.UIButtonKit.withLoading === 'function') {
+      await window.UIButtonKit.withLoading('button[onclick="jbSubmitExcelImport()"]', runImport);
+    } else {
+      await runImport();
+    }
+  } catch (e) {
+    await UIConfirmKit.alert({
+      title: 'Fehler beim Import',
+      message: 'Fehler beim Hochladen der Daten: ' + (e.message || e),
+      type: 'danger'
+    });
   } finally {
     hideLoadingOverlay();
-    btn.disabled = false;
-    btn.innerHTML = '<i class="fas fa-cloud-upload-alt me-1"></i> Import nach Supabase starten';
   }
 }

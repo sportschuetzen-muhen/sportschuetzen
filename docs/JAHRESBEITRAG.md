@@ -4,7 +4,7 @@
 > **Stand:** Oktober 2026  
 > **Komponenten:** `public.contributions_header`, `contributions_positions`, `member_participations`, `gebuehren_config`  
 > **Verknüpfung:** `contributions_header.invoice_id` $\rightarrow$ `public.invoices.id`  
-> **Frontend:** [`vorstand/js/jahresbeitrag/`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresbeitrag/) (`jahresbeitrag-overview.js`, `jahresbeitrag-matrix.js`, `jahresbeitrag-core.js`, `jahresbeitrag-gebuehren.js`, `jahresbeitrag-calc.js`, `jahresbeitrag-bank.js`, `jahresbeitrag-schnellerfassung.js`)
+> **Frontend:** [`vorstand/js/jahresbeitrag/`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresbeitrag/) (`jahresbeitrag-overview.js`, `jahresbeitrag-matrix.js`, `jahresbeitrag-core.js`, `jahresbeitrag-gebuehren.js`, `jahresbeitrag-calc.js`, `jahresbeitrag-import.js`, `jahresbeitrag-schnellerfassung.js`) & [`buchhaltung-bank.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/buchhaltung/buchhaltung-bank.js) (CAMT-Bankabgleich)
 
 ---
 
@@ -44,7 +44,7 @@ Das Modul Jahresbeitrag steuert die jährliche Beitragsbemessung, Rechnungsstell
 
 ### 2.5 Warum CAMT.054 Batch-Bankabgleich?
 * **Massenabgleich:** Nach dem Versand der Beitragsrechnungen treffen viele Zahlungen gleichzeitig auf dem Vereinskonto ein.
-* **Automatisierung:** Das Bankabgleichsmodul (`jahresbeitrag-bank.js`) liest den `CAMT.054`-XML-Kontoauszug, erkennt die 27-stelligen QR-Referenzen, setzt `contributions_header.status = 'bezahlt'` und bucht den Zahlungseingang in `public.invoice_payments` sowie im Finanzjournal (`accounting_journal`).
+* **Automatisierung:** Der zentrale CAMT.054-Bankabgleich erfolgt konsolidiert über `buchhaltung-bank.js` (`jahresbeitrag-bank.js` wurde aus `index.html` entfernt): Er liest den `CAMT.054`-XML-Kontoauszug, erkennt die 27-stelligen QR-Referenzen, setzt `contributions_header.status = 'bezahlt'` und bucht den Zahlungseingang in `public.invoice_payments` sowie im Finanzjournal (`accounting_journal`).
 
 ### 2.6 Warum KMU-Kontenrahmen (`accounting_accounts`) & Saubere Konto-Übergabe an `RechnungsCore`?
 * **Problem:** Werden Gegenkonten statisch codiert oder Freitextnummern ohne Validierung eingetippt, entstehen Fehlbuchungen im Journal. Zudem gingen Kontierungszuordnungen verloren, wenn Fachmodule abweichende Key-Namen (`account` statt `konto`/`accountHaben`) an `RechnungsCore` schickten.
@@ -380,6 +380,12 @@ Wird eine Jahresbeitrags-Rechnung (`JB-26-XXXX`) im Rechnungsmodul gelöscht –
 * **Kanonische Text-Priorität (`bezeichnung_frontend` vor `ui_feld`):** Sowohl bei Standardgebühren als auch bei variablen Zusatzpositionen (`Z%`) gilt für Positionen und Rechnungsdruck die einheitliche Reihenfolge `bezeichnung_frontend || bezeichnung || ui_feld` (`jahresbeitrag-calc.js`, `jahresbeitrag-schnellerfassung.js`, `calculate_member_contributions`); `ui_feld` dient ausschliesslich als kurzes Steuerelement-/Spaltenlabel.
 * **Leere / offene Standardbeträge bei `ui_typ = 'amount'`:** Variable Zusatzpositionen dürfen in `gebuehren_config` leer bzw. mit `CHF 0.00` gespeichert werden (`jahresbeitrag-gebuehren.js`); Positionen mit Betrag `0.00` werden weder im Frontend noch in `calculate_member_contributions` als Nullzeile fakturiert.
 * **Automatischer Entwurfs-Abgleich & `source_field`-Vererbung:** Änderungen in der Gebührenkonfiguration gleichen automatisch unveränderte Standardtexte in offenen `contributions_positions` und noch nicht versendeten/bezahlten `entwurf`-Rechnungen ab (mit anschliessender PDF-Neugenerierung), und `ensureInvoiceCreatedRemote` sowie `jbSaveSingleMemberDirect` schreiben `source_field` durchgängig in `invoice_positions`.
+
+### 8.13 Revisionssichere Sperren, Split-FiBu-Buchung & Tarif-/Stichjahr-Härtung (Migration 129)
+* **SSV-Vereinsnummer, Fallback & Stichjahr:** `calculate_member_contributions` prüft ausschliesslich Muhen-Lizenzen der Vereinsnummer `1.19.0.01.029`, verwendet ohne aktive Muhen-Lizenz den neutralen Fallback `JB005` (`Frei/Fremdlizenz`, CHF 0.00) und berechnet die U21-Altersgrenze (`age > 0 AND age <= 20`) sowohl serverseitig als auch in allen Frontend-Modulen (`jahresbeitrag-core.js`, `jahresbeitrag-calc.js`, `jahresbeitrag-overview.js`, `jahresbeitrag-schnellerfassung.js`) einheitlich gegen das ausgewählte Beitragsjahr `_jbYear`.
+* **Durchgängige Lebenszyklus-Sperre:** Bereits versendete (`mail_status = 'versendet'`), teilbezahlte oder bezahlte Beiträge/Rechnungen werden durch `calculate_member_contributions` (inklusive gezieltem `p_target_pns`-Aufruf), `jbGetContributionLockState()` in der Schnellerfassung sowie `jbResetYear()` strikt geschützt; offene Entwürfe werden zentral und fehlergeprüft über `jbSyncOpenDraftInvoice()` aktualisiert.
+* **Doppelbuchungs-Schutz bei Zahlungen & RBAC:** `jbSaveZahlung()` ruft `RechnungsCore.recordPayment(..., { syncBookkeeping: false, paymentMethod, documentRef })` auf und verbucht ausschliesslich die Konten-Splitbuchung im `accounting_journal` exakt einmal; Migration 129 ergänzt zudem die `SECURITY DEFINER`-Berechtigungsprüfung in `calculate_member_contributions` und schaltet `member_participations` per RLS für `jahresbeitrag.view`/`.manage` (inklusive Kassier) frei.
+* **Globale UI-Toolkits & Modul-Hygiene:** Alle aktiven Skripte nutzen ausschliesslich `UIConfirmKit` (`{ title, message, type }`), `UIFormatKit` (`money`/`date`), `UIButtonKit.withLoading`, Du-Form und XSS-Escaping; `jahresbeitrag-bank.js` wurde aus `vorstand/index.html` entfernt.
 
 
 

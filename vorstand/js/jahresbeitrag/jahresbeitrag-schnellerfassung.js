@@ -173,13 +173,18 @@ function jbRenderEntryList() {
       itemStyle += ' background-color: #fffbeb;'; // Soft pastell yellow/orange background
     }
 
+    const esc = (s) => (typeof escHtml === 'function')
+      ? escHtml(s)
+      : String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    const pnAttr = String(m.PersonNumber || '').replace(/[^a-zA-Z0-9_-]/g, '');
+
     return `
       <button class="${itemClass}" style="${itemStyle}" 
-              onclick="jbEntrySelectMember('${m.PersonNumber}')">
+              onclick="jbEntrySelectMember('${pnAttr}')">
         <div>
-          <div class="fw-semibold" style="font-size: 13px;">${m.FirstName} ${m.LastName} ${modifiedBadge}</div>
+          <div class="fw-semibold" style="font-size: 13px;">${esc(m.FirstName || '')} ${esc(m.LastName || '')} ${modifiedBadge}</div>
           <div class="small text-muted" style="font-size: 11px; ${activeClass ? 'color: #cbd5e1 !important;' : ''}">
-            ${m.PersonNumber} · <strong class="${activeClass ? 'text-white' : 'text-primary'}">${totalText}</strong>
+            ${esc(m.PersonNumber || '')} · <strong class="${activeClass ? 'text-white' : 'text-primary'}">${totalText}</strong>
           </div>
         </div>
         <span class="badge ${activeClass ? 'bg-white text-primary' : 'bg-secondary'} rounded-pill" style="font-size: 10px;">${statusText}</span>
@@ -220,8 +225,9 @@ async function jbEntrySelectMember(pn) {
     const m = _jbMembers.find(x => String(x.PersonNumber || '').trim() === pnClean);
     if (!m) throw new Error("Schütze nicht gefunden");
 
-    // Initialisiere lokalen State für Radio-Buttons / Checkboxen
-    const age = m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+    // Initialisiere lokalen State für Radio-Buttons / Checkboxen (Stichjahr = _jbYear)
+    const refYear = (typeof _jbYear !== 'undefined' && _jbYear) ? Number(_jbYear) : new Date().getFullYear();
+    const age = m.BirthDate ? (refYear - new Date(m.BirthDate).getFullYear()) : 0;
     const isJunior = age > 0 && age <= 20;
     const hatG50m = (m._lizenzen || window._mglLizenzenCache?.[String(m.PersonNumber)] || []).some(l => 
       (l.IsActive == 1 || l.IsActive === true) && !l.ExitDate && (l.MembershipCategory || '').toLowerCase().includes('g50')
@@ -250,7 +256,6 @@ async function jbEntrySelectMember(pn) {
     // Lizenz-Initialisierung anhand m._lizenzen
     const ownLiz = (m._lizenzen || []).find(l => l.istMuhen);
     if (ownLiz) {
-      const age = m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
       if (age > 0 && age <= 20) {
         _jbParticipationsState.lizenz = 'junior';
       } else {
@@ -485,7 +490,8 @@ function jbGetEffectiveFeeItems() {
 function jbRenderDynamicFeeGroupsHTML(m, state) {
   const feeItems = jbGetEffectiveFeeItems();
   const events = state.events || {};
-  const age = m && m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+  const refYear = (typeof _jbYear !== 'undefined' && _jbYear) ? Number(_jbYear) : new Date().getFullYear();
+  const age = m && m.BirthDate ? (refYear - new Date(m.BirthDate).getFullYear()) : 0;
   const isJunior = age > 0 && age <= 20;
 
   // Filtere nicht-aktive Gebühren sowie System-Gebühren (JB, LI, RA, GE001, amount/Zusatz)
@@ -582,11 +588,23 @@ function jbRenderDynamicFeeGroupsHTML(m, state) {
             events['KK003'] ? '2-stellung' :
             events['KK004'] ? '3-stellung' : 'keine'
           );
+          const ssvSumSelected =
+            ssvVal === 'sv' ? Number(fieldItems.find(x => x.key === 'KK005')?.betrag || 0) :
+            ssvVal === 'liegend_2_3' ? ['KK002', 'KK003', 'KK004'].reduce((s, k) => s + Number(fieldItems.find(x => x.key === k)?.betrag || 0), 0) :
+            ssvVal === 'liegend' ? Number(fieldItems.find(x => x.key === 'KK002')?.betrag || 0) :
+            ssvVal === '2-stellung' ? Number(fieldItems.find(x => x.key === 'KK003')?.betrag || 0) :
+            ssvVal === '3-stellung' ? Number(fieldItems.find(x => x.key === 'KK004')?.betrag || 0) : 0;
+          const ssvPrices = fieldItems.map(x => Number(x.betrag || 0)).filter(n => n > 0);
+          const ssvMin = ssvPrices.length ? Math.min(...ssvPrices) : Number(item.betrag || 0);
+          const ssvMax = ssvPrices.length ? Math.max(...ssvPrices) : Number(item.betrag || 0);
+          const ssvBadgeText = ssvVal !== 'keine'
+            ? `CHF ${ssvSumSelected.toFixed(2)}`
+            : (ssvMin === ssvMax ? `CHF ${ssvMin.toFixed(2)}` : `CHF ${ssvMin.toFixed(2)}–${ssvMax.toFixed(2)}`);
           bodyHtml += `
             <div class="mb-3">
               <div class="d-flex justify-content-between align-items-center mb-1">
                 <label class="form-label small fw-semibold text-muted mb-0">SSV dez (KK002/003/004/005)</label>
-                <span class="badge bg-secondary" style="font-size: 10px;">CHF ${item.betrag.toFixed(2)}</span>
+                <span class="badge bg-secondary" style="font-size: 10px;">${ssvBadgeText}</span>
               </div>
               <div class="d-flex bg-light p-1 rounded-2" style="gap: 5px; flex-wrap: wrap;">
                 <button type="button" class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${ssvVal === 'keine' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'}" 
@@ -701,8 +719,24 @@ function jbRenderDynamicFeeGroupsHTML(m, state) {
   return html;
 }
 
+function jbCheckEntryEditable(pn, showFeedback = true) {
+  if (typeof Perms !== 'undefined' && typeof Perms.can === 'function' && !Perms.can('jahresbeitrag.manage')) {
+    if (showFeedback) showToast('Keine Berechtigung zum Bearbeiten (jahresbeitrag.manage erforderlich).', 'warning');
+    return false;
+  }
+  const lockState = typeof window.jbGetContributionLockState === 'function'
+    ? window.jbGetContributionLockState(pn)
+    : { isLocked: false };
+  if (lockState.isLocked) {
+    if (showFeedback) showToast(`Bearbeitungssperre: ${lockState.reason || 'Rechnung bereits versendet oder bezahlt.'}`, 'warning');
+    return false;
+  }
+  return true;
+}
+
 window.jbUpdateEventState = function(key, val, pn) {
   const pnClean = String(pn || '').trim();
+  if (!jbCheckEntryEditable(pnClean)) return;
   key = String(key).trim().toUpperCase();
   val = Number(val || 0);
 
@@ -748,6 +782,7 @@ window.jbUpdateEventState = function(key, val, pn) {
 
 window.jbSelectSingleSelectOption = function(activeKey, allKeysStr, pn) {
   const pnClean = String(pn || '').trim();
+  if (!jbCheckEntryEditable(pnClean)) return;
   const allKeys = String(allKeysStr || '').split(',').map(k => k.trim().toUpperCase()).filter(Boolean);
   
   if (!_jbParticipationsState.events) {
@@ -849,13 +884,38 @@ function jbRenderEntryForm(m) {
 
   // Live-Berechnung der Summen
   const calc = jbCalculateLiveTotal(m, _jbParticipationsState);
-  const isJunior = m.BirthDate ? ((new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) <= 20) : false;
+  const refYear = (typeof _jbYear !== 'undefined' && _jbYear) ? Number(_jbYear) : new Date().getFullYear();
+  const age = m.BirthDate ? (refYear - new Date(m.BirthDate).getFullYear()) : 0;
+  const isJunior = age > 0 && age <= 20;
+  const esc = (s) => (typeof escHtml === 'function')
+    ? escHtml(s)
+    : String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const pnAttr = String(m.PersonNumber || '').replace(/[^a-zA-Z0-9_-]/g, '');
+
+  const lockState = typeof window.jbGetContributionLockState === 'function'
+    ? window.jbGetContributionLockState(m.PersonNumber)
+    : { isLocked: false, reason: '' };
+  const canManage = (typeof Perms !== 'undefined' && typeof Perms.can === 'function')
+    ? Perms.can('jahresbeitrag.manage')
+    : true;
+  const isReadOnly = !canManage || lockState.isLocked;
+  const readOnlyBanner = lockState.isLocked
+    ? `<div class="alert alert-warning border-warning d-flex align-items-center gap-2 py-2 px-3 mb-3 small">
+         <i class="fas fa-lock text-warning"></i>
+         <div><strong>Bearbeitungssperre aktiv:</strong> ${esc(lockState.reason || 'Rechnung bereits versendet oder bezahlt.')} Änderungen in der Schnellerfassung sind gesperrt.</div>
+       </div>`
+    : (!canManage
+      ? `<div class="alert alert-info d-flex align-items-center gap-2 py-2 px-3 mb-3 small">
+           <i class="fas fa-eye text-info"></i>
+           <div>Du hast nur Leserechte (<code>jahresbeitrag.view</code>). Änderungen sind deaktiviert.</div>
+         </div>`
+      : '');
 
   const positionsHTML = calc.positions.map(p => {
     const isCredit = p.typ === 'Kredit' || p.typ === 'Credit' || p.betrag < 0;
     return `
     <div class="d-flex justify-content-between align-items-center py-1 border-bottom" style="font-size: 12px;">
-      <span class="text-muted">${p.name}</span>
+      <span class="text-muted">${esc(p.name)}</span>
       <span class="fw-bold ${isCredit ? 'text-success' : 'text-dark'}">
         ${isCredit ? '-' : ''}CHF ${Math.abs(p.betrag).toFixed(2)}
       </span>
@@ -867,7 +927,7 @@ function jbRenderEntryForm(m) {
     <div class="alert alert-danger p-2 mb-2 rounded-3 border-0 shadow-sm" style="font-size: 11px;">
       <div class="fw-bold mb-1"><i class="fas fa-exclamation-triangle me-1"></i>Konfigurationsfehler:</div>
       <ul class="mb-1 ps-3">
-        ${calc.configErrors.map(e => `<li>${e.error}</li>`).join('')}
+        ${calc.configErrors.map(e => `<li>${esc(e.error)}</li>`).join('')}
       </ul>
       <div class="small fw-semibold text-danger">⚠️ Bitte im Reiter <strong>"Gebühren"</strong> korrigieren.</div>
     </div>
@@ -876,7 +936,7 @@ function jbRenderEntryForm(m) {
   const geFee = (window._jbGebuehren || []).find(g => String(g.key || '').trim().toUpperCase() === 'GE001');
   const geTitle = geFee ? (geFee.bezeichnung_frontend || geFee.bezeichnung || 'Schützenhaus-Beitrag') : 'Schützenhaus-Beitrag';
   const geAmt = geFee && geFee.betrag !== undefined && geFee.betrag !== null ? Math.abs(Number(geFee.betrag)).toFixed(2) : null;
-  const geLabel = geAmt !== null ? `${geTitle} (CHF ${geAmt})` : `<span class="text-danger fw-bold"><i class="fas fa-exclamation-triangle me-1"></i>${geTitle} (Tarif fehlt in Konfiguration!)</span>`;
+  const geLabel = geAmt !== null ? `${esc(geTitle)} (CHF ${geAmt})` : `<span class="text-danger fw-bold"><i class="fas fa-exclamation-triangle me-1"></i>${esc(geTitle)} (Tarif fehlt in Konfiguration!)</span>`;
 
   const hmFee = (window._jbGebuehren || []).find(g => String(g.key || '').trim().toUpperCase() === 'RA002');
   const hmTitle = hmFee ? (hmFee.bezeichnung_frontend || hmFee.bezeichnung || 'Gutschrift Unterhalt Anlage (Hausmeister)') : 'Gutschrift Unterhalt Anlage (Hausmeister)';
@@ -890,8 +950,8 @@ function jbRenderEntryForm(m) {
       <div class="col-md-5 d-flex flex-column" style="position: sticky; top: 10px; height: calc(100vh - 235px); min-height: 480px;">
         <div class="card p-3 shadow-sm border-0 bg-light flex-fill d-flex flex-column rounded-3" style="background: rgba(243, 244, 246, 0.7); backdrop-filter: blur(10px);">
           <div class="mb-3 border-bottom pb-2">
-            <h5 class="mb-0 text-primary fw-bold">${m.FirstName} ${m.LastName}</h5>
-            <small class="text-muted">${m.PersonNumber} · ${isJunior ? '👦 Junior' : '👤 Erwachsen'}</small>
+            <h5 class="mb-0 text-primary fw-bold">${esc(m.FirstName || '')} ${esc(m.LastName || '')}</h5>
+            <small class="text-muted">${esc(m.PersonNumber || '')} · ${isJunior ? '👦 Junior' : '👤 Erwachsen'}</small>
           </div>
 
           ${errorsHTML}
@@ -911,31 +971,38 @@ function jbRenderEntryForm(m) {
 
       <!-- RECHTE SPALTE: Auswahlelemente (Scrollbar mit ausreichend Puffer unten) -->
       <div class="col-md-7 d-flex flex-column overflow-y-auto pr-2 pb-5 mb-4" id="jbEntryRightCol" style="max-height: calc(100vh - 235px); min-height: 480px;">
+        ${readOnlyBanner}
         
         <!-- 0. Schnell-Presets (Vorlagen) -->
         <div class="card p-2 border-0 shadow-sm mb-3 rounded-3 bg-light border-start border-4 border-warning">
           <div class="d-flex align-items-center justify-content-between flex-wrap gap-1">
             <span class="small fw-bold text-muted" style="font-size:11px;"><i class="fas fa-bolt text-warning me-1"></i>Schnell-Vorlage:</span>
             <div class="d-flex gap-1">
-              <button type="button" class="btn btn-xs btn-outline-primary py-1 px-2 fw-semibold" onclick="jbApplyPreset('aktiv_a', '${m.PersonNumber}')" style="font-size:11px;">⚡ Aktiv A</button>
-              <button type="button" class="btn btn-xs btn-outline-primary py-1 px-2 fw-semibold" onclick="jbApplyPreset('aktiv_b', '${m.PersonNumber}')" style="font-size:11px;">⚡ Aktiv B</button>
-              <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2 fw-semibold" onclick="jbApplyPreset('passiv', '${m.PersonNumber}')" style="font-size:11px;">⚡ Passiv</button>
+              <button type="button" class="btn btn-xs btn-outline-primary py-1 px-2 fw-semibold" onclick="jbApplyPreset('aktiv_a', '${pnAttr}')" style="font-size:11px;">⚡ Aktiv A</button>
+              <button type="button" class="btn btn-xs btn-outline-primary py-1 px-2 fw-semibold" onclick="jbApplyPreset('aktiv_b', '${pnAttr}')" style="font-size:11px;">⚡ Aktiv B</button>
+              <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2 fw-semibold" onclick="jbApplyPreset('passiv', '${pnAttr}')" style="font-size:11px;">⚡ Passiv</button>
             </div>
           </div>
         </div>
 
-        <!-- 1. Lizenz & Status -->
+        <!-- 1. Lizenz & Status (abgeleitet aus SSV-Mitgliederstamm) -->
         <div class="card p-3 border-0 shadow-sm mb-3 rounded-3">
-          <h6 class="text-secondary fw-bold mb-2" style="font-size: 12px; text-transform: uppercase;"><i class="fas fa-id-card me-2"></i>Lizenz & Status</h6>
-          <div class="d-flex bg-light p-1 rounded-2" style="gap: 5px;">
-            <button class="btn btn-sm flex-fill rounded-2 border-0 py-2 ${_jbParticipationsState.lizenz === 'keine' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'}" 
-                    onclick="jbUpdateState('lizenz', 'keine', '${m.PersonNumber}')">Keine (Fremd)</button>
-            <button class="btn btn-sm flex-fill rounded-2 border-0 py-2 ${_jbParticipationsState.lizenz === 'verein' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'}" 
-                    onclick="jbUpdateState('lizenz', 'verein', '${m.PersonNumber}')">Eigener JB</button>
-            <button class="btn btn-sm flex-fill rounded-2 border-0 py-2 ${_jbParticipationsState.lizenz === 'junior' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'}" 
-                    onclick="jbUpdateState('lizenz', 'junior', '${m.PersonNumber}')">Jungschütze</button>
-            <button class="btn btn-sm flex-fill rounded-2 border-0 py-2 ${_jbParticipationsState.lizenz === 'passiv' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'}" 
-                    onclick="jbUpdateState('lizenz', 'passiv', '${m.PersonNumber}')">Passiv</button>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="text-secondary fw-bold mb-0" style="font-size: 12px; text-transform: uppercase;"><i class="fas fa-id-card me-2"></i>Lizenz &amp; Status (Stammdaten)</h6>
+            <span class="badge bg-light text-muted border" style="font-size: 10px;"><i class="fas fa-database me-1"></i>SSV / Mitglieder</span>
+          </div>
+          <div class="d-flex flex-wrap gap-2 align-items-center bg-light p-2 rounded-2 border">
+            <span class="badge ${
+              _jbParticipationsState.lizenz === 'junior' ? 'bg-info text-dark' :
+              _jbParticipationsState.lizenz === 'verein' ? 'bg-primary' :
+              _jbParticipationsState.lizenz === 'passiv' ? 'bg-secondary' : 'bg-warning text-dark'
+            }">${
+              _jbParticipationsState.lizenz === 'junior' ? 'Jungschütze / Junior (Muhen)' :
+              _jbParticipationsState.lizenz === 'verein' ? 'Eigener JB / Lizenz Muhen' :
+              _jbParticipationsState.lizenz === 'passiv' ? 'Passivmitglied' :
+              _jbParticipationsState.lizenz === 'fremd' ? 'Fremdlizenz (auswärtig)' : 'Ohne Muhen-Lizenz'
+            }</span>
+            <span class="small text-muted">${esc(m._kategorie || (m._istPassiv ? 'Passiv' : 'Aktiv'))} · Anpassung erfolgt über Stammdaten / SSV-Import</span>
           </div>
         </div>
 
@@ -947,7 +1014,7 @@ function jbRenderEntryForm(m) {
             <div class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" id="entry_schuetzenhaus" ${
                 _jbParticipationsState.schuetzenhaus ? 'checked' : ''
-              } onchange="jbConfirmEntrySchuetzenhaus(this, '${m.PersonNumber}')">
+              } onchange="jbConfirmEntrySchuetzenhaus(this, '${pnAttr}')">
             </div>
           </div>
         </div>
@@ -957,14 +1024,14 @@ function jbRenderEntryForm(m) {
           <div class="d-flex align-items-center justify-content-between">
             <div>
               <h6 class="text-secondary fw-bold mb-1" style="font-size: 12px; text-transform: uppercase;">
-                <i class="fas fa-tools me-2 text-success"></i>${hmTitle}
+                <i class="fas fa-tools me-2 text-success"></i>${esc(hmTitle)}
               </h6>
               <span class="small fw-semibold text-muted">${hmSubTitle}</span>
             </div>
             <div class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" id="entry_hausmeister" ${
                 _jbParticipationsState.hausmeister ? 'checked' : ''
-              } onchange="jbUpdateState('hausmeister', this.checked, '${m.PersonNumber}')" style="cursor: pointer; transform: scale(1.15);">
+              } onchange="jbUpdateState('hausmeister', this.checked, '${pnAttr}')" style="cursor: pointer; transform: scale(1.15);">
             </div>
           </div>
         </div>
@@ -977,11 +1044,11 @@ function jbRenderEntryForm(m) {
 
         <!-- 5. Speichern & Aktionen (mit großzügigem Abstand nach unten) -->
         <div class="d-flex gap-2 mt-4 pt-2 pb-5">
-          <button class="btn btn-outline-danger px-3" onclick="jbEntryResetForm('${m.PersonNumber}')">
+          <button type="button" class="btn btn-outline-danger px-3" onclick="jbEntryResetForm('${pnAttr}')" ${isReadOnly ? 'disabled' : ''}>
             <i class="fas fa-trash-alt me-1"></i> Zurücksetzen
           </button>
-          <button class="btn btn-success flex-fill py-2.5 fw-bold shadow-sm" onclick="jbEntrySaveAndNext('${m.PersonNumber}')">
-            <i class="fas fa-save me-1"></i> Speichern & Weiter (Nächster Schütze)
+          <button type="button" id="jbEntrySaveNextBtn" class="btn btn-success flex-fill py-2.5 fw-bold shadow-sm" onclick="jbEntrySaveAndNext('${pnAttr}')" ${isReadOnly ? 'disabled' : ''}>
+            <i class="fas fa-save me-1"></i> Speichern &amp; Weiter (Nächster Schütze)
           </button>
         </div>
 
@@ -989,6 +1056,15 @@ function jbRenderEntryForm(m) {
 
     </div>
   `;
+
+  if (isReadOnly) {
+    const rightColReadOnly = document.getElementById('jbEntryRightCol');
+    if (rightColReadOnly) {
+      rightColReadOnly.querySelectorAll('input, select, textarea, button').forEach(el => {
+        el.disabled = true;
+      });
+    }
+  }
 
   // Scrollposition & Fokus wiederherstellen
   const newRightCol = document.getElementById('jbEntryRightCol');
@@ -1011,15 +1087,17 @@ function jbRenderEntryForm(m) {
 async function jbConfirmEntrySchuetzenhaus(chk, pn) {
   const currentVal = chk.checked;
   const prevVal = !currentVal;
-  
-  const ok = window.UIConfirmKit
-    ? await UIConfirmKit.confirm({
-        title: 'Infrastrukturbeitrag anpassen?',
-        message: 'Möchtest du den Infrastrukturbeitrag Schützenhaus für dieses Mitglied wirklich manuell ändern?',
-        type: 'warning',
-        confirmText: 'Ändern'
-      })
-    : confirm("Möchtest du den Infrastrukturbeitrag Schützenhaus für dieses Mitglied wirklich manuell ändern?");
+  if (!jbCheckEntryEditable(pn)) {
+    chk.checked = prevVal;
+    return;
+  }
+
+  const ok = await UIConfirmKit.confirm({
+    title: 'Infrastrukturbeitrag anpassen?',
+    message: 'Möchtest du den Infrastrukturbeitrag Schützenhaus für dieses Mitglied wirklich manuell ändern?',
+    type: 'warning',
+    confirmText: 'Ändern'
+  });
 
   if (ok) {
     jbUpdateState('schuetzenhaus', currentVal, pn);
@@ -1031,6 +1109,15 @@ async function jbConfirmEntrySchuetzenhaus(chk, pn) {
 // 5. State live synchronisieren & direkt in Supabase speichern
 async function jbSaveSingleMemberDirect(pnClean) {
   const pn = String(pnClean || '').trim();
+  if (typeof Perms !== 'undefined' && typeof Perms.can === 'function' && !Perms.can('jahresbeitrag.manage')) {
+    throw new Error('Keine Berechtigung zum Speichern (jahresbeitrag.manage erforderlich).');
+  }
+  const lockState = typeof window.jbGetContributionLockState === 'function'
+    ? window.jbGetContributionLockState(pn)
+    : { isLocked: false, reason: '' };
+  if (lockState.isLocked) {
+    throw new Error(lockState.reason || 'Beitrag ist bereits versendet/bezahlt und daher gesperrt.');
+  }
   const settings = _jbLocalBulkChanges[pn] || _jbParticipationsState;
   const m = (_jbMemberMap && _jbMemberMap[pn]) || (_jbMembers || []).find(x => String(x.PersonNumber || '').trim() === pn);
   if (!m) return null;
@@ -1089,7 +1176,8 @@ async function jbSaveSingleMemberDirect(pnClean) {
       erfasst_am: new Date().toISOString(),
       erfasst_von: window.currentUser || 'frontend'
     }));
-    await supa.from('member_participations').upsert(dbParts, { onConflict: 'person_number,year,event_key' });
+    const { error: partErr } = await supa.from('member_participations').upsert(dbParts, { onConflict: 'person_number,year,event_key' });
+    if (partErr) throw new Error('Fehler beim Speichern der Teilnahmen: ' + partErr.message);
   }
 
   // Memory Participations Cache updaten
@@ -1123,7 +1211,7 @@ async function jbSaveSingleMemberDirect(pnClean) {
   let existingHeader = (_jbData || []).find(x => String(x.PersonNumber).trim() === pn);
   const statusToSet = existingHeader?.status === 'bezahlt' ? 'bezahlt' : 'offen';
 
-  await supa.from('contributions_header').upsert({
+  const { error: hdrErr } = await supa.from('contributions_header').upsert({
     id: headId,
     person_number: pn,
     year: Number(_jbYear),
@@ -1131,6 +1219,7 @@ async function jbSaveSingleMemberDirect(pnClean) {
     gesamt: calc.total,
     updated_at: new Date().toISOString()
   }, { onConflict: 'id' });
+  if (hdrErr) throw new Error('Fehler beim Speichern des Beitrags-Headers: ' + hdrErr.message);
 
   // Positionen ersetzen
   const newPos = (calc.positions || []).map((p, idx) => ({
@@ -1147,16 +1236,19 @@ async function jbSaveSingleMemberDirect(pnClean) {
     last_upd: new Date().toISOString()
   }));
 
-  await supa.from('contributions_positions').delete().eq('header_id', headId);
+  const { error: delPosErr } = await supa.from('contributions_positions').delete().eq('header_id', headId);
+  if (delPosErr) throw new Error('Fehler beim Zurücksetzen der Beitragspositionen: ' + delPosErr.message);
   if (newPos.length > 0) {
-    await supa.from('contributions_positions').insert(newPos);
+    const { error: insPosErr } = await supa.from('contributions_positions').insert(newPos);
+    if (insPosErr) throw new Error('Fehler beim Speichern der Beitragspositionen: ' + insPosErr.message);
   }
 
   // Referenzen in group_competition_members auf die neue Positions-ID aktualisieren
   for (const link of verified1301Links) {
     const matchedNewPos = newPos.find(np => np.konto === '1301' && np.beschreibung === link.desc);
     if (matchedNewPos && link.gcmId) {
-      await supa.from('group_competition_members').update({ contribution_position_id: matchedNewPos.id }).eq('id', link.gcmId);
+      const { error: gcmErr } = await supa.from('group_competition_members').update({ contribution_position_id: matchedNewPos.id }).eq('id', link.gcmId);
+      if (gcmErr) throw new Error('Fehler beim Aktualisieren der Gruppenpreis-Referenz: ' + gcmErr.message);
     }
   }
 
@@ -1189,53 +1281,27 @@ async function jbSaveSingleMemberDirect(pnClean) {
     existingHeader.pdf_url = null; // Cache-Invalidierung für neu berechnete Rechnungen
   }
 
-  // 3. Rechnungsentwurf im RechnungsCore synchronisieren, falls vorhanden & noch nicht versendet/bezahlt
+  // 3. Rechnungsentwurf im RechnungsCore zentral synchronisieren (nur unversendeter Entwurf ohne Zahlungen)
   const invoiceId = existingHeader?.invoiceId || existingHeader?.invoice_id;
-  if (invoiceId) {
-    if (window._invoicePositionsCache) {
-      delete window._invoicePositionsCache[String(invoiceId).trim()];
-    }
-    const allInvs = window._invoices || window._jbAllInvoices || [];
-    const inv = allInvs.find(i => String(i.id).trim() === String(invoiceId).trim());
-    if (inv && (!inv.mail_status || inv.mail_status === 'entwurf') && (!inv.total_paid || Number(inv.total_paid) === 0)) {
-      await supa.from('invoices').update({
-        total_amount: calc.total,
-        open_amount: calc.total,
-        pdf_url: null,
-        pdf_storage_path: null,
-        updated_at: new Date().toISOString()
-      }).eq('id', invoiceId);
-
-      const invPositions = newPos.map((p, idx) => ({
-        invoice_id: invoiceId,
-        position_nr: idx + 1,
-        description: p.beschreibung,
-        quantity: 1,
-        unit_price: p.betrag,
-        amount: p.betrag,
-        konto: p.konto || '3000',
-        source_field: p.source_field || null
-      }));
-      await supa.from('invoice_positions').delete().eq('invoice_id', invoiceId);
-      if (invPositions.length > 0) {
-        await supa.from('invoice_positions').insert(invPositions);
-      }
-      inv.total_amount = calc.total;
-      inv.open_amount = calc.total;
-      inv.pdf_url = null;
-      inv.positions = invPositions;
-
-      // Automatische PDF-Neugenerierung im Hintergrund gemäss Richtlinie 6
-      if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
-        window.RechnungsCore.renderPdf(invoiceId, { forceRecreate: true }).then(res => {
-          if (res && res.pdfUrl) {
-            inv.pdf_url = res.pdfUrl;
-            if (existingHeader) existingHeader.pdf_url = res.pdfUrl;
-          }
-        }).catch(err => {
-          console.warn("⚠️ [Schnellerfassung] Hintergrund-PDF-Neugenerierung Hinweis:", err);
-        });
-      }
+  if (invoiceId && typeof window.jbSyncOpenDraftInvoice === 'function') {
+    const invPositions = newPos.map((p, idx) => ({
+      invoice_id: invoiceId,
+      position_nr: idx + 1,
+      description: p.beschreibung,
+      quantity: 1,
+      unit_price: p.betrag,
+      amount: p.betrag,
+      konto: p.konto || '3000',
+      source_field: p.source_field || null
+    }));
+    const syncRes = await window.jbSyncOpenDraftInvoice(supa, invoiceId, {
+      totalAmount: calc.total,
+      positions: invPositions,
+      headerId: existingHeader?.id || headId,
+      backgroundPdf: true
+    });
+    if (syncRes?.updated && syncRes.pdfUrl && existingHeader) {
+      existingHeader.pdf_url = syncRes.pdfUrl;
     }
   }
 
@@ -1272,6 +1338,7 @@ function jbTriggerAutoSave(pnClean) {
 
 function jbApplyPreset(presetType, pn) {
   const pnClean = String(pn || '').trim();
+  if (!jbCheckEntryEditable(pnClean)) return;
   const m = _jbMembers.find(x => String(x.PersonNumber || '').trim() === pnClean);
   if (!m) return;
 
@@ -1280,7 +1347,6 @@ function jbApplyPreset(presetType, pn) {
   }
 
   if (presetType === 'aktiv_a') {
-    _jbParticipationsState.lizenz = 'verein';
     _jbParticipationsState.schuetzenhaus = true;
     _jbParticipationsState.kk_volksschiessen = '1';
     _jbParticipationsState.kk_verband = true;
@@ -1290,7 +1356,6 @@ function jbApplyPreset(presetType, pn) {
     _jbParticipationsState.events['KK006'] = 1;
     _jbParticipationsState.events['KK007'] = 1;
   } else if (presetType === 'aktiv_b') {
-    _jbParticipationsState.lizenz = 'verein';
     _jbParticipationsState.schuetzenhaus = true;
     _jbParticipationsState.kk_volksschiessen = '1';
     _jbParticipationsState.kk_verband = false;
@@ -1300,7 +1365,6 @@ function jbApplyPreset(presetType, pn) {
     _jbParticipationsState.events['KK006'] = 0;
     _jbParticipationsState.events['KK007'] = 1;
   } else if (presetType === 'passiv') {
-    _jbParticipationsState.lizenz = 'passiv';
     _jbParticipationsState.schuetzenhaus = false;
     _jbParticipationsState.kk_volksschiessen = 'keine';
     _jbParticipationsState.kk_verband = false;
@@ -1349,6 +1413,7 @@ function jbHandleSidebarKeyDown(e) {
 
 function jbUpdateState(key, val, pn) {
   const pnClean = String(pn || '').trim();
+  if (!jbCheckEntryEditable(pnClean)) return;
   _jbParticipationsState[key] = val;
 
   if (!_jbParticipationsState.events) {
@@ -1405,17 +1470,24 @@ function jbUpdateState(key, val, pn) {
 // 6. Formular-Reset
 function jbEntryResetForm(pn) {
   const pnClean = String(pn || '').trim();
-  
+  if (!jbCheckEntryEditable(pnClean)) return;
+
   const m = _jbMembers.find(x => String(x.PersonNumber || '').trim() === pnClean);
-  const age = m && m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+  const refYear = (typeof _jbYear !== 'undefined' && _jbYear) ? Number(_jbYear) : new Date().getFullYear();
+  const age = m && m.BirthDate ? (refYear - new Date(m.BirthDate).getFullYear()) : 0;
   const isJunior = age > 0 && age <= 20;
   const hatG50m = m && (m._lizenzen || window._mglLizenzenCache?.[String(m.PersonNumber)] || []).some(l => 
     (l.IsActive == 1 || l.IsActive === true) && !l.ExitDate && (l.MembershipCategory || '').toLowerCase().includes('g50')
   );
   const defaultGe = m ? (!isJunior && hatG50m && !m._istPassiv) : false;
 
+  const ownLiz = (m?._lizenzen || []).find(l => l.istMuhen);
+  const derivedLizenz = ownLiz
+    ? (isJunior ? 'junior' : 'verein')
+    : ((m?._lizenzen || []).length > 0 ? 'fremd' : (m?._istPassiv ? 'passiv' : 'keine'));
+
   _jbParticipationsState = {
-    lizenz: 'keine',
+    lizenz: derivedLizenz,
     events: {
       'GE001': defaultGe ? 1 : 0
     },
@@ -1441,25 +1513,34 @@ function jbEntryResetForm(pn) {
   if (m) {
     jbRenderEntryForm(m);
   }
+  jbTriggerAutoSave(pnClean);
 }
 
 // 7. Direkt in Supabase speichern & Automatisch zum nächsten Schützen springen
 async function jbEntrySaveAndNext(pn) {
   const pnClean = String(pn || '').trim();
-  
-  try {
+  if (!jbCheckEntryEditable(pnClean)) return;
+
+  const runSave = async () => {
     const calc = await jbSaveSingleMemberDirect(pnClean);
     showToast(`✅ Änderungen für ${pnClean} gespeichert (CHF ${(calc?.total || 0).toFixed(2)})!`);
-  } catch (err) {
-    console.error("Fehler beim Speichern:", err);
-    if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Fehler beim Speichern', err.message, 'danger');
-    } else {
-      alert("Fehler beim Speichern: " + err.message);
-    }
-  }
+    jbEntrySelectNext();
+  };
 
-  jbEntrySelectNext();
+  try {
+    if (window.UIButtonKit && typeof window.UIButtonKit.withLoading === 'function') {
+      await window.UIButtonKit.withLoading('#jbEntrySaveNextBtn', runSave);
+    } else {
+      await runSave();
+    }
+  } catch (err) {
+    console.error('Fehler beim Speichern:', err);
+    await UIConfirmKit.alert({
+      title: 'Fehler beim Speichern',
+      message: err.message || String(err),
+      type: 'danger'
+    });
+  }
 }
 
 function jbEntrySelectNext() {
@@ -1508,23 +1589,45 @@ function jbUpdateBulkSaveButton() {
 }
 
 async function jbSaveAllBulkLocalChanges() {
-  const count = Object.keys(_jbLocalBulkChanges).length;
-  if (count === 0) return;
-
-  const btn = document.querySelector('#jbBulkSaveContainer button');
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Speichere ' + count + ' Schützen…';
+  if (typeof Perms !== 'undefined' && typeof Perms.can === 'function' && !Perms.can('jahresbeitrag.manage')) {
+    await UIConfirmKit.alert({
+      title: 'Keine Berechtigung',
+      message: 'Du hast keine Berechtigung zum Speichern (jahresbeitrag.manage erforderlich).',
+      type: 'danger'
+    });
+    return;
   }
 
-  try {
+  const allKeys = Object.keys(_jbLocalBulkChanges);
+  if (allKeys.length === 0) return;
+
+  const unlockedPNs = [];
+  const skippedLockedPNs = [];
+  allKeys.forEach(pn => {
+    const lockState = typeof window.jbGetContributionLockState === 'function'
+      ? window.jbGetContributionLockState(pn)
+      : { isLocked: false };
+    if (lockState.isLocked) skippedLockedPNs.push(pn);
+    else unlockedPNs.push(pn);
+  });
+
+  if (unlockedPNs.length === 0) {
+    await UIConfirmKit.alert({
+      title: 'Alle Einträge gesperrt',
+      message: 'Alle geänderten Mitglieder haben bereits versendete oder bezahlte Rechnungen und können nicht mehr geändert werden.',
+      type: 'warning'
+    });
+    return;
+  }
+
+  const count = unlockedPNs.length;
+  const runBulk = async () => {
     showLoadingOverlay(`Speichere Änderungen für ${count} Schützen und berechne Beiträge neu…`);
     const list = [];
     const year = _jbYear;
-    const editedPNs = Object.keys(_jbLocalBulkChanges);
-    const licenses = Object.entries(_jbLocalBulkChanges).map(([pn, state]) => ({ pn, lizenz: state.lizenz }));
 
-    Object.entries(_jbLocalBulkChanges).forEach(([pn, state]) => {
+    unlockedPNs.forEach(pn => {
+      const state = _jbLocalBulkChanges[pn] || {};
       const events = state.events ? { ...state.events } : {};
 
       if (state.schuetzenhaus !== undefined) events['GE001'] = state.schuetzenhaus ? 1 : 0;
@@ -1568,93 +1671,96 @@ async function jbSaveAllBulkLocalChanges() {
       });
     });
 
-    // 1. Direkt in Supabase speichern
     const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
-    if (supa && list.length > 0) {
-      try {
-        const dbParts = list.map(item => ({
-          id: `${item.pn}-${item.year}-${item.eventkey}`,
-          person_number: item.pn,
-          year: Number(item.year),
-          event_key: item.eventkey,
-          teilgenommen: Number(item.teilgenommen || 0),
-          quelle: 'schnellerfassung',
-          erfasst_am: new Date().toISOString(),
-          erfasst_von: window.currentUser || 'frontend'
+    if (!supa) throw new Error('Supabase Client nicht verfügbar.');
+
+    if (list.length > 0) {
+      const dbParts = list.map(item => ({
+        id: `${item.pn}-${item.year}-${item.eventkey}`,
+        person_number: item.pn,
+        year: Number(item.year),
+        event_key: item.eventkey,
+        teilgenommen: Number(item.teilgenommen || 0),
+        quelle: 'schnellerfassung',
+        erfasst_am: new Date().toISOString(),
+        erfasst_von: window.currentUser || 'frontend'
+      }));
+      const { error: partErr } = await supa.from('member_participations').upsert(dbParts, { onConflict: 'person_number,year,event_key' });
+      if (partErr) throw new Error('Fehler beim Speichern der Teilnahmen: ' + partErr.message);
+    }
+
+    for (const pn of unlockedPNs) {
+      const m = (_jbMemberMap && _jbMemberMap[pn]) || (_jbMembers || []).find(x => String(x.PersonNumber).trim() === pn);
+      if (m && typeof jbCalculateLiveTotal === 'function') {
+        const settings = _jbLocalBulkChanges[pn] || {};
+        const calc = jbCalculateLiveTotal(m, settings);
+        const headId = `CH-${year}-${pn}`;
+
+        const verified1301Links = await jbAppendPreserved1301Credits(supa, pn, year, calc);
+
+        const { error: hdrErr } = await supa.from('contributions_header').upsert({
+          id: headId,
+          person_number: pn,
+          year: Number(year),
+          status: 'offen',
+          gesamt: calc.total,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'person_number,year' });
+        if (hdrErr) throw new Error(`Fehler bei Header ${pn}: ${hdrErr.message}`);
+
+        const newPos = calc.positions.map((p, idx) => ({
+          id: `${headId}-${idx + 1}`,
+          header_id: headId,
+          person_number: pn,
+          year: Number(year),
+          position_nr: idx + 1,
+          beschreibung: p.name || 'Position',
+          betrag: Number(p.betrag || 0),
+          typ: p.typ || 'Debit',
+          source_field: p.key || '',
+          konto: p.konto || (typeof window.jbResolveAccountForPosition === 'function' ? window.jbResolveAccountForPosition(p.key, p.name) : '3000'),
+          last_upd: new Date().toISOString()
         }));
-        await supa.from('member_participations').upsert(dbParts, { onConflict: 'person_number,year,event_key' });
 
-        // Für jeden geänderten Schützen den Beitrag neu berechnen und speichern
-        for (const pn of editedPNs) {
-          const m = (_jbMemberMap && _jbMemberMap[pn]) || (_jbMembers || []).find(x => String(x.PersonNumber).trim() === pn);
-          if (m && typeof jbCalculateLiveTotal === 'function') {
-            const settings = _jbLocalBulkChanges[pn] || {};
-            const calc = jbCalculateLiveTotal(m, settings);
-            const headId = `CH-${year}-${pn}`;
+        const { error: delErr } = await supa.from('contributions_positions').delete().eq('header_id', headId);
+        if (delErr) throw new Error(`Fehler beim Zurücksetzen der Positionen (${pn}): ${delErr.message}`);
+        if (newPos.length > 0) {
+          const { error: insErr } = await supa.from('contributions_positions').insert(newPos);
+          if (insErr) throw new Error(`Fehler beim Speichern der Positionen (${pn}): ${insErr.message}`);
+        }
 
-            const verified1301Links = await jbAppendPreserved1301Credits(supa, pn, year, calc);
-
-            let existingHeader = (_jbData || []).find(x => String(x.PersonNumber).trim() === pn);
-            const statusToSet = existingHeader?.status === 'bezahlt' ? 'bezahlt' : 'offen';
-
-            await supa.from('contributions_header').upsert({
-              id: headId,
-              person_number: pn,
-              year: Number(year),
-              status: statusToSet,
-              gesamt: calc.total,
-              updated_at: new Date().toISOString()
-            }, { onConflict: 'person_number,year' });
-
-            const newPos = calc.positions.map((p, idx) => ({
-              id: `${headId}-${idx + 1}`,
-              header_id: headId,
-              person_number: pn,
-              year: Number(year),
-              position_nr: idx + 1,
-              beschreibung: p.name || 'Position',
-              betrag: Number(p.betrag || 0),
-              typ: p.typ || 'Debit',
-              source_field: p.key || '',
-              konto: p.konto || (typeof window.jbResolveAccountForPosition === 'function' ? window.jbResolveAccountForPosition(p.key, p.name) : '3000'),
-              last_upd: new Date().toISOString()
-            }));
-
-            await supa.from('contributions_positions').delete().eq('header_id', headId);
-            if (newPos.length > 0) {
-              await supa.from('contributions_positions').insert(newPos);
-            }
-
-            for (const link of verified1301Links) {
-              const matchedNewPos = newPos.find(np => np.konto === '1301' && np.beschreibung === link.desc);
-              if (matchedNewPos && link.gcmId) {
-                await supa.from('group_competition_members').update({ contribution_position_id: matchedNewPos.id }).eq('id', link.gcmId);
-              }
-            }
+        for (const link of verified1301Links) {
+          const matchedNewPos = newPos.find(np => np.konto === '1301' && np.beschreibung === link.desc);
+          if (matchedNewPos && link.gcmId) {
+            const { error: gcmErr } = await supa.from('group_competition_members').update({ contribution_position_id: matchedNewPos.id }).eq('id', link.gcmId);
+            if (gcmErr) throw new Error(`Fehler bei Gruppenpreis-Verknüpfung (${pn}): ${gcmErr.message}`);
           }
         }
-        console.log(`✅ [Supabase] ${list.length} Teilnahmen und Beiträge für ${editedPNs.length} Schützen gespeichert.`);
-      } catch (errSup) {
-        console.warn("⚠️ Fehler bei direkter Supabase Bulk-Speicherung:", errSup);
       }
     }
 
+    showToast(
+      `🎉 ${count} Schützen erfolgreich gespeichert und Beiträge neu berechnet!` +
+      (skippedLockedPNs.length > 0 ? ` (${skippedLockedPNs.length} gesperrte übersprungen)` : '')
+    );
 
-    showToast(`🎉 ${count} Schützen erfolgreich gespeichert und Beiträge neu berechnet!`);
-    
     _jbLocalBulkChanges = {};
     jbUpdateBulkSaveButton();
     await loadJahresbeitragData(true, false);
-    
-    // Automatisch verknüpfte Rechnungen synchronisieren
-    for (const pn of editedPNs) {
+
+    // Nur offene Rechnungsentwürfe synchronisieren
+    for (const pn of unlockedPNs) {
       const cleanPn = pn.trim();
       const updatedHeader = _jbData.find(x => String(x.PersonNumber).trim() === cleanPn);
       if (updatedHeader && updatedHeader.invoiceId) {
+        const lockState = typeof window.jbGetContributionLockState === 'function'
+          ? window.jbGetContributionLockState(updatedHeader)
+          : { isLocked: false };
+        if (lockState.isLocked) continue;
+
         const updatedM = _jbMemberMap[cleanPn] || {};
         const updatedName = updatedM.FirstName ? `${updatedM.FirstName} ${updatedM.LastName}` : cleanPn;
         try {
-          console.log(`🤖 Synchronisiere Rechnung für ${cleanPn} nach Bulk-Änderung...`);
           if (typeof ensureInvoiceCreatedRemote === 'function') {
             await ensureInvoiceCreatedRemote(updatedHeader, updatedM, updatedName);
           }
@@ -1664,31 +1770,31 @@ async function jbSaveAllBulkLocalChanges() {
       }
     }
 
-    // Rechnungen-Modul zwingen, die Daten neu zu laden
     if (typeof loadRechnungenData === 'function') {
       await loadRechnungenData(true, true);
     }
-
-    // Re-merge invoices into Jahresbeitrag data
     if (typeof jbMergeInvoicesIntoData === 'function') {
       jbMergeInvoicesIntoData(window._jbAllInvoices || []);
     }
 
-    // Automatisch zurück zur Beitrags-Übersicht wechseln
     _jbActiveTab = 'overview';
     renderJahresbeitragView();
-  } catch(e) {
-    if (window.UIConfirmKit) {
-      await UIConfirmKit.alert('Fehler beim Speichern', 'Fehler beim Bulk-Speichern: ' + e.message, 'danger');
+  };
+
+  try {
+    if (window.UIButtonKit && typeof window.UIButtonKit.withLoading === 'function') {
+      await window.UIButtonKit.withLoading('#jbBulkSaveContainer button', runBulk);
     } else {
-      alert("Fehler beim Bulk-Speichern: " + e.message);
+      await runBulk();
     }
+  } catch (e) {
+    await UIConfirmKit.alert({
+      title: 'Fehler beim Speichern',
+      message: 'Fehler beim Bulk-Speichern: ' + (e.message || e),
+      type: 'danger'
+    });
   } finally {
     hideLoadingOverlay();
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = '<i class="fas fa-cloud-upload-alt me-1"></i> ' + count + ' Änderungen speichern';
-    }
   }
 }
 
@@ -1871,6 +1977,7 @@ window.jbRenderVariableZusatzHTML = jbRenderVariableZusatzHTML;
 
 window.jbUpdateExtraState = function(key, field, val, pn) {
   const pnClean = String(pn || '').trim();
+  if (!jbCheckEntryEditable(pnClean)) return;
   key = String(key || '').trim().toUpperCase();
 
   if (!_jbParticipationsState.extras) _jbParticipationsState.extras = {};
@@ -2000,6 +2107,15 @@ window.jbToggleKontoLock = function(key, pn) {
 };
 
 window.jbToggleAllAktiveZusatz = async function(activateState, currentPn) {
+  if (typeof Perms !== 'undefined' && typeof Perms.can === 'function' && !Perms.can('jahresbeitrag.manage')) {
+    await UIConfirmKit.alert({
+      title: 'Keine Berechtigung',
+      message: 'Du hast keine Berechtigung für diese Massenaktion (jahresbeitrag.manage erforderlich).',
+      type: 'danger'
+    });
+    return;
+  }
+
   // Nimmt die erste aktive Zusatzposition aus gebuehren_config (z.B. Z001)
   const zFee = (window._jbGebuehren || []).find(f => {
     const uiTyp = String(f.ui_typ || '').toLowerCase();
@@ -2013,66 +2129,128 @@ window.jbToggleAllAktiveZusatz = async function(activateState, currentPn) {
   const feeBetrag = zFee ? Number(zFee.betrag || 0) : 60;
   const feeKonto = zFee ? (zFee.konto_haben || zFee.konto || '8500') : '8500';
 
-  const textMsg = activateState ? `für ALLE aktiven Schützen aktivieren` : `für ALLE Schützen abwählen`;
-  const ok = window.UIConfirmKit
-    ? await UIConfirmKit.confirm({
-        title: 'Zusatzposition anpassen?',
-        message: `Möchtest du die Zusatzposition <strong>${feeKey} (${feeName})</strong> ${textMsg}?`,
-        type: 'warning',
-        confirmText: activateState ? 'Aktivieren' : 'Abwählen'
-      })
-    : confirm(`Möchtest du die Zusatzposition ${feeKey} (${feeName}) ${textMsg}?`);
+  const textMsg = activateState ? `für ALLE entsperrten aktiven Schützen aktivieren` : `für ALLE entsperrten Schützen abwählen`;
+  const ok = await UIConfirmKit.confirm({
+    title: 'Zusatzposition anpassen?',
+    message: `Möchtest du die Zusatzposition <strong>${feeKey} (${feeName})</strong> ${textMsg} und die Beiträge sofort in Supabase neu berechnen?`,
+    type: 'warning',
+    confirmText: activateState ? 'Aktivieren & Speichern' : 'Abwählen & Speichern'
+  });
 
   if (!ok) return;
+
+  const refYear = (typeof _jbYear !== 'undefined' && _jbYear) ? Number(_jbYear) : new Date().getFullYear();
+  const affectedPns = [];
+  let skippedLocked = 0;
 
   _jbMembers.forEach(m => {
     const isEhren = m._istEhren || false;
     const isPassiv = m._istPassiv || false;
-    const age = m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+    const age = m.BirthDate ? (refYear - new Date(m.BirthDate).getFullYear()) : 0;
     const isJunior = age > 0 && age <= 20;
 
-    // Nur für Aktive (oder beim Abwählen für alle)
     if (!activateState || (!isPassiv && !isEhren && !isJunior)) {
       const pnClean = String(m.PersonNumber || '').trim();
-      if (!_jbLocalBulkChanges[pnClean]) {
-        _jbLocalBulkChanges[pnClean] = {};
+      const lockState = typeof window.jbGetContributionLockState === 'function'
+        ? window.jbGetContributionLockState(pnClean)
+        : { isLocked: false };
+      if (lockState.isLocked) {
+        skippedLocked++;
+        return;
       }
-      if (!_jbLocalBulkChanges[pnClean].extras) {
-        _jbLocalBulkChanges[pnClean].extras = {};
-      }
-      _jbLocalBulkChanges[pnClean].extras[feeKey] = {
-        key: feeKey,
-        active: activateState,
-        text: feeName,
-        betrag: feeBetrag,
-        konto: feeKonto,
-        unlocked: false
-      };
-      if (feeKey === 'Z001') {
-        _jbLocalBulkChanges[pnClean].z1_active = activateState;
-        _jbLocalBulkChanges[pnClean].z1_text = feeName;
-        _jbLocalBulkChanges[pnClean].z1_betrag = feeBetrag;
-        _jbLocalBulkChanges[pnClean].z1_konto = feeKonto;
-      }
+      affectedPns.push(pnClean);
     }
   });
 
-  if (!_jbParticipationsState.extras) _jbParticipationsState.extras = {};
-  _jbParticipationsState.extras[feeKey] = {
-    key: feeKey,
-    active: activateState,
-    text: feeName,
-    betrag: feeBetrag,
-    konto: feeKonto,
-    unlocked: false
-  };
-  if (feeKey === 'Z001') {
-    _jbParticipationsState.z1_active = activateState;
-    _jbParticipationsState.z1_text = feeName;
-    _jbParticipationsState.z1_betrag = feeBetrag;
-    _jbParticipationsState.z1_konto = feeKonto;
+  if (affectedPns.length === 0) {
+    await UIConfirmKit.alert({
+      title: 'Keine bearbeitbaren Mitglieder',
+      message: skippedLocked > 0
+        ? `Alle betroffenen ${skippedLocked} Schützen haben bereits versendete oder bezahlte Rechnungen und bleiben unverändert.`
+        : 'Keine passenden Mitglieder gefunden.',
+      type: 'warning'
+    });
+    return;
   }
 
-  jbUpdateExtraState(feeKey, 'active', activateState, currentPn);
-  showToast(`⚡ ${feeName} ${activateState ? 'für alle aktiven Schützen aktiviert' : 'abgewählt'}.`, 'success');
+  try {
+    showLoadingOverlay(`Aktualisiere ${feeKey} für ${affectedPns.length} Schützen in Supabase…`);
+    const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+    if (!supa) throw new Error('Supabase Client nicht verfügbar.');
+
+    const dbParts = affectedPns.map(pn => ({
+      id: `${pn}-${refYear}-${feeKey}`,
+      person_number: pn,
+      year: refYear,
+      event_key: feeKey,
+      teilgenommen: activateState ? 1 : 0,
+      quelle: 'schnellerfassung',
+      erfasst_am: new Date().toISOString(),
+      erfasst_von: window.currentUser || 'frontend'
+    }));
+
+    for (let i = 0; i < dbParts.length; i += 50) {
+      const chunk = dbParts.slice(i, i + 50);
+      const { error: partErr } = await supa.from('member_participations').upsert(chunk, { onConflict: 'person_number,year,event_key' });
+      if (partErr) throw new Error('Fehler beim Speichern der Teilnahmen: ' + partErr.message);
+    }
+
+    const { error: rpcErr } = await supa.rpc('calculate_member_contributions', {
+      p_year: refYear,
+      p_target_pns: affectedPns
+    });
+    if (rpcErr) throw new Error('Fehler bei serverseitiger Neuberechnung: ' + rpcErr.message);
+
+    await loadJahresbeitragData(true, false);
+
+    // Offene Entwurfsrechnungen synchronisieren
+    for (const pn of affectedPns) {
+      const updatedHeader = _jbData.find(x => String(x.PersonNumber).trim() === pn);
+      if (updatedHeader && updatedHeader.invoiceId) {
+        const lockState = typeof window.jbGetContributionLockState === 'function'
+          ? window.jbGetContributionLockState(updatedHeader)
+          : { isLocked: false };
+        if (lockState.isLocked) continue;
+        const updatedM = _jbMemberMap[pn] || {};
+        const updatedName = updatedM.FirstName ? `${updatedM.FirstName} ${updatedM.LastName}` : pn;
+        if (typeof ensureInvoiceCreatedRemote === 'function') {
+          await ensureInvoiceCreatedRemote(updatedHeader, updatedM, updatedName);
+        }
+      }
+    }
+
+    if (currentPn) {
+      const currentPnClean = String(currentPn).trim();
+      const currentLocked = typeof window.jbGetContributionLockState === 'function'
+        ? window.jbGetContributionLockState(currentPnClean).isLocked
+        : false;
+      if (!currentLocked && affectedPns.includes(currentPnClean)) {
+        if (!_jbParticipationsState.extras) _jbParticipationsState.extras = {};
+        _jbParticipationsState.extras[feeKey] = {
+          key: feeKey,
+          active: activateState,
+          text: feeName,
+          betrag: feeBetrag,
+          konto: feeKonto,
+          unlocked: false
+        };
+      }
+      await jbEntrySelectMember(currentPnClean);
+    }
+    jbRenderEntryList();
+
+    showToast(
+      `⚡ ${feeName} für ${affectedPns.length} Schützen ${activateState ? 'aktiviert' : 'abgewählt'} & gespeichert.` +
+      (skippedLocked > 0 ? ` (${skippedLocked} gesperrte übersprungen)` : ''),
+      'success'
+    );
+  } catch (err) {
+    await UIConfirmKit.alert({
+      title: 'Fehler bei Massenaktion',
+      message: err.message || String(err),
+      type: 'danger'
+    });
+  } finally {
+    hideLoadingOverlay();
+  }
 };
