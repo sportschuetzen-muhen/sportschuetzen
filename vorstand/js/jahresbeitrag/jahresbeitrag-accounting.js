@@ -5,8 +5,7 @@
 
 /**
  * Ermittelt das hinterlegte Sachkonto für eine Beitragsposition.
- * Durchsucht primär die aus dem Sheet "gebuehrenconfig" (Members100)
- * geladenen Gebühren (Spalte "Haben-Konto-Jahresbeitrag-Buchhaltung").
+ * Durchsucht primär die aus Supabase (gebuehren_config) geladenen Gebühren (konto_haben).
  * 
  * @param {string} sourceField - z. B. 'JB001', 'LI001', 'GE001', 'KK006', etc.
  * @param {string} description - z. B. 'Jahresbeitrag Aktiv A G50m', 'Lizenz', etc.
@@ -236,9 +235,13 @@ window.jbGetSplitBookings = function(options) {
     }
   });
 
-  // 4. Allfälligen Differenzbetrag ausgleichen (z.B. Spende / Rundung durch Mitglied)
+  // 4. Differenzbetrag (Überzahlung -> Spende 3800; Teilzahlung -> anteilige Skalierung auf paidAmount)
   if (options.paidAmount !== undefined && options.paidAmount !== null) {
     const paid = Number(options.paidAmount || 0);
+    if (paid <= 0 && netCalculated > 0) {
+      return [];
+    }
+
     const diff = Math.round((paid - netCalculated) * 100) / 100;
 
     if (diff > 0.05) {
@@ -254,6 +257,32 @@ window.jbGetSplitBookings = function(options) {
         typ: 'Bank',
         buchungstyp: (typeof getBuchungstyp === 'function') ? getBuchungstyp(bankAccount, '3800') : 'ERTRAG'
       });
+    } else if (diff < -0.05 && netCalculated > 0 && paid > 0 && entries.length > 0) {
+      // Teilzahlung: Positionen proportional auf bezahlten Betrag skalieren, damit FiBu exakt zum Bankeingang stimmt
+      const factor = paid / netCalculated;
+      let scaledNet = 0;
+      let maxDebitIdx = -1;
+      let maxDebitAmt = -1;
+      entries.forEach((e, idx) => {
+        const isCreditEntry = e.konto_haben === bankAccount;
+        const scaledAmt = Math.round(Number(e.betrag || 0) * factor * 100) / 100;
+        e.betrag = scaledAmt;
+        e.beschreibung = `${e.beschreibung} (Teilzahlung)`;
+        if (isCreditEntry) {
+          scaledNet -= scaledAmt;
+        } else {
+          scaledNet += scaledAmt;
+          if (scaledAmt > maxDebitAmt) {
+            maxDebitAmt = scaledAmt;
+            maxDebitIdx = idx;
+          }
+        }
+      });
+      const centDiff = Math.round((paid - scaledNet) * 100) / 100;
+      if (Math.abs(centDiff) > 0 && maxDebitIdx >= 0) {
+        entries[maxDebitIdx].betrag = Math.round((entries[maxDebitIdx].betrag + centDiff) * 100) / 100;
+      }
+      console.info(`ℹ️ Teilzahlung (${paid.toFixed(2)} von ${netCalculated.toFixed(2)}) proportional auf ${entries.length} Splitbuchungen verteilt.`);
     }
   }
 

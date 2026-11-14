@@ -6,7 +6,7 @@ window._jbYear = window._jbYear || new Date().getFullYear();
 window._jbData = window._jbData || []; // Rechnungs-Header
 window._jbMembers = window._jbMembers || []; // Stammdaten aller aktiven Mitglieder
 window._jbMemberMap = window._jbMemberMap || {};
-window._jbActiveTab = window._jbActiveTab || 'overview'; // 'overview', 'entry', 'import', 'bank'
+window._jbActiveTab = window._jbActiveTab || 'overview'; // 'overview', 'matrix', 'entry', 'import', 'config'
 window._jbSelectedMemberPN = window._jbSelectedMemberPN || null; // Aktive Person in der Schnellerfassung
 window._jbEntrySearch = window._jbEntrySearch || ''; // Filter für die Mitgliederliste in der Schnellerfassung
 window._jbParticipationsState = window._jbParticipationsState || {}; // Lokale Teilnahmen-Änderungen vor dem Speichern
@@ -17,8 +17,17 @@ window._jbPositionsCache = window._jbPositionsCache || {}; // Lokaler Cache für
 window._jbSortCol = window._jbSortCol || 'name'; // Aktuell sortierte Tabellenspalte
 window._jbSortAsc = window._jbSortAsc === undefined ? true : window._jbSortAsc; // Sortierrichtung: true (aufsteigend), false (absteigend)
 window._jbSidebarSort = window._jbSidebarSort || 'name'; // Sortierung der Seitenleiste
-window._jbBankTransactions = window._jbBankTransactions || []; // Parsed CAMT.053 transactions
-window._jbBankMatchResults = window._jbBankMatchResults || [];  // Match results after reconciliation
+
+function jbEscHtml(val) {
+  if (val === null || val === undefined) return '';
+  return String(val)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+window.jbEscHtml = jbEscHtml;
 
 // Komplette globale Caches über alle Jahre hinweg
 window._jbAllBeitraege = window._jbAllBeitraege || null;
@@ -76,10 +85,13 @@ window.JB_FILTER_CATEGORIES = window.JB_FILTER_CATEGORIES || [
   { value: 'Aktiv A', label: 'Aktiv A' },
   { value: 'Aktiv B', label: 'Aktiv B' },
   { value: 'G50m (A)', label: 'G50m (A)' },
+  { value: 'G50m Aufl. (A)', label: 'G50m Aufl. (A)' },
   { value: 'G50m (B)', label: 'G50m (B)' },
+  { value: 'G50m Aufl. (B)', label: 'G50m Aufl. (B)' },
   { value: 'G10m (A)', label: 'G10m (A)' },
-  { value: 'G10m (B)', label: 'G10m (B)' },
   { value: 'G10m Aufl. (A)', label: 'G10m Aufl. (A)' },
+  { value: 'G10m (B)', label: 'G10m (B)' },
+  { value: 'G10m Aufl. (B)', label: 'G10m Aufl. (B)' },
   { value: 'Ehrenmitglied', label: 'Ehrenmitglied' },
   { value: 'Junior', label: 'Junior (U21)' },
   { value: 'Veteran', label: 'Veteran (60+)' },
@@ -173,8 +185,10 @@ function jbGetMemberCategories(m, r) {
       const s = String(k || '').trim();
       if (!s || seenLics.has(s)) return;
       seenLics.add(s);
-      if (/50m/i.test(s)) addCat(/b/i.test(s) ? 'G50m (B)' : 'G50m (A)');
-      else if (/10m/i.test(s)) addCat(/b/i.test(s) ? 'G10m (B)' : 'G10m (A)');
+      const isB = /aktiv[\s-]*b|status[\s-]*b|\(b\)/i.test(s);
+      const isAufl = /aufl/i.test(s);
+      if (/50m|g50/i.test(s)) addCat(isAufl ? `G50m Aufl. (${isB ? 'B' : 'A'})` : `G50m (${isB ? 'B' : 'A'})`);
+      else if (/10m|g10/i.test(s)) addCat(isAufl ? `G10m Aufl. (${isB ? 'B' : 'A'})` : `G10m (${isB ? 'B' : 'A'})`);
       else addCat(s.replace('Aktiv-', 'Aktiv '));
     });
   }
@@ -276,28 +290,30 @@ function jbGetContributionLockState(headerOrPn) {
   let inv = null;
   if (header && (header.invoiceId || header.invoice_id)) {
     const iid = String(header.invoiceId || header.invoice_id).trim();
-    inv = invoicesList.find(i => String(i.id).trim() === iid) || null;
-  } else if (header && header.PersonNumber) {
+    inv = invoicesList.find(i => String(i.id).trim() === iid && String(i.status || '').toLowerCase() !== 'storniert') || null;
+  }
+  if (!inv && header && header.PersonNumber) {
     inv = invoicesList.find(i =>
       String(i.PersonNumber || i.person_number || '').trim() === String(header.PersonNumber).trim() &&
       Number(i.year) === Number(header.year || _jbYear) &&
       String(i.type || '').toLowerCase() === 'jahresbeitrag' &&
-      i.status !== 'storniert'
+      String(i.status || '').toLowerCase() !== 'storniert'
     ) || null;
   }
 
   const hStatus = String(header?.status || '').toLowerCase();
   const invStatus = String(inv?.status || '').toLowerCase();
   const invMail = String(inv?.mail_status || header?.mail_status || '').toLowerCase();
-  const totalPaid = Number(inv?.total_paid || 0);
   const openAmt = (inv && inv.open_amount !== undefined && inv.open_amount !== null) ? Number(inv.open_amount) : null;
   const totalAmt = (inv && inv.total_amount !== undefined && inv.total_amount !== null) ? Number(inv.total_amount) : null;
+  const paidFromAmounts = (totalAmt !== null && openAmt !== null) ? Math.max(0, totalAmt - openAmt) : 0;
+  const effectivePaid = Math.max(Number(inv?.total_paid || 0), paidFromAmounts);
   const hasPartialViaAmounts = (totalAmt !== null && totalAmt > 0 && openAmt !== null && openAmt < (totalAmt - 0.01));
 
   if (hStatus === 'bezahlt' || invStatus === 'bezahlt') {
     return { isLocked: true, reason: 'bezahlt', label: 'Bezahlt (revisionsgesperrt)', header, invoice: inv };
   }
-  if (hStatus === 'teilbezahlt' || invStatus === 'teilbezahlt' || totalPaid > 0 || hasPartialViaAmounts) {
+  if (hStatus === 'teilbezahlt' || invStatus === 'teilbezahlt' || effectivePaid > 0.01 || hasPartialViaAmounts) {
     return { isLocked: true, reason: 'teilbezahlt', label: 'Teilbezahlt (revisionsgesperrt)', header, invoice: inv };
   }
   if (hStatus === 'versendet' || hStatus === 'gesendet' || invMail === 'versendet' || invMail === 'gesendet' || Boolean(inv?.send_date)) {
@@ -327,23 +343,52 @@ async function jbSyncOpenDraftInvoice(supa, invoiceObjOrId, { totalAmount, posit
 
   const mailSt = String(inv?.mail_status || 'entwurf').toLowerCase();
   const invSt = String(inv?.status || 'offen').toLowerCase();
-  const paid = Number(inv?.total_paid || 0);
-  if (mailSt !== 'entwurf' || invSt === 'storniert' || invSt === 'bezahlt' || invSt === 'teilbezahlt' || paid > 0 || Boolean(inv?.send_date)) {
+  const invOpen = (inv && inv.open_amount !== undefined && inv.open_amount !== null) ? Number(inv.open_amount) : null;
+  const invTotal = (inv && inv.total_amount !== undefined && inv.total_amount !== null) ? Number(inv.total_amount) : null;
+  const invPaidFromAmounts = (invTotal !== null && invOpen !== null) ? Math.max(0, invTotal - invOpen) : 0;
+  const paid = Math.max(Number(inv?.total_paid || 0), invPaidFromAmounts);
+  if (mailSt !== 'entwurf' || invSt === 'storniert' || invSt === 'bezahlt' || invSt === 'teilbezahlt' || paid > 0.01 || Boolean(inv?.send_date)) {
     return { synced: false, reason: 'locked_or_cancelled' };
   }
 
+  if (supa) {
+    const [{ data: dbInv, error: dbInvErr }, { data: dbPays, error: dbPayErr }] = await Promise.all([
+      supa.from('invoices').select('id, status, mail_status, send_date, total_amount, open_amount').eq('id', invId).maybeSingle(),
+      supa.from('invoice_payments').select('id').eq('invoice_id', invId).limit(1)
+    ]);
+    if (dbInvErr) throw new Error(`Fehler bei der Lebenszyklus-Prüfung für Rechnung ${invId}: ${dbInvErr.message}`);
+    if (dbPayErr) throw new Error(`Fehler bei der Zahlungsprüfung für Rechnung ${invId}: ${dbPayErr.message}`);
+    if (!dbInv) return { synced: false, reason: 'not_found' };
+
+    const dbMail = String(dbInv.mail_status || 'entwurf').toLowerCase();
+    const dbSt = String(dbInv.status || 'offen').toLowerCase();
+    const dbPaidAmt = (dbInv.total_amount != null && dbInv.open_amount != null)
+      ? Math.max(0, Number(dbInv.total_amount) - Number(dbInv.open_amount))
+      : 0;
+    if (dbMail !== 'entwurf' || dbSt === 'storniert' || dbSt === 'bezahlt' || dbSt === 'teilbezahlt' ||
+        Boolean(dbInv.send_date) || (dbPays && dbPays.length > 0) || dbPaidAmt > 0.01) {
+      return { synced: false, reason: 'locked_or_cancelled' };
+    }
+  }
+
   const headTotal = Number(Number(totalAmount || 0).toFixed(2));
-  const normalizedPositions = (positions || []).map((p, idx) => ({
-    invoice_id: invId,
-    position_nr: p.position_nr || (idx + 1),
-    description: p.description || p.beschreibung || p.name || 'Position',
-    quantity: Number(p.quantity || 1),
-    unit_price: Number(p.unit_price ?? p.betrag ?? 0),
-    amount: Number(p.amount ?? p.betrag ?? 0),
-    konto: String(p.konto || '3000').trim(),
-    type: p.type || p.typ || 'Debit',
-    source_field: p.source_field || p.sourcefield || p.key || null
-  }));
+  const normalizedPositions = (positions || []).map((p, idx) => {
+    const kontoVal = String(p.konto || '').trim();
+    if (!kontoVal) {
+      throw new Error(`Fehlendes Ertrags-/Buchungskonto bei Position "${p.description || p.beschreibung || p.name || idx + 1}". Bitte in den Gebühren ergänzen.`);
+    }
+    return {
+      invoice_id: invId,
+      position_nr: p.position_nr || (idx + 1),
+      description: p.description || p.beschreibung || p.name || 'Position',
+      quantity: Number(p.quantity || 1),
+      unit_price: Number(p.unit_price ?? p.betrag ?? 0),
+      amount: Number(p.amount ?? p.betrag ?? 0),
+      konto: kontoVal,
+      type: p.type || p.typ || 'Debit',
+      source_field: p.source_field || p.sourcefield || p.key || null
+    };
+  });
 
   if (supa) {
     const { error: invErr } = await supa.from('invoices').update({
@@ -619,7 +664,12 @@ async function loadJahresbeitragData(forceReload = false, showSpinner = true) {
         window.jbEnsureKontenrahmen()
       ]);
 
-      if (!headRes.error && Array.isArray(headRes.data)) {
+      if (headRes.error) throw headRes.error;
+      if (posRes.error) throw posRes.error;
+      if (partRes.error) throw partRes.error;
+      if (gebRes.error) throw gebRes.error;
+
+      if (Array.isArray(headRes.data)) {
         console.log(`✅ ${headRes.data.length} Beitragsrechnungen & ${posRes.data?.length || 0} Positionen aus Supabase geladen (< 50 ms).`);
         window._jahresbeitragIsSupabase = true;
 
@@ -696,7 +746,7 @@ async function loadJahresbeitragData(forceReload = false, showSpinner = true) {
       if (container) {
         container.innerHTML = `<div class="alert alert-danger shadow-sm">
           <i class="fas fa-exclamation-triangle me-2"></i>
-          <strong>Fehler:</strong> Jahresbeiträge konnten nicht aus Supabase geladen werden: ${supaErr.message || supaErr}
+          <strong>Fehler:</strong> Jahresbeiträge konnten nicht aus Supabase geladen werden: ${jbEscHtml(supaErr.message || String(supaErr))}
         </div>`;
       }
     }
@@ -719,41 +769,54 @@ function jbMergeInvoicesIntoData(invoices) {
   _jbData.forEach(r => {
     const existingInvId = r.invoiceId || r.invoice_id || '';
     
-    // 1. Zuerst exakter Match über Rechnungs-ID (sofern vorhanden)
+    // 1. Zuerst exakter Match über Rechnungs-ID (sofern nicht storniert)
     let match = null;
     if (existingInvId) {
-      match = invoices.find(inv => String(inv.id).trim() === String(existingInvId).trim());
+      match = invoices.find(inv =>
+        String(inv.id).trim() === String(existingInvId).trim() &&
+        String(inv.status || '').toLowerCase() !== 'storniert'
+      );
     }
     
-    // 2. Falls keine ID oder nicht gefunden, Match über PersonNumber, Jahr und Typ
-    if (!match && !existingInvId) {
-      match = invoices.find(inv => 
-        String(inv.PersonNumber || inv.recipient_id || '').trim() === String(r.PersonNumber).trim() && 
-        Number(inv.year) === Number(r.year) && 
-        String(inv.type || '').toLowerCase() === 'jahresbeitrag'
+    // 2. Falls keine ID oder storniert/nicht gefunden, Match über PersonNumber, Jahr und Typ (nicht storniert)
+    if (!match) {
+      match = invoices.find(inv =>
+        String(inv.PersonNumber || inv.recipient_id || '').trim() === String(r.PersonNumber).trim() &&
+        Number(inv.year) === Number(r.year) &&
+        String(inv.type || '').toLowerCase() === 'jahresbeitrag' &&
+        String(inv.status || '').toLowerCase() !== 'storniert'
       );
     }
     
     if (match) {
       r.pdf_url = match.pdf_url || '';
       r.mail_status = match.mail_status || 'entwurf';
+      r.send_date = match.send_date || null;
+      r.total_amount = match.total_amount;
+      r.open_amount = match.open_amount;
       r.invoiceId = match.id || '';
       r.invoice_id = match.id || '';
       
-      // Falls in Rechnungen bezahlt, synchronisieren wir den Status im Frontend
-      if (match.status === 'bezahlt' && r.status !== 'bezahlt') {
+      // Falls in Rechnungen (teil-)bezahlt, synchronisieren wir den Status im Frontend
+      const mStatus = String(match.status || '').toLowerCase();
+      if (mStatus === 'bezahlt' && r.status !== 'bezahlt') {
         r.status = 'bezahlt';
         r.payment_date = match.payment_date;
         r.payment_method = match.payment_method;
         r.document_ref = match.document_ref;
+      } else if (mStatus === 'teilbezahlt' && r.status !== 'bezahlt') {
+        r.status = 'teilbezahlt';
       }
     } else {
-      // Wenn Rechnungen im Speicher geladen sind, aber kein Match (mehr) existiert -> sauber entkoppeln!
+      // Wenn Rechnungen im Speicher geladen sind, aber kein aktiver Match existiert -> sauber entkoppeln!
       if (invoices.length > 0 && existingInvId) {
         r.invoiceId = null;
         r.invoice_id = null;
         r.mail_status = null;
+        r.send_date = null;
         r.pdf_url = null;
+        r.total_amount = undefined;
+        r.open_amount = undefined;
       } else {
         r.invoiceId = existingInvId || null;
         r.invoice_id = existingInvId || null;

@@ -184,7 +184,7 @@ function renderMatrixTab(canEdit, years) {
             <div class="fs-5 text-secondary">Beitragsmatrix & Gebühren-Übersicht ${Number(_jbYear)}</div>
           </div>
           <div class="text-end text-muted small">
-            <div>Gedruckt am: ${new Date().toLocaleDateString('de-CH')}</div>
+            <div>Gedruckt am: ${(window.UIFormatKit && typeof window.UIFormatKit.formatDate === 'function') ? window.UIFormatKit.formatDate(new Date()) : new Date().toLocaleDateString('de-CH')}</div>
             <div id="jbMatrixPrintInfo"></div>
           </div>
         </div>
@@ -721,19 +721,19 @@ function jbRenderMatrixTable() {
     thHtml += `
       <th class="text-end tk-col-${col.key}" 
           data-col-id="${col.key}" 
-          data-col-name="[${cat.badge}] ${escHtml(col.label)} (${col.key})"
+          data-col-name="[${cat.badge}] ${jbEscHtml(col.label)} (${col.key})"
           data-col-cat="${cat.id}"
           data-col-cat-name="${cat.label}"
           data-col-cat-color="${cat.color}"
           style="min-width: 58px; cursor: pointer; user-select: none; border-top: 4px solid ${cat.border} !important; background-color: ${cat.bg} !important; transition: background-color 0.15s ease;" 
           onclick="jbMatrixSort('${col.key}')" 
-          title="${escHtml(cat.label)}: ${escHtml(col.bezeichnung)} (${col.key})">
+          title="${jbEscHtml(cat.label)}: ${jbEscHtml(col.bezeichnung)} (${col.key})">
         <div class="d-flex flex-column justify-content-between h-100" style="min-height: 70px;">
           <div class="d-flex justify-content-between align-items-center mb-1">
             <span class="badge px-1 py-0 shadow-xs" style="font-size: 8px; font-weight: 700; background-color: ${cat.color}; color: #ffffff; letter-spacing: 0.3px;">${cat.badge}</span>
             <span class="tk-sort-ind text-muted" style="font-size: 9px;">${_jbMatrixSortCol === col.key ? (_jbMatrixSortAsc ? '▲' : '▼') : '↕'}</span>
           </div>
-          <div class="my-auto py-1" style="font-size: 10px; font-weight: 700; color: #1e293b; white-space: normal; word-break: break-word; overflow-wrap: break-word; hyphens: auto; -webkit-hyphens: auto; line-height: 1.15;" lang="de">${escHtml(col.label)}</div>
+          <div class="my-auto py-1" style="font-size: 10px; font-weight: 700; color: #1e293b; white-space: normal; word-break: break-word; overflow-wrap: break-word; hyphens: auto; -webkit-hyphens: auto; line-height: 1.15;" lang="de">${jbEscHtml(col.label)}</div>
           <div class="mt-auto" style="font-size: 8.5px; font-weight: 600; font-family: monospace; color: ${cat.color};">${col.key}</div>
         </div>
       </th>
@@ -835,7 +835,7 @@ function jbRenderMatrixTable() {
             <a href="#" class="text-decoration-none fw-semibold text-primary d-block text-truncate" 
                onclick="jbShowPositionen('${r.id}'); return false;" 
                style="font-size: 11px; line-height: 1.25;"
-               title="${escHtml(name)} (${escHtml(catLabel)})">${escHtml(name)}</a>
+               title="${jbEscHtml(name)} (${jbEscHtml(catLabel)})">${jbEscHtml(name)}</a>
           </td>
           <td class="text-center tk-col-status" data-col-id="status" style="width: 65px; min-width: 55px; max-width: 70px; padding: 2px;">${statusBadge}</td>
           ${cellsHtml}
@@ -1115,10 +1115,10 @@ function jbMatrixSort(col) {
 // ============================================================
 // EXCEL-EXPORT (.XLSX VIA SHEETJS)
 // ============================================================
-function jbExportMatrixExcel() {
+async function jbExportMatrixExcel() {
   if (typeof XLSX === 'undefined') {
     if (window.UIConfirmKit) {
-      UIConfirmKit.alert({
+      await UIConfirmKit.alert({
         title: 'Bibliothek fehlt',
         message: 'Die SheetJS (XLSX) Export-Bibliothek ist noch nicht geladen.',
         type: 'warning'
@@ -1158,7 +1158,7 @@ function jbExportMatrixExcel() {
 
   if (rowsData.length === 0) {
     if (window.UIConfirmKit) {
-      UIConfirmKit.alert({
+      await UIConfirmKit.alert({
         title: 'Keine Daten',
         message: 'Es sind keine passenden Daten für den Excel-Export vorhanden.',
         type: 'warning'
@@ -1178,24 +1178,26 @@ function jbExportMatrixExcel() {
   const isStatusVisible = !hiddenColIds.has('status');
   const isGesamtVisible = !hiddenColIds.has('gesamt');
 
-  // 1. Kopfzeilen aufbauen
-  const headerRow1 = [
-    'Ausgewählt',
-    'Personennummer',
-    'Name',
-    'Vorname',
-    'Kategorie'
-  ];
-  if (isStatusVisible) headerRow1.push('Status');
-  headerRow1.push('Bezahlt am', 'Zahlungsmethode', 'Beleg / Ref');
+  // 1. Header-Mapping für UIExportKit aufbauen
+  const headers = {
+    selected: 'Ausgewählt',
+    pn: 'Personennummer',
+    lastName: 'Name',
+    firstName: 'Vorname',
+    category: 'Kategorie'
+  };
+  if (isStatusVisible) headers.status = 'Status';
+  headers.paymentDate = 'Bezahlt am';
+  headers.paymentMethod = 'Zahlungsmethode';
+  headers.docRef = 'Beleg / Ref';
 
   exportColumns.forEach(col => {
-    headerRow1.push(`${col.label} (${col.key})`);
+    headers[col.key] = `${col.label} (${col.key})`;
   });
-  if (isGesamtVisible) headerRow1.push('Total CHF');
+  if (isGesamtVisible) headers.total = 'Total CHF';
 
-  // 2. Datenzeilen aufbauen
-  const dataRows = [];
+  // 2. Datenzeilen & Summen aufbauen
+  const exportRows = [];
   const colTotals = {};
   exportColumns.forEach(c => { colTotals[c.key] = 0; });
   let grandTotal = 0;
@@ -1213,25 +1215,25 @@ function jbExportMatrixExcel() {
       if (k) feeMap[k] = (feeMap[k] || 0) + Number(p.betrag || 0);
     });
 
-    const row = [
-      isSelected ? 'Ja' : 'Nein',
+    const rowObj = {
+      selected: isSelected ? 'Ja' : 'Nein',
       pn,
-      m.LastName || r._name || '',
-      m.FirstName || '',
-      catLabel
-    ];
+      lastName: m.LastName || r._name || '',
+      firstName: m.FirstName || '',
+      category: catLabel
+    };
     if (isStatusVisible) {
-      row.push((typeof jbGetEffectiveStatus === 'function' ? jbGetEffectiveStatus(r) : (r.status || 'offen')).toUpperCase());
+      rowObj.status = (typeof jbGetEffectiveStatus === 'function' ? jbGetEffectiveStatus(r) : (r.status || 'offen')).toUpperCase();
     }
-    row.push(
-      r.payment_date || '',
-      r.payment_method || '',
-      r.document_ref || ''
-    );
+    rowObj.paymentDate = (window.UIFormatKit && typeof window.UIFormatKit.formatDate === 'function')
+      ? window.UIFormatKit.formatDate(r.payment_date, { fallback: '' })
+      : (r.payment_date || '');
+    rowObj.paymentMethod = r.payment_method || '';
+    rowObj.docRef = r.document_ref || '';
 
     exportColumns.forEach(col => {
       const val = feeMap[col.key] || 0;
-      row.push(val);
+      rowObj[col.key] = val;
       if (isSelected) {
         colTotals[col.key] = (colTotals[col.key] || 0) + val;
       }
@@ -1239,56 +1241,50 @@ function jbExportMatrixExcel() {
 
     if (isGesamtVisible) {
       const rowTotal = Number(r.Gesamt || 0);
-      row.push(rowTotal);
+      rowObj.total = rowTotal;
       if (isSelected) {
         grandTotal += rowTotal;
       }
     }
 
-    dataRows.push(row);
+    exportRows.push(rowObj);
   });
 
-  // 3. Summenzeile aufbauen
-  const sumRow = [
-    'SUMME',
-    `${_jbMatrixSelected.size} Schützen ausgewählt`,
-    '', '', ''
-  ];
-  if (isStatusVisible) sumRow.push('');
-  sumRow.push('', '', '');
-
+  // 3. Summenzeile anhängen
+  exportRows.push({});
+  const sumRowObj = {
+    selected: 'SUMME',
+    pn: `${_jbMatrixSelected.size} Schützen ausgewählt`
+  };
   exportColumns.forEach(col => {
-    sumRow.push(colTotals[col.key] || 0);
+    sumRowObj[col.key] = colTotals[col.key] || 0;
   });
-  if (isGesamtVisible) sumRow.push(grandTotal);
+  if (isGesamtVisible) sumRowObj.total = grandTotal;
+  exportRows.push(sumRowObj);
 
-  // 4. Excel Workbook erzeugen
-  const wsData = [
-    [`Sportschützen Muhen - Beitragsmatrix & Gebührenübersicht ${_jbYear}`],
-    [`Erstellt am: ${new Date().toLocaleDateString('de-CH')} | Ausgewählt: ${_jbMatrixSelected.size} von ${rowsData.length} Schützen`],
-    [], // Leerzeile
-    headerRow1,
-    ...dataRows,
-    [], // Leerzeile
-    sumRow
-  ];
+  const columnWidths = [12, 15, 18, 18, 15];
+  if (isStatusVisible) columnWidths.push(14);
+  columnWidths.push(12, 15, 15);
+  exportColumns.forEach(() => columnWidths.push(14));
+  if (isGesamtVisible) columnWidths.push(14);
 
-  const ws = XLSX.utils.aoa_to_sheet(wsData);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, `Beitragsmatrix_${_jbYear}`);
-
-  // Spaltenbreiten optimieren (exakt passend zu exportColumns und isStatusVisible / isGesamtVisible)
-  const colWidths = [
-    { wch: 12 }, { wch: 15 }, { wch: 18 }, { wch: 18 }, { wch: 15 }
-  ];
-  if (isStatusVisible) colWidths.push({ wch: 14 });
-  colWidths.push({ wch: 12 }, { wch: 15 }, { wch: 15 });
-  exportColumns.forEach(() => colWidths.push({ wch: 14 }));
-  if (isGesamtVisible) colWidths.push({ wch: 14 });
-  ws['!cols'] = colWidths;
-
-  const fileName = `Sportschuetzen_Muhen_Beitragsmatrix_${_jbYear}_${new Date().toISOString().split('T')[0]}.xlsx`;
-  XLSX.writeFile(wb, fileName);
+  if (window.UIExportKit && typeof window.UIExportKit.dataToExcel === 'function') {
+    window.UIExportKit.dataToExcel(exportRows, {
+      headers,
+      columnWidths,
+      sheetName: `Beitragsmatrix_${_jbYear}`,
+      filename: `Sportschuetzen_Muhen_Beitragsmatrix_${_jbYear}`,
+      dateSuffix: true
+    });
+  } else {
+    const keys = Object.keys(headers);
+    const aoa = [Object.values(headers), ...exportRows.map(ro => keys.map(k => ro[k] !== undefined ? ro[k] : ''))];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = columnWidths.map(w => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, `Beitragsmatrix_${_jbYear}`);
+    XLSX.writeFile(wb, `Sportschuetzen_Muhen_Beitragsmatrix_${_jbYear}_${new Date().toISOString().split('T')[0]}.xlsx`);
+  }
 }
 
 // ============================================================
@@ -1349,8 +1345,8 @@ function jbMatrixResetColumns() {
   localStorage.removeItem('jb_matrix_col_order');
   localStorage.removeItem('jb_matrix_col_widths');
   localStorage.removeItem('portal_jb_matrix_cols');
-  if (typeof jbToast === 'function') {
-    jbToast('Standard-Spaltenordnung und -breiten wiederhergestellt.', 'info');
+  if (typeof showToast === 'function') {
+    showToast('Standard-Spaltenordnung und -breiten wiederhergestellt.');
   }
   jbRenderMatrixTable();
 }

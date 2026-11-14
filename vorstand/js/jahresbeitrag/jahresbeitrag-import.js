@@ -17,7 +17,7 @@ function renderExcelImportTab() {
           <div class="card p-3 border-dashed text-center h-100 bg-light" style="border: 2px dashed #ccc; cursor: pointer;" 
                onclick="document.getElementById('importFileVerein').click()">
             <input type="file" id="importFileVerein" class="d-none" accept=".xlsx,.xlsm,.xls,.csv" 
-                   onchange="jbHandleExcelUpload(this.files[0], 'verein')">
+                   onchange="jbHandleExcelUpload(this.files[0], 'verein'); this.value='';">
             <i class="fas fa-trophy fa-2x mb-2 text-success"></i>
             <h6>1. Vereinswettschiessen</h6>
             <span class="text-muted small" style="font-size: 11px;">(Vereinswettschiessen.xlsx / .csv)</span>
@@ -29,7 +29,7 @@ function renderExcelImportTab() {
           <div class="card p-3 border-dashed text-center h-100 bg-light" style="border: 2px dashed #ccc; cursor: pointer;" 
                onclick="document.getElementById('importFileVerband').click()">
             <input type="file" id="importFileVerband" class="d-none" accept=".xlsx,.xlsm,.xls,.csv" 
-                   onchange="jbHandleExcelUpload(this.files[0], 'verband')">
+                   onchange="jbHandleExcelUpload(this.files[0], 'verband'); this.value='';">
             <i class="fas fa-medal fa-2x mb-2 text-primary"></i>
             <h6>2. Verbandsschiessen</h6>
             <span class="text-muted small" style="font-size: 11px;">(Verband.xlsx / .csv)</span>
@@ -42,7 +42,7 @@ function renderExcelImportTab() {
                onclick="document.getElementById('importFileDez').click()" id="jbDezCard">
             <input type="file" id="importFileDez" class="d-none" accept=".xlsx,.xlsm,.xls,.csv"
                    multiple
-                   onchange="jbHandleExcelUploadMulti(this.files, 'dez')">
+                   onchange="jbHandleExcelUploadMulti(this.files, 'dez'); this.value='';">
             <i class="fas fa-chart-line fa-2x mb-2 text-warning"></i>
             <h6>3. Dez-Import (Dezember)</h6>
             <span class="text-muted small" style="font-size: 11px;">
@@ -287,6 +287,8 @@ async function jbProcessExcelRows(rows, type, appendMode) {
 
   const previewBody = document.getElementById('jbImportPreviewBody');
   const previewContainer = document.getElementById('jbImportPreviewContainer');
+  const previewRows = [];
+  const esc = window.jbEscHtml || (s => String(s ?? ''));
 
   let detectedCount = 0;
 
@@ -438,14 +440,14 @@ async function jbProcessExcelRows(rows, type, appendMode) {
           quelle: 'excel-import'
         });
 
-        previewBody.innerHTML += `
+        previewRows.push(`
           <tr>
-            <td>${cleanedLizenz}</td>
-            <td class="${m ? '' : 'text-danger fw-bold'}">${memberName}${memberPN ? `<br><small class="text-muted">${memberPN}</small>` : ''}</td>
-            <td>${eventName}</td>
+            <td>${esc(cleanedLizenz)}</td>
+            <td class="${m ? '' : 'text-danger fw-bold'}">${esc(memberName)}${memberPN ? `<br><small class="text-muted">${esc(memberPN)}</small>` : ''}</td>
+            <td>${esc(eventName)}</td>
             <td><span class="badge bg-${m ? 'success' : 'danger'}">${m ? 'Erkannt' : 'Kein Match'}</span></td>
           </tr>
-        `;
+        `);
         detectedCount++;
       }
     }
@@ -538,17 +540,21 @@ async function jbProcessExcelRows(rows, type, appendMode) {
         }
         const memberPN = m ? m.PersonNumber : '';
 
-        previewBody.innerHTML += `
+        previewRows.push(`
           <tr>
-            <td>${cleanedLizenz}</td>
-            <td class="${m ? '' : 'text-danger fw-bold'}">${memberName}${memberPN ? `<br><small class="text-muted">${memberPN}</small>` : ''}</td>
-            <td>${evt.name} <span class="badge bg-secondary ms-1" style="font-size:9px">${ageClass||'E'}</span></td>
+            <td>${esc(cleanedLizenz)}</td>
+            <td class="${m ? '' : 'text-danger fw-bold'}">${esc(memberName)}${memberPN ? `<br><small class="text-muted">${esc(memberPN)}</small>` : ''}</td>
+            <td>${esc(evt.name)} <span class="badge bg-secondary ms-1" style="font-size:9px">${esc(ageClass || 'E')}</span></td>
             <td><span class="badge bg-${m ? 'success' : 'danger'}">${m ? 'Erkannt' : 'Kein Match'}</span></td>
           </tr>
-        `;
+        `);
         detectedCount++;
       });
     }
+  }
+
+  if (previewRows.length > 0 && previewBody) {
+    previewBody.insertAdjacentHTML('beforeend', previewRows.join(''));
   }
 
   if (detectedCount > 0) {
@@ -653,10 +659,11 @@ async function jbSubmitExcelImport() {
     document.getElementById('jbImportPreviewContainer').classList.add('d-none');
     _jbImportData = null;
 
-    // Reload Jahresbeitrag details from Supabase
-    await loadJahresbeitragData(true, false);
+    // Reload Jahresbeitrag & Rechnungen details from Supabase
+    await loadJahresbeitragData(true, true);
 
     // Nur offene Entwurfsrechnungen synchronisieren
+    const syncFailures = [];
     for (const pn of uniquePns) {
       const cleanPn = pn.trim();
       const updatedHeader = _jbData.find(x => String(x.PersonNumber).trim() === cleanPn);
@@ -675,6 +682,7 @@ async function jbSubmitExcelImport() {
           }
         } catch (err) {
           console.error(`⚠️ Fehler bei automatischer Rechnungs-Aktualisierung für ${cleanPn}:`, err);
+          syncFailures.push(`${updatedName}: ${err.message || err}`);
         }
       }
     }
@@ -690,6 +698,15 @@ async function jbSubmitExcelImport() {
 
     if (typeof renderJahresbeitragView === 'function') {
       renderJahresbeitragView();
+    }
+
+    if (syncFailures.length > 0 && window.UIConfirmKit) {
+      const esc = window.jbEscHtml || (s => String(s ?? ''));
+      await UIConfirmKit.alert({
+        title: 'Rechnungsentwürfe teilweise nicht aktualisiert',
+        message: `Die Teilnahmen wurden importiert, jedoch konnten <strong>${syncFailures.length}</strong> Rechnungsentwürfe nicht synchronisiert werden:<br><ul class="mb-0 mt-2 small">${syncFailures.slice(0, 5).map(msg => `<li>${esc(msg)}</li>`).join('')}</ul>`,
+        type: 'warning'
+      });
     }
   };
 

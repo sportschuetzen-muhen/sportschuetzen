@@ -24,7 +24,7 @@ function renderGebuehrenConfigTab() {
           </p>
         </div>
         <div class="d-flex gap-2">
-          <button class="btn btn-sm btn-outline-secondary" onclick="jbReloadGebuehrenData()">
+          <button id="btnJbReloadGebuehren" class="btn btn-sm btn-outline-secondary" onclick="jbReloadGebuehrenData()">
             <i class="fas fa-sync-alt me-1"></i> Neu laden
           </button>
           <button class="btn btn-sm btn-success fw-bold shadow-sm" onclick="jbOpenEditGebuehrModal('')">
@@ -479,7 +479,7 @@ function jbRenderGebuehrenTable() {
         <td class="tk-col-betrag text-end fw-bold text-dark" data-col-id="betrag">CHF ${Number(f.betrag || 0).toFixed(2)}</td>
         <td class="tk-col-konto" data-col-id="konto">
           <span class="badge bg-light text-dark border font-monospace">${konto}</span>
-          ${kontoBezeichnung ? `<div class="text-muted small" style="font-size:10px;">${escHtml(kontoBezeichnung)}</div>` : ''}
+          ${kontoBezeichnung ? `<div class="text-muted small" style="font-size:10px;">${jbEscHtml(kontoBezeichnung)}</div>` : ''}
         </td>
         <td class="tk-col-ui_gruppe" data-col-id="ui_gruppe"><small class="text-secondary">${f.ui_gruppe || '<span class="text-muted fst-italic">Auto</span>'}</small></td>
         <td class="tk-col-ui_feld" data-col-id="ui_feld"><small class="text-dark">${f.ui_feld || '<span class="text-muted fst-italic">Auto</span>'}</small></td>
@@ -538,7 +538,7 @@ function jbPopulateModalDropdowns(selectedKat, selectedGrp, selectedFeld) {
     kats.forEach(k => {
       const sel = k === selectedKat;
       if (sel) found = true;
-      html += `<option value="${escHtml(k)}"${sel ? ' selected' : ''}>${escHtml(k)}</option>`;
+      html += `<option value="${jbEscHtml(k)}"${sel ? ' selected' : ''}>${jbEscHtml(k)}</option>`;
     });
     html += '<option value="__custom__">➕ [ Neue Kategorie erfassen… ]</option>';
     katSelect.innerHTML = html;
@@ -562,7 +562,7 @@ function jbPopulateModalDropdowns(selectedKat, selectedGrp, selectedFeld) {
     gruppen.forEach(g => {
       const sel = g === selectedGrp;
       if (sel) found = true;
-      html += `<option value="${escHtml(g)}"${sel ? ' selected' : ''}>${escHtml(g)}</option>`;
+      html += `<option value="${jbEscHtml(g)}"${sel ? ' selected' : ''}>${jbEscHtml(g)}</option>`;
     });
     html += '<option value="__custom__">➕ [ Neue UI-Gruppe erfassen… ]</option>';
     grpSelect.innerHTML = html;
@@ -595,14 +595,14 @@ function jbPopulateUiFeldDropdown(selectedGrp, selectedFeld) {
   const feldInput = document.getElementById('g_ui_feld');
   if (!feldSelect || !feldInput) return;
 
-  const placeholder = grpClean ? `-- Feld in «${escHtml(selectedGrp)}» wählen --` : '-- UI-Feld wählen oder neu --';
+  const placeholder = grpClean ? `-- Feld in «${jbEscHtml(selectedGrp)}» wählen --` : '-- UI-Feld wählen oder neu --';
   let html = `<option value="">${placeholder}</option>`;
   let found = false;
 
   felder.forEach(fld => {
     const sel = fld === selectedFeld;
     if (sel) found = true;
-    html += `<option value="${escHtml(fld)}"${sel ? ' selected' : ''}>${escHtml(fld)}</option>`;
+    html += `<option value="${jbEscHtml(fld)}"${sel ? ' selected' : ''}>${jbEscHtml(fld)}</option>`;
   });
   html += '<option value="__custom__">➕ [ Neues Feld erfassen… ]</option>';
   feldSelect.innerHTML = html;
@@ -750,7 +750,7 @@ function jbUpdateGebuehrLivePreview() {
 
   const ui_typ = document.getElementById('g_ui_typ')?.value || 'checkbox';
   const betrag = parseFloat(document.getElementById('g_betrag')?.value) || 0;
-  const konto = document.getElementById('g_konto')?.value?.trim() || '3000';
+  const konto = document.getElementById('g_konto')?.value?.trim() || '';
   const zielgruppe = document.getElementById('g_zielgruppe')?.value || 'Alle';
   const rawSort = document.getElementById('g_ui_sort')?.value;
   const parsedSort = parseInt(rawSort, 10);
@@ -803,7 +803,7 @@ function jbUpdateGebuehrLivePreview() {
       ui_feld: f.ui_feld || f.bezeichnungfrontend || f.bezeichnung || fKey,
       ui_typ: (f.ui_typ || 'checkbox').toLowerCase(),
       betrag: Number(f.betrag || 0),
-      konto: f.konto_haben || f.konto || '3000',
+      konto: f.konto_haben || f.konto || '',
       zielgruppe: f.zielgruppe || 'Alle',
       ui_sort: sortVal,
       isCurrent: false
@@ -833,7 +833,7 @@ function jbUpdateGebuehrLivePreview() {
         <div class="d-flex align-items-center justify-content-between p-2 bg-light rounded-2 border">
           <div class="form-check mb-0">
             <input class="form-check-input" type="checkbox" checked disabled>
-            <label class="form-check-label small fw-semibold text-dark ms-1">${escHtml(item.ui_feld)}</label>
+            <label class="form-check-label small fw-semibold text-dark ms-1">${jbEscHtml(item.ui_feld)}</label>
             ${item.zielgruppe === 'Junioren' ? '<span class="badge bg-info-subtle text-info ms-2" style="font-size:9px;">Jugend</span>' : ''}
           </div>
           <span class="badge bg-white text-dark border font-monospace small">CHF ${item.betrag.toFixed(2)}</span>
@@ -843,7 +843,7 @@ function jbUpdateGebuehrLivePreview() {
       controlHtml = `
         <div class="p-2 bg-light rounded-2 border">
           <div class="d-flex justify-content-between align-items-center mb-1">
-            <span class="small fw-semibold text-dark">${escHtml(item.ui_feld)}</span>
+            <span class="small fw-semibold text-dark">${jbEscHtml(item.ui_feld)}</span>
             <span class="badge bg-white text-muted border small font-monospace">CHF ${item.betrag.toFixed(2)} / Stich</span>
           </div>
           <div class="btn-group btn-group-sm w-100 opacity-75">
@@ -857,10 +857,10 @@ function jbUpdateGebuehrLivePreview() {
     } else if (item.ui_typ === 'singleselect') {
       controlHtml = `
         <div class="p-2 bg-light rounded-2 border">
-          <div class="small fw-semibold text-dark mb-1">${escHtml(item.ui_feld)} <span class="badge bg-light text-muted border" style="font-size:9px;">Einzelauswahl</span></div>
+          <div class="small fw-semibold text-dark mb-1">${jbEscHtml(item.ui_feld)} <span class="badge bg-light text-muted border" style="font-size:9px;">Einzelauswahl</span></div>
           <div class="d-flex gap-1.5 flex-wrap">
             <button type="button" class="btn btn-sm btn-primary active py-0.5 px-2.5 rounded-pill fw-bold" style="font-size:11px;">
-              ${escHtml(item.ui_feld)} (CHF ${item.betrag.toFixed(2)})
+              ${jbEscHtml(item.ui_feld)} (CHF ${item.betrag.toFixed(2)})
             </button>
             <button type="button" class="btn btn-sm btn-light border py-0.5 px-2 rounded-pill text-muted" style="font-size:11px;" disabled>
               Weitere Stufe…
@@ -871,10 +871,10 @@ function jbUpdateGebuehrLivePreview() {
     } else if (item.ui_typ === 'multiselect') {
       controlHtml = `
         <div class="p-2 bg-light rounded-2 border">
-          <div class="small fw-semibold text-dark mb-1">${escHtml(item.ui_feld)} <span class="badge bg-info text-dark" style="font-size:9px;">Mehrfachauswahl</span></div>
+          <div class="small fw-semibold text-dark mb-1">${jbEscHtml(item.ui_feld)} <span class="badge bg-info text-dark" style="font-size:9px;">Mehrfachauswahl</span></div>
           <div class="d-flex gap-1.5 flex-wrap">
             <button type="button" class="btn btn-sm btn-primary active py-0.5 px-2 rounded-pill" style="font-size:11px;">
-              <i class="fas fa-check me-1"></i>${escHtml(item.ui_feld)} (CHF ${item.betrag.toFixed(2)})
+              <i class="fas fa-check me-1"></i>${jbEscHtml(item.ui_feld)} (CHF ${item.betrag.toFixed(2)})
             </button>
           </div>
         </div>
@@ -887,7 +887,7 @@ function jbUpdateGebuehrLivePreview() {
               <input class="form-check-input" type="checkbox" checked disabled>
             </div>
             <div class="col">
-              <input type="text" class="form-control form-control-sm bg-white" value="${escHtml(item.ui_feld)}" readonly style="font-size: 11px;">
+              <input type="text" class="form-control form-control-sm bg-white" value="${jbEscHtml(item.ui_feld)}" readonly style="font-size: 11px;">
             </div>
             <div class="col-3">
               <div class="input-group input-group-sm">
@@ -897,7 +897,7 @@ function jbUpdateGebuehrLivePreview() {
             </div>
             <div class="col-auto">
               <div class="input-group input-group-sm" style="width: 110px;">
-                <input type="text" class="form-control form-control-sm font-monospace" value="${escHtml(item.konto)}" readonly style="background-color: #e9ecef; font-size:10px;">
+                <input type="text" class="form-control form-control-sm font-monospace" value="${jbEscHtml(item.konto)}" readonly style="background-color: #e9ecef; font-size:10px;">
                 <button class="btn btn-outline-secondary" type="button" disabled><i class="fas fa-lock" style="font-size:9px;"></i></button>
               </div>
             </div>
@@ -910,21 +910,21 @@ function jbUpdateGebuehrLivePreview() {
     const cardBorder = isCurrent ? 'border-primary border-2 shadow-sm bg-primary-subtle bg-opacity-10' : 'border bg-white shadow-2xs';
 
     return `
-      <div class="tk-draggable-item card p-2 mb-2 rounded-2 ${cardBorder}" data-id="${escHtml(item.key)}" draggable="true" style="transition: all 0.15s ease;">
+      <div class="tk-draggable-item card p-2 mb-2 rounded-2 ${cardBorder}" data-id="${jbEscHtml(item.key)}" draggable="true" style="transition: all 0.15s ease;">
         <div class="d-flex align-items-center justify-content-between mb-1.5 pb-1 border-bottom">
           <div class="d-flex align-items-center gap-1.5">
             <span class="tk-drag-handle text-muted cursor-grab px-1 py-0.5 rounded" title="Anfassen und verschieben" style="cursor: grab;">
               <i class="fas fa-grip-vertical"></i>
             </span>
             <div class="btn-group btn-group-xs me-1">
-              <button type="button" class="btn btn-outline-secondary py-0 px-1 border" onclick="jbMovePreviewItem('${escHtml(item.key)}', -1); return false;" title="Nach oben">
+              <button type="button" class="btn btn-outline-secondary py-0 px-1 border" onclick="jbMovePreviewItem('${jbEscHtml(item.key)}', -1); return false;" title="Nach oben">
                 <i class="fas fa-chevron-up" style="font-size: 9px;"></i>
               </button>
-              <button type="button" class="btn btn-outline-secondary py-0 px-1 border" onclick="jbMovePreviewItem('${escHtml(item.key)}', 1); return false;" title="Nach unten">
+              <button type="button" class="btn btn-outline-secondary py-0 px-1 border" onclick="jbMovePreviewItem('${jbEscHtml(item.key)}', 1); return false;" title="Nach unten">
                 <i class="fas fa-chevron-down" style="font-size: 9px;"></i>
               </button>
             </div>
-            <strong class="font-monospace small ${isCurrent ? 'text-primary' : 'text-dark'}">${escHtml(item.key)}</strong>
+            <strong class="font-monospace small ${isCurrent ? 'text-primary' : 'text-dark'}">${jbEscHtml(item.key)}</strong>
             ${isCurrent ? '<span class="badge bg-primary text-white" style="font-size: 9px;"><i class="fas fa-pen me-1"></i>In Bearbeitung</span>' : '<span class="badge bg-light text-muted border" style="font-size: 9px;">Bestehend</span>'}
           </div>
           <div class="d-flex align-items-center gap-1">
@@ -942,7 +942,7 @@ function jbUpdateGebuehrLivePreview() {
     <div class="card p-3 border-0 shadow-sm rounded-3 bg-white" id="jbPreviewDraggableContainer">
       <div class="d-flex justify-content-between align-items-center mb-2.5 pb-2 border-bottom">
         <h6 class="text-secondary fw-bold mb-0 text-uppercase" style="font-size: 12px; letter-spacing: 0.5px;">
-          <i class="fas ${icon} me-2"></i>${escHtml(ui_gruppe)}
+          <i class="fas ${icon} me-2"></i>${jbEscHtml(ui_gruppe)}
         </h6>
         <span class="badge bg-light text-muted border font-monospace small">
           ${groupItems.length} Elemente in Card
@@ -1047,8 +1047,8 @@ function jbOpenEditGebuehrModal(key) {
     ddEl.innerHTML = list.map(k => `
       <li>
         <a class="dropdown-item py-1 px-2 d-flex justify-content-between align-items-center cursor-pointer" href="#" onclick="jbOnGebuehrKontoChanged('${k.konto}'); jbUpdateGebuehrLivePreview(); return false;">
-          <span>${escHtml(k.bezeichnung)}</span>
-          <span class="badge bg-light text-primary font-monospace ms-2 border">${escHtml(k.konto)}</span>
+          <span>${jbEscHtml(k.bezeichnung)}</span>
+          <span class="badge bg-light text-primary font-monospace ms-2 border">${jbEscHtml(k.konto)}</span>
         </a>
       </li>
     `).join('') || '<li class="text-muted small px-2">Keine Konten geladen</li>';
@@ -1074,7 +1074,7 @@ function jbOpenEditGebuehrModal(key) {
       delete bezEl.dataset.manualEdit;
     }
     document.getElementById('g_betrag').value = '';
-    jbOnGebuehrKontoChanged('8500');
+    jbOnGebuehrKontoChanged('');
     document.getElementById('g_ui_typ').value = 'amount';
     document.getElementById('g_ui_sort').value = '30';
     document.getElementById('g_aktiv').checked = true;
@@ -1104,7 +1104,7 @@ function jbOpenEditGebuehrModal(key) {
     }
     const uiTypVal = (f.ui_typ || 'checkbox').toLowerCase();
     document.getElementById('g_betrag').value = (uiTypVal === 'amount' && Number(f.betrag || 0) === 0) ? '' : (f.betrag !== undefined ? f.betrag : '');
-    const initialKonto = f['Haben-Konto-Jahresbeitrag-Buchhaltung'] || f.konto_haben || f.konto || '3000';
+    const initialKonto = f['Haben-Konto-Jahresbeitrag-Buchhaltung'] || f.konto_haben || f.konto || '';
     jbOnGebuehrKontoChanged(initialKonto);
     document.getElementById('g_ui_typ').value = uiTypVal;
     document.getElementById('g_ui_sort').value = f.ui_sort !== undefined ? f.ui_sort : '10';
@@ -1132,7 +1132,9 @@ async function jbSaveGebuehrFromModal() {
 
   const katSelect = document.getElementById('g_kategorie_select');
   const katInput = document.getElementById('g_kategorie');
-  const kategorie = (katInput?.value || katSelect?.value || '').trim();
+  const kategorie = katSelect?.value === '__custom__'
+    ? (katInput?.value || '').trim()
+    : (katInput?.value || katSelect?.value || '').trim();
 
   const zielgruppe = document.getElementById('g_zielgruppe')?.value || 'Alle';
 
@@ -1154,11 +1156,15 @@ async function jbSaveGebuehrFromModal() {
 
   const grpInput = document.getElementById('g_ui_gruppe');
   const grpSelect = document.getElementById('g_ui_gruppe_select');
-  const ui_gruppe = (grpInput?.value || grpSelect?.value || '').trim();
+  const ui_gruppe = grpSelect?.value === '__custom__'
+    ? (grpInput?.value || '').trim()
+    : (grpInput?.value || grpSelect?.value || '').trim();
 
   const fldInput = document.getElementById('g_ui_feld');
   const fldSelect = document.getElementById('g_ui_feld_select');
-  const ui_feld = (fldInput?.value || fldSelect?.value || bezeichnungfrontend).trim();
+  const ui_feld = fldSelect?.value === '__custom__'
+    ? (fldInput?.value || '').trim()
+    : (fldInput?.value || fldSelect?.value || bezeichnungfrontend).trim();
 
   const rawSort = document.getElementById('g_ui_sort')?.value;
   const parsedSort = parseInt(rawSort, 10);
@@ -1394,7 +1400,8 @@ async function jbSyncUpdatedFeeToOpenDrafts(supa, key, prevFee, nextFee) {
     .eq('year', activeYear)
     .eq('source_field', key);
 
-  if (posErr || !Array.isArray(posRows) || posRows.length === 0) {
+  if (posErr) throw new Error(`Fehler beim Laden betroffener Beitragspositionen: ${posErr.message}`);
+  if (!Array.isArray(posRows) || posRows.length === 0) {
     return { updatedPositions: 0, updatedInvoices: 0 };
   }
 
@@ -1404,7 +1411,8 @@ async function jbSyncUpdatedFeeToOpenDrafts(supa, key, prevFee, nextFee) {
     .select('id, invoice_id, status')
     .in('id', headerIds);
 
-  if (hdrErr || !Array.isArray(headers)) {
+  if (hdrErr) throw new Error(`Fehler beim Laden betroffener Beitrags-Header: ${hdrErr.message}`);
+  if (!Array.isArray(headers)) {
     return { updatedPositions: 0, updatedInvoices: 0 };
   }
 
@@ -1413,16 +1421,14 @@ async function jbSyncUpdatedFeeToOpenDrafts(supa, key, prevFee, nextFee) {
   const invoiceMap = {};
 
   if (invoiceIds.length > 0) {
-    const { data: invRows } = await supa
-      .from('invoices')
-      .select('id, mail_status, status, total_amount, open_amount')
-      .in('id', invoiceIds);
-    (invRows || []).forEach(inv => { invoiceMap[inv.id] = inv; });
+    const [{ data: invRows, error: invErr }, { data: payRows, error: payErr }] = await Promise.all([
+      supa.from('invoices').select('id, mail_status, send_date, status, total_amount, open_amount').in('id', invoiceIds),
+      supa.from('invoice_payments').select('invoice_id').in('invoice_id', invoiceIds)
+    ]);
+    if (invErr) throw new Error(`Fehler beim Prüfen verknüpfter Rechnungen: ${invErr.message}`);
+    if (payErr) throw new Error(`Fehler beim Prüfen von Rechnungszahlungen: ${payErr.message}`);
 
-    const { data: payRows } = await supa
-      .from('invoice_payments')
-      .select('invoice_id')
-      .in('invoice_id', invoiceIds);
+    (invRows || []).forEach(inv => { invoiceMap[inv.id] = inv; });
     const paidInvSet = new Set((payRows || []).map(p => p.invoice_id));
     Object.values(invoiceMap).forEach(inv => {
       inv._hasPayments = paidInvSet.has(inv.id);
@@ -1435,11 +1441,13 @@ async function jbSyncUpdatedFeeToOpenDrafts(supa, key, prevFee, nextFee) {
 
   for (const cp of posRows) {
     const hdr = headerMap[cp.header_id];
-    if (!hdr || hdr.status === 'bezahlt') continue;
+    const hdrSt = String(hdr?.status || '').toLowerCase();
+    if (!hdr || hdrSt === 'bezahlt' || hdrSt === 'teilbezahlt' || hdrSt === 'versendet' || hdrSt === 'gesendet') continue;
 
     const inv = hdr.invoice_id ? invoiceMap[hdr.invoice_id] : null;
     if (inv) {
       const isDraftInv = (!inv.mail_status || inv.mail_status === 'entwurf')
+        && !inv.send_date
         && !inv._hasPayments
         && inv.status !== 'bezahlt'
         && inv.status !== 'teilbezahlt'
@@ -1468,19 +1476,18 @@ async function jbSyncUpdatedFeeToOpenDrafts(supa, key, prevFee, nextFee) {
         .from('contributions_positions')
         .update(updateFields)
         .eq('id', cp.id);
-      if (!updErr) {
-        updatedPositions++;
-        touchedHeaderIds.add(cp.header_id);
-        if (inv) {
-          if (!touchedDraftInvoices.has(inv.id)) touchedDraftInvoices.set(inv.id, []);
-          touchedDraftInvoices.get(inv.id).push({
-            position_nr: cp.position_nr,
-            oldDesc: curDesc,
-            newDesc: updateFields.beschreibung || curDesc,
-            newBetrag: updateFields.betrag,
-            newKonto: updateFields.konto
-          });
-        }
+      if (updErr) throw new Error(`Fehler beim Aktualisieren der Beitragsposition (${cp.id}): ${updErr.message}`);
+      updatedPositions++;
+      touchedHeaderIds.add(cp.header_id);
+      if (inv) {
+        if (!touchedDraftInvoices.has(inv.id)) touchedDraftInvoices.set(inv.id, []);
+        touchedDraftInvoices.get(inv.id).push({
+          position_nr: cp.position_nr,
+          oldDesc: curDesc,
+          newDesc: updateFields.beschreibung || curDesc,
+          newBetrag: updateFields.betrag,
+          newKonto: updateFields.konto
+        });
       }
     }
   }
@@ -1489,10 +1496,11 @@ async function jbSyncUpdatedFeeToOpenDrafts(supa, key, prevFee, nextFee) {
   const updatedHeaderTotals = {};
   if (betragChanged && touchedHeaderIds.size > 0) {
     for (const hid of touchedHeaderIds) {
-      const { data: allPos } = await supa
+      const { data: allPos, error: allPosErr } = await supa
         .from('contributions_positions')
         .select('betrag, source_field')
         .eq('header_id', hid);
+      if (allPosErr) throw new Error(`Fehler beim Laden der Positions-Summen (${hid}): ${allPosErr.message}`);
       if (Array.isArray(allPos)) {
         const hasRa002 = allPos.some(x => String(x.source_field || '').toUpperCase() === 'RA002');
         let sum = allPos.reduce((acc, x) => acc + Number(x.betrag || 0), 0);
@@ -1508,10 +1516,11 @@ async function jbSyncUpdatedFeeToOpenDrafts(supa, key, prevFee, nextFee) {
   // Verknüpfte Rechnungsentwürfe synchronisieren & PDF neu rendern
   let updatedInvoices = 0;
   for (const [invId, changes] of touchedDraftInvoices.entries()) {
-    const { data: invPosRows } = await supa
+    const { data: invPosRows, error: invPosErr } = await supa
       .from('invoice_positions')
       .select('id, position_nr, description, source_field')
       .eq('invoice_id', invId);
+    if (invPosErr) throw new Error(`Fehler beim Laden der Rechnungspositionen (${invId}): ${invPosErr.message}`);
 
     let invModified = false;
     for (const ch of changes) {
@@ -1528,7 +1537,8 @@ async function jbSyncUpdatedFeeToOpenDrafts(supa, key, prevFee, nextFee) {
         }
         if (ch.newKonto) ipPatch.konto = ch.newKonto;
         const { error: ipErr } = await supa.from('invoice_positions').update(ipPatch).eq('id', targetIp.id);
-        if (!ipErr) invModified = true;
+        if (ipErr) throw new Error(`Fehler beim Aktualisieren der Rechnungsposition (${targetIp.id}): ${ipErr.message}`);
+        invModified = true;
       }
     }
 
@@ -1556,9 +1566,8 @@ async function jbSyncUpdatedFeeToOpenDrafts(supa, key, prevFee, nextFee) {
   }
 
   if (updatedPositions > 0 && typeof loadJahresbeitragData === 'function') {
-    await loadJahresbeitragData(true, false);
-  }
-  if (updatedInvoices > 0 && typeof loadRechnungenData === 'function') {
+    await loadJahresbeitragData(true, updatedInvoices > 0);
+  } else if (updatedInvoices > 0 && typeof loadRechnungenData === 'function') {
     await loadRechnungenData(true, true);
   }
 
@@ -1566,20 +1575,24 @@ async function jbSyncUpdatedFeeToOpenDrafts(supa, key, prevFee, nextFee) {
 }
 
 async function jbReloadGebuehrenData() {
-  try {
-    showToast("Lade Gebührenkonfiguration aus Supabase neu…");
-    const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
-    if (supa) {
+  const btn = document.getElementById('btnJbReloadGebuehren');
+  const runReload = async () => {
+    try {
+      showToast("Lade Gebührenkonfiguration aus Supabase neu…");
+      const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+      if (!supa) throw new Error('Supabase Client nicht verfügbar.');
       const { data, error } = await supa.from('gebuehren_config').select('*').order('sort_order', { ascending: true });
-      if (!error && Array.isArray(data)) {
+      if (error) throw new Error(error.message);
+      if (Array.isArray(data)) {
         window._jbGebuehren = data.map(g => ({
           key: g.key,
           bezeichnung: g.bezeichnung,
           bezeichnung_frontend: g.bezeichnung_frontend || g.bezeichnung,
           bezeichnungfrontend: g.bezeichnung_frontend || g.bezeichnung,
           betrag: Number(g.betrag || 0),
-          konto: g.konto_haben || '3000',
-          'Haben-Konto-Jahresbeitrag-Buchhaltung': g.konto_haben || '3000',
+          konto_haben: g.konto_haben || '',
+          konto: g.konto_haben || '',
+          'Haben-Konto-Jahresbeitrag-Buchhaltung': g.konto_haben || '',
           kategorie: g.kategorie || 'Jahresbeitrag',
           sort_order: g.sort_order || 10,
           ui_gruppe: g.ui_gruppe || '',
@@ -1594,10 +1607,21 @@ async function jbReloadGebuehrenData() {
         jbPopulateFilterDropdowns();
         jbRenderGebuehrenTable();
         showToast("✅ Gebühren aus Supabase aktualisiert!");
-        return;
+      }
+    } catch (e) {
+      console.error("Fehler beim Neuladen der Gebühren aus Supabase:", e);
+      if (window.UIConfirmKit) {
+        await UIConfirmKit.alert({
+          title: 'Fehler beim Laden der Gebühren',
+          message: e.message || String(e),
+          type: 'danger'
+        });
       }
     }
-  } catch(e) {
-    console.error("Fehler beim Neuladen der Gebühren aus Supabase:", e);
+  };
+  if (window.UIButtonKit && btn) {
+    await UIButtonKit.withLoading(btn, runReload);
+  } else {
+    await runReload();
   }
 }

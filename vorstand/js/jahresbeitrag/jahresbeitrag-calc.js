@@ -5,10 +5,14 @@
 function jbCalculateLiveTotal(m, settings) {
   const isEhren = m._istEhren || false;
   const isPassiv = m._istPassiv || false;
-  const isIntern = String(m.PersonNumber || '').startsWith('INT-');
+  const isIntern = (m.OrganizationName || m.organization_name || '').toLowerCase().includes('intern') ||
+                   String(m.OrganizationNumber || m.organization_number || '').trim() === 'INTERN' ||
+                   String(m.PersonNumber || '').startsWith('INT-');
   
   const refYear = Number((typeof _jbYear !== 'undefined' && _jbYear) ? _jbYear : new Date().getFullYear());
-  const age = m.BirthDate ? (refYear - new Date(m.BirthDate).getFullYear()) : 0;
+  const birthYearMatch = m.BirthDate ? String(m.BirthDate).match(/^(\d{4})/) : null;
+  const birthYear = birthYearMatch ? parseInt(birthYearMatch[1], 10) : (m.BirthDate ? new Date(m.BirthDate).getFullYear() : 0);
+  const age = birthYear > 0 ? (refYear - birthYear) : 0;
   const isJunior = age > 0 && age <= 20;
   
   const configErrors = [];
@@ -54,35 +58,41 @@ function jbCalculateLiveTotal(m, settings) {
   // 1. Jahresbeitrag
   let jbKey = '';
 
-  if (isPassiv) {
+  if (isEhren) {
+    jbKey = 'JB004';
+  } else if (isPassiv) {
     jbKey = 'JB005';
   } else if (isIntern && isJunior) {
     jbKey = 'JB006';
   } else if (isJunior) {
     jbKey = 'JB007';
   } else {
-    // Aktiv
+    // Aktiv (inkl. Liegend / Auflage)
     let haupt = m._hauptlizenz || '';
     if (!haupt) {
       const lics = (m._lizenzen || window._mglLizenzenCache?.[String(m.PersonNumber)] || []).filter(l => (l.IsActive == 1 || l.IsActive === true) && !l.ExitDate);
-      const g50 = lics.find(l => (l.MembershipCategory || '').toLowerCase().includes('50m') || (l.MembershipCategory || '').toLowerCase().includes('g50'));
-      const g10 = lics.find(l => (l.MembershipCategory || '').toLowerCase().includes('10m') || (l.MembershipCategory || '').toLowerCase().includes('g10'));
+      const is50mCat = (cat) => cat.includes('50m') || cat.includes('g50') || cat.includes('gewehr 50');
+      const is10mCat = (cat) => cat.includes('10m') || cat.includes('g10') || cat.includes('luftgewehr');
+      const g50 = lics.find(l => is50mCat((l.MembershipCategory || l.membership_category || '').toLowerCase()));
+      const g10 = lics.find(l => is10mCat((l.MembershipCategory || l.membership_category || '').toLowerCase()));
       if (g50) {
-        const isA = (g50.LicenseCategory || '').toUpperCase() === 'A' || (g50.MembershipCategory || '').toLowerCase().includes('aktiv-a') || (g50.MembershipCategory || '').toLowerCase().includes('aktiv a');
-        haupt = isA ? 'Aktiv-A G50m' : 'Aktiv-B G50m';
+        const g50Cat = (g50.MembershipCategory || g50.membership_category || '').toLowerCase();
+        const licCat = String(g50.LicenseCategory || g50.license_category || '').trim().toUpperCase();
+        const isB = licCat === 'B' || g50Cat.includes('aktiv-b') || g50Cat.includes('aktiv b') || g50Cat.includes('status b');
+        haupt = isB ? 'Aktiv-B G50m' : 'Aktiv-A G50m';
       } else if (g10) {
-        const isA = (g10.LicenseCategory || '').toUpperCase() === 'A' || (g10.MembershipCategory || '').toLowerCase().includes('aktiv-a') || (g10.MembershipCategory || '').toLowerCase().includes('aktiv a');
-        haupt = isA ? 'Aktiv-A G10m' : 'Aktiv-B G10m';
+        const g10Cat = (g10.MembershipCategory || g10.membership_category || '').toLowerCase();
+        const licCat = String(g10.LicenseCategory || g10.license_category || '').trim().toUpperCase();
+        const isB = licCat === 'B' || g10Cat.includes('aktiv-b') || g10Cat.includes('aktiv b') || g10Cat.includes('status b');
+        haupt = isB ? 'Aktiv-B G10m' : 'Aktiv-A G10m';
       }
     }
 
-    if (haupt.includes('G50m')) {
-      if (haupt.includes('Aktiv-A')) {
-        jbKey = 'JB001';
-      } else {
-        jbKey = 'JB002';
-      }
-    } else if (haupt.includes('G10m')) {
+    const hLower = haupt.toLowerCase();
+    if (hLower.includes('g50') || hLower.includes('gewehr 50') || hLower.includes('50m')) {
+      const isB = hLower.includes('aktiv-b') || hLower.includes('aktiv b') || hLower.includes('status b');
+      jbKey = isB ? 'JB002' : 'JB001';
+    } else if (hLower.includes('g10') || hLower.includes('luftgewehr') || hLower.includes('10m')) {
       jbKey = 'JB003';
     } else {
       jbKey = 'JB005';
@@ -96,8 +106,8 @@ function jbCalculateLiveTotal(m, settings) {
   
   positions.push({ name: jbDesc, betrag: jbBetrag, typ: 'Debit', key: jbKey, konto: jbKonto });
 
-  // Ehrenmitgliedschaft als Rabattzeile in Höhe des Grundbeitrags mit Cap auf RA003
-  if (isEhren && jbBetrag > 0) {
+  // Fallback-Schutz: Falls JB004 manuell > 0 oder historisch ein anderer Tarif ermittelt wurde
+  if (isEhren && jbKey !== 'JB004' && jbBetrag > 0) {
     const rawMaxDiscount = getFee('RA003');
     const raKonto = getFeeAccount('RA003');
     const raName = getFeeName('RA003', 'Ehrenmitgliedschaft');
@@ -109,7 +119,7 @@ function jbCalculateLiveTotal(m, settings) {
         positions.push({
           name: raName,
           betrag: -effectiveDiscount,
-          typ: 'Kredit',
+          typ: 'Credit',
           key: 'RA003',
           konto: raKonto
         });
@@ -141,9 +151,10 @@ function jbCalculateLiveTotal(m, settings) {
     if (settings && settings.schuetzenhaus !== undefined) {
       chargeGe = !!settings.schuetzenhaus;
     } else {
-      const hatG50m = (m._lizenzen || window._mglLizenzenCache?.[String(m.PersonNumber)] || []).some(l => 
-        (l.IsActive == 1 || l.IsActive === true) && !l.ExitDate && (l.MembershipCategory || '').toLowerCase().includes('g50')
-      );
+      const hatG50m = (m._lizenzen || window._mglLizenzenCache?.[String(m.PersonNumber)] || []).some(l => {
+        const mc = (l.MembershipCategory || l.membership_category || '').toLowerCase();
+        return (l.IsActive == 1 || l.IsActive === true) && !l.ExitDate && (mc.includes('g50') || mc.includes('gewehr 50') || mc.includes('50m'));
+      });
       chargeGe = !isJunior && hatG50m && !isPassiv;
     }
     if (chargeGe) eventsMap['GE001'] = 1;
@@ -252,9 +263,9 @@ function jbCalculateLiveTotal(m, settings) {
     return k === 'KOSTENUEBERNAHME_JUGEND' || cKat === 'kostenübernahme_jugend' || cKat === 'kostenuebernahme_jugend';
   });
 
-  const subsidyTitle = (masterSubsidy && (masterSubsidy.bezeichnung || masterSubsidy.bezeichnungfrontend))
-    ? (masterSubsidy.bezeichnung || masterSubsidy.bezeichnungfrontend)
-    : 'Beitrag Jugendförderung Verein (Übernahme SpS Muhen)';
+  const subsidyTitle = (masterSubsidy && (masterSubsidy.bezeichnung || masterSubsidy.bezeichnung_frontend || masterSubsidy.bezeichnungfrontend))
+    ? (masterSubsidy.bezeichnung || masterSubsidy.bezeichnung_frontend || masterSubsidy.bezeichnungfrontend)
+    : 'Kostenübernahme Verein (Nachwuchsförderung)';
 
   Object.values(youthSubsidies).forEach(sub => {
     if (sub.total > 0) {
@@ -263,7 +274,7 @@ function jbCalculateLiveTotal(m, settings) {
         betrag: -sub.total,
         konto: sub.konto,
         kontobezeichnung: sub.kontobezeichnung || (masterSubsidy ? (masterSubsidy['Kontobezeichnung im KMU-Kontenrahmen'] || masterSubsidy.kontobezeichnung || '') : 'Nachwuchsförderung'),
-        typ: 'Kredit',
+        typ: 'Credit',
         key: 'KOSTENUEBERNAHME_JUGEND'
       });
     }
@@ -353,7 +364,7 @@ function jbCalculateLiveTotal(m, settings) {
           betrag: posBetrag,
           konto: posKonto,
           locked: isLocked,
-          typ: posBetrag >= 0 ? 'Debit' : 'Kredit',
+          typ: posBetrag >= 0 ? 'Debit' : 'Credit',
           key: key
         });
       }
@@ -374,7 +385,7 @@ function jbCalculateLiveTotal(m, settings) {
       positions.push({
         name: getFeeName('RA001', 'Rabatt Vorstand'),
         betrag: -Math.abs(rawVal),
-        typ: 'Kredit',
+        typ: 'Credit',
         key: 'RA001',
         konto: getFeeAccount('RA001')
       });
@@ -387,7 +398,7 @@ function jbCalculateLiveTotal(m, settings) {
       positions.push({
         name: getFeeName('RA002', 'Gutschrift Unterhalt Anlage (Hausmeister)'),
         betrag: -Math.abs(rawVal),
-        typ: 'Kredit',
+        typ: 'Credit',
         key: 'RA002',
         konto: getFeeAccount('RA002')
       });

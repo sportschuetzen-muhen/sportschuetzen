@@ -21,7 +21,7 @@ Das Modul Jahresbeitrag steuert die jährliche Beitragsbemessung, Rechnungsstell
 ## 2. Kern-Architektur & Das «Warum» hinter den Designentscheidungen
 
 ### 2.1 Warum dynamische Gebührenordnung (`gebuehren_config`) statt statischer Code-Werte?
-* **Problem:** Beitrags- und Lizenzansätze werden an der Generalversammlung periodisch angepasst (z. B. Aktivbeitrag `JB001`, Passivbeitrag `JB002`, Nachwuchstarif `JB004`, SSV-Lizenz Gewehr 50m `LI001`, Munitionsbeitrag `GE001`).
+* **Problem:** Beitrags- und Lizenzansätze werden an der Generalversammlung periodisch angepasst (z. B. Aktiv A G50m `JB001`, Aktiv B G50m `JB002`, Aktiv nur 10m `JB003`, Ehrenmitglied `JB004`, Passivmitglied `JB005`, Schüler intern `JB006`, Junior `JB007`, SSV-Lizenz `LI001`, Gebäudebeitrag / Schützenhaus `GE001`).
 * **Lösung & Warum:** Alle Ansätze liegen in `public.gebuehren_config`. Der Vorstand kann Beiträge im Cockpit unter *Einstellungen > Gebührenordnung* direkt anpassen. Es sind **keinerlei Code-Änderungen** erforderlich, wenn die GV neue Ansätze beschliesst.
 
 ### 2.2 Warum Rechnungsstellung zwingend über den zentralen `RechnungsCore`?
@@ -44,7 +44,7 @@ Das Modul Jahresbeitrag steuert die jährliche Beitragsbemessung, Rechnungsstell
 
 ### 2.5 Warum CAMT.054 Batch-Bankabgleich?
 * **Massenabgleich:** Nach dem Versand der Beitragsrechnungen treffen viele Zahlungen gleichzeitig auf dem Vereinskonto ein.
-* **Automatisierung:** Der zentrale CAMT.054-Bankabgleich erfolgt konsolidiert über `buchhaltung-bank.js` (`jahresbeitrag-bank.js` wurde aus `index.html` entfernt): Er liest den `CAMT.054`-XML-Kontoauszug, erkennt die 27-stelligen QR-Referenzen, setzt `contributions_header.status = 'bezahlt'` und bucht den Zahlungseingang in `public.invoice_payments` sowie im Finanzjournal (`accounting_journal`).
+* **Automatisierung:** Der zentrale CAMT.054-Bankabgleich erfolgt konsolidiert über `buchhaltung-bank.js` (`jahresbeitrag-bank.js` wurde vollständig aus dem Projekt entfernt): Er liest den `CAMT.054`-XML-Kontoauszug, erkennt die 27-stelligen QR-Referenzen, setzt `contributions_header.status = 'bezahlt'` und bucht den Zahlungseingang in `public.invoice_payments` sowie im Finanzjournal (`accounting_journal`).
 
 ### 2.6 Warum KMU-Kontenrahmen (`accounting_accounts`) & Saubere Konto-Übergabe an `RechnungsCore`?
 * **Problem:** Werden Gegenkonten statisch codiert oder Freitextnummern ohne Validierung eingetippt, entstehen Fehlbuchungen im Journal. Zudem gingen Kontierungszuordnungen verloren, wenn Fachmodule abweichende Key-Namen (`account` statt `konto`/`accountHaben`) an `RechnungsCore` schickten.
@@ -134,26 +134,23 @@ Das Modul Jahresbeitrag steuert die jährliche Beitragsbemessung, Rechnungsstell
 Die Beitragsberechnung erfolgt nach einer deterministischen Kaskade aus Mitgliederkategorie, Lizenzen, Anlagennutzung, Wettkampfteilnahmen und Rabatten:
 
 ### 5.1 Kaskade für den Grundbeitrag (JB001–JB007)
-1. **Passivmitglied:** `is_passive = true` $\rightarrow$ `JB005` (CHF 20.00).
-2. **Schüler intern (ohne SSV-Lizenz):** `person_number` beginnt mit `INT-` und Junior $\rightarrow$ `JB006` (CHF 0.00).
-3. **Junior / Nachwuchs:** Alter am Stichtag $\le$ 20 Jahre (SSV U21-Definition) $\rightarrow$ `JB007` (CHF 20.00).
-4. **Aktivmitglied (Erwachsene mit SSV-Lizenz):**
-   - Prüfung aktiver Lizenzen in `member_licenses` (`is_active = true` und `exit_date IS NULL`):
-     - **Gewehr 50m (G50m):**
-       - **Aktiv-A:** Wenn `license_category = 'A'` oder Kategorie `'Aktiv-A'` enthält $\rightarrow$ **`JB001` (CHF 100.00)**.
-       - **Aktiv-B:** Wenn `license_category = 'B'` oder Kategorie `'Aktiv-B'` enthält $\rightarrow$ **`JB002` (CHF 70.00)**.
-     - **Gewehr 10m (G10m):**
-       - Wenn aktive 10m-Lizenz vorhanden und keine 50m-Lizenz $\rightarrow$ **`JB003` (CHF 10.00)**.
-     - **Keine eigene Muhen-Lizenz (z. B. nur Fremdlizenz G300):**
-       - $\rightarrow$ **`JB005` (CHF 20.00, Passivbeitrag)**.
+1. **Ehrenmitglied (`is_honorary = true`):** $\rightarrow$ **`JB004` (`Ehrenmitglied`, CHF 0.00, Konto `3410`)**.
+2. **Passivmitglied (`is_passive = true`):** $\rightarrow$ **`JB005` (`Passivmitglied`, CHF 20.00, Konto `3412`)**.
+3. **Schüler intern (ohne aktive SSV-Lizenz / internes Profil):** `person_number` beginnt mit `INT-` oder Verein/Organisation `INTERN` $\rightarrow$ **`JB006` (`Schüler intern`, CHF 0.00, Konto `3420`)**.
+4. **Junior / Nachwuchs:** Alter am Stichtag (Beitragsjahr) $\le$ 20 Jahre (SSV U20 bis U17) $\rightarrow$ **`JB007` (`Junior (U20 bis U17)`, CHF 10.00, Konto `3410`)**.
+5. **Aktivmitglied (Erwachsene mit aktiver Muhen-Lizenz `1.19.0.01.029` in `member_licenses`, `is_active = true` und `exit_date IS NULL`):**
+   - **Gewehr 50m (G50m, inklusive Liegend / Auflage – keine separaten Gebührenschlüssel):**
+     - **Aktiv-A:** Wenn `license_category` auf `A` bzw. `Aktiv-A` lautet $\rightarrow$ **`JB001` (`Aktiv A G50m`, CHF 100.00, Konto `3410`)**.
+     - **Aktiv-B:** Wenn `license_category` auf `B` bzw. `Aktiv-B` lautet $\rightarrow$ **`JB002` (`Aktiv B G50m`, CHF 70.00, Konto `3410`)**.
+   - **Gewehr 10m / Luftgewehr (G10m, egal ob A oder B, inklusive Liegend / Auflage – ohne 50m-Lizenz):**
+     - Wenn aktive 10m-Lizenz vorhanden und keine 50m-Lizenz $\rightarrow$ **`JB003` (`Aktiv nur 10m`, CHF 10.00, Konto `3410`)**.
+   - **Keine aktive Muhen-Lizenz (z. B. nur Fremdlizenz G300 oder ohne Lizenz):**
+     - $\rightarrow$ **`JB005` (`Passivmitglied`, CHF 20.00, Konto `3412`)**.
 
-### 5.2 Ehrenmitglieder & Ausweisung mit Rabatt-Cap (RA003)
-- **Regel:** Ehrenmitglieder erhalten ihren regulären Grundbeitrag (z. B. Aktiv A CHF 100.–, Aktiv B CHF 70.– bzw. Passiv CHF 20.–) ausgewiesen.
-- **Gegenzeile mit Cap:** Direkt darunter wird als Gegenposition **`Ehrenmitgliedschaft`** (`RA003`) mit negativem Betrag eingefügt.
-  - **Formel:** `effektiver_rabatt = -Math.min(Grundbeitrag, ABS(Tarif RA003))` (in PostgreSQL: `-LEAST(v_base_fee_amt, ABS(v_geb.betrag))`).
-  - **Beispiel:** Beträgt der Grundbeitrag CHF 150.– und der Rabatt CHF 100.–, zahlt das Ehrenmitglied die Differenz (CHF 50.–). Beträgt der Grundbeitrag CHF 70.– oder CHF 20.–, wird der Rabatt auf CHF -70.– bzw. CHF -20.– gespiegelt.
-  - **Schutz vor Minusbetrag:** Da der Abzug exakt auf die Höhe des Grundbeitrags gedeckelt ist, entsteht auch bei Passiv-Ehrenmitgliedern niemals ein negativer Saldo.
-- **Gebühren-Invariante:** Lizenzen (SSV `LI001`) und Schützenhaus (`GE001`) sowie allfällige Wettkämpfe werden **weiterhin regulär verrechnet** (keine Befreiung durch Ehrenmitgliedschaft).
+### 5.2 Ehrenmitglieder (`JB004` – direkter Nulltarif)
+- **Regel (Migration 130):** Ehrenmitglieder (`is_honorary = true`) werden in der Kaskade prioritär direkt mit dem Tarif **`JB004` (`Ehrenmitglied`, CHF 0.00)** eingestuft, statt zuerst einen Aktiv-/Passivtarif zu berechnen und über `RA003` wieder abzuziehen.
+- **Schutz vor Doppelrabatt & Altlasten (`RA003`):** `RA003` verbleibt in `gebuehren_config` lediglich als optionaler/historischer Abzugsschlüssel und wird bei `JB004` nicht zusätzlich ausgelöst (damit niemals ein negativer Grundbeitrag entsteht).
+- **Gebühren-Invariante:** Lizenzen (SSV `LI001`) und Schützenhaus (`GE001`) sowie allfällige Wettkämpfe werden **weiterhin regulär verrechnet** (Befreiung betrifft ausschliesslich den Grundbeitrag).
 
 ### 5.3 SSV-Lizenzen (LI001–LI003)
 - **Eigener Verein (Muhen, `license_invoicing_club_number = '1.19.0.01.029'`):**
@@ -176,9 +173,9 @@ Die Beitragsberechnung erfolgt nach einer deterministischen Kaskade aus Mitglied
 
 ### 5.6 Rabatte & Gutschriften (RA001, RA002, RA003) & Vorzeichentoleranz
 - **Vorzeichentoleranz:** In `public.gebuehren_config` erfasste Beträge für Rabatte werden vom System immer als Abzug behandelt (`-ABS(betrag)`). Ein versehentliches Erfassen von `100.00` anstelle von `-100.00` führt nicht zu Fehlern.
-- **Vorstand (`RA001`):** Bleibt auf den Grundbeitrag beschränkt und greift nicht auf Schützenhaus oder Lizenzen über. Entfällt für Ehrenmitglieder, da diese bereits durch `RA003` vom Grundbeitrag entlastet sind.
+- **Vorstand (`RA001`):** Bleibt auf den Grundbeitrag beschränkt und greift nicht auf Schützenhaus oder Lizenzen über. Entfällt für Ehrenmitglieder (`JB004`), da deren Grundbeitrag bereits CHF 0.00 beträgt.
 - **Hausmeister / Unterhalt (`RA002`):** Reine Gutschrift (keine Belastung wie bei Junioren). Betrag und Gegenkonto werden zu 100% dynamisch aus `public.gebuehren_config` gelesen (keine feste Verdrahtung).
-- **Ehrenmitgliedschaft (`RA003`):** Dynamischer Rabatt bis zur Höhe des Grundbeitrags (Konto aus `gebuehren_config`, Standard `3410`).
+- **Ehrenmitgliedschaft (`RA003`):** Historischer/optionaler Korrekturschlüssel (aktive Ehrenmitglieder werden seit Migration 130 direkt über `JB004` mit CHF 0.00 abgebildet; `RA003` wird bei `JB004` nicht ausgelöst).
 
 ### 5.7 Keine stillen Fallbacks & Fehlerbehandlung
 - Das System verwendet keine hardcodierten Betrags- oder Konten-Fallbacks mehr.
@@ -186,8 +183,8 @@ Die Beitragsberechnung erfolgt nach einer deterministischen Kaskade aus Mitglied
 
 ### 5.8 Jugendförderung (Kostenübernahme Verein / Option A, Migration 72 & 114)
 - **Vollautomatische Kostenübernahme:** Bei Junioren (`is_junior = true` bzw. Alter $\le$ 20 Jahre oder Tarif `JB006`/`JB007`) werden sämtliche Wettkampfteilnahmen (Kategorien `Kleinkaliber`, `Luftgewehr`, `Wettkampf` bzw. Schlüssel `KK%`, `LG%`) vollautomatisch saldiert.
-- **Buchhalterischer Gegenbeleg:** Das System generiert automatisch eine Gegenposition **`KOSTENUEBERNAHME_JUGEND`** (*«Kostenübernahme Verein (Nachwuchsförderung)»*) in Höhe der summierten Wettkampfgebühren (Konto `3420` bzw. variables Wettkampf-Gegenkonto).
-- **Transparenz:** Auf der Beitragsrechnung des Nachwuchsschützen sowie in der Beitragsmatrix sind alle geschossenen Stiche einzeln als Soll aufgeführt und durch die Vereinssubvention auf Saldo CHF 0.00 ausgeglichen (effektiver Rechnungsbetrag entspricht dem reinen Grundbeitrag von CHF 10.00). In der Buchhaltung (`RechnungsCore`) ist die Kostenübernahme durch den Verein lückenlos ausgewiesen.
+- **Buchhalterischer Gegenbeleg:** Das System generiert automatisch je Wettkampf-Gegenkonto (Gruppierung in `calculate_member_contributions` nach `konto_haben`) eine Gegenposition **`KOSTENUEBERNAHME_JUGEND`** (*«Kostenübernahme Verein (Nachwuchsförderung)»*) in Höhe der dort summierten Wettkampfgebühren.
+- **Transparenz:** Auf der Beitragsrechnung des Nachwuchsschützen sowie in der Beitragsmatrix sind alle geschossenen Stiche einzeln als Soll aufgeführt und durch die Vereinssubvention auf Saldo CHF 0.00 ausgeglichen (effektiver Rechnungsbetrag entspricht dem reinen Grundbeitrag `JB007` bzw. `JB006`). In der Buchhaltung (`RechnungsCore`) wird jedes betroffene Wettkampf- bzw. Ertragskonto exakt auf Null entlastet.
 
 ### 5.9 Floor-Regel
 - Rechnungsbetrag wird auf mindestens CHF 0.00 begrenzt, ausser bei Hausmeister-Gutschriften (`RA002`), wo negative Auszahlungsbeträge für Unterhaltsentschädigungen zulässig sind.
@@ -236,7 +233,7 @@ Statt einer fehleranfälligen N-fachen HTTP-Schleife im Browser wird die persist
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │ STUFE 2: KONTROLLE & ABSTIMMUNG (Kassier / Vorstand)                                   │
 │          - Kontrolle in der Beitragsmatrix (jahresbeitrag-matrix.js)                    │
-│          - Prüfung: Ehrenmitglieder (RA003), Hausmeister (RA002), U21, Lizenzen        │
+│          - Prüfung: Ehrenmitglieder (JB004), Hausmeister (RA002), U21, Lizenzen        │
 │          - Bei Bedarf: Manuelle Anpassungen via Schnellerfassung                        │
 │          - Vorteil: Wiederholtes Berechnen möglich, OHNE Nummernkreise zu verbrennen.  │
 └──────────────────────────────────────┬─────────────────────────────────────────────────┘
@@ -369,7 +366,7 @@ Wird eine Jahresbeitrags-Rechnung (`JB-26-XXXX`) im Rechnungsmodul gelöscht –
 ### 8.10 Resilienz bei SSV-Lizenz-Konflikten (Migration 117)
 * **Lizenz-Integrität als Berechnungsgrundlage:** Die Beitragsermittlung in `calculate_member_contributions` hängt direkt von aktiven Lizenzen in `public.member_licenses` ab (`is_active IS TRUE`).
 * **Verhinderung falscher Fallbacks:** Durch Migration 117 und die Härtung der Import-Engine (`extractAllLicenses`) werden aktive Muhen-Lizenzen bei Mitgliedern mit Mehrfachmitgliedschaften (z. B. Rolf Denzler mit beendeter Lizenz in Balsthal-Klus und aktiver Lizenz in Muhen) nicht mehr durch inaktive Fremdvereinszeilen überschrieben.
-* **Ergebnis:** Das System weist Mitgliedern mit Aktiv-B-Lizenzen verlässlich `JB002 Aktiv-B G50m` (CHF 70.00) plus Verbandskosten `LI001` (CHF 18.00) zu, anstatt auf die Standard-A-Fallback-Gebühr `JB001` (CHF 100.00) zurückzufallen.
+* **Ergebnis:** Das System weist Mitgliedern mit Aktiv-B-Lizenzen verlässlich `JB002 Aktiv B G50m` (CHF 70.00) plus Verbandskosten `LI001` (CHF 18.00) zu, anstatt auf `JB001` (CHF 100.00) zurückzufallen.
 
 ### 8.11 Variable Zusatzpositionen (`Z001`–`Z003`) & Bewahrung individueller Beträge (Migration 122)
 * **Vorschlagswert vs. individueller Betrag:** Für variable Zusatzpositionen (`kategorie = 'variabel'` / `ui_typ = 'amount'` / Schlüssel `Z%`, z. B. `Z002` Beitrag Eidg. Schützenfest, `Z003` Übernachtung Eidgenössisches) dient `gebuehren_config.betrag` ausschliesslich als initialer Vorschlagswert. Sobald ein individueller Betrag, Text oder ein Haben-Konto für ein Mitglied erfasst wurde, ist `public.contributions_positions` die führende Quelle.
@@ -382,10 +379,15 @@ Wird eine Jahresbeitrags-Rechnung (`JB-26-XXXX`) im Rechnungsmodul gelöscht –
 * **Automatischer Entwurfs-Abgleich & `source_field`-Vererbung:** Änderungen in der Gebührenkonfiguration gleichen automatisch unveränderte Standardtexte in offenen `contributions_positions` und noch nicht versendeten/bezahlten `entwurf`-Rechnungen ab (mit anschliessender PDF-Neugenerierung), und `ensureInvoiceCreatedRemote` sowie `jbSaveSingleMemberDirect` schreiben `source_field` durchgängig in `invoice_positions`.
 
 ### 8.13 Revisionssichere Sperren, Split-FiBu-Buchung & Tarif-/Stichjahr-Härtung (Migration 129)
-* **SSV-Vereinsnummer, Fallback & Stichjahr:** `calculate_member_contributions` prüft ausschliesslich Muhen-Lizenzen der Vereinsnummer `1.19.0.01.029`, verwendet ohne aktive Muhen-Lizenz den neutralen Fallback `JB005` (`Frei/Fremdlizenz`, CHF 0.00) und berechnet die U21-Altersgrenze (`age > 0 AND age <= 20`) sowohl serverseitig als auch in allen Frontend-Modulen (`jahresbeitrag-core.js`, `jahresbeitrag-calc.js`, `jahresbeitrag-overview.js`, `jahresbeitrag-schnellerfassung.js`) einheitlich gegen das ausgewählte Beitragsjahr `_jbYear`.
+* **SSV-Vereinsnummer, Fallback & Stichjahr:** `calculate_member_contributions` prüft ausschliesslich Muhen-Lizenzen der Vereinsnummer `1.19.0.01.029`, verwendet ohne aktive Muhen-Lizenz den Fallback `JB005` (`Passivmitglied`) und berechnet die U21-Altersgrenze (`age > 0 AND age <= 20`) sowohl serverseitig als auch in allen Frontend-Modulen (`jahresbeitrag-core.js`, `jahresbeitrag-calc.js`, `jahresbeitrag-overview.js`, `jahresbeitrag-schnellerfassung.js`) einheitlich gegen das ausgewählte Beitragsjahr `_jbYear`.
 * **Durchgängige Lebenszyklus-Sperre:** Bereits versendete (`mail_status = 'versendet'`), teilbezahlte oder bezahlte Beiträge/Rechnungen werden durch `calculate_member_contributions` (inklusive gezieltem `p_target_pns`-Aufruf), `jbGetContributionLockState()` in der Schnellerfassung sowie `jbResetYear()` strikt geschützt; offene Entwürfe werden zentral und fehlergeprüft über `jbSyncOpenDraftInvoice()` aktualisiert.
 * **Doppelbuchungs-Schutz bei Zahlungen & RBAC:** `jbSaveZahlung()` ruft `RechnungsCore.recordPayment(..., { syncBookkeeping: false, paymentMethod, documentRef })` auf und verbucht ausschliesslich die Konten-Splitbuchung im `accounting_journal` exakt einmal; Migration 129 ergänzt zudem die `SECURITY DEFINER`-Berechtigungsprüfung in `calculate_member_contributions` und schaltet `member_participations` per RLS für `jahresbeitrag.view`/`.manage` (inklusive Kassier) frei.
-* **Globale UI-Toolkits & Modul-Hygiene:** Alle aktiven Skripte nutzen ausschliesslich `UIConfirmKit` (`{ title, message, type }`), `UIFormatKit` (`money`/`date`), `UIButtonKit.withLoading`, Du-Form und XSS-Escaping; `jahresbeitrag-bank.js` wurde aus `vorstand/index.html` entfernt.
+* **Globale UI-Toolkits & Modul-Hygiene:** Alle aktiven Skripte nutzen ausschliesslich `UIConfirmKit` (`{ title, message, type }`), `UIFormatKit` (`money`/`date`), `UIButtonKit.withLoading`, Du-Form und XSS-Escaping.
+
+### 8.14 Harmonisierung Tarife JB001–JB007, Liegend/Auflage, Entwurfs-Sync & FiBu-Teilzahlungen (Migration 130)
+* **Kanonische Tarife `JB001`–`JB007` & Liegend/Auflage:** Migration 130 harmonisiert `public.gebuehren_config` sowie `calculate_member_contributions` und `jahresbeitrag-calc.js` verbindlich auf `JB001 Aktiv A G50m` (`100.00`), `JB002 Aktiv B G50m` (`70.00`), `JB003 Aktiv nur 10m` (`10.00`, A und B), `JB004 Ehrenmitglied` (`0.00`), `JB005 Passivmitglied` (`20.00`), `JB006 Schüler intern` (`0.00`) und `JB007 Junior (U20 bis U17)` (`10.00`). Liegend- und Auflage-Lizenzen (`G50m Aufl.`, `G10m Aufl.`) werden direkt `JB001`–`JB003` zugeordnet, ohne separate Gebührenschlüssel anzulegen.
+* **Ehrenmitglieder direkt mit `JB004`:** Mitglieder mit `is_honorary = true` erhalten direkt `JB004` (`CHF 0.00`), statt einen Aktivtarif über `RA003` gegenzurechnen (`RA003` dient nur noch als Legacy-Hinweis/Schutz falls `jbKey !== 'JB004'`). Bei der gezielten Neuberechnung sowie im Komplettluf bereinigt Schritt 1 stets nicht gesperrte Altzeilen vor dem Neuaufbau, und `KOSTENUEBERNAHME_JUGEND` gruppiert Subventionen sauber nach Wettkampf-Habenkonto (`temp_youth_subsidies`).
+* **Revisionssichere Entwurfs-Synchronisation, `storniert`-Schutz & FiBu-Skalierung:** Alle Lebenszyklus-Prüfungen (`jbGetContributionLockState`, `jbGetEffectiveStatus`, `jbMergeInvoicesIntoData`, `ensureInvoiceCreatedRemote`, `jbResetYear`) schliessen stornierte Belege (`status === 'storniert'`) konsequent aus und ermitteln bereits bezahlte Beträge konsistent über `total_amount - open_amount`. `jbBerechnen` synchronisiert veränderte unversendete Entwürfe nach der Neuberechnung automatisch über `jbSyncOpenDraftInvoice` (inklusive Hintergrund-PDF-Refresh); `jbGetSplitBookings` skaliert Split-Buchungen bei Teilzahlungen proportional mit Cent-Rundungsausgleich. Die obsolete Altdatei `vorstand/js/jahresbeitrag/jahresbeitrag-bank.js` wurde vollständig entfernt, und globale Namenskollisionen (`jbEscHtml`) sowie fehlende UI-Kit-Wrappings (`UIExportKit.dataToExcel`, `UIButtonKit.withLoading`) behoben.
 
 
 
