@@ -860,12 +860,40 @@ function _mailBuildRowHtml(m) {
     </tr>`;
 }
 
+function _mailDestroyPreviewTable() {
+  const existing = document.getElementById('mail-recipients-table');
+  if (existing && existing._tkController && typeof existing._tkController.destroy === 'function') {
+    existing._tkController.destroy();
+  }
+}
+
+function _mailApplyActiveSort(table) {
+  if (!table) return;
+  const activeTh = table.querySelector('thead th.tk-sort-asc, thead th.tk-sort-desc');
+  if (!activeTh) return;
+  const key = activeTh.dataset.sortKey;
+  if (!key) return;
+  const dirMult = activeTh.classList.contains('tk-sort-desc') ? -1 : 1;
+  const tbody = table.querySelector('tbody');
+  if (!tbody) return;
+  const rows = Array.from(tbody.querySelectorAll('tr[data-id]'));
+  if (rows.length < 2) return;
+  const getVal = (row) => {
+    const cell = row.querySelector(`[data-cell="${key}"]`);
+    if (!cell) return '';
+    return cell.dataset.sortValue !== undefined ? cell.dataset.sortValue : cell.textContent.trim();
+  };
+  rows.sort((a, b) => String(getVal(a)).localeCompare(String(getVal(b)), 'de-CH', { numeric: true, sensitivity: 'base' }) * dirMult);
+  rows.forEach(r => tbody.appendChild(r));
+}
+
 function _mailRenderPreview() {
   const container = document.getElementById('mail-preview');
   if (!container) return;
 
   const candidates = _mailGetActiveCandidates();
   if (candidates.length === 0) {
+    _mailDestroyPreviewTable();
     container.innerHTML = `
       <div class="d-flex flex-column align-items-center justify-content-center h-100 text-muted py-5" style="opacity: 0.6;">
         <i class="fas fa-users-rectangle fa-3x mb-3 text-secondary"></i>
@@ -876,6 +904,7 @@ function _mailRenderPreview() {
 
   const visible = _mailGetVisibleCandidates();
   if (visible.length === 0) {
+    _mailDestroyPreviewTable();
     container.innerHTML = `
       <div class="text-center py-5 text-muted border rounded-3 bg-white">
         <i class="fas fa-filter fa-2x mb-2 text-secondary opacity-50"></i>
@@ -950,6 +979,7 @@ function _mailRenderPreview() {
     const tbody = table.querySelector('tbody');
     if (tbody) {
       tbody.innerHTML = rowsHtml;
+      _mailApplyActiveSort(table);
     }
     if (window.TableKit && typeof window.TableKit.syncTable === 'function') {
       window.TableKit.syncTable(table);
@@ -1180,19 +1210,21 @@ async function mailExcel() {
         vorstand: (m._istVorstand || Number(m._aktiveFunktionenCount || 0) > 0) ? 'Ja' : 'Nein'
       };
     });
-    window.UIExportKit.dataToExcel(
-      exportRows,
-      [
-        { key: 'pn', header: 'SSV-Nummer', width: 14 },
-        { key: 'lastName', header: 'Nachname', width: 22 },
-        { key: 'firstName', header: 'Vorname', width: 20 },
-        { key: 'email', header: 'E-Mail', width: 32 },
-        { key: 'additional', header: 'Zweitadresse', width: 32 },
-        { key: 'kategorie', header: 'Kategorie', width: 22 },
-        { key: 'vorstand', header: 'Vorstand', width: 12 }
-      ],
-      `muhen_mail_verteiler_${new Date().toISOString().slice(0, 10)}.xlsx`
-    );
+    window.UIExportKit.dataToExcel(exportRows, {
+      headers: {
+        pn: 'SSV-Nummer',
+        lastName: 'Nachname',
+        firstName: 'Vorname',
+        email: 'E-Mail',
+        additional: 'Zweitadresse',
+        kategorie: 'Kategorie',
+        vorstand: 'Vorstand'
+      },
+      columnWidths: [14, 22, 20, 32, 32, 22, 12],
+      sheetName: 'Mail-Verteiler',
+      filename: 'muhen_mail_verteiler',
+      dateSuffix: true
+    });
   } else {
     await mailCSV();
   }
@@ -1327,7 +1359,7 @@ function _renderMailLogTable(rows) {
           <div class="text-truncate">${subject}</div>
           ${r.record_id ? `<span class="badge bg-light text-dark border small">${escapeHtml(r.record_id)}</span>` : ''}
         </td>
-        <td class="align-middle text-center" data-col-id="pdf" data-cell="pdf">${pdfIcon}</td>
+        <td class="align-middle text-center" data-col-id="pdf" data-cell="pdf" data-sort-value="${r.has_pdf ? '1' : '0'}">${pdfIcon}</td>
         <td class="align-middle" data-col-id="status" data-cell="status">${statusBadge}</td>
       </tr>`;
   }).join('');
@@ -1449,21 +1481,26 @@ function _mailLogStatusBadge(status) {
 /** Gibt ein Emoji-Label für das Herkunftsmodul zurück. */
 function _mailLogModuleLabel(ref) {
   const map = {
-    'rechnung':     '💶 Rechnung',
-    'mietvertrag':  '🏠 Mietvertrag',
-    'jahresbeitrag':'📋 Jahresbeitrag',
-    'mahnung':      '⚠️ Mahnung',
-    'anlasse':      '📅 Anlässe',
-    'vermietung':   '🔑 Vermietung',
-    'mitglieder':   '👥 Mitglieder',
-    'gv':           '🏛️ GV',
-    'manager':      '🎯 Manager',
-    'auth':         '🔐 Auth',
-    'logins':       '🪪 Logins',
-    'system_test':  '🧪 System-Test',
-    'allgemein':    '✉️ Allgemein',
-    'sonstige':     '📁 Sonstige',
-    'unbekannt':    '❓ Unbekannt'
+    'rechnung':            '💶 Rechnung',
+    'mietvertrag':         '🏠 Mietvertrag',
+    'jahresbeitrag':       '📋 Jahresbeitrag',
+    'mahnung':             '⚠️ Mahnung',
+    'anlasse':             '📅 Anlässe',
+    'vermietung':          '🔑 Vermietung',
+    'vermietung_test':     '🧪 Vermietung-Test',
+    'mitglieder':          '👥 Mitglieder',
+    'gv':                  '🏛️ GV',
+    'manager':             '🎯 Manager',
+    'jahresmeisterschaft': '🏅 Jahresmeisterschaft',
+    'umfragen':            '📊 Umfragen',
+    'kontakt':             '📬 Website-Kontakt',
+    'auth':                '🔐 Auth',
+    'logins':              '🪪 Logins',
+    'ai_system':           '🤖 KI-System',
+    'system_test':         '🧪 System-Test',
+    'allgemein':           '✉️ Allgemein',
+    'sonstige':            '📁 Sonstige',
+    'unbekannt':           '❓ Unbekannt'
   };
   return map[ref] || escapeHtml(ref || '–');
 }

@@ -12,11 +12,11 @@
 
 Das Modul **Mail-Verteiler** dient dem Vorstand und den Funktionären der Sportschützen Muhen zur zielgerichteten, datenschutzkonformen Zusammenstellung von Empfängerlisten für die interne und externe Vereinskommunikation.
 
-* **Zweck:** Ad-hoc-Zusammenstellung von E-Mail-Adressen nach dynamischen Kriterien (Vorstand, Gesamtverein, Aktive Schützen inkl. aktiver Ehrenmitglieder, G50m/G10m, Ehrenmitglieder, Passivmitglieder) sowie optionalem Einschliessen von Zweitadressen.
+* **Zweck:** Ad-hoc-Zusammenstellung von E-Mail-Adressen nach dynamischen Kriterien (Vorstand, Gesamtverein, Aktive Schützen inkl. lizenzierter aktiver Ehrenmitglieder, G50m/G10m, Ehrenmitglieder, Passivmitglieder) sowie optionalem Einschliessen von Zweitadressen.
 * **Ausgabeformate:**
   1. **BCC-Zwischenablage:** Semikolon-separierte Adresszeile für Mail-Programme (Outlook, Apple Mail, Thunderbird).
   2. **Mailto-Direktaufruf:** Öffnen des System-Mailprogramms mit vorbefülltem BCC-Feld (RFC-6068-kompatibel kommagetrennt, limitiert auf max. 30 Empfänger bzw. < 1950 Zeichen URL-Länge zum Schutz vor Provider-/Client-Limits).
-  3. **CSV- & Excel-Export:** Strukturierter Export für Serienbriefe oder Archivierung (`UIExportKit.dataToExcel`).
+  3. **CSV- & Excel-Export:** Strukturierter Export für Serienbriefe oder Archivierung (`UIExportKit.dataToExcel` mit `headers`-Objekt, `columnWidths` und `filename`).
 * **Abgrenzung:** Das Modul versendet **keine** automatisierten Transaktionsmails und generiert keine Rechnungs-PDFs. Diese Aufgaben liegen ausschliesslich bei der zentralen [Document & Mail Engine](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/docs/DOCUMENT_AND_MAIL_ENGINE_SPEC.md).
 
 ---
@@ -124,5 +124,5 @@ Im Rahmen der Systemharmonisierung muss die Empfängervorschau zwingend auf das 
 ## 6. Sicherheits- & Berechtigungs-Kontrakt (RBAC & RLS)
 
 * **Rollen & Sichtbarkeit:** Das Modul wird über `mail.view` (Verteiler & Versandprotokoll einsehen) und `mail.manage` (SMTP-Test, Kampagnen & Log-Verwaltung) gesteuert. Für den Empfänger-Abruf aus `public.members` ist zusätzlich `members.view` erforderlich (u. a. bei `kassier`, `aktuar`, `schuetzenmeister`, `vorstand` hinterlegt).
-* **Datenbank-RLS (`133_harden_mail_rls_and_rbac.sql`):** `public.mail_logs`, `communication_campaigns`, `campaign_attachments` und `campaign_recipients` sind strikt über `rbac_allows(ARRAY['mail.view', 'mail.manage'])` bzw. `mail.manage` abgesichert (`anon`-Zugriffe und offene `INSERT`-Policies sind entfernt). Unauthentifizierte Auth-Logs (Passwort-Reset / Magic Link) werden ausschliesslich über die validierte `SECURITY DEFINER`-RPC `public.log_auth_mail_event` protokolliert.
+* **Datenbank-RLS (`133_harden_mail_rls_and_rbac.sql`, `134_harden_campaign_assets_storage_rls.sql`):** `public.mail_logs`, `communication_campaigns`, `campaign_attachments` und `campaign_recipients` sind strikt über `rbac_allows(ARRAY['mail.view', 'mail.manage'])` bzw. `mail.manage` abgesichert (`anon`-Zugriffe und offene `INSERT`-Policies sind entfernt). Unauthentifizierte Auth-Logs (Passwort-Reset / Magic Link) werden ausschliesslich über die validierte `SECURITY DEFINER`-RPC `public.log_auth_mail_event` protokolliert. Der Storage-Bucket `campaign-assets` erlaubt Schreibzugriffe (`INSERT`/`UPDATE`/`DELETE`) ausschliesslich autorisierten Benutzern mit `mail.manage` oder `gv.manage`. Das Versandprotokoll (`mail_logs`) unterstützt in Filter und Labels sämtliche produktiven `module_ref`-Quellen inkl. `jahresmeisterschaft`, `umfragen`, `kontakt`, `ai_system` und `vermietung_test`.
 * **Edge Function `send-email`:** Authentifizierte Aufrufe erfordern eine Vorstands-`.manage`-Berechtigung in `user_roles` / `role_permissions` (bzw. `mail.manage` für `system_test`); Downloads privater Storage-Anhänge über den Service-Role-Client sind ausschliesslich für Service-Role und autorisierte Manager freigegeben.
