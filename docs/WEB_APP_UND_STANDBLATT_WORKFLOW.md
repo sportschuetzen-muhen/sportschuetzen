@@ -64,8 +64,8 @@ Alle drei Fachmodule der Web-App lesen **exklusiv und direkt** aus Supabase Post
      2. *Anlass erkannt:* Fuzzy-Matching gleicht Anlass & Veranstalter (z.B. «43. Stumpenlandschiessen 2026, Menziken-Burg») exakt mit vorhandenen Schiessspalten der aktuellen Jahresmeisterschaft ab (z.B. «Stumpenland-Schiessen Menziken-Burg»).
      3. *Punkte & Maximum:* Stich (z.B. Gruppenstich), erreichte Punktzahl und Maximum (100 Pkt) werden validiert.
 2. **Speicherung des Standblatts & Beleg-Abruf:**
-   - Das komprimierte Bild wird an Cloudflare R2 übermittelt (`worker_github-dropdown-refresh.js`, Route `action=upload_standblatt`).
-   - Die Datei kann über `action=get_standblatt&file=...` mit CORS-Headern und Cache-Headern im Frontend als Belegfoto angezeigt werden.
+   - Das komprimierte Bild wird per Supabase-JWT an Cloudflare R2 über den zentralen Portal-Worker `v1-vorstand-api` (`WORKER/v1-vorstand.js`, Route `action=upload_standblatt`) übermittelt.
+   - Die Datei kann über `https://v1-vorstand-api.dan-hunziker73.workers.dev/?action=get_standblatt&file=...` authentifiziert und mit privaten Cache-Headern (`Cache-Control: private, max-age=3600`) im Frontend als Belegfoto angezeigt werden (bestehende Beleg-URLs wurden per Migration `144` umgeschrieben).
    - Die Metadaten (Punkte, Maximum, Schütze, Beleg-URL, Jahrgang, exakter Anlassname) sowie die strukturierte `ocr_analysis` (Schütze-Status, Anlass-Status, Score-Status, Beweis-Text) werden mit Status `pending` in `public.contest_ocr_logs` protokolliert.
    - **System-Mails & Bestätigung:** Der Schütze erhält unmittelbar eine Bestätigungs-Mail über den Eingang via Supabase Edge Function `send-email`. Eine Kopie wird automatisch an den Verteiler `Info_Mail_Standblatt_Upload` gesendet (konfigurierbar im Modul System-Mails via `public.system_mail_configs`).
 3. **Standblatt-Freigabe-Inbox im Vorstandscockpit (`jahresmeisterschaft-inbox.js`):**

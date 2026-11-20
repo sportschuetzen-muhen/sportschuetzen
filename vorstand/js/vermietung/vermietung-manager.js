@@ -1420,7 +1420,7 @@ async function syncNotfallBuchungen() {
     const { data: sessData } = await supa.auth.getSession();
     const accessToken = sessData?.session?.access_token || '';
     const workerAuthHeaders = accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {};
-    const proxyUrl = "https://github-dropdown-refresh.dan-hunziker73.workers.dev?action=getUnsyncedRentals";
+    const proxyUrl = "https://v1-vorstand-api.dan-hunziker73.workers.dev/?action=getUnsyncedRentals";
     const resp = await fetch(proxyUrl, { headers: workerAuthHeaders });
     if (!resp.ok) throw new Error("Fehler beim Abrufen der Notfall-Buchungen: HTTP " + resp.status);
 
@@ -1526,7 +1526,7 @@ async function syncNotfallBuchungen() {
 
     // Nur erfolgreich importierte Buchungen im Google Sheet als synchronisiert markieren
     if (syncedBookingNumbers.length > 0) {
-      const markResp = await fetch("https://github-dropdown-refresh.dan-hunziker73.workers.dev?action=markSyncedRentals", {
+      const markResp = await fetch("https://v1-vorstand-api.dan-hunziker73.workers.dev/?action=markSyncedRentals", {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...workerAuthHeaders },
         body: JSON.stringify({ booking_numbers: syncedBookingNumbers })

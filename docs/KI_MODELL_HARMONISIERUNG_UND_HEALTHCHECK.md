@@ -78,15 +78,10 @@ Die Prüfergebnisse werden atomar in der Tabelle `public.system_app_configs` abg
 - `key = 'ai_primary_model'`: Das aktuell empfohlene Standardmodell (z.B. `gemini-3-flash-preview`).
 
 ### 3.4 Automatischer Cron-Job & Admin-Alarmierung
-1. **Supabase `pg_cron` & `pg_net`:**
-   In PostgreSQL ist Job #1 `ai-model-healthcheck` registriert, der täglich um 04:00 Uhr UTC via `net.http_get` den Worker aufruft:
-   ```sql
-   SELECT cron.schedule('ai-model-healthcheck', '0 4 * * *', $$
-     SELECT net.http_get(url := 'https://v1-vorstand-api.dan-hunziker73.workers.dev/?action=check_ai_models');
-   $$);
-   ```
-2. **Cloudflare Worker Cron Trigger:**
-   Zusätzlich exportiert der Worker einen nativen `scheduled()`-Handler für maximale Redundanz.
+1. **Cloudflare Worker Cron Trigger (`scheduled()`):**
+   Der zentrale Portal-Worker `v1-vorstand-api` exportiert einen nativen `scheduled()`-Handler für den täglichen automatischen Healthcheck. *(Hinweis: Der frühere doppelte und unauthentifizierte Supabase-`pg_cron`-Job #1 `ai-model-healthcheck` wurde nach Einführung der verpflichtenden JWT-Auth per Migration `144` entfernt.)*
+2. **Workers-AI-Fallback im Archiv-RAG (`handleArchivRoutes`):**
+   Fällt der externe Groq-Proxy aus, nutzt der Worker automatisch die aktuellen Cloudflare Workers AI Modelle `@cf/google/gemma-4-26b-a4b-it` mit Fallback auf `@cf/qwen/qwen3.8-27b` (Ersatz für das am `2026-11-20` dekommissionierte `@cf/meta/llama-3.2-3b-instruct`).
 3. **Alarmierung bei Ausfall:**
    Sollte das Standardmodell ausfallen oder kein gesundes Modell mehr verfügbar sein, wird automatisch ein Eintrag in `public.mail_logs` mit Status `system_alert` angelegt und der Administrator benachrichtigt.
 

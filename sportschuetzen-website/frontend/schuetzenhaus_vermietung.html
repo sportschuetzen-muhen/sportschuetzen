@@ -1929,7 +1929,7 @@
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M";
 
     // Sicherer Notfall-Ausfallschutz über Cloudflare Worker (Google Apps Script URL bleibt 100% verborgen)
-    const NOTFALL_FALLBACK_URL = "https://github-dropdown-refresh.dan-hunziker73.workers.dev?action=notfallVermietung";
+    const NOTFALL_FALLBACK_URL = "https://sportschuetzen-website-worker.dan-hunziker73.workers.dev/?action=notfallVermietung";
     let currentRentalCcEmails = "info@sportschuetzen-muhen.ch";
 
     // Bilderliste für Galerie
@@ -2029,7 +2029,7 @@
             body: '{}'
           }).catch(() => null),
           fetch(`${SUPABASE_REST_URL}/termine?select=anlasstitel,datum,startzeit,endzeit,status&status=neq.abgesagt&order=datum.asc`, { headers }).catch(() => null),
-          fetch('https://github-dropdown-refresh.dan-hunziker73.workers.dev?action=getHausKalender').then(r => r.ok ? r.json() : []).catch(() => []),
+          fetch('https://sportschuetzen-website-worker.dan-hunziker73.workers.dev/?action=getHausKalender').then(r => r.ok ? r.json() : []).catch(() => []),
           fetch(`${SUPABASE_REST_URL}/rental_pricing?tariff_code=eq.standard_tag&select=base_price_chf&is_active=eq.true`, { headers }).catch(() => null),
           fetch(`${SUPABASE_REST_URL}/rental_settings?select=setting_key,setting_value`, { headers }).catch(() => null)
         ]);

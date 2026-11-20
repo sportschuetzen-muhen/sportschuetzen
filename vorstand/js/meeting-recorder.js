@@ -9,6 +9,17 @@
  * auf dem Musterprotokoll vom Januar 2026.
  */
 
+const DEFAULT_WHISPER_WORKER_URL = 'https://v1-vorstand-api.dan-hunziker73.workers.dev/?module=whisper&action=transcribe';
+
+function getWhisperWorkerUrl() {
+    const stored = (localStorage.getItem('portal_whisper_worker_url') || '').trim();
+    if (!stored || stored.includes('sportschuetzen-whisper.dan-hunziker73.workers.dev')) {
+        localStorage.setItem('portal_whisper_worker_url', DEFAULT_WHISPER_WORKER_URL);
+        return DEFAULT_WHISPER_WORKER_URL;
+    }
+    return stored;
+}
+
 // Musterprotokoll aus Januar 2026 als Stil- und Strukturvorlage
 const PROTOKOLL_MUSTER = `48. Vorstandsitzung Sportschützen Muhen
 Ort:\tMetzgerei Berchtold, Partyraum
@@ -408,8 +419,8 @@ function initMeetingRecorder() {
         mrElapsedTime = sessionMeta.totalElapsedSeconds;
     }
 
-    // Default oder geladene URL
-    const savedWorkerUrl = localStorage.getItem('portal_whisper_worker_url') || 'https://sportschuetzen-whisper.dan-hunziker73.workers.dev/';
+    // Default oder geladene URL (inkl. Auto-Migration auf zentralen v1-vorstand-api Worker)
+    const savedWorkerUrl = getWhisperWorkerUrl();
     const savedInterval = parseInt(localStorage.getItem('portal_whisper_interval')) || 600000;
     mrSelectedInterval = savedInterval;
 
@@ -895,7 +906,7 @@ function logToConsole(message, type = 'info') {
 
 // Aufnahme starten
 async function startRecording() {
-    const workerUrl = localStorage.getItem('portal_whisper_worker_url') || 'https://sportschuetzen-whisper.dan-hunziker73.workers.dev/';
+    const workerUrl = getWhisperWorkerUrl();
     if (!workerUrl) {
         showToast("Bitte konfiguriere zuerst die Cloudflare Worker URL in den Einstellungen.", "warning");
         return;
@@ -1149,9 +1160,9 @@ function stopRecording() {
     showToast("Aufnahme beendet. Letztes Segment wird verarbeitet...", "info");
 }
 
-// Sende Audio-Segment an Cloudflare AI (mit automatischer Retry-Logik)
+// Sende Audio-Segment an Cloudflare AI (mit automatischer Retry-Logik & Supabase-JWT)
 async function sendAudioChunkToCloudflare(blob, segmentNumber) {
-    const workerUrl = localStorage.getItem('portal_whisper_worker_url') || 'https://sportschuetzen-whisper.dan-hunziker73.workers.dev/';
+    const workerUrl = getWhisperWorkerUrl();
     if (!workerUrl) {
         logToConsole(`Fehler beim Senden von Segment ${segmentNumber}: Cloudflare Worker URL nicht konfiguriert.`, "error");
         return;
@@ -1166,6 +1177,9 @@ async function sendAudioChunkToCloudflare(blob, segmentNumber) {
 
     const formData = new FormData();
     formData.append('file', blob, `segment_${segmentNumber}.webm`);
+
+    const accessToken = typeof window.getPortalAccessToken === 'function' ? await window.getPortalAccessToken() : '';
+    const authHeaders = accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {};
 
     while (attempt < maxRetries && !success) {
         attempt++;
@@ -1185,6 +1199,7 @@ async function sendAudioChunkToCloudflare(blob, segmentNumber) {
         try {
             const response = await fetch(workerUrl, {
                 method: 'POST',
+                headers: authHeaders,
                 body: formData
             });
 

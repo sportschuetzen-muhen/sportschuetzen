@@ -5,7 +5,7 @@ Das Modul **Meeting-Recorder & Protokoll-Assistent** (`vorstand/js/meeting-recor
 
 Es verbindet:
 * **Browserseitige Audioaufzeichnung:** Kontinuierliche Mikrofon-Aufnahme mit automatischer Segmentierung alle 10 Minuten (`audio/webm;codecs=opus`).
-* **Cloudflare Whisper AI:** Asynchrone Spracherkennung der Audio-Segmente mit Exponential-Backoff Retry.
+* **Cloudflare Whisper AI (via `v1-vorstand-api`):** Asynchrone Spracherkennung der Audio-Segmente über den zentralen Portal-Worker (`https://v1-vorstand-api.dan-hunziker73.workers.dev/?module=whisper&action=transcribe`, strikt Board-JWT-geschützt) mit `@cf/openai/whisper-large-v3-turbo` (Fallback `@cf/openai/whisper`) und Exponential-Backoff Retry.
 * **LLM-basierte Protokollgenerierung (Gemini Advanced):** Strukturierte Protokollerstellung nach dem offiziellen Musterprotokoll der Sportschützen Muhen (Schweizer Hochdeutsch ohne «ß»).
 
 ---

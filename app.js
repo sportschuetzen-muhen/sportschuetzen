@@ -124,7 +124,7 @@ async function fetchHausbelegungFromSupabase() {
     const list = [];
     // 1. Google Kalender Belegungen
     try {
-        const gRes = await fetch("https://github-dropdown-refresh.dan-hunziker73.workers.dev?action=getHausKalender");
+        const gRes = await fetch("https://sportschuetzen-website-worker.dan-hunziker73.workers.dev/?action=getHausKalender");
         if (gRes.ok) {
             const gData = await gRes.json();
             if (Array.isArray(gData)) {

@@ -47,7 +47,7 @@ if (mobileToggle && navLinks && !mobileToggle.hasAttribute('data-bound')) {
 const SUPABASE_REST_URL = "https://supabase-muhen.danfamily.uk/rest/v1";
 const SUPABASE_FUNCTIONS_URL = "https://supabase-muhen.danfamily.uk/functions/v1";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M";
-const GOOGLE_HAUS_KALENDER_URL = "https://github-dropdown-refresh.dan-hunziker73.workers.dev?action=getHausKalender";
+const GOOGLE_HAUS_KALENDER_URL = "https://sportschuetzen-website-worker.dan-hunziker73.workers.dev/?action=getHausKalender";
 
 function escapeHtml(str) {
     if (!str) return '';

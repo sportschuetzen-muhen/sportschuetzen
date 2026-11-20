@@ -1,4 +1,4 @@
-const WORKER_UPLOAD_URL = "https://github-dropdown-refresh.dan-hunziker73.workers.dev/";
+const WORKER_UPLOAD_URL = "https://v1-vorstand-api.dan-hunziker73.workers.dev/";
 const WORKER_OCR_URL = "https://v1-vorstand-api.dan-hunziker73.workers.dev/?module=resultate&action=ocr";
 const SUPABASE_REST_URL = "https://supabase-muhen.danfamily.uk/rest/v1";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M";
@@ -1283,7 +1283,7 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
         }
 
         // 1. Upload an Worker übermitteln (Cloudflare R2 Speicher, authentifiziert via Supabase JWT)
-        const res = await fetch(WORKER_UPLOAD_URL, {
+        const res = await fetch(`${WORKER_UPLOAD_URL}?action=upload_standblatt`, {
             method: "POST",
             headers: getUploadAuthHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({
