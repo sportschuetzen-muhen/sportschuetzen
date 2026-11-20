@@ -1,0 +1,1542 @@
+// =========================================================
+//  ZENTRALE UTILITIES (XSS-Schutz)
+// =========================================================
+function escapeHtml(str) {
+    return String(str || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+}
+
+// Escapes a value for safe embedding inside a JS string in an HTML attribute (onclick="...")
+function escapeJs(str) {
+    return String(str || '')
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")   
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r');
+}
+
+// Converts ISO date (YYYY-MM-DD or ISO timestamp) → display format (DD.MM.YYYY)
+function isoToDisplay(val) {
+    if (!val) return '';
+    const s = String(val).trim();
+    if (s.includes('T')) {
+        const dt = new Date(s);
+        if (!isNaN(dt.getTime())) {
+            const d = String(dt.getDate()).padStart(2, '0');
+            const m = String(dt.getMonth() + 1).padStart(2, '0');
+            const y = dt.getFullYear();
+            return `${d}.${m}.${y}`;
+        }
+    }
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+        const [y, m, d] = s.split('T')[0].split('-');
+        return `${d}.${m}.${y}`;
+    }
+    return s;
+}
+
+// Converts display format (DD.MM.YYYY) → ISO (YYYY-MM-DD)
+function displayToIso(val) {
+    if (!val) return '';
+    const s = String(val).trim();
+    if (s.includes('T')) {
+        const dt = new Date(s);
+        if (!isNaN(dt.getTime())) {
+            const y = dt.getFullYear();
+            const m = String(dt.getMonth() + 1).padStart(2, '0');
+            const d = String(dt.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+    }
+    if (/^\d{1,2}\.\d{1,2}\.\d{4}$/.test(s)) {
+        const [d, m, y] = s.split('.');
+        return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+    }
+    return s;
+}
+
+// =========================================================
+//  ZENTRALES STATE-MANAGEMENT
+// =========================================================
+const AppState = {
+    _listeners: {},
+    
+    // State-Objekt
+    state: {
+        currentUser: null,
+        currentRoles: [],
+        userRole: null,
+        hasUnsavedChanges: false,
+        isLoading: false,
+        loadingMessage: '',
+        lastError: null
+    },
+    
+    // Subscribe für State-Änderungen
+    subscribe(key, callback) {
+        if (!this._listeners[key]) this._listeners[key] = [];
+        this._listeners[key].push(callback);
+        return () => {
+            this._listeners[key] = this._listeners[key].filter(cb => cb !== callback);
+        };
+    },
+    
+    // State setzen mit Benachrichtigung
+    set(key, value) {
+        const oldValue = this.state[key];
+        this.state[key] = value;
+        if (this._listeners[key]) {
+            this._listeners[key].forEach(cb => cb(value, oldValue));
+        }
+        if (this._listeners['*']) {
+            this._listeners['*'].forEach(cb => cb(key, value, oldValue));
+        }
+    },
+    
+    // State holen
+    get(key) {
+        return this.state[key];
+    },
+    
+    // Markieren als ungespeichert
+    markUnsaved() {
+        this.set('hasUnsavedChanges', true);
+    },
+    
+    // Markieren als gespeichert
+    clearUnsaved() {
+        this.set('hasUnsavedChanges', false);
+    },
+    
+    // Ladezustand setzen
+    setLoading(isLoading, message = '') {
+        this.set('isLoading', isLoading);
+        this.set('loadingMessage', message);
+    },
+    
+    // Fehler setzen
+    setError(error) {
+        this.set('lastError', error);
+        if (error) {
+            console.error('App Error:', error);
+        }
+    },
+    
+    // Fehler löschen
+    clearError() {
+        this.set('lastError', null);
+    }
+};
+
+// =========================================================
+//  SAVE BUTTON KIT (Zentraler Standard für Speichern-Buttons)
+// =========================================================
+const SaveButtonKit = {
+    /**
+     * Aktualisiert Zustand, Styling, Zähler und Icon eines Speichern-Buttons.
+     * @param {HTMLElement|string} btnOrId - DOM-Element oder Selector/ID
+     * @param {Object} options
+     * @param {number} options.count - Anzahl ungespeicherter Änderungen (0 = sauber/gespeichert)
+     * @param {boolean} [options.canWrite=true] - Ob Benutzer Schreibrechte besitzt
+     * @param {boolean} [options.isSaving=false] - Ob Speicher-Vorgang im Gange ist
+     * @param {string} [options.label='Speichern'] - Text für aktiven Zustand
+     * @param {string} [options.savedLabel='Gespeichert'] - Text für inaktiven/gespeicherten Zustand
+     * @param {string} [options.icon='fas fa-save'] - FontAwesome Icon
+     */
+    update(btnOrId, options = {}) {
+        const opts = (typeof options === 'number') ? { count: options } : (options || {});
+        const {
+            count = 0,
+            canWrite = true,
+            isSaving = false,
+            label = 'Speichern',
+            savedLabel = 'Gespeichert',
+            icon = 'fas fa-save'
+        } = opts;
+        const btn = (typeof btnOrId === 'string')
+            ? (document.getElementById(btnOrId.replace(/^#/, '')) || document.querySelector(btnOrId))
+            : btnOrId;
+            
+        if (!btn) return;
+
+        // Falls keine Schreibrechte: Button komplett ausblenden
+        if (!canWrite) {
+            btn.disabled = true;
+            btn.classList.add('d-none');
+            return;
+        }
+        btn.classList.remove('d-none');
+
+        // Während Speichervorgang: Ladeindikator anzeigen
+        if (isSaving) {
+            btn.disabled = true;
+            btn.className = 'btn btn-sm btn-warning write-protected fw-bold';
+            btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Speichern...`;
+            return;
+        }
+
+        const changeCount = Math.max(0, parseInt(count, 10) || 0);
+
+        if (changeCount > 0) {
+            btn.disabled = false;
+            btn.className = 'btn btn-sm btn-warning write-protected fw-bold';
+            btn.innerHTML = `<i class="${icon} me-1"></i> ${label} (${changeCount})`;
+        } else {
+            btn.disabled = true;
+            btn.className = 'btn btn-sm btn-outline-secondary write-protected';
+            btn.innerHTML = `💾 ${savedLabel}`;
+        }
+    }
+};
+window.SaveButtonKit = SaveButtonKit;
+
+// =========================================================
+//  SMART STORAGE CACHE MANAGER (Versioniert & TTL-gesteuert)
+// =========================================================
+const AppCache = {
+    VERSION: 2,
+    PREFIX: 'portal_cache_v2_',
+
+    set(key, data, ttlMinutes = 120) {
+        try {
+            const entry = {
+                version: this.VERSION,
+                timestamp: Date.now(),
+                ttlMs: ttlMinutes * 60 * 1000,
+                data: data
+            };
+            localStorage.setItem(this.PREFIX + key, JSON.stringify(entry));
+        } catch (e) {
+            console.warn("⚠️ AppCache.set fehlgeschlagen (evtl. Quota voll):", e);
+        }
+    },
+
+    get(key) {
+        try {
+            const raw = localStorage.getItem(this.PREFIX + key);
+            if (!raw) return null;
+            const entry = JSON.parse(raw);
+            // Versionsprüfung
+            if (!entry || entry.version !== this.VERSION) {
+                this.invalidate(key);
+                return null;
+            }
+            // TTL-Prüfung
+            if (Date.now() - entry.timestamp > entry.ttlMs) {
+                this.invalidate(key);
+                return null;
+            }
+            return entry.data;
+        } catch (e) {
+            return null;
+        }
+    },
+
+    invalidate(key) {
+        try {
+            localStorage.removeItem(this.PREFIX + key);
+        } catch (e) {}
+    },
+
+    remove(key) {
+        this.invalidate(key);
+    }
+};
+window.AppCache = AppCache;
+
+// =========================================================
+//  EINHEITLICHE FEHLERBEHANDLUNG
+// =========================================================
+function getOrCreateToastContainer(position = 'top-end') {
+    const pos = (position === 'bottom' || position === 'bottom-end') ? 'bottom-end' : 
+                (position === 'bottom-center' || position === 'bottom-middle') ? 'bottom-center' :
+                (position === 'top-center' || position === 'top-middle') ? 'top-center' : 'top-end';
+    
+    let id = 'app-toast-container-' + pos;
+    let container = document.getElementById(id);
+    if (!container) {
+        container = document.createElement('div');
+        container.id = id;
+        container.style.zIndex = '10050';
+        container.style.pointerEvents = 'none';
+        if (pos === 'bottom-end') {
+            container.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+        } else if (pos === 'bottom-center') {
+            container.className = 'toast-container position-fixed bottom-0 start-50 translate-middle-x p-3';
+        } else if (pos === 'top-center') {
+            container.className = 'toast-container position-fixed top-0 start-50 translate-middle-x p-3';
+        } else {
+            container.className = 'toast-container position-fixed top-0 end-0 p-3';
+        }
+        document.body.appendChild(container);
+    }
+    return container;
+}
+
+function showError(message, duration = 5000, position = 'top-end') {
+    AppState.setError(message);
+    const container = getOrCreateToastContainer(position);
+    const toast = document.createElement('div');
+    toast.className = 'toast show bg-danger text-white shadow-lg mb-2 border-0';
+    toast.style.pointerEvents = 'auto';
+    toast.setAttribute('role', 'alert');
+    toast.innerHTML = `
+        <div class="toast-body d-flex align-items-center">
+            <i class="fas fa-exclamation-circle me-2 fs-5"></i>
+            <span class="fw-medium">${escapeHtml(message)}</span>
+            <button type="button" class="btn-close btn-close-white ms-auto" onclick="this.closest('.toast').remove(); AppState.clearError();"></button>
+        </div>`;
+    container.appendChild(toast);
+    
+    if (duration > 0) {
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.classList.remove('show');
+                setTimeout(() => {
+                    toast.remove();
+                    AppState.clearError();
+                }, 250);
+            }
+        }, duration);
+    }
+    return toast;
+}
+
+function showSuccess(message, duration = 3000, position = 'top-end') {
+    const container = getOrCreateToastContainer(position);
+    const toast = document.createElement('div');
+    toast.className = 'toast show bg-success text-white shadow-lg mb-2 border-0';
+    toast.style.pointerEvents = 'auto';
+    toast.setAttribute('role', 'alert');
+    toast.innerHTML = `
+        <div class="toast-body d-flex align-items-center">
+            <i class="fas fa-check-circle me-2 fs-5"></i>
+            <span class="fw-medium">${escapeHtml(message)}</span>
+            <button type="button" class="btn-close btn-close-white ms-auto" onclick="this.closest('.toast').remove();"></button>
+        </div>`;
+    container.appendChild(toast);
+    
+    if (duration > 0) {
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 250);
+            }
+        }, duration);
+    }
+    return toast;
+}
+
+function showToast(message, type = 'success', position = 'top-end', duration = 3000) {
+    if (type === 'danger' || type === 'error') {
+        return showError(message, duration, position);
+    } else if (type === 'warning') {
+        const container = getOrCreateToastContainer(position);
+        const toast = document.createElement('div');
+        toast.className = 'toast show bg-warning text-dark shadow-lg mb-2 border-0';
+        toast.style.pointerEvents = 'auto';
+        toast.setAttribute('role', 'alert');
+        toast.innerHTML = `
+            <div class="toast-body d-flex align-items-center">
+                <i class="fas fa-exclamation-triangle me-2 fs-5 text-dark"></i>
+                <span class="fw-medium">${escapeHtml(message)}</span>
+                <button type="button" class="btn-close ms-auto" onclick="this.closest('.toast').remove();"></button>
+            </div>`;
+        container.appendChild(toast);
+        if (duration > 0) {
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.classList.remove('show');
+                    setTimeout(() => toast.remove(), 250);
+                }
+            }, duration);
+        }
+        return toast;
+    } else if (type === 'info') {
+        const container = getOrCreateToastContainer(position);
+        const toast = document.createElement('div');
+        toast.className = 'toast show bg-info text-dark shadow-lg mb-2 border-0';
+        toast.style.pointerEvents = 'auto';
+        toast.setAttribute('role', 'alert');
+        toast.innerHTML = `
+            <div class="toast-body d-flex align-items-center">
+                <i class="fas fa-info-circle me-2 fs-5 text-dark"></i>
+                <span class="fw-medium">${escapeHtml(message)}</span>
+                <button type="button" class="btn-close ms-auto" onclick="this.closest('.toast').remove();"></button>
+            </div>`;
+        container.appendChild(toast);
+        if (duration > 0) {
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.classList.remove('show');
+                    setTimeout(() => toast.remove(), 250);
+                }
+            }, duration);
+        }
+        return toast;
+    } else {
+        return showSuccess(message, duration, position);
+    }
+}
+window.showToast = showToast;
+window.showToastImpl = showToast;
+
+// =========================================================
+//  VALIDIERUNG
+// =========================================================
+const Validation = {
+    // E-Mail validieren
+    isEmail(str) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str);
+    },
+    
+    // Telefonnummer (CH-Format)
+    isPhoneCH(str) {
+        return /^(\+41|0)\d{9}$/.test(str.replace(/\s/g, ''));
+    },
+    
+    // Datum (CH-Format TT.MM.JJJJ)
+    isDateCH(str) {
+        if (!str) return false;
+        const parts = str.split('.');
+        if (parts.length !== 3) return false;
+        const day = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10);
+        const year = parseInt(parts[2], 10);
+        return day >= 1 && day <= 31 && month >= 1 && month <= 12 && year >= 1900;
+    },
+    
+    // Zahl
+    isNumber(str) {
+        return !isNaN(parseFloat(str)) && isFinite(str);
+    },
+    
+    // Pflichtfeld
+    required(str) {
+        return str && str.trim().length > 0;
+    },
+    
+    // Mindestlänge
+    minLength(str, len) {
+        return str && str.length >= len;
+    },
+    
+    // Maximallänge
+    maxLength(str, len) {
+        return !str || str.length <= len;
+    },
+    
+    // Formular validieren und Fehler anzeigen
+    validateForm(formId, rules) {
+        const form = document.getElementById(formId);
+        if (!form) return true;
+        
+        let isValid = true;
+        const errors = [];
+        
+        for (const [fieldId, fieldRules] of Object.entries(rules)) {
+            const field = form.querySelector(`[name="${fieldId}"]`) || document.getElementById(fieldId);
+            if (!field) continue;
+            
+            const value = field.value || '';
+            
+            for (const rule of fieldRules) {
+                let valid = true;
+                let message = '';
+                
+                switch (rule.type) {
+                    case 'required':
+                        valid = this.required(value);
+                        message = rule.message || 'Pflichtfeld';
+                        break;
+                    case 'email':
+                        valid = !value || this.isEmail(value);
+                        message = rule.message || 'Ungültige E-Mail';
+                        break;
+                    case 'phone':
+                        valid = !value || this.isPhoneCH(value);
+                        message = rule.message || 'Ungültige Telefonnummer';
+                        break;
+                    case 'date':
+                        valid = !value || this.isDateCH(value);
+                        message = rule.message || 'Ungültiges Datum';
+                        break;
+                    case 'number':
+                        valid = !value || this.isNumber(value);
+                        message = rule.message || 'Keine Zahl';
+                        break;
+                    case 'minLength':
+                        valid = this.minLength(value, rule.value);
+                        message = rule.message || `Mindestens ${rule.value} Zeichen`;
+                        break;
+                    case 'maxLength':
+                        valid = this.maxLength(value, rule.value);
+                        message = rule.message || `Maximal ${rule.value} Zeichen`;
+                        break;
+                }
+                
+                if (!valid) {
+                    isValid = false;
+                    errors.push({ field: fieldId, message });
+                    field.classList.add('is-invalid');
+                } else {
+                    field.classList.remove('is-invalid');
+                }
+            }
+        }
+        
+        if (!isValid) {
+            showError(errors.map(e => e.message).join(', '));
+        }
+        
+        return isValid;
+    }
+};
+
+// =========================================================
+//  LADEZUSTAND (Loading Overlay)
+// =========================================================
+function showLoadingOverlay(message = 'Lade...') {
+    console.log('🔌 showLoadingOverlay called with message:', message);
+    let overlay = document.getElementById('global-loading-overlay');
+    if (!overlay) {
+        console.log('🔌 overlay not found in DOM, creating new one');
+        overlay = document.createElement('div');
+        overlay.id = 'global-loading-overlay';
+        overlay.className = 'position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center d-none';
+        overlay.style.background = 'rgba(255,255,255,0.9)';
+        overlay.style.zIndex = '9998';
+        overlay.innerHTML = `
+            <div class="text-center">
+                <div class="spinner-border text-primary mb-2" role="status"></div>
+                <div class="text-muted" id="global-loading-message">${escapeHtml(message)}</div>
+            </div>`;
+        document.body.appendChild(overlay);
+    }
+    const msgEl = document.getElementById('global-loading-message');
+    if (msgEl) msgEl.textContent = message;
+    overlay.classList.remove('d-none');
+    try {
+        AppState.setLoading(true, message);
+    } catch(e) {
+        console.error('🔌 Error in AppState.setLoading:', e);
+    }
+}
+
+function hideLoadingOverlay() {
+    console.log('🔌 hideLoadingOverlay called');
+    const overlay = document.getElementById('global-loading-overlay');
+    if (overlay) {
+        console.log('🔌 overlay found, adding d-none class');
+        overlay.classList.add('d-none');
+    } else {
+        console.warn('🔌 overlay NOT found in DOM!');
+    }
+    try {
+        AppState.setLoading(false, '');
+    } catch(e) {
+        console.error('🔌 Error in AppState.setLoading:', e);
+    }
+}
+
+// Wrapper für API-Calls mit Ladezustand
+async function apiFetchWithLoading(module, paramsString, options = {}) {
+    showLoadingOverlay(options.loadingMessage || 'Lade Daten...');
+    try {
+        const result = await apiFetch(module, paramsString, options);
+        return result;
+    } catch (e) {
+        showError('Fehler: ' + e.message);
+        throw e;
+    } finally {
+        hideLoadingOverlay();
+    }
+}
+
+// =========================================================
+//  APP INITIALISIERUNG & STATUS
+// =========================================================
+
+// Alte globale Variablen (für Abwärtskompatibilität) - jetzt mit AppState synchronisiert
+window.hasUnsavedChanges = false;
+window.markUnsaved = function() { 
+    window.hasUnsavedChanges = true; 
+    AppState.markUnsaved();
+};
+window.clearUnsaved = function() { 
+    window.hasUnsavedChanges = false; 
+    AppState.clearUnsaved();
+};
+
+// State-Änderungen überwachen und globale Variablen aktualisieren
+AppState.subscribe('currentUser', (val) => { window.currentUser = val; });
+AppState.subscribe('currentRoles', (val) => { window.currentRoles = val; });
+AppState.subscribe('userRole', (val) => { window.userRole = val; window.currentRole = val; });
+AppState.subscribe('hasUnsavedChanges', (val) => { window.hasUnsavedChanges = val; });
+
+window.onload = () => {
+    const savedUser = localStorage.getItem('portal_user');
+    const savedRole = localStorage.getItem('portal_role');
+    const savedRoles = localStorage.getItem('portal_roles');
+    
+    if (savedUser && savedRole) {
+        currentUser = savedUser;
+        currentRoles = String(savedRoles || savedRole)
+            .split(',')
+            .map(r => String(r || '').trim().toLowerCase())
+            .filter(Boolean);
+        userRole = currentRoles[0] || savedRole;
+        currentRole = userRole;
+        
+        // AppState initialisieren
+        AppState.set('currentUser', currentUser);
+        AppState.set('currentRoles', currentRoles);
+        AppState.set('userRole', userRole);
+        
+        showApp();
+        setupGlobalChangeTracking();
+        
+        // Warnung beim Verlassen der Seite
+        window.addEventListener('beforeunload', (e) => {
+            if(window.hasUnsavedChanges) {
+                e.preventDefault();
+                e.returnValue = 'Du hast ungespeicherte Änderungen!';
+            }
+        });
+    } else {
+        document.getElementById('login-screen').style.display = 'flex';
+    }
+};
+
+// =========================================================
+//  APP ROUTING & ENVIRONMENT RESOLVER
+// =========================================================
+function getAppUrls() {
+    const loc = window.location;
+    const hostname = loc.hostname;
+    let root = '';
+
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        const path = loc.pathname;
+        if (path.includes('/sportschuetzen-website/frontend/')) {
+            root = loc.origin + path.replace(/\/sportschuetzen-website\/frontend\/.*$/, '/');
+        } else if (path.includes('/vorstand/')) {
+            root = loc.origin + path.replace(/\/vorstand\/.*$/, '/');
+        } else {
+            root = loc.origin + path.replace(/\/[^/]*$/, '/');
+        }
+    } else if (hostname.includes('pages.dev')) {
+        root = loc.origin + '/';
+    } else if (hostname.includes('github.io')) {
+        const match = loc.pathname.match(/^(\/[^/]+\/)/);
+        root = loc.origin + (match ? match[1] : '/');
+    } else if (hostname.includes('sportschuetzen-muhen.ch')) {
+        root = 'https://sportschuetzen-muhen.ch/';
+    } else {
+        root = loc.origin + '/';
+    }
+
+    if (!root.endsWith('/')) root += '/';
+
+    return {
+        root: root,
+        webApp: root + 'index.html',
+        portal: root + 'vorstand/index.html',
+        website: root + 'sportschuetzen-website/frontend/index.html',
+        intern: root + 'sportschuetzen-website/frontend/intern.html'
+    };
+}
+window.getAppUrls = getAppUrls;
+
+function showApp() {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app-screen').classList.remove('d-none');
+    document.getElementById('app-screen').style.display = 'flex'; 
+
+    // App-Switcher Links dynamisch setzen
+    try {
+        const appUrls = getAppUrls();
+        const pWebapp = document.getElementById('portal-link-webapp');
+        if (pWebapp) pWebapp.href = appUrls.webApp;
+        const pWebsite = document.getElementById('portal-link-website');
+        if (pWebsite) pWebsite.href = appUrls.website;
+        const mWebapp = document.getElementById('mobile-link-webapp');
+        if (mWebapp) mWebapp.href = appUrls.webApp;
+        const mWebsite = document.getElementById('mobile-link-website');
+        if (mWebsite) mWebsite.href = appUrls.website;
+    } catch (urlEx) {
+        console.warn("App-Urls Initialisierung Hinweis:", urlEx);
+    }
+    
+    const roles = Array.from(new Set(
+        (currentRoles || [])
+            .map(r => String(r || '').trim().toLowerCase())
+            .filter(Boolean)
+    ));
+    const roleLabel = roles.length ? roles.join(', ') : 'gast';
+    const primaryRole = roles[0] || 'gast';
+
+    // Sofortige Cache-Wärmung aus AppCache für 0 ms Ladezeit
+    if (window.AppCache) {
+        const cachedMgl = window.AppCache.get('mitglieder');
+        if (cachedMgl && Array.isArray(cachedMgl.data) && cachedMgl.data.length > 0) {
+            window._mglData = cachedMgl.data;
+            if (cachedMgl.lizenzen) window._mglLizenzenCache = cachedMgl.lizenzen;
+            if (cachedMgl.funktionen) window._mglFunktionenCache = cachedMgl.funktionen;
+            if (cachedMgl.historie) window._mglHistoryCache = cachedMgl.historie;
+            console.log(`⚡ AppCache: ${window._mglData.length} Mitglieder sofort im RAM verfügbar.`);
+        }
+    }
+
+    const dbUserName = document.getElementById('dashboard-user-name');
+    if (dbUserName) dbUserName.innerText = currentUser || window.currentUser || '';
+
+    // Sidebar & Mobile Benutzeranzeige aktualisieren
+    const userInfo = document.getElementById('user-info');
+    if (userInfo) {
+        const uDisplay = window.currentUser || currentUser || 'Vorstand';
+        userInfo.innerHTML = `<span class="fw-semibold text-dark">${escapeHtml(uDisplay)}</span> <span class="badge bg-primary-subtle text-primary rounded-pill ms-1" style="font-size:0.7rem;">${escapeHtml(primaryRole)}</span>`;
+    }
+    const userBadgeMobile = document.getElementById('user-badge-mobile');
+    if (userBadgeMobile) userBadgeMobile.textContent = primaryRole;
+
+    // Etwaige hängende Modals und Backdrops zuverlässig entfernen (verhindert ausgegrauten Bildschirm)
+    document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
+    document.body.classList.remove('modal-open');
+    document.body.style.removeProperty('overflow');
+    document.body.style.removeProperty('padding-right');
+
+    // Kacheln & Nav-Links filtern:
+    //  - Ansichten mit Eintrag in Perms.VIEW_ACCESS werden von der Berechtigungsmatrix (role_permissions) gesteuert
+    //    (fail-closed: bis zum Laden der Berechtigungen verborgen),
+    //  - alle übrigen weiterhin nach data-roles.
+    document.querySelectorAll('.role-protected').forEach(el => {
+        if (window.Perms && window.Perms.isMatrixControlled(el)) {
+            el.classList.add('d-none');
+            return;
+        }
+        const allowed = (el.dataset.roles || '')
+            .split(',')
+            .map(r => r.trim().toLowerCase())
+            .filter(Boolean);
+        // Kein data-roles → immer sichtbar
+        if (allowed.length === 0) {
+            el.classList.remove('d-none');
+            return;
+        }
+        const visible = roles.some(r => allowed.includes(r));
+        if (visible) {
+            el.classList.remove('d-none');
+        } else {
+            el.classList.add('d-none');
+        }
+    });
+
+    // Berechtigungsmatrix live laden und gesteuerte Elemente einblenden
+    if (window.Perms) {
+        window.Perms.refresh().then(() => window.Perms.applyToDom());
+    }
+
+    // 1. Letzten Login ausgeben
+    const lastLogin = localStorage.getItem('portal_last_login');
+    const nowStr = new Date().toLocaleString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' Uhr';
+    localStorage.setItem('portal_last_login', nowStr);
+
+    const tsElem = document.getElementById('welcome-login-timestamp');
+    if (tsElem) {
+        tsElem.textContent = lastLogin || "Erste Anmeldung in dieser Sitzung";
+    }
+
+    const lastLoginBanner = document.getElementById('last-login-banner');
+    if (lastLoginBanner) {
+        if (lastLogin) {
+            lastLoginBanner.innerHTML = `
+                <div class="badge bg-light text-dark p-2 border shadow-sm animate__animated animate__fadeIn" style="font-size: 0.85rem; border-radius: 20px;">
+                    <i class="fas fa-lock text-success me-1"></i> Letzter Login: ${escapeHtml(lastLogin)} <span class="badge bg-success ms-1">✓ Bestätigt</span>
+                </div>
+            `;
+        } else {
+            lastLoginBanner.innerHTML = `
+                <div class="badge bg-light text-dark p-2 border shadow-sm animate__animated animate__fadeIn" style="font-size: 0.85rem; border-radius: 20px;">
+                    <i class="fas fa-shield-alt text-primary me-1"></i> Erste Anmeldung in dieser Sitzung <span class="badge bg-info ms-1">Neu</span>
+                </div>
+            `;
+        }
+    }
+
+    // 2. Online-Präsenz pingen
+    startPresencePingTimer();
+
+    // 3. KI-Infrastruktur Status aktualisieren
+    if (typeof window.loadAiHealthStatus === 'function') {
+        window.loadAiHealthStatus().then(r => {
+            if (typeof window.updateAiStatusBadges === 'function') window.updateAiStatusBadges(r);
+        });
+    }
+    // 4. Pendenzen-Badges aller Fachmodule laden & synchronisieren
+    if (typeof window.refreshAllPortalPendenzenBadges === 'function') {
+        window.refreshAllPortalPendenzenBadges();
+    } else {
+        if (typeof window.checkGalerieInboxBadge === 'function') window.checkGalerieInboxBadge();
+        if (typeof window.loadPendingStandblaetter === 'function') window.loadPendingStandblaetter(true);
+    }
+}
+
+// Pendenzen-Refresh beim Reaktivieren der App (App-Resume / Tab-Wechsel)
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        if (typeof window.refreshAllPortalPendenzenBadges === 'function') {
+            window.refreshAllPortalPendenzenBadges();
+        } else {
+            if (typeof window.checkGalerieInboxBadge === 'function') window.checkGalerieInboxBadge();
+            if (typeof window.loadPendingStandblaetter === 'function') window.loadPendingStandblaetter(true);
+        }
+        if (typeof window.updatePortalBadgePermissionUi === 'function') window.updatePortalBadgePermissionUi();
+    }
+});
+window.addEventListener('pageshow', (e) => {
+    if (e.persisted) {
+        if (typeof window.refreshAllPortalPendenzenBadges === 'function') {
+            window.refreshAllPortalPendenzenBadges();
+        } else {
+            if (typeof window.checkGalerieInboxBadge === 'function') window.checkGalerieInboxBadge();
+            if (typeof window.loadPendingStandblaetter === 'function') window.loadPendingStandblaetter(true);
+        }
+        if (typeof window.updatePortalBadgePermissionUi === 'function') window.updatePortalBadgePermissionUi();
+    }
+});
+
+// =========================================================
+//  PRELOAD STATUS INDIKATOREN (Visuelle Indikatoren entfernt)
+// =========================================================
+window.setPreloadStatus = function(viewId, status) {
+    // Visuelle Spinner & Häkchen deaktiviert – Hintergrund-Laden erfolgt lautlos
+};
+
+// =========================================================
+//  SEQUENTIELLER HINTERGRUND-MODUL-MANAGER (Pacing & GAS-Delivery)
+// =========================================================
+const bgModuleLoader = {
+    // 10 Sekunden Pause zwischen Modulen, nachdem GAS geliefert hat
+    intervalMs: 10000,
+    loadedSet: new Set(),
+    isRunning: false,
+    isUserActiveLoading: false,
+    nextTimerId: null,
+
+    modules: [
+        {
+            id: 'termine',
+            label: 'Jahresprogramm',
+            load: () => (typeof loadTermineData === 'function' ? loadTermineData(false) : Promise.resolve()),
+            isLoaded: () => typeof adminState !== 'undefined' && adminState !== null && document.getElementById('termine-ui')?.children.length > 0
+        },
+        {
+            id: 'umfragen',
+            label: 'Anlässe & Umfragen',
+            load: () => (typeof loadUmfragenData === 'function' ? loadUmfragenData(false) : Promise.resolve()),
+            isLoaded: () => typeof umfragenState !== 'undefined' && umfragenState !== null && document.getElementById('umfragen-tabs') !== null
+        },
+        {
+            id: 'system-mails',
+            label: 'System-Mails',
+            load: () => (typeof loadSystemMailsData === 'function' ? loadSystemMailsData(false) : Promise.resolve()),
+            isLoaded: () => typeof sysMailState !== 'undefined' && sysMailState !== null && (document.getElementById('sys-mail-list') !== null || document.getElementById('app-info-list') !== null)
+        },
+        {
+            id: 'resultate',
+            label: 'Resultate Mannschaft & G & G',
+            load: () => (typeof loadResultateData === 'function' ? loadResultateData(false) : Promise.resolve()),
+            isLoaded: () => typeof resultateState !== 'undefined' && resultateState && resultateState.rows && resultateState.rows.length > 0
+        },
+        {
+            id: 'manager',
+            label: 'Team Manager',
+            load: async () => {
+                if (typeof loadContestData === 'function') {
+                    await loadContestData('grenzland', false, true);
+                    await loadContestData('mannschaft', false, true);
+                    await loadContestData('gruppe', false, true);
+                }
+            },
+            isLoaded: () => typeof mailWizard !== 'undefined' && mailWizard && mailWizard.cachedModules && mailWizard.cachedModules['grenzland']
+        },
+        {
+            id: 'vermietung',
+            label: 'Vermietung',
+            load: () => (typeof loadVermietungData === 'function' ? loadVermietungData(false) : Promise.resolve()),
+            isLoaded: () => typeof vermietungDaten !== 'undefined' && Array.isArray(vermietungDaten) && vermietungDaten.length > 0
+        },
+        {
+            id: 'jahresmeisterschaft',
+            label: 'Jahresmeisterschaft KK',
+            load: () => (typeof loadJahresmeisterschaftData === 'function' ? loadJahresmeisterschaftData(false, true) : Promise.resolve()),
+            isLoaded: () => typeof jmRawGrid !== 'undefined' && Array.isArray(jmRawGrid) && jmRawGrid.length > 0
+        },
+        {
+            id: 'mail',
+            label: 'Mail',
+            load: () => (typeof loadMailData === 'function' ? loadMailData(false) : Promise.resolve()),
+            isLoaded: () => typeof _mailLoaded !== 'undefined' && _mailLoaded === true
+        },
+        {
+            id: 'jahresbeitrag',
+            label: 'Jahresbeitrag',
+            load: () => (typeof loadJahresbeitragData === 'function' ? loadJahresbeitragData(false, false) : Promise.resolve()),
+            isLoaded: () => typeof window._jbAllBeitraege !== 'undefined' && window._jbAllBeitraege !== null && window._jbAllBeitraege.length > 0
+        },
+        {
+            id: 'rechnungen',
+            label: 'Rechnungen',
+            load: () => (typeof loadRechnungenData === 'function' ? loadRechnungenData(true) : Promise.resolve()),
+            isLoaded: () => typeof window._invoices !== 'undefined' && window._invoices !== null && window._invoices.length > 0
+        },
+        {
+            id: 'mitglieder',
+            label: 'Mitglieder',
+            load: () => (typeof loadMitgliederData === 'function' ? loadMitgliederData(false) : Promise.resolve()),
+            isLoaded: () => typeof window._mglData !== 'undefined' && window._mglData !== null && window._mglData.length > 0
+        },
+        {
+            id: 'buchhaltung',
+            label: 'Buchhaltung',
+            load: () => (typeof window.loadBuchhaltungData === 'function' ? window.loadBuchhaltungData(true) : Promise.resolve()),
+            isLoaded: () => (typeof window._bhJournal !== 'undefined' && window._bhJournal !== null && window._bhJournal.length > 0) || (typeof window._bhJournalData !== 'undefined' && window._bhJournalData !== null && window._bhJournalData.length > 0)
+        },
+        {
+            id: 'inventar',
+            label: 'Inventar',
+            load: () => (typeof loadInventarData === 'function' ? loadInventarData(false) : Promise.resolve()),
+            isLoaded: () => typeof inventarState !== 'undefined' && inventarState !== null && document.getElementById('inventar-container')?.querySelector('.nav-btn') !== null
+        },
+        {
+            id: 'logins',
+            label: 'Logins',
+            load: () => (typeof loadLoginsData === 'function' && (userHasRole('admin') || (window.Perms && window.Perms.canAccessView('logins'))) ? loadLoginsData(false) : Promise.resolve()),
+            isLoaded: () => typeof window._loginsData !== 'undefined' && window._loginsData !== null && window._loginsData.length > 0
+        }
+    ],
+
+    // Prüft, ob Benutzer für dieses Modul berechtigt ist
+    isAccessible: function(viewId) {
+        const link = document.querySelector(`#sidebar .nav-link[onclick*="'${viewId}'"]`);
+        if (!link) return false;
+        if (link.classList.contains('d-none')) return false;
+        return true;
+    },
+
+    // Prüft, ob das Modul bereits geladen ist
+    isLoaded: function(mod) {
+        if (this.loadedSet.has(mod.id)) return true;
+        try {
+            if (typeof mod.isLoaded === 'function' && mod.isLoaded()) {
+                this.loadedSet.add(mod.id);
+                return true;
+            }
+        } catch (e) {
+            console.warn(`Fehler bei isLoaded Prüfung für ${mod.id}:`, e);
+        }
+        return false;
+    },
+
+    // Markiert Modul als geladen
+    markLoaded: function(viewId) {
+        this.loadedSet.add(viewId);
+    },
+
+    // Wird aufgerufen, wenn der Benutzer ein Modul manuell geladen hat
+    onUserModuleLoaded: function(viewId) {
+        this.markLoaded(viewId);
+        this.isUserActiveLoading = false;
+    },
+
+    // Plant den nächsten Hintergrundschritt (Deaktiviert: Supabase lädt on-demand)
+    scheduleNext: function(delayMs) {
+        // Stillgelegt gemäss Supabase-Architektur: Kein Hintergrund-Polling/Preloading mehr.
+        return;
+    },
+
+    // Führt das nächste noch nicht geladene Modul aus (Deaktiviert)
+    step: async function() {
+        return;
+    }
+};
+window.bgModuleLoader = bgModuleLoader;
+
+// =========================================================
+//  ASYNCHRONER BACKGROUND SYNC (5-Minuten-Timer)
+// =========================================================
+let _backgroundSyncTimerId = null;
+
+async function silentInitialLoad() {
+    console.log("🚀 Initiales Bulk-Loading im Hintergrund gestartet...");
+    try {
+        // 1. Jahresbeitrag bulk load
+        console.log("🔍 Checking loadJahresbeitragData: ", typeof loadJahresbeitragData);
+        if (typeof loadJahresbeitragData === 'function') {
+            window._jbPreloadPromise = (async () => {
+                try {
+                    await loadJahresbeitragData(false, false);
+                    console.log("✅ Initiales Bulk-Loading: Jahresbeitrag geladen.");
+                } catch (jbErr) {
+                    console.warn("⚠️ Fehler beim Preload des Jahresbeitrags:", jbErr);
+                }
+            })();
+        }
+
+        // 2. Mitglieder bulk load (Dedupliziert & sequentiell über ensureMitgliederLoaded)
+        if (typeof window.ensureMitgliederLoaded === 'function' || typeof loadMitgliederData === 'function') {
+            window._mglPreloadPromise = (async () => {
+                if (typeof window.ensureMitgliederLoaded === 'function') {
+                    await window.ensureMitgliederLoaded();
+                } else if (typeof loadMitgliederData === 'function') {
+                    await loadMitgliederData(false);
+                }
+                const activeView = document.querySelector('.module-view.active');
+                const activeViewId = activeView ? activeView.id.replace('view-', '') : '';
+                if (activeViewId === 'mitglieder') {
+                    if (typeof renderMitgliederView === 'function') renderMitgliederView(window._mglData);
+                    if (typeof mglFilter === 'function') mglFilter();
+                }
+                console.log("✅ Initiales Bulk-Loading: Mitglieder geladen.");
+            })();
+        }
+
+        await Promise.all([
+            window._jbPreloadPromise || Promise.resolve(),
+            window._mglPreloadPromise || Promise.resolve()
+        ]);
+        console.log("🚀 Initiales Bulk-Loading erfolgreich abgeschlossen.");
+    } catch (e) {
+        console.error("❌ Fehler beim initialen Bulk-Loading:", e);
+    }
+}
+
+// =========================================================
+//  ASYNCHRONER REFRESH (Obsoletes GAS-Polling deaktiviert -> Direktes Laden via Supabase)
+// =========================================================
+
+async function runBackgroundSync() {
+    if (window.hasUnsavedChanges) {
+        console.log("🔄 Background Sync: Übersprungen wegen ungespeicherten Änderungen");
+        return;
+    }
+
+    try {
+        const activeView = document.querySelector('.module-view.active');
+        const activeViewId = activeView ? activeView.id.replace('view-', '') : '';
+
+        // Supabase-first Reload nur falls relevant
+        if (activeViewId === 'jahresbeitrag' && typeof loadJahresbeitragData === 'function') {
+            await loadJahresbeitragData(true, false);
+        } else if (activeViewId === 'mitglieder' && typeof window.ensureMitgliederLoaded === 'function') {
+            await window.ensureMitgliederLoaded(true);
+            if (typeof renderMitgliederView === 'function') renderMitgliederView(window._mglData);
+            if (typeof mglFilter === 'function') mglFilter();
+        }
+    } catch (err) {
+        console.warn("⚠️ Fehler bei Hintergrund-Aktualisierung:", err);
+    }
+}
+
+function startBackgroundSyncTimer() {
+    // Deaktiviert: Dank nativer Supabase-Performance (< 50ms) ist 5-Minuten-Polling obsolet.
+    console.log("⚡ Direktes Laden via Supabase aktiv (5-Minuten-Hintergrund-Timer deaktiviert).");
+}
+
+// Globale Event Listener für Formular-Änderungen in allen views
+function setupGlobalChangeTracking() {
+    const handler = (e) => {
+        if (!e.isTrusted) return; // Nur echte Nutzer-Eingaben
+        const tgt = e.target;
+        if(tgt && (tgt.classList.contains('write-protected') || tgt.closest('.write-protected'))) {
+            if(!tgt.id || (!tgt.id.toLowerCase().includes('search') && !tgt.id.toLowerCase().includes('filter'))) {
+                window.markUnsaved();
+            }
+        }
+    };
+    document.body.addEventListener('input', handler);
+    document.body.addEventListener('change', handler);
+}
+
+// Hilfsfunktion zur Rollenprüfung
+function userHasRole(requiredRole) {
+    const roles = (window.currentRoles && window.currentRoles.length > 0) ? window.currentRoles : (currentRoles || []);
+    if (!roles || roles.length === 0) return false;
+    return roles.map(r => String(r).toLowerCase()).includes(requiredRole.toLowerCase());
+}
+
+// Kanonische Zuordnung von Modul- oder View-IDs auf ihren Manage-Berechtigungsschlüssel
+const MODULE_MANAGE_PERMS = {
+    'inventar':               'inventar.manage',
+    'termine':                'termine.manage',
+    'system-mails':           'system-mails.manage',
+    'push':                   'push.manage',
+    'anlaesse':               'anlaesse.manage',
+    'schichtplaner':          'anlaesse.manage',
+    'festkasse':              'anlaesse.manage',
+    'umfragen':               'umfragen.manage',
+    'manager':                'manager.manage',
+    'resultate':              'resultate.manage',
+    'vermietung':             'vermietung.manage',
+    'jahresmeisterschaft':    'jahresmeisterschaft.manage',
+    'jahresmeisterschaft-kk': 'jahresmeisterschaft.manage',
+    'mail':                   'mail.manage',
+    'jahresbeitrag':          'jahresbeitrag.manage',
+    'rechnungen':             'rechnungen.manage',
+    'dokument-vorlagen':      'dokumente.manage',
+    'dokumente':              'dokumente.manage',
+    'buchhaltung':            'buchhaltung.manage',
+    'mitglieder':             'members.manage',
+    'members':                'members.manage',
+    'gv':                     'gv.manage',
+    'gv-dossier':             'gv.manage',
+    'archiv':                 'archiv.manage',
+    'meeting-recorder':       'meeting.manage',
+    'meeting':                'meeting.manage',
+    'news':                   'news.manage',
+    'galerie':                'galerie.manage',
+    'endschiessen':           'endschiessen.manage',
+    'logins':                 'logins.manage'
+};
+
+// Matrix-Prüfung für Schreibrechte (einheitliches View & Manage Modell)
+function hasWriteAccess(module) {
+    // Wenn Perms geladen ist: Dynamische Prüfung über die Berechtigungsmatrix
+    if (window.Perms) {
+        if (window.Perms.has('*') || userHasRole('admin')) return true;
+        const targetPerm = MODULE_MANAGE_PERMS[module] || (module && module.endsWith('.manage') ? module : (module + '.manage'));
+        return window.Perms.has(targetPerm);
+    }
+
+    // Fallback falls Perms noch nicht geladen ist
+    return userHasRole('admin');
+}
+
+// Universeller UI-Schutz für View vs. Manage Kontrakt
+function applyModuleWriteProtection(targetView, canWrite) {
+    if (!targetView) return;
+    const protectedElements = targetView.querySelectorAll('.write-protected');
+    protectedElements.forEach(el => {
+        if (canWrite) {
+            el.classList.remove('d-none');
+            el.removeAttribute('disabled');
+            if (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA') {
+                el.removeAttribute('readonly');
+            }
+        } else {
+            if (el.tagName === 'BUTTON' || el.classList.contains('btn') || el.tagName === 'A') {
+                el.classList.add('d-none');
+            } else {
+                el.setAttribute('disabled', 'true');
+                el.setAttribute('readonly', 'true');
+            }
+        }
+    });
+}
+window.applyModuleWriteProtection = applyModuleWriteProtection;
+
+function navTo(viewId, el) {
+    // Berechtigungsmatrix: Zugriff auf Ansicht prüfen (schützt auch vor Direktaufrufen)
+    if (window.Perms && !window.Perms.canAccessView(viewId)) {
+        const loaded = window.Perms.isLoaded();
+        showError(loaded
+            ? '⛔ Für diesen Bereich fehlt die Berechtigung.'
+            : '⏳ Berechtigungen werden noch geladen – bitte kurz warten und erneut versuchen.');
+        return;
+    }
+
+    if (window.hasUnsavedChanges) {
+        if (!confirm("⚠️ Modul wechseln?\n\nDu hast ungespeicherte Änderungen. Wenn du fortfährst, gehen diese verloren.")) {
+            return;
+        }
+        window.clearUnsaved();
+    }
+
+    // Wenn der Nutzer manuell navigiert, Vorrang gewähren
+    if (window.bgModuleLoader) {
+        window.bgModuleLoader.isUserActiveLoading = true;
+    }
+
+    // 1. Nav-Links (nur in Sidebar, um Sub-Tabs in Modulen nicht zu beeinflussen)
+    document.querySelectorAll('#sidebar .nav-link').forEach(l => l.classList.remove('active'));
+    if (el && el.classList.contains('nav-link')) {
+        el.classList.add('active');
+    } else {
+        const sidebarLink = document.querySelector(`#sidebar .nav-link[onclick*="'${viewId}'"]`);
+        if (sidebarLink) sidebarLink.classList.add('active');
+    }
+
+    // 2. Teardowns (VOR dem View-Wechsel)
+    if (viewId !== 'manager'  && typeof teardownManager  === 'function') teardownManager();
+    if (viewId !== 'inventar' && typeof teardownInventar === 'function') teardownInventar();
+
+    // 3. View wechseln
+    document.querySelectorAll('.module-view').forEach(v => v.classList.remove('active'));
+
+    const effectiveViewId = viewId === 'schichtplaner' ? 'anlaesse' : viewId;
+    const targetView = document.getElementById('view-' + effectiveViewId);
+    if (targetView) {
+        targetView.classList.add('active');
+        
+        // Globale Schreibrecht-Prüfung für das geladene Modul anwenden (Initial)
+        const canWrite = hasWriteAccess(effectiveViewId);
+        applyModuleWriteProtection(targetView, canWrite);
+        
+    } else {
+        console.error("View nicht gefunden: view-" + effectiveViewId);
+    }
+
+    closeSidebarMobile();
+
+    // 4. Module laden und Ladeabschluss überwachen
+    let loadPromise = null;
+    try {
+        if (viewId === 'inventar'  && typeof loadInventarData  === 'function') loadPromise = loadInventarData();
+        else if (viewId === 'termine'   && typeof loadTermineData   === 'function') loadPromise = loadTermineData();
+        else if (viewId === 'resultate' && typeof loadResultateData === 'function') loadPromise = loadResultateData();
+        else if (viewId === 'manager'   && typeof loadContestData   === 'function') loadPromise = loadContestData();
+        else if (viewId === 'vermietung' && typeof loadVermietungData === 'function') loadPromise = loadVermietungData();
+        else if (viewId === 'system-mails' && typeof loadSystemMailsData === 'function') loadPromise = loadSystemMailsData();
+        else if (viewId === 'push' && typeof window.PushUI?.init === 'function') loadPromise = window.PushUI.init();
+        else if (viewId === 'umfragen' && typeof loadUmfragenData === 'function') loadPromise = loadUmfragenData();
+        else if (viewId === 'anlaesse' && typeof loadAnlaesseData === 'function') loadPromise = loadAnlaesseData();
+        else if (viewId === 'schichtplaner') {
+            loadPromise = (async () => {
+                if (typeof loadAnlaesseData === 'function') {
+                    await loadAnlaesseData();
+                }
+                if (window.AnlaesseModule && typeof window.AnlaesseModule.switchTab === 'function') {
+                    window.AnlaesseModule.switchTab('shifts');
+                }
+            })();
+        }
+        else if (viewId === 'festkasse' && typeof window.renderFestkasseView === 'function') {
+            loadPromise = window.renderFestkasseView();
+        }
+        else if (viewId === 'logins' && typeof loadLoginsData === 'function') loadPromise = loadLoginsData();
+        else if (viewId === 'jahresmeisterschaft' && typeof loadJahresmeisterschaftData === 'function') loadPromise = loadJahresmeisterschaftData();
+        else if (viewId === 'jahresmeisterschaft-kk' && typeof loadJahresmeisterschaftKKData === 'function') loadPromise = loadJahresmeisterschaftKKData();
+        else if (viewId === 'mail'          && typeof loadMailData          === 'function') loadPromise = loadMailData();
+        else if (viewId === 'jahresbeitrag' && typeof loadJahresbeitragData === 'function') loadPromise = loadJahresbeitragData();
+        else if (viewId === 'rechnungen'    && typeof loadRechnungenData    === 'function') loadPromise = loadRechnungenData(false, true);
+        else if (viewId === 'dokument-vorlagen' && typeof window.renderDokumentVorlagen === 'function') loadPromise = window.renderDokumentVorlagen();
+        else if (viewId === 'gv-dossier' && typeof window.renderGVDossierView === 'function') {
+            loadPromise = window.renderGVDossierView('#gv-dossier-container');
+        }
+        else if (viewId === 'mitglieder'    && typeof loadMitgliederData    === 'function') loadPromise = loadMitgliederData();
+        else if (viewId === 'buchhaltung'      && typeof renderBuchhaltung     === 'function') loadPromise = renderBuchhaltung();
+        else if (viewId === 'galerie'          && typeof initGalerieManager    === 'function') loadPromise = initGalerieManager();
+        else if (viewId === 'news'             && typeof initNewsView          === 'function') loadPromise = initNewsView();
+        else if (viewId === 'meeting-recorder' && typeof initMeetingRecorder   === 'function') loadPromise = initMeetingRecorder();
+        else if (viewId === 'archiv'           && typeof initArchiv            === 'function') loadPromise = initArchiv();
+        else if (viewId === 'endschiessen'     && typeof loadEndschiessenData  === 'function') loadPromise = loadEndschiessenData();
+    } catch (err) {
+        console.error(`Fehler beim Laden von Modul ${viewId}:`, err);
+    }
+
+    // Nach erfolgreichem Laden das Hintergrund-Laden der verbleibenden Module anstossen
+    if (viewId !== 'dashboard') {
+        Promise.resolve(loadPromise).then(() => {
+            // Schreibschutz nach asynchronem DOM-Rendern erneut durchsetzen
+            if (targetView) {
+                applyModuleWriteProtection(targetView, hasWriteAccess(viewId));
+            }
+            if (window.bgModuleLoader) {
+                window.bgModuleLoader.onUserModuleLoaded(viewId);
+            }
+        }).catch(err => {
+            console.warn(`Fehler beim Laden von ${viewId}:`, err);
+            if (targetView) {
+                applyModuleWriteProtection(targetView, hasWriteAccess(viewId));
+            }
+            if (window.bgModuleLoader) {
+                window.bgModuleLoader.isUserActiveLoading = false;
+                window.bgModuleLoader.scheduleNext(5000);
+            }
+        });
+    } else {
+        if (window.bgModuleLoader) {
+            window.bgModuleLoader.isUserActiveLoading = false;
+        }
+    }
+}
+
+function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('show');
+    document.body.classList.toggle('sidebar-open');
+}
+
+function closeSidebarMobile() {
+    document.getElementById('sidebar').classList.remove('show');
+    document.body.classList.remove('sidebar-open');
+}
+
+// =========================================================
+//  ONLINE PRESENCE CHECK & LAST LOGIN
+// =========================================================
+let _presencePingTimerId = null;
+
+function getSessionId() {
+    let sessId = sessionStorage.getItem('portal_session_id');
+    if (!sessId) {
+        sessId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        sessionStorage.setItem('portal_session_id', sessId);
+    }
+    return sessId;
+}
+
+async function pingPresence() {
+    if (!window.currentUser) return;
+    try {
+        const sessId = getSessionId();
+        const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+
+        if (supa) {
+            const friendlyUA = typeof simplifyUserAgent === 'function' ? simplifyUserAgent(navigator.userAgent) : navigator.userAgent;
+            const { data, error } = await supa.rpc('ping_login_session', {
+                p_session_id: sessId,
+                p_username: window.currentUser,
+                p_role: window.userRole || 'vorstand',
+                p_device: friendlyUA,
+                p_ip: 'Web Portal'
+            });
+            if (!error && data && data.success && Array.isArray(data.onlineUsers)) {
+                updatePresenceUI(data.onlineUsers);
+                return;
+            }
+        } else {
+            console.warn("⚠️ Supabase Client für Presence-Ping nicht bereit.");
+        }
+    } catch (e) {
+        console.warn("⚠️ Fehler beim Presence-Ping:", e.message);
+    }
+}
+
+function startPresencePingTimer() {
+    console.log("🔍 startPresencePingTimer called");
+    if (_presencePingTimerId) return;
+    pingPresence(); // Erstes Mal sofort ausführen
+    console.log("⏰ Presence-Ping: Timer gestartet (Intervall: 30 Sekunden)");
+    _presencePingTimerId = setInterval(pingPresence, 30000); // alle 30 Sekunden
+}
+
+function updatePresenceUI(onlineUsers) {
+    const presenceBanner = document.getElementById('presence-banner');
+    const sidebarPresenceBadge = document.getElementById('sidebar-presence-badge');
+    const mobilePresenceBanner = document.getElementById('mobile-presence-banner');
+    const welcomeText = document.getElementById('welcome-presence-text');
+    const welcomeIcon = document.getElementById('presence-modal-icon');
+    const welcomeAlert = document.getElementById('welcome-presence-alert');
+
+    const myName = (window.currentUser || '').toLowerCase();
+    const otherUsers = (onlineUsers || []).filter(u => {
+        const uName = (typeof u === 'string' ? u : (u.username || '')).trim().toLowerCase();
+        return uName && uName !== myName;
+    });
+
+    if (otherUsers.length === 0) {
+        const aloneHtml = `
+            <span class="badge bg-light text-muted border px-2.5 py-1.5 animate__animated animate__fadeIn" style="font-size: 0.8rem; font-weight: normal; border-radius: 20px;">
+                <span class="spinner-grow spinner-grow-sm text-success me-1 align-middle" style="width: 8px; height: 8px;" role="status"></span>
+                Allein im Portal (Multi-User & Supabase aktiv)
+            </span>
+        `;
+        if (presenceBanner) presenceBanner.innerHTML = aloneHtml;
+
+        // PC Sidebar update
+        if (sidebarPresenceBadge) {
+            sidebarPresenceBadge.innerHTML = `
+                <span class="badge bg-light text-muted border px-2.5 py-1" style="font-size: 0.72rem; font-weight: 500; border-radius: 20px; display: inline-flex; align-items: center;">
+                    <span class="spinner-grow spinner-grow-sm text-success me-1.5" style="width: 6px; height: 6px;" role="status"></span>
+                    Allein online
+                </span>
+            `;
+        }
+
+        // Mobile Header update
+        if (mobilePresenceBanner) {
+            mobilePresenceBanner.innerHTML = `
+                <span class="text-success" style="font-size: 0.65rem; font-weight: 600;"><span class="spinner-grow spinner-grow-sm text-success align-middle" style="width: 5px; height: 5px;" role="status"></span> Allein</span>
+            `;
+        }
+
+        // Modal step 2 update
+        if (welcomeText) {
+            welcomeText.innerHTML = `
+                <div class="text-center py-2 animate__animated animate__fadeIn">
+                    <span class="spinner-grow spinner-grow-sm text-success me-2 align-middle" style="width: 12px; height: 12px;" role="status"></span>
+                    <strong class="text-success">Keine anderen Vorstandsmitglieder online.</strong><br>
+                    <span class="text-muted mt-1 d-block small">Du kannst ungestört arbeiten. Alle Änderungen werden direkt in Supabase gespeichert.</span>
+                </div>
+            `;
+        }
+        if (welcomeIcon) {
+            welcomeIcon.className = "fas fa-user-shield fa-4x text-success animate__animated animate__bounceIn";
+        }
+        if (welcomeAlert) {
+            welcomeAlert.style.backgroundColor = "rgba(40,167,69,0.05)";
+            welcomeAlert.style.borderColor = "rgba(40,167,69,0.1)";
+        }
+    } else {
+        const namesHtml = otherUsers.map(u => {
+            const rawName = typeof u === 'string' ? u : (u.username || 'Vorstand');
+            return `<strong>${escapeHtml(rawName)}</strong>`;
+        }).join(', ');
+
+        const warningHtml = `
+            <span class="badge px-2.5 py-1.5 animate__animated animate__fadeIn" style="font-size: 0.8rem; font-weight: normal; color: #0f3a5d; background-color: #e8f0fe; border: 1px solid #c2dbfe; border-radius: 20px;">
+                <i class="fas fa-users-viewfinder text-primary me-1"></i>
+                Aktuell ebenfalls online: ${namesHtml} <span class="text-muted ms-1 small">(Bei gleichzeitigen Änderungen bitte kurz absprechen)</span>
+            </span>
+        `;
+        if (presenceBanner) presenceBanner.innerHTML = warningHtml;
+
+        // PC Sidebar update
+        if (sidebarPresenceBadge) {
+            sidebarPresenceBadge.innerHTML = `
+                <span class="badge px-2.5 py-1.5 animate__animated animate__fadeIn" style="font-size: 0.72rem; font-weight: normal; color: #0f3a5d; background-color: #e8f0fe; border: 1px solid #c2dbfe; border-radius: 12px; display: block; text-align: left; white-space: normal; line-height: 1.3;" title="Team-Präsenz aktiv">
+                    <i class="fas fa-users text-primary me-1"></i>
+                    Online: ${namesHtml}
+                </span>
+            `;
+        }
+
+        // Mobile Header update
+        if (mobilePresenceBanner) {
+            mobilePresenceBanner.innerHTML = `
+                <span class="text-primary fw-bold" style="font-size: 0.65rem;"><i class="fas fa-users align-middle"></i> ${otherUsers.length} online</span>
+            `;
+        }
+
+        // Modal step 2 update
+        if (welcomeText) {
+            welcomeText.innerHTML = `
+                <div class="py-2 animate__animated animate__fadeIn">
+                    <strong class="text-primary d-block mb-1 fs-6"><i class="fas fa-users me-1"></i> Weitere Vorstandsmitglieder online</strong>
+                    <span class="text-dark d-block">Folgende Vorstandsmitglieder sind ebenfalls im Portal aktiv:</span>
+                    <div class="mt-2 p-2 rounded border text-center fw-bold" style="color: #0f3a5d; background-color: #e8f0fe; border-color: #c2dbfe;">
+                        ${namesHtml}
+                    </div>
+                    <span class="text-muted mt-2 d-block small">Supabase sichert alle Schreibvorgänge ab. Sprecht euch kurz ab, falls ihr am selben Modul arbeitet.</span>
+                </div>
+            `;
+        }
+        if (welcomeIcon) {
+            welcomeIcon.className = "fas fa-users-viewfinder fa-4x text-primary animate__animated animate__pulse animate__infinite";
+        }
+        if (welcomeAlert) {
+            welcomeAlert.style.backgroundColor = "rgba(13,110,253,0.05)";
+            welcomeAlert.style.borderColor = "rgba(13,110,253,0.15)";
+        }
+    }
+}
+
+function advanceWelcomeStep() {
+    const step1 = document.getElementById('welcome-step-login');
+    const step2 = document.getElementById('welcome-step-presence');
+    if (step1 && step2) {
+        step1.classList.add('d-none');
+        step2.classList.remove('d-none');
+    }
+}
+
+function handleSecurityLock() {
+    if (confirm("⚠️ SICHERHEITS-WARNUNG!\n\nBist du sicher, dass du dein Konto sperren und dich sofort abmelden möchtest?\n\nDeine aktuelle Sitzung wird umgehend vernichtet. Bitte wende dich danach sofort an einen Administrator oder ändere nach dem erneuten Einloggen dein Passwort!")) {
+        showError("Sicherheits-Abmeldung läuft... Deine Sitzung wird zerstört.", 3000);
+        setTimeout(doLogout, 2000);
+    }
+}
+
+function openChangePasswordModal() {
+    document.getElementById('change-password-form')?.reset();
+    const modalEl = document.getElementById('change-password-modal');
+    if (modalEl) {
+        const modal = new bootstrap.Modal(modalEl);
+        modal.show();
+    }
+}
+
+async function submitChangePassword(e) {
+    e.preventDefault();
+    const oldPw = document.getElementById('cp-old-password').value;
+    const newPw = document.getElementById('cp-new-password').value;
+    const confirmPw = document.getElementById('cp-confirm-password').value;
+    const submitBtn = document.getElementById('cp-submit-btn');
+
+    if (newPw.length < 6) {
+        showError("Das neue Passwort muss mindestens 6 Zeichen lang sein!");
+        return;
+    }
+
+    if (newPw !== confirmPw) {
+        showError("Die Passwörter stimmen nicht überein!");
+        return;
+    }
+
+    try {
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Passwort wird geändert...';
+        }
+
+        const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+        let changed = false;
+
+        // 1. Supabase Auth
+        if (supa && supa.auth) {
+            const { data: updateData, error: updateErr } = await supa.auth.updateUser({
+                password: newPw
+            });
+            if (!updateErr && updateData) {
+                changed = true;
+                console.log("✅ Passwort via Supabase Auth aktualisiert!");
+            }
+            if (updateErr) {
+                throw new Error("Fehler bei Supabase Auth: " + updateErr.message);
+            }
+        }
+
+        if (!changed) {
+            throw new Error("Das Passwort konnte nicht aktualisiert werden. Bitte stelle sicher, dass du angemeldet bist.");
+        }
+
+        showSuccess("Passwort erfolgreich geändert! Bitte logge dich mit deinem neuen Passwort erneut ein.", 5000);
+        const modalEl = document.getElementById('change-password-modal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+        setTimeout(doLogout, 4000);
+    } catch (err) {
+        showError("Fehler beim Ändern des Passworts: " + err.message);
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-save me-1"></i> Passwort aktualisieren';
+        }
+    }
+}
+
+// Opens a base64-encoded PDF in a new browser tab using a local blob URL
+function openPdfBase64(base64Str) {
+    if (!base64Str) return;
+    try {
+        // Bereinige eventuelle data: URIs sowie Zeilenumbrüche/Whitespace (z. B. von Google Apps Script RFC 2045)
+        const cleanBase64 = String(base64Str).replace(/^data:application\/pdf;base64,/, '').replace(/\s+/g, '');
+        const byteCharacters = atob(cleanBase64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], {type: 'application/pdf'});
+        const fileURL = URL.createObjectURL(blob);
+        window.open(fileURL, '_blank');
+    } catch (err) {
+        console.error("❌ openPdfBase64 Fehler beim Dekodieren:", err);
+    }
+}

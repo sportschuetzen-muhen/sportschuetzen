@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Standblatt Upload</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://supabase-muhen.danfamily.uk">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css?v=18">
+<style>
+/* Pfeile bei Number-Inputs (Spin-Buttons) entfernen */
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button { 
+    -webkit-appearance: none; 
+    margin: 0; 
+}
+input[type=number] { 
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+.upload-page-title {
+    margin-top: 0;
+    text-align: center;
+    line-height: 1.3;
+    font-size: 1.45rem;
+}
+.upload-page-subtitle {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: #64748b;
+}
+.upload-area:focus-within {
+    border-color: var(--primary);
+    background: #eff6ff;
+    outline: 3px solid #0b57d0;
+    outline-offset: 2px;
+}
+#preview {
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    max-height: 220px;
+    object-fit: contain;
+    border-radius: 6px;
+    display: none;
+    margin: 10px auto 0;
+}
+.upload-score-grid {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+.upload-score-field {
+    flex: 1;
+}
+.upload-field-label {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: #475569;
+    display: block;
+    margin-bottom: 4px;
+}
+
+/* Animierte KI-Fortschrittsleiste */
+.ai-progress-track {
+    width: 100%;
+    height: 8px;
+    background: #e2e8f0;
+    border-radius: 999px;
+    overflow: hidden;
+    margin-top: 10px;
+    position: relative;
+}
+.ai-progress-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #3b82f6, #06b6d4, #10b981);
+    background-size: 200% 100%;
+    border-radius: 999px;
+    transition: width 0.25s linear;
+    animation: aiBarShift 2s linear infinite;
+}
+@keyframes aiBarShift {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 200% 50%; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .ai-progress-bar {
+        animation: none;
+        transition: none;
+    }
+}
+</style>
+</head>
+<body>
+
+<main class="card">
+    <h1 class="upload-page-title">Standblatt Upload<br><span class="upload-page-subtitle">Auswärtsschiessen</span></h1>
+    <form id="uploadForm">
+        <div class="form-group">
+            <div id="upload-user-info" style="background:#f1f5f9; padding:12px; border-radius:8px; font-weight:bold; text-align:center; color:#334155; font-size:1.05rem;">
+                <!-- Wird per JS gefüllt -->
+            </div>
+            <input type="hidden" id="name" name="name">
+        </div>
+        <div class="form-group">
+            <label for="foto" class="upload-area" style="cursor:pointer; display:block;">
+                <span id="upload-hint">📸 Foto aufnehmen oder Standblatt / PDF wählen</span>
+                <input type="file" id="foto" name="foto" accept="image/*,.heic,.heif,application/pdf,.pdf" class="visually-hidden">
+                <img id="preview" alt="Standblatt-Vorschau" width="300" height="220">
+                <div id="pdf-preview-box" style="display:none; padding:15px; background:#f8fafc; border:1px dashed #94a3b8; border-radius:8px; text-align:center;">
+                    <span style="font-size:2rem;" aria-hidden="true">📄</span>
+                    <div id="pdf-file-name" style="font-size:0.85rem; font-weight:600; color:#334155; margin-top:5px;"></div>
+                </div>
+            </label>
+        </div>
+
+        <input type="hidden" id="anlass" name="anlass">
+
+        <div id="ai-status" role="status" aria-live="polite" style="display:none; margin: 12px 0; padding: 10px 14px; border-radius: 8px; font-size: 0.88rem; line-height: 1.4; text-align: center;"></div>
+
+        <div class="upload-score-grid">
+            <div class="upload-score-field">
+                <label for="erzielt" class="upload-field-label">Erzielte Punkte</label>
+                <input type="number" id="erzielt" name="erzielt" inputmode="decimal" placeholder="z.B. 98" step="any" min="0" required aria-invalid="false" data-error="erzielt-error">
+                <span id="erzielt-error" class="field-error-msg">Bitte gib deine erzielten Punkte ein (mind. 0).</span>
+            </div>
+            <div class="upload-score-field">
+                <label for="maximal" class="upload-field-label">Maximalpunkte</label>
+                <input type="number" id="maximal" name="maximal" inputmode="decimal" placeholder="100" step="any" min="1" required aria-invalid="false" data-error="maximal-error">
+                <span id="maximal-error" class="field-error-msg">Bitte gib das gültige Maximum ein (mind. 1).</span>
+            </div>
+        </div>
+        <div id="error-msg" role="alert" style="display:none; color:#991b1b; background:#fef2f2; padding:10px; border-radius:8px; margin-bottom:15px; font-size:0.9rem; font-weight:600; text-align:center; border:1px solid #fecaca;"></div>
+        <button type="submit" id="submitBtn" class="btn-main">Jetzt senden</button>
+    </form>
+</main>
+
+<dialog id="upload-result-dialog" class="app-dialog" aria-labelledby="upload-dialog-title" closedby="any">
+    <div class="modal-card" style="max-width:420px; text-align:left;">
+        <div class="modal-header">
+            <h2 id="upload-dialog-title" style="margin:0; font-size:1.1rem; font-weight:700; color:var(--primary);">Hinweis</h2>
+            <button type="button" id="upload-dialog-close-x" class="modal-close-btn" aria-label="Dialog schliessen">&times;</button>
+        </div>
+        <div id="upload-dialog-body" class="modal-body" style="font-size:0.94rem; line-height:1.5; color:#1f2937;"></div>
+        <div class="modal-footer">
+            <button type="button" id="upload-dialog-ok" class="btn-main" style="width:auto; padding:8px 24px; border-radius:8px;">OK</button>
+        </div>
+    </div>
+</dialog>
+
+<script src="upload.js?v=10" defer></script>
+</body>
+</html>
+

@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Resultate - Sportschützen Muhen</title>
+    <meta name="description" content="Aktuelle und historische Wettkampfresultate, Gruppenmeisterschaft, Mannschaftsmeisterschaft, Jahresmeisterschaft und Endschiessen der Sportschützen Muhen.">
+    <link rel="canonical" href="https://sportschuetzen-muhen.ch/resultate.html">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Wettkampf Resultate - Sportschützen Muhen">
+    <meta property="og:description" content="Alle aktuellen Ranglisten und Archive der Jahresmeisterschaft, Gruppenmeisterschaft, Mannschaftsmeisterschaft und des Endschiessens.">
+    <meta property="og:url" content="https://sportschuetzen-muhen.ch/resultate.html">
+    <meta property="og:locale" content="de_CH">
+    <link rel="icon" type="image/png" href="assets/logo.png">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="stylesheet" href="css/style.css?v=20261020_2">
+    <style>
+        .hero-mini {
+            min-height: 35vh;
+            display: flex;
+            align-items: center;
+            position: relative;
+            padding-top: 80px;
+        }
+    </style>
+</head>
+<body>
+    <site-header active="resultate"></site-header>
+
+    <main>
+        <!-- Mini Hero -->
+        <section class="hero-mini">
+            <div class="hero-overlay"></div>
+            <div class="container hero-content">
+                <h1 class="fade-in-up">Wettkampf <span class="text-red">Resultate</span></h1>
+                <p class="fade-in-up delay-1">Verfolge die aktuellen Leistungen, Zwischenstände und historischen Rekorde unserer Vereinsmitglieder in allen Ligen.</p>
+            </div>
+        </section>
+
+        <!-- Dynamic Year Dropdown & Tabs Container -->
+        <section style="padding: 2rem 0 6rem 0;">
+            <div class="container">
+                
+                <!-- Dynamic Archive Selector Card -->
+                <div class="glass-card archive-selector-card fade-in-up delay-1">
+                    <div>
+                        <label for="jahr-select">📅 Saison & Archiv auswählen</label>
+                        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">Die Tabellen laden automatisch die Daten des ausgewählten Jahres.</p>
+                    </div>
+                    <select id="jahr-select" class="select-control">
+                        <!-- Dynamically filled by JavaScript -->
+                    </select>
+                </div>
+
+                <!-- Tabs Navigation mit ARIA-Unterstützung -->
+                <div class="dashboard-tabs fade-in-up delay-2" role="tablist" aria-label="Wettkampf-Kategorien">
+                    <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="tab-jm" id="tab-btn-jm" data-tab="tab-jm">🏆 Jahresmeisterschaft</button>
+                    <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-gruppe" id="tab-btn-gruppe" data-tab="tab-gruppe">👥 Gruppe & Grenzland</button>
+                    <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-mannschaft" id="tab-btn-mannschaft" data-tab="tab-mannschaft">🎯 Mannschaft</button>
+                    <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-endschiessen" id="tab-btn-endschiessen" data-tab="tab-endschiessen">🏅 Endschiessen</button>
+                </div>
+
+                <p class="dashboard-subtitle fade-in-up delay-2" id="info-subtitle">Tippe auf einen Schützen oder ein Feld für detaillierte Einzelresultate.</p>
+
+                <!-- TAB CONTENT A: JAHRESMEISTERSCHAFT -->
+                <div id="tab-jm" class="tab-content active" role="tabpanel" aria-labelledby="tab-btn-jm">
+                    <!-- Schnellauswahl Ligen -->
+                    <div class="jm-league-pills fade-in-up delay-2" style="display: flex; gap: 0.6rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+                        <a href="#card-liga1" class="jm-pill-btn" style="background: rgba(15, 60, 92, 0.06); color: var(--primary-color); padding: 0.45rem 1rem; border-radius: 9999px; font-size: 0.85rem; font-weight: 700; text-decoration: none; transition: background 0.2s;">🏆 Liga 1</a>
+                        <a href="#card-liga2" class="jm-pill-btn" style="background: rgba(15, 60, 92, 0.06); color: var(--primary-color); padding: 0.45rem 1rem; border-radius: 9999px; font-size: 0.85rem; font-weight: 700; text-decoration: none; transition: background 0.2s;">🥈 Liga 2</a>
+                        <a href="#card-u21" class="jm-pill-btn" style="background: rgba(15, 60, 92, 0.06); color: var(--primary-color); padding: 0.45rem 1rem; border-radius: 9999px; font-size: 0.85rem; font-weight: 700; text-decoration: none; transition: background 0.2s;">🎯 Junioren (U21)</a>
+                    </div>
+
+                    <!-- Liga 1 -->
+                    <div class="results-card" id="card-liga1" style="margin-bottom: 2rem;">
+                        <div style="margin-bottom: 1rem;">
+                            <h3 style="margin-bottom: 0.25rem;">🏆 Liga 1</h3>
+                            <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">Die 8 Schützen der obersten Liga. Rang 7 & 8 steigen am Saisonende in Liga 2 ab.</p>
+                        </div>
+                        <div class="table-responsive" tabindex="0" role="region" aria-label="Rangliste Jahresmeisterschaft Liga 1">
+                            <table class="table-results" id="table-liga1">
+                                <thead>
+                                    <tr>
+                                        <th scope="col" class="col-rang">Rang</th>
+                                        <th scope="col" class="col-name">Name</th>
+                                        <th scope="col" class="col-total">Total <span class="max-badge" style="font-size:0.75rem; font-weight:normal; opacity:0.85;">(max. 800%)</span></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-liga1">
+                                    <!-- Loaded dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Liga 2 -->
+                    <div class="results-card" id="card-liga2" style="margin-bottom: 2rem;">
+                        <div style="margin-bottom: 1rem;">
+                            <h3 style="margin-bottom: 0.25rem;">🥈 Liga 2</h3>
+                            <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">Rang 1 & 2 steigen am Saisonende in Liga 1 auf. <span style="display: inline-block; margin-left: 0.5rem; color: #0284c7;">💡 Schützinnen und Schützen erscheinen in der Rangliste, sobald ihr erstes Wertungsresultat vorliegt.</span></p>
+                        </div>
+                        <div class="table-responsive" tabindex="0" role="region" aria-label="Rangliste Jahresmeisterschaft Liga 2">
+                            <table class="table-results" id="table-liga2">
+                                <thead>
+                                    <tr>
+                                        <th scope="col" class="col-rang">Rang</th>
+                                        <th scope="col" class="col-name">Name</th>
+                                        <th scope="col" class="col-total">Total <span class="max-badge" style="font-size:0.75rem; font-weight:normal; opacity:0.85;">(max. 800%)</span></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-liga2">
+                                    <!-- Loaded dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Junioren U21 -->
+                    <div class="results-card" id="card-u21">
+                        <div style="margin-bottom: 1rem;">
+                            <h3 style="margin-bottom: 0.25rem;">🎯 Junioren (U21)</h3>
+                            <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">Nachwuchswertung Kleinkaliber mit reduzierten Streichresultaten.</p>
+                        </div>
+                        <div class="table-responsive" tabindex="0" role="region" aria-label="Rangliste Junioren U21">
+                            <table class="table-results" id="table-u21">
+                                <thead>
+                                    <tr>
+                                        <th scope="col" class="col-rang">Rang</th>
+                                        <th scope="col" class="col-name">Name</th>
+                                        <th scope="col" class="col-total">Total <span class="max-badge" style="font-size:0.75rem; font-weight:normal; opacity:0.85;">(max. 800%)</span></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-u21">
+                                    <!-- Loaded dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB CONTENT B: GRUPPE & GRENZLAND -->
+                <div id="tab-gruppe" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-gruppe">
+                    <div class="results-grid-2">
+                        <!-- Gruppenmeisterschaft -->
+                        <div class="results-card">
+                            <h3>Gruppenmeisterschaft (GM)</h3>
+                            <div class="table-responsive" tabindex="0" role="region" aria-label="Resultate Gruppenmeisterschaft">
+                                <table class="table-results" id="table-gm">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col" style="text-align: left; padding-left: 10px;">Team</th>
+                                            <th scope="col" class="col-round-sm">R1</th>
+                                            <th scope="col" class="col-round-sm">R2</th>
+                                            <th scope="col" class="col-round-sm">R3</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbody-gm">
+                                        <!-- Loaded dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Grenzlandcup -->
+                        <div class="results-card">
+                            <h3>Grenzlandcup (GC)</h3>
+                            <div class="table-responsive" tabindex="0" role="region" aria-label="Resultate Grenzlandcup">
+                                <table class="table-results" id="table-gc">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col" style="text-align: left; padding-left: 10px;">Team</th>
+                                            <th scope="col" class="col-round-sm">R1</th>
+                                            <th scope="col" class="col-round-sm">R2</th>
+                                            <th scope="col" class="col-round-sm">R3</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbody-gc">
+                                        <!-- Loaded dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB CONTENT C: MANNSCHAFT -->
+                <div id="tab-mannschaft" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-mannschaft">
+                    <div class="results-card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.5rem;">
+                            <h3 style="margin-bottom: 0; padding-bottom: 0; border-bottom: none;">Mannschaftsmeisterschaft (SSV)</h3>
+                            <!-- Mobile View Switch Indicator -->
+                            <span class="mobile-hint text-muted" style="font-size: 0.85rem;"><i class="fa-solid fa-mobile-screen"></i> Mobile Card-Ansicht aktiv</span>
+                        </div>
+
+                        <!-- Desktop Table View -->
+                        <div class="table-responsive desktop-only-table" tabindex="0" role="region" aria-label="Resultate Mannschaftsmeisterschaft">
+                            <table class="table-results" id="table-mannschaft" style="table-layout: fixed; min-width: 600px;">
+                                <thead>
+                                    <tr>
+                                        <th scope="col" style="width: 30%; text-align: left; padding-left: 15px;">Team</th>
+                                        <th scope="col" style="width: 10%; text-align: center;">R1</th>
+                                        <th scope="col" style="width: 10%; text-align: center;">R2</th>
+                                        <th scope="col" style="width: 10%; text-align: center;">R3</th>
+                                        <th scope="col" style="width: 10%; text-align: center;">R4</th>
+                                        <th scope="col" style="width: 10%; text-align: center;">R5</th>
+                                        <th scope="col" style="width: 10%; text-align: center;">R6</th>
+                                        <th scope="col" style="width: 10%; text-align: center;">R7</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-mannschaft">
+                                    <!-- Loaded dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Adaptive Mobile Cards View (Kein horizontales Scrollen mehr!) -->
+                        <div id="mobile-mannschaft-container" class="mobile-mannschaft-cards" style="display: none;">
+                            <!-- Dynamisch befüllt für kleine Bildschirme -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB CONTENT D: ENDSCHIESSEN -->
+                <div id="tab-endschiessen" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-endschiessen">
+                    <div id="endschiessen-loading-state" class="results-loading py-5 text-center">
+                        <div class="spinner"></div>Endschiessen-Resultate werden geladen...
+                    </div>
+                    
+                    <div id="endschiessen-content-container" style="display: none;">
+                        <!-- Endstich 20 Schuss -->
+                        <div class="results-card" style="margin-bottom: 2rem;">
+                            <div style="margin-bottom: 1.25rem;">
+                                <h3 style="margin-bottom: 0.25rem;">🏅 Endstich (20 Schuss A10)</h3>
+                                <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">
+                                    Hauptwettkampf mit 2 Passen à 10 Schuss (Ganz- und Zehntelwertung). Zählt zur Jahresmeisterschaft.
+                                </p>
+                            </div>
+                            <div class="table-responsive" tabindex="0" role="region" aria-label="Rangliste Endstich 20 Schuss">
+                                <table class="table-results" id="table-endschiessen-endstich">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col" class="col-rang sortable-col" data-sort="rang" title="Nach Rang sortieren">Rang <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="col-name sortable-col" data-sort="name" title="Nach Schütze sortieren">Schütze <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="p1" style="text-align: center;" title="Nach Passe 1 sortieren">Passe 1 <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="p2" style="text-align: center;" title="Nach Passe 2 sortieren">Passe 2 <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="col-total sortable-col" data-sort="total" title="Nach Total sortieren">Total Pkt <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="decimal" style="text-align: center; color: var(--color-primary, #0d6efd);" title="Nach Zehntel sortieren">Zehntel <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="rang_decimal" style="text-align: center; color: var(--text-muted);" title="Nach Rang 10tel sortieren">Rang 10tel <span class="sort-icon">↕</span></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbody-endschiessen-endstich">
+                                        <!-- Loaded dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Meister-Final Top 8 -->
+                        <div class="results-card" id="endschiessen-final-card" style="display: none; margin-bottom: 2rem;">
+                            <div style="margin-bottom: 1.25rem;">
+                                <h3 style="margin-bottom: 0.25rem;">🏆 Meister-Final (Top 8 Ausscheidung)</h3>
+                                <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">
+                                    Die besten 8 Schützen des Endstichs im direkten Ausscheidungs-Wettkampf.
+                                </p>
+                            </div>
+                            <div class="table-responsive" tabindex="0" role="region" aria-label="Rangliste Meister-Final Top 8">
+                                <table class="table-results" id="table-endschiessen-final">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col" class="col-rang sortable-col" data-sort="rang" title="Nach Rang sortieren">Rang <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="col-name sortable-col" data-sort="name" title="Nach Schütze sortieren">Schütze <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="s1" style="text-align: center;" title="Nach Serie 1 sortieren">S1 <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="s2" style="text-align: center;" title="Nach Serie 2 sortieren">S2 <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="s3" style="text-align: center;" title="Nach Serie 3 sortieren">S3 <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="s4" style="text-align: center;" title="Nach Serie 4 sortieren">S4 <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="s5" style="text-align: center;" title="Nach Serie 5 sortieren">S5 <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="s6" style="text-align: center;" title="Nach Serie 6 sortieren">S6 <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="s7" style="text-align: center;" title="Nach Serie 7 sortieren">S7 <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="col-total sortable-col" data-sort="total" title="Nach Total sortieren">Total <span class="sort-icon">↕</span></th>
+                                            <th scope="col" style="text-align: center;">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbody-endschiessen-final">
+                                        <!-- Loaded dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Weitere Stiche Container (Gaben, Differenzler, Sie & Er) -->
+                        <div id="endschiessen-other-stiche-container" class="results-grid-2">
+                            <!-- Loaded dynamically if present -->
+                        </div>
+                    </div>
+
+                    <div id="endschiessen-empty-state" style="display: none;" class="results-card text-center py-5">
+                        <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">🎯</div>
+                        <h3>Endschiessen noch nicht freigegeben</h3>
+                        <p style="color: var(--text-muted); max-width: 500px; margin: 0 auto;">
+                            Die Resultate für diese Saison sind noch nicht öffentlich freigegeben oder das Schiessen hat noch nicht stattgefunden.
+                        </p>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+    </main>
+
+    <site-footer></site-footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+    <script src="js/auth-session.js" defer></script>
+    <script src="js/components.js" defer></script>
+    <script src="js/resultate.js?v=20261020_2" defer></script>
+</body>
+</html>

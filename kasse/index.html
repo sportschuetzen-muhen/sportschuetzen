@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Festkasse (WaiterOne POS) – Sportschützen Muhen</title>
+  
+  <!-- PWA & Apple Meta Tags -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#131c31">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Festkasse">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  
+  <!-- Styling -->
+  <link rel="stylesheet" href="kasse.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- ─────────────────────────────────────────────────────────────
+         TOP NAVIGATION & HEADER
+         ───────────────────────────────────────────────────────────── -->
+    <header class="top-header">
+      <div class="header-left">
+        <div class="brand-badge">
+          <span>🎯</span>
+          <span class="brand-badge-name">SPORTSCHÜTZEN MUHEN</span>
+        </div>
+        <div class="event-title"><span class="event-title-text">Festwirtschaft</span></div>
+      </div>
+
+      <!-- ZENTRALE MODUS-TABS -->
+      <nav class="header-nav">
+        <button id="tab-btn-kasse" class="nav-tab-btn active" onclick="KasseModule.switchView('kasse')">
+          <span>🛒</span>
+          <span class="tab-label">Kasse</span>
+        </button>
+        <button id="tab-btn-abschluss" class="nav-tab-btn" onclick="KasseModule.switchView('abschluss')">
+          <span>📊</span>
+          <span class="tab-label">Kassensturz &amp; Z-Bericht</span>
+        </button>
+        <button id="tab-btn-kellner" class="nav-tab-btn" onclick="KasseModule.switchView('kellner')">
+          <span>📱</span>
+          <span class="tab-label">Kellner (iPhone)</span>
+        </button>
+      </nav>
+
+      <div class="header-right">
+        <!-- LIVE-UMSATZ QUICK-BADGE (WÄHREND VERKAUF) -->
+        <div class="live-sales-badge" id="live-sales-badge" onclick="KasseModule.switchView('abschluss')" title="Live-Umsatz heute (Klicke für Kassensturz &amp; Details)">
+          <div class="live-sales-item">
+            <span class="live-sales-icon">💵</span>
+            <span class="live-sales-label">Bar:</span>
+            <strong id="live-sales-bar" class="live-sales-val">CHF 0.00</strong>
+          </div>
+          <div class="live-sales-sep">|</div>
+          <div class="live-sales-item">
+            <span class="live-sales-icon">📱</span>
+            <span class="live-sales-label">Twint:</span>
+            <strong id="live-sales-twint" class="live-sales-val">CHF 0.00</strong>
+          </div>
+        </div>
+
+        <!-- AKTIVER BEDIENER -->
+        <div class="active-operator-badge" onclick="KasseModule.openCashierModal()" title="Klicke hier, um den Bediener zu wechseln">
+          <div class="operator-avatar" id="active-operator-avatar">BM</div>
+          <div class="operator-info">
+            <span class="operator-name" id="active-cashier-name">Beat Müller</span>
+            <span class="operator-station" id="active-cashier-station">Kasse 1</span>
+          </div>
+        </div>
+
+        <!-- EINSTELLUNGEN & DRUCKER -->
+        <button class="nav-tab-btn btn-printer-settings" onclick="KasseModule.openSettingsModal()" title="Kassen- &amp; Drucker-Einstellungen (Epson LAN)">
+          <span>⚙️</span>
+          <span class="btn-printer-label">Drucker</span>
+        </button>
+
+        <div class="offline-pill" title="App ist 100% offline-fähig">
+          <div class="offline-dot"></div>
+          <span class="offline-pill-text">Offline Bereit</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- ─────────────────────────────────────────────────────────────
+         HAUPTANSICHTEN (VIEW CONTAINER)
+         ───────────────────────────────────────────────────────────── -->
+    <main class="view-container">
+
+      <!-- ── VIEW 1: KASSE / POS (WAITERONE LAYOUT) ─────────────── -->
+      <section id="view-kasse" class="view-section active">
+        <div class="pos-layout">
+          <!-- LINKE & MITTLERE SPALTE: ARTIKELKATALOG -->
+          <div class="pos-catalog">
+            <!-- KATEGORIEN-LEISTE -->
+            <div class="category-bar" id="category-bar"></div>
+
+            <!-- SUCHE -->
+            <div class="catalog-toolbar">
+              <div class="search-input-wrap">
+                <span class="search-icon">🔍</span>
+                <input 
+                  type="text" 
+                  class="search-input" 
+                  placeholder="Artikel suchen (z.B. Bier, Pommes, Bratwurst)..." 
+                  oninput="KasseModule.setSearch(this.value)"
+                >
+              </div>
+            </div>
+
+            <!-- PRODUKTKACHELN GRID -->
+            <div class="products-grid" id="products-grid"></div>
+          </div>
+
+          <!-- RECHTE SPALTE: BON & WARENKORB -->
+          <div class="pos-ticket-panel">
+            <div class="ticket-header">
+              <div class="ticket-title">
+                <span>🧾</span>
+                <span>Aktueller Bon</span>
+              </div>
+              <div class="ticket-actions">
+                <button class="btn-icon-clear" onclick="KasseModule.clearCart()">
+                  <span>✕</span>
+                  <span>Leeren</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- SCHNELLZUGRIFF: LETZTER BON DRUCKEN -->
+            <div id="last-order-bar" style="display: none; padding: 8px 12px; background: rgba(16, 185, 129, 0.12); border-bottom: 1px solid rgba(16, 185, 129, 0.3); font-size: 13px; align-items: center; justify-content: space-between;">
+              <div style="font-weight: 700; color: #10b981; display: flex; align-items: center; gap: 6px;">
+                <span>✓ Bezahlt:</span>
+                <span id="last-order-summary" style="font-family: monospace; font-size: 14px;">#01 (CHF 0.00)</span>
+              </div>
+              <button class="btn-secondary" style="padding: 4px 10px; font-size: 12px; font-weight: bold; background: #0f172a; border-color: #10b981; color: #34d399; display: flex; align-items: center; gap: 4px; cursor: pointer;" onclick="KasseModule.printLastOrder()">
+                <span>🖨️</span>
+                <span>Letzter Bon</span>
+              </button>
+            </div>
+
+            <!-- EINGEHENDE IPHONE-BESTELLUNG BANNER -->
+            <div id="incoming-order-banner" style="display: none; padding: 10px 10px 0 10px;"></div>
+
+            <!-- POSITIONENLISTE -->
+            <div class="ticket-items-list" id="ticket-items-list"></div>
+
+            <!-- TICKET FOOTER: TOTAL & CHECKOUT -->
+            <div class="ticket-footer">
+              <div class="ticket-summary-row">
+                <span class="summary-total-label">Gesamttotal:</span>
+                <span class="summary-total-amount" id="ticket-total-display">CHF 0.00</span>
+              </div>
+
+              <!-- SCHWEIZER NOTEN SCHNELLTASTEN -->
+              <div class="cash-quick-buttons" id="cash-quick-buttons"></div>
+
+              <!-- RÜCKGELD RECHNER -->
+              <div class="change-display-box" id="change-display-box" style="display: none;">
+                <span class="change-label">💵 Rückgeld an Kunden:</span>
+                <span class="change-amount" id="ticket-change-amount">CHF 0.00</span>
+              </div>
+
+              <!-- ZAHLUNGSAKTIONEN -->
+              <div class="payment-actions-grid">
+                <button class="btn-pay-cash" onclick="KasseModule.completePayment('bar')">
+                  <span>💵</span>
+                  <span>BAR BEZAHLEN</span>
+                </button>
+                <button class="btn-pay-twint" onclick="KasseModule.startTwintPayment()">
+                  <span>📱</span>
+                  <span>TWINT</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- ── VIEW 3: KASSENSTURZ & Z-ABSCHLUSS (PHASE 2) ─────────── -->
+      <section id="view-abschluss" class="view-section">
+        <div style="width: 100%; height: 100%;" id="abschluss-view-content"></div>
+      </section>
+
+      <!-- ── VIEW 4: IPHONE KELLNER HANDHELD (PHASE 3) ──────────── -->
+      <section id="view-kellner" class="view-section">
+        <div style="width: 100%; height: 100%;" id="kellner-view-content"></div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       MODALE & DIALOGE
+       ───────────────────────────────────────────────────────────── -->
+
+  <!-- TWINT ZAHLUNGS-MODAL (ECHTER RAISENOW 1-KLICK-TURBO & AUTO-BONDRUCK) -->
+  <div id="twint-payment-modal" class="modal-overlay">
+    <div class="modal-dialog" style="max-width: 460px; max-height: 92dvh; display: flex; flex-direction: column; text-align: center; overflow: hidden;">
+      <div class="modal-header" style="background: linear-gradient(135deg, #009b77, #007a5e); color: white; padding: 14px 18px; margin-bottom: 0; flex-shrink: 0;">
+        <div class="modal-title" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;">
+          <span>📱 TWINT Bezahlung</span>
+        </div>
+        <button class="modal-close-btn" style="color: white;" onclick="KasseModule.closeTwintModal()">✕</button>
+      </div>
+
+      <div class="modal-body d-flex flex-column gap-2" style="align-items: center; padding: 14px 16px; overflow-y: auto; flex: 1;">
+        <div style="display: flex; align-items: baseline; justify-content: center; gap: 12px; flex-wrap: wrap;">
+          <div id="twint-modal-amount" style="font-size: 32px; font-weight: 900; color: #00bf63; font-family: monospace; letter-spacing: -0.5px;">
+            CHF 0.00
+          </div>
+          <div id="twint-modal-bon-ref" style="font-size: 13px; font-weight: 700; color: #60a5fa;">
+            Bestellung #01
+          </div>
+        </div>
+
+        <!-- Live RaiseNow Tamaro Widget Container (echter nativer TWINT-QR-Code) -->
+        <div id="twint-modal-qr-wrap" style="width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px;">
+          <div style="background: #ffffff; color: #1e293b; border-radius: 12px; padding: 10px; width: 100%; min-height: 320px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); text-align: left;">
+            <div id="twint-modal-tamaro-root" class="root"></div>
+          </div>
+
+          <div id="twint-modal-status-hint" style="font-size: 12px; color: var(--text-muted); line-height: 1.35;">
+            Nach dem Scannen in der TWINT-App druckt der Bon automatisch.
+          </div>
+        </div>
+
+        <!-- Ergebnis-Bild (Erfolg / Abgebrochen) für klare Rückmeldung an den Kassenbediener -->
+        <div id="twint-modal-result-screen" style="display: none; width: 100%; padding: 12px 4px;"></div>
+      </div>
+
+      <div id="twint-modal-footer" class="modal-footer" style="justify-content: space-between; gap: 10px; padding: 12px 16px; margin-top: 0; border-top: 1px solid var(--border-color); flex-shrink: 0;">
+        <button type="button" class="btn-secondary" style="min-height: 44px; padding: 0 14px;" onclick="KasseModule.closeTwintModal()">
+          ✕ Abbrechen
+        </button>
+        <button type="button" class="btn-primary" id="btn-confirm-twint-payment" onclick="KasseModule.confirmTwintPayment()" style="background: #00bf63; border-color: #00bf63; color: #000; font-weight: 900; font-size: 14px; min-height: 44px; padding: 0 16px; flex: 1;">
+          ✓ Manuell bestätigen &amp; drucken
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- QUITTUNGS-MODAL (80mm BON) -->
+  <div id="receipt-modal" class="modal-overlay">
+    <div class="modal-dialog" style="max-width: 380px;">
+      <div class="modal-header">
+        <div class="modal-title">Quittung</div>
+        <button class="modal-close-btn" onclick="document.getElementById('receipt-modal').classList.remove('active')">✕</button>
+      </div>
+      <div id="print-receipt-area"></div>
+      <div class="modal-footer" style="justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+        <button class="btn-secondary" onclick="document.getElementById('receipt-modal').classList.remove('active')">Schließen</button>
+        <div style="display: flex; gap: 6px;">
+          <button class="btn-secondary" style="font-size: 12px; padding: 6px 10px;" onclick="KasseModule.printBrowserReceipt()" title="Über das iOS-Druckermenü drucken">Menü</button>
+          <button class="btn-primary" onclick="KasseModule.printActiveReceipt()">🖨️ Sofortdruck (Epson)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Z-BERICHT QUITTUNGS-MODAL -->
+  <div id="z-report-receipt-modal" class="modal-overlay">
+    <div class="modal-dialog" style="max-width: 420px;">
+      <div class="modal-header">
+        <div class="modal-title">Z-Kassenabschluss</div>
+        <button class="modal-close-btn" onclick="document.getElementById('z-report-receipt-modal').classList.remove('active')">✕</button>
+      </div>
+      <div id="z-report-receipt-body"></div>
+      <div class="modal-footer" style="justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+        <button class="btn-secondary" onclick="document.getElementById('z-report-receipt-modal').classList.remove('active')">Schließen</button>
+        <div style="display: flex; gap: 6px;">
+          <button class="btn-secondary" style="font-size: 12px; padding: 6px 10px;" onclick="KassenAbschluss.printZReportBrowser()" title="Über das iOS-Druckermenü drucken">Menü</button>
+          <button class="btn-primary" onclick="KassenAbschluss.printZReportEpson()">🖨️ Z-Bericht an Epson senden</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BARAUSLAGE / WECHSELGELD MODAL -->
+  <div id="cash-movement-modal" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title" id="movement-title">Barauslage erfassen</div>
+        <button class="modal-close-btn" onclick="document.getElementById('cash-movement-modal').classList.remove('active')">✕</button>
+      </div>
+      <input type="hidden" id="movement-type" value="ausgabe">
+      <div class="d-flex flex-column gap-3">
+        <div>
+          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted);">Betrag in CHF:</label>
+          <input type="number" step="0.05" id="movement-amount" class="search-input" style="padding: 0 12px; font-size: 18px; font-weight: bold;" placeholder="z.B. 25.00">
+        </div>
+        <div style="margin-top: 10px;">
+          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted);">Grund / Belegtext:</label>
+          <input type="text" id="movement-reason" class="search-input" style="padding: 0 12px;" placeholder="z.B. Not-Einkauf Brot Coop, Senf, etc.">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="document.getElementById('cash-movement-modal').classList.remove('active')">Abbrechen</button>
+        <button class="btn-primary" onclick="KassenAbschluss.saveCashMovement()">Speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BEDIENER WECHSELN MODAL -->
+  <div id="cashier-modal" class="modal-overlay">
+    <div class="modal-dialog" style="max-width: 400px;">
+      <div class="modal-header">
+        <div class="modal-title">Bediener wechseln</div>
+        <button class="modal-close-btn" onclick="document.getElementById('cashier-modal').classList.remove('active')">✕</button>
+      </div>
+      <div class="d-flex flex-column gap-3" style="margin-top: 10px;">
+        <div>
+          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 4px;">Name des Bedieners:</label>
+          <input type="text" id="input-cashier-name" class="search-input" style="padding: 0 12px; font-size: 16px;" placeholder="z.B. Beat Müller">
+        </div>
+        <div style="margin-top: 10px;">
+          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 4px;">Station / Kasse:</label>
+          <input type="text" id="input-station-name" class="search-input" style="padding: 0 12px; font-size: 16px;" placeholder="z.B. Kasse 1">
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content: space-between; margin-top: 20px;">
+        <button class="btn-secondary" onclick="document.getElementById('cashier-modal').classList.remove('active')">Abbrechen</button>
+        <button class="btn-primary" onclick="KasseModule.saveCashier()">Speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- EINSTELLUNGEN & EPSON LAN DRUCKER MODAL -->
+  <div id="settings-modal" class="modal-overlay">
+    <div class="modal-dialog settings-modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">⚙️ Kassen- &amp; Drucker-Einstellungen</div>
+        <button class="modal-close-btn" onclick="document.getElementById('settings-modal').classList.remove('active')">✕</button>
+      </div>
+
+      <div class="modal-body d-flex flex-column gap-3">
+        <!-- ABSCHNITT 0: AKTIVER FESTANLASS & SORTIMENTS-SYNC -->
+        <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label style="font-size: 13px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 6px;">
+              <span>🎉 Aktiver Festanlass:</span>
+            </label>
+            <button type="button" class="btn-secondary" id="btn-sync-event-products" style="padding: 4px 10px; font-size: 12px; font-weight: 700; color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);" onclick="KasseModule.syncEventSortimentManually()">
+              🔄 Sortiment abgleichen
+            </button>
+          </div>
+          <div style="font-size: 14px; font-weight: 800; color: #f8fafc;" id="setting-active-event-name">
+            Wird ermittelt...
+          </div>
+          <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;" id="setting-active-event-details">
+            Verbindet sich mit Supabase (Modul «Anlässe &amp; Controlling») für Preise &amp; Becherpfand.
+          </div>
+        </div>
+
+        <!-- ABSCHNITT 1: DRUCKER LAN IP -->
+        <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+          <label style="font-size: 13px; font-weight: 700; color: #38bdf8; display: block; margin-bottom: 4px;">
+            🖨️ Epson LAN-Drucker IP-Adresse:
+          </label>
+          <input type="text" id="setting-printer-ip" class="search-input" style="padding: 0 12px; font-size: 16px; font-family: monospace;" value="192.168.68.200" placeholder="192.168.68.200">
+          <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+            iPad &amp; Epson-Drucker müssen am gleichen Router (WLAN/LAN) im Festzelt angeschlossen sein.
+          </div>
+        </div>
+
+        <!-- ABSCHNITT 1b: DRUCKER-VERBINDUNGSMETHODE / TREIBER -->
+        <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+          <label style="font-size: 13px; font-weight: 700; color: #a855f7; display: block; margin-bottom: 8px;">
+            🔌 Druck-Verbindungsmethode:
+          </label>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer;">
+              <input type="radio" name="setting-print-driver" value="epos_direct" id="driver-epos-direct" checked style="margin-top: 2px;" onchange="KasseModule.toggleDriverOptions()">
+              <div>
+                <strong>🌐 Direkter ePOS-Print (100% ohne Supabase / rein aus dem Browser)</strong>
+                <div style="font-size: 11px; color: var(--text-muted);">Sendet ePOS-Print XML direkt an die Drucker-IP via Port 80 (HTTP) oder 443 (HTTPS). Standard für Festbetrieb &amp; iPads.</div>
+              </div>
+            </label>
+            <div id="epos-direct-options" style="margin-left: 24px; display: block; margin-top: 2px; padding: 8px 10px; background: rgba(0,0,0,0.25); border-radius: 4px; border-left: 2px solid #a855f7;">
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; margin-bottom: 6px;">
+                <input type="checkbox" id="setting-print-ssl" checked>
+                <span><strong>HTTPS / SSL nutzen</strong> (aktiv für Epson ePOS mit Vereins-Zertifikat)</span>
+              </label>
+              <div id="setting-cert-status-container" style="font-size: 11px; margin-top: 4px; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap;">
+                <span id="setting-cert-status-badge">Zertifikat wird geprüft...</span>
+                <button type="button" class="btn-secondary" style="padding: 2px 8px; font-size: 10px;" onclick="KasseModule.showCertHelp()">ℹ️ Erneuerung</button>
+              </div>
+            </div>
+            <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer;">
+              <input type="radio" name="setting-print-driver" value="gateway" id="driver-gateway" style="margin-top: 2px;" onchange="KasseModule.toggleDriverOptions()">
+              <div>
+                <strong>⚡ LAN-Gateway (CT 117 / Supabase)</strong>
+                <div style="font-size: 11px; color: var(--text-muted);">Sofortdruck im Hintergrund via Port 9100. Erfordert Verbindung zu CT 117.</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- ABSCHNITT 2: DRUCKMODUS BEIM KASSIEREN -->
+        <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+          <label style="font-size: 13px; font-weight: 700; color: #f59e0b; display: block; margin-bottom: 8px;">
+            ⚡ Druckmodus beim Kassieren:
+          </label>
+          <div style="display: flex; flex-column; gap: 8px; flex-direction: column;">
+            <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer;">
+              <input type="radio" name="setting-print-mode" value="manual" id="mode-manual" checked style="margin-top: 2px;">
+              <div>
+                <strong>Kein automatischer Bon (Empfohlen für Festbetrieb)</strong>
+                <div style="font-size: 11px; color: var(--text-muted);">Kasse sofort frei für nächsten Kunden. Bon nur bei Bedarf via «Letzter Bon».</div>
+              </div>
+            </label>
+            <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer;">
+              <input type="radio" name="setting-print-mode" value="auto" id="mode-auto" style="margin-top: 2px;">
+              <div>
+                <strong>Automatischer Sofortdruck (ohne Druckermenü)</strong>
+                <div style="font-size: 11px; color: var(--text-muted);">Druckt Gast- und/oder Küchenbon sofort nach jeder Bezahlung an den Epson-Drucker.</div>
+              </div>
+            </label>
+            <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer;">
+              <input type="radio" name="setting-print-mode" value="browser" id="mode-browser" style="margin-top: 2px;">
+              <div>
+                <strong>Browser-Druckdialog (AirPrint Fallback)</strong>
+                <div style="font-size: 11px; color: var(--text-muted);">Öffnet das native Druckermenü des iPad.</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- ABSCHNITT 3: BONS AUSWÄHLEN (MULTI-BON) -->
+        <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+          <label style="font-size: 13px; font-weight: 700; color: #10b981; display: block; margin-bottom: 8px;">
+            📑 Ausgeworfene Bons (Mehrfachdruck):
+          </label>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer;">
+              <input type="checkbox" id="setting-print-guest" checked>
+              <span><strong>Gast-Quittung</strong> (mit Preisen, Zahlart &amp; Abhol-Nummer)</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer;">
+              <input type="checkbox" id="setting-print-kitchen" checked>
+              <span><strong>Küchen- / Grill-Bon</strong> (nur Speisen, riesige Bestell-Nr., Schnitt)</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer;">
+              <input type="checkbox" id="setting-print-drinks">
+              <span><strong>Getränke- / Ausschank-Bon</strong> (nur Bar &amp; Getränke)</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer;">
+              <input type="checkbox" id="setting-open-drawer" checked>
+              <span><strong>Kassenschublade öffnen</strong> (bei Barzahlung)</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- ABSCHNITT 4: BESTELLNUMMER-ZÄHLER -->
+        <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between;">
+          <div>
+            <div style="font-size: 13px; font-weight: 700; color: var(--text-main);">Bestellnummer-Zähler:</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Nächste Nummer auf Bon: <strong id="setting-current-seq-label" style="color: #38bdf8;">#01</strong></div>
+          </div>
+          <button class="btn-secondary" style="padding: 4px 10px; font-size: 12px;" onclick="KasseModule.resetOrderSequence()">
+            ↺ Auf #01 zurücksetzen
+          </button>
+        </div>
+
+        <!-- ABSCHNITT 5: TESTDRUCK -->
+        <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+          <div style="font-size: 13px; font-weight: 700; color: var(--text-main); margin-bottom: 6px;">
+            🧪 Drucker-Test (Verbindung prüfen):
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-secondary" style="flex: 1; padding: 8px; font-size: 12px;" onclick="KasseModule.runPrinterTest('guest')">
+              🖨️ Test Gastbeleg
+            </button>
+            <button class="btn-secondary" style="flex: 1; padding: 8px; font-size: 12px;" onclick="KasseModule.runPrinterTest('kitchen')">
+              👨‍🍳 Test Küchenbon
+            </button>
+          </div>
+          <div id="printer-test-status" style="margin-top: 8px; font-size: 12px; min-height: 18px;"></div>
+        </div>
+
+        <!-- ABSCHNITT 6: TWINT & RAISENOW PAYLINK KONFIGURATION -->
+        <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+          <label style="font-size: 13px; font-weight: 700; color: #00bf63; display: block; margin-bottom: 4px;">
+            📱 TWINT PayLink URL (RaiseNow Hub):
+          </label>
+          <input type="text" id="setting-twint-paylink" class="search-input" style="padding: 0 12px; font-size: 14px; font-family: monospace;" value="https://pay.raisenow.io/cctmv" placeholder="https://pay.raisenow.io/cctmv">
+          <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+            Touchpoint-Lösung der Sportschützen Muhen. Betrag &amp; Bestellnummer werden dynamisch als QR-Code erzeugt.
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="justify-content: space-between;">
+        <button class="btn-secondary" onclick="document.getElementById('settings-modal').classList.remove('active')">Abbrechen</button>
+        <button class="btn-primary" onclick="KasseModule.saveSettings()" style="background: #0284c7; border-color: #0284c7; font-weight: 800; min-height: 42px; padding: 0 18px;">💾 Einstellungen speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ZERTIFIKAT-ERNEUERUNG HILFE MODAL -->
+  <div id="cert-help-modal" class="modal-overlay">
+    <div class="modal-dialog" style="max-width: 500px;">
+      <div class="modal-header">
+        <div class="modal-title">🔐 Epson Drucker-Zertifikat erneuern</div>
+        <button class="modal-close-btn" onclick="document.getElementById('cert-help-modal').classList.remove('active')">✕</button>
+      </div>
+      <div class="modal-body" style="font-size: 13px; line-height: 1.5; color: var(--text-main);">
+        <div style="background: rgba(2, 132, 199, 0.15); border-left: 3px solid #0284c7; padding: 8px 12px; border-radius: 4px; margin-bottom: 12px;">
+          <strong>Keine Aktion auf dem iPad nötig!</strong><br>
+          Die Stamm-CA ist für 10 Jahre (bis 2036) gültig und bleibt auf den iPads unverändert. Nur das Serverzertifikat auf dem Drucker wird jährlich erneuert.
+        </div>
+        <strong>Ablauf (ca. 2 Minuten):</strong>
+        <ol style="margin-top: 6px; padding-left: 18px; color: var(--text-muted); line-height: 1.6;">
+          <li>Auf CT 117 per SSH das Skript ausführen:<br><code style="background: rgba(0,0,0,0.4); padding: 2px 6px; border-radius: 3px; color: #38bdf8; font-size: 11px;">ssh root@192.168.68.117 "/opt/muhen-ca/renew-printer-cert.sh"</code></li>
+          <li>Die Datei <code style="color: #38bdf8;">epson_printer.pfx</code> (Passwort: <code>epson</code>) herunterladen.</li>
+          <li>Im Drucker-Webmenü (<a href="https://192.168.68.200" target="_blank" style="color: #38bdf8;">https://192.168.68.200</a>) unter <em>Authentication &gt; Certificate Import</em> hochladen.</li>
+          <li>Unter <em>Security &gt; SSL/TLS</em> auf <em>CA-Signed Certificate 1</em> stellen und speichern.</li>
+        </ol>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-primary" onclick="document.getElementById('cert-help-modal').classList.remove('active')">Schliessen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- KELLNER: TISCH AUSWAHL MODAL -->
+  <div id="kellner-table-modal" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">Tisch auswählen</div>
+        <button class="modal-close-btn" onclick="document.getElementById('kellner-table-modal').classList.remove('active')">✕</button>
+      </div>
+      <div id="kellner-table-list" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;"></div>
+    </div>
+  </div>
+
+  <!-- KELLNER: BAR KASSIEREN MODAL (AM TISCH) -->
+  <div id="kellner-cash-modal" class="modal-overlay">
+    <div class="modal-dialog" style="max-width: 420px;">
+      <div class="modal-header">
+        <div class="modal-title">💵 Bar kassieren (<span id="kellner-cash-table-name">Tisch</span>)</div>
+        <button class="modal-close-btn" onclick="KellnerHandheld.closeCashModal()">✕</button>
+      </div>
+      <div class="modal-body d-flex flex-column gap-3">
+        <div style="background: rgba(15, 23, 42, 0.7); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); text-align: center;">
+          <div style="font-size: 12px; color: var(--text-muted); font-weight: 700;">ZU BEZAHLENDER BETRAG:</div>
+          <div id="kellner-cash-total-display" style="font-size: 32px; font-weight: 900; color: #38bdf8; font-family: monospace;">CHF 0.00</div>
+        </div>
+
+        <div>
+          <div style="font-size: 12px; color: var(--text-muted); font-weight: 700; margin-bottom: 6px;">ERHALTENER BETRAG (NOTEN):</div>
+          <div id="kellner-quick-notes-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;">
+            <!-- Noten-Buttons werden dynamisch gefüllt -->
+          </div>
+        </div>
+
+        <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); padding: 10px 14px; border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: baseline;">
+          <span style="font-size: 14px; font-weight: 700; color: #10b981;">Rückgeld:</span>
+          <span id="kellner-cash-change-display" style="font-size: 26px; font-weight: 900; color: #34d399; font-family: monospace;">CHF 0.00</span>
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content: space-between; gap: 8px;">
+        <button class="btn-secondary" onclick="KellnerHandheld.closeCashModal()">Abbrechen</button>
+        <button class="btn-primary" id="kellner-btn-confirm-cash" onclick="KellnerHandheld.confirmCashPayment()" style="background: #10b981; border-color: #10b981; font-weight: 800; min-height: 42px; padding: 0 16px;">
+          ✓ Bar kassiert &amp; Bon drucken
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- KELLNER: TWINT KASSIEREN MODAL (AM TISCH) -->
+  <div id="kellner-twint-modal" class="modal-overlay">
+    <div class="modal-dialog" style="max-width: 420px; max-height: 92dvh; display: flex; flex-direction: column; text-align: center; overflow: hidden;">
+      <div class="modal-header" style="background: linear-gradient(135deg, #009b77, #007a5e); color: white; padding: 12px 16px; margin-bottom: 0; flex-shrink: 0;">
+        <div class="modal-title" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; font-size: 17px;">
+          <span>📱 TWINT am Tisch (<span id="kellner-twint-table-name">Tisch</span>)</span>
+        </div>
+        <button class="modal-close-btn" style="color: white;" onclick="KellnerHandheld.closeTwintModal()">✕</button>
+      </div>
+      <div class="modal-body d-flex flex-column gap-2" style="align-items: center; padding: 12px; overflow-y: auto; flex: 1;">
+        <div id="kellner-twint-total-display" style="font-size: 30px; font-weight: 900; color: #00bf63; font-family: monospace;">
+          CHF 0.00
+        </div>
+        <div id="kellner-twint-qr-wrap" style="width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px;">
+          <div style="background: #ffffff; color: #1e293b; border-radius: 12px; padding: 8px; width: 100%; min-height: 290px; box-shadow: 0 6px 18px rgba(0,0,0,0.3); text-align: left;">
+            <div id="kellner-twint-tamaro-root" class="root"></div>
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted);">
+            Gast scannt direkt von deinem Smartphone – Bon druckt automatisch.
+          </div>
+        </div>
+        <div id="kellner-twint-result-screen" style="display: none; width: 100%; padding: 10px 4px;"></div>
+      </div>
+      <div id="kellner-twint-footer" class="modal-footer" style="justify-content: space-between; gap: 8px; padding: 10px 14px; margin-top: 0; border-top: 1px solid var(--border-color); flex-shrink: 0;">
+        <button class="btn-secondary" onclick="KellnerHandheld.closeTwintModal()">Abbrechen</button>
+        <button class="btn-primary" id="kellner-btn-confirm-twint" onclick="KellnerHandheld.confirmTwintPayment()" style="background: #00bf63; border-color: #00bf63; color: #000; font-weight: 800; min-height: 42px; padding: 0 14px; flex: 1;">
+          ✓ Manuell bestätigen
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GLOBAL TOAST NOTIFICATION -->
+  <div id="global-toast" class="toast-box"></div>
+
+  <!-- SCRIPTS -->
+  <script src="qrcode.min.js"></script>
+  <script src="db.js"></script>
+  <script src="epos-print.js"></script>
+  <script src="abschluss.js"></script>
+  <script src="kellner.js"></script>
+  <script src="kasse.js"></script>
+</body>
+</html>

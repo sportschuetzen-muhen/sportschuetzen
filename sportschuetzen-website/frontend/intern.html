@@ -1,0 +1,1498 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Mitgliederbereich - Sportschützen Muhen</title>
+    <link rel="icon" type="image/png" href="assets/logo.png">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .intern-hero {
+            padding: 7.5rem 0 2.5rem 0;
+            background: linear-gradient(180deg, rgba(15, 60, 92, 0.04) 0%, rgba(15, 60, 92, 0.08) 100%);
+            border-bottom: 1px solid var(--glass-border);
+        }
+        .intern-container {
+            padding: 2.5rem 0 5rem 0;
+        }
+        .doc-folder-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.6rem 1.25rem;
+            border-radius: 30px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            border: 1px solid rgba(15, 60, 92, 0.15);
+            background: white;
+            color: var(--text-color);
+            cursor: pointer;
+            transition: var(--transition);
+        }
+        .doc-folder-btn:hover {
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+            transform: translateY(-1px);
+        }
+        .doc-folder-btn.active {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+            box-shadow: 0 4px 12px rgba(15, 60, 92, 0.15);
+        }
+        .doc-card {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 1.5rem;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border-radius: 16px;
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 4px 20px rgba(15, 60, 92, 0.04);
+            transition: var(--transition);
+        }
+        .doc-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(15, 60, 92, 0.08);
+            border-color: rgba(15, 60, 92, 0.2);
+        }
+        .doc-decade-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.35rem 0.85rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            border: 1px solid rgba(15, 60, 92, 0.12);
+            background: rgba(255, 255, 255, 0.7);
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: var(--transition);
+        }
+        .doc-decade-btn:hover {
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+            background: white;
+        }
+        .doc-decade-btn.active {
+            background: rgba(15, 60, 92, 0.1);
+            color: var(--primary-color);
+            border-color: var(--primary-color);
+            font-weight: 700;
+        }
+        @media (max-width: 768px) {
+            #reader-modal-body {
+                grid-template-columns: 1fr !important;
+                grid-template-rows: 260px 1fr;
+            }
+            #reader-modal-preview {
+                border-right: none !important;
+                border-bottom: 1px solid #e2e8f0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <site-header active="intern"></site-header>
+
+    <!-- Header / Intro -->
+    <section class="intern-hero">
+        <div class="container fade-in-up">
+            <span class="badge" style="background: rgba(220, 38, 38, 0.1); color: var(--accent-color); font-weight: 700; padding: 4px 12px; border-radius: 20px; font-size: 0.82rem; margin-bottom: 0.75rem; display: inline-block;">
+                🔐 Geschützter Bereich
+            </span>
+            <h1 style="margin-bottom: 0.5rem;">Vereins- &amp; <span class="text-red">Mitgliederportal</span></h1>
+            <p style="color: var(--text-light); font-size: 1.1rem; max-width: 650px; margin: 0;">
+                Exklusiver Zugriff auf unser historisches Vereinsarchiv ab 1919, Generalversammlungsprotokolle, Einladungen, Chroniken und private Fotoalben.
+            </p>
+        </div>
+    </section>
+
+    <!-- Hauptbereich -->
+    <main class="intern-container">
+        <div class="container">
+            <!-- STATE 1: Nicht angemeldet (Prompt) -->
+            <div id="mb-logged-out" class="glass-card" style="text-align: center; max-width: 720px; margin: 2rem auto; padding: 4rem 2rem; border: 1px solid rgba(220, 38, 38, 0.2); box-shadow: 0 15px 35px rgba(15, 60, 92, 0.08);">
+                <div style="font-size: 3.5rem; margin-bottom: 1rem; line-height: 1;">🔐</div>
+                <h2 style="font-size: 1.8rem; margin-bottom: 0.75rem; color: var(--primary-color);">Zugang nur für Vereinsmitglieder</h2>
+                <p style="font-size: 1.05rem; color: var(--text-light); max-width: 560px; margin: 0 auto 2rem; line-height: 1.6;">
+                    Du bist Mitglied der Sportschützen Muhen? Melde dich bequem über unser zentrales Schützen-Login an. Nach der Bestätigung stehen dir alle Vereinsdokumente, Protokolle und Alben sofort zur Verfügung.
+                </p>
+                <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                    <button id="btn-mb-login" class="btn btn-primary" style="padding: 0.85rem 2.2rem; font-size: 1.05rem; border-radius: 30px; font-weight: 700; display: inline-flex; align-items: center; gap: 0.6rem; box-shadow: 0 4px 15px rgba(220, 38, 38, 0.25);">
+                        <span>👉</span> <span>In der Schützen-App anmelden</span>
+                    </button>
+                </div>
+                <div style="margin-top: 1.75rem; font-size: 0.88rem; color: var(--text-muted); display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                    <span>💡</span> <span>Du wirst kurz zur Web-App geleitet und nach Bestätigung automatisch wieder hierher zurückgeführt.</span>
+                </div>
+            </div>
+
+            <!-- STATE 2: Angemeldet (Voller Zugriff) -->
+            <div id="mb-logged-in" style="display: none;">
+                <!-- Willkommens-Bar -->
+                <div class="glass-card mb-4" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1.25rem; padding: 1.25rem 2rem; border-left: 5px solid var(--primary-color);">
+                    <div>
+                        <span style="font-size: 0.82rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700;">Vereinskonto aktiv</span>
+                        <h3 style="margin: 0.15rem 0 0; font-size: 1.35rem; color: var(--primary-color);">
+                            Willkommen, <span id="mb-user-fullname">Schütze</span> 
+                            <span id="mb-user-badge" class="badge" style="font-size: 0.75rem; background: var(--primary-color); color: white; padding: 3px 8px; border-radius: 8px; vertical-align: middle; margin-left: 6px;">Mitglied</span>
+                        </h3>
+                    </div>
+                    <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+                        <a href="https://sps-b55.pages.dev/" target="_blank" class="btn btn-primary" style="padding: 0.5rem 1.2rem; font-size: 0.9rem; border-radius: 20px; text-decoration: none;">
+                            🎯 Zur Schützen-App
+                        </a>
+                        <button id="btn-mb-logout" class="btn btn-outline" style="padding: 0.5rem 1rem; font-size: 0.9rem; border-radius: 20px;">
+                            Abmelden
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Haupt-Tabs Navigation (Standard: Dokumente aktiv!) -->
+                <div class="gallery-filters" style="margin-bottom: 2rem; justify-content: flex-start; overflow-x: auto; padding-bottom: 0.5rem; gap: 0.75rem;">
+                    <button class="gallery-filter-btn active" data-tab="dokumente">📄 Vereinsdokumente &amp; Archiv</button>
+                    <button class="gallery-filter-btn" id="tab-btn-schichten" data-tab="schichten" style="display: none;">📅 Helfer- &amp; Schichtplan</button>
+                    <button class="gallery-filter-btn" data-tab="fotos">📷 Vereinsfotos (Immich)</button>
+                    <button class="gallery-filter-btn" id="tab-btn-vorstand" data-tab="vorstand" style="display: none; border-color: var(--accent-color); color: var(--accent-color); font-weight: 700;">📂 Vorstandsdokumente</button>
+                    <a id="link-btn-kasse" href="/kasse/" target="_blank" rel="noopener noreferrer" class="gallery-filter-btn" style="display: none; text-decoration: none; border-color: #10b981; color: #047857; font-weight: 700; align-items: center; gap: 0.35rem;" onclick="this.href = (window.location.protocol === 'file:' ? '../../kasse/index.html' : '/kasse/');" title="Festkasse für Helfer im Festzelt & Schützenhaus öffnen">
+                        🛒 Festkasse (POS) ↗
+                    </a>
+                </div>
+
+                <!-- ========================================== -->
+                <!-- TAB 1: DOKUMENTE & ARCHIV (Standard aktiv) -->
+                <!-- ========================================== -->
+                <div id="tab-content-dokumente" class="mb-tab-pane">
+                    <div class="glass-card mb-4" style="background: rgba(15, 60, 92, 0.02); padding: 1.5rem 2rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1.25rem;">
+                            <div>
+                                <h3 style="margin-bottom: 0.25rem; font-size: 1.25rem;">📄 Historisches Vereinsarchiv &amp; Dokumente (1919–heute)</h3>
+                                <p style="color: var(--text-muted); font-size: 0.92rem; margin: 0;">
+                                    Durchsuche über 320 historische GV-Protokolle, Jahresberichte, Traktanden, Statuten und Chroniken im Volltext.
+                                </p>
+                            </div>
+                            <!-- Suchfeld -->
+                            <search style="display: block; position: relative; min-width: 280px; width: 100%; max-width: 400px;">
+                                <span aria-hidden="true" style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); opacity: 0.5;">🔍</span>
+                                <input type="text" id="doc-search-input" aria-label="Vereinsdokumente durchsuchen" placeholder="Stichwort, Name oder Jahr (z.B. 1954, Standbau)..." style="width: 100%; padding: 0.65rem 1rem 0.65rem 2.4rem; border-radius: 25px; border: 1px solid var(--glass-border); font-size: 0.9rem; background: #ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
+                            </search>
+                        </div>
+
+                        <!-- Ordner-Filter Bar -->
+                        <div id="doc-folder-bar" style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid rgba(15, 60, 92, 0.06);">
+                            <button class="doc-folder-btn active" data-folder="all">
+                                <span>📁</span> <span>Alle Dokumente</span>
+                            </button>
+                            <button class="doc-folder-btn" data-folder="gv">
+                                <span>🗳️</span> <span>Generalversammlung</span> <span style="opacity: 0.7; font-size: 0.8rem;">(1919–heute)</span>
+                            </button>
+                            <button class="doc-folder-btn" data-folder="berichte">
+                                <span>📊</span> <span>Jahresberichte</span>
+                            </button>
+                            <button class="doc-folder-btn" data-folder="einladungen">
+                                <span>✉️</span> <span>Einladungen &amp; Traktanden</span>
+                            </button>
+                            <button class="doc-folder-btn" data-folder="chronik">
+                                <span>📖</span> <span>Chronik &amp; Presse</span>
+                            </button>
+                            <button class="doc-folder-btn" data-folder="statuten">
+                                <span>📜</span> <span>Statuten &amp; Reglemente</span>
+                            </button>
+                        </div>
+
+                        <!-- Epochen / Jahrzehnt-Zeitleiste -->
+                        <div id="doc-decade-bar" style="display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; margin-top: 0.85rem; padding-top: 0.75rem; border-top: 1px dashed rgba(15, 60, 92, 0.08);">
+                            <span style="font-size: 0.78rem; font-weight: 700; color: var(--text-muted); margin-right: 0.25rem;">🗓️ Zeitleiste:</span>
+                            <button class="doc-decade-btn active" data-decade="all">Alle Jahre</button>
+                            <button class="doc-decade-btn" data-decade="2020">2020er</button>
+                            <button class="doc-decade-btn" data-decade="2010">2010er</button>
+                            <button class="doc-decade-btn" data-decade="2000">2000er</button>
+                            <button class="doc-decade-btn" data-decade="1990">1990er</button>
+                            <button class="doc-decade-btn" data-decade="1980">1980er</button>
+                            <button class="doc-decade-btn" data-decade="1950-1979">1950–1979</button>
+                            <button class="doc-decade-btn" data-decade="1919-1949">1919–1949 (Gründerzeit)</button>
+                        </div>
+
+                        <!-- Zähler & Filterstatus -->
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted); flex-wrap: wrap; gap: 0.5rem;">
+                            <span id="doc-count-badge" style="font-weight: 600;">Lade Dokumente...</span>
+                            <span id="doc-sort-info" style="font-size: 0.8rem;">Chronologisch sortiert (neueste zuerst) • 💡 Tipp: Klicke auf «📖 Lesen» für die Volltext-Ansicht</span>
+                        </div>
+                    </div>
+
+                    <!-- Grid für Dokumentenkarten -->
+                    <div class="grid-2" id="club-documents-grid" style="gap: 1.25rem;">
+                        <div class="glass-card" style="grid-column: 1 / -1; text-align: center; padding: 3rem 2rem;">
+                            <div class="loading-spinner">Dokumente aus Supabase werden geladen...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ========================================== -->
+                <!-- TAB 2: HELFER- & SCHICHTPLAN (APLANO)      -->
+                <!-- ========================================== -->
+                <div id="tab-content-schichten" class="mb-tab-pane" style="display: none;"></div>
+
+                <!-- ========================================== -->
+                <!-- TAB 2: FOTOS (IMMICH)                     -->
+                <!-- ========================================== -->
+                <div id="tab-content-fotos" class="mb-tab-pane" style="display: none;">
+                    <div class="glass-card mb-4" style="background: rgba(15, 60, 92, 0.02); padding: 1.5rem 2rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                            <div>
+                                <h3 style="margin-bottom: 0.25rem; font-size: 1.25rem;">📷 Vereinsfotos &amp; Alben (Immich)</h3>
+                                <p style="color: var(--text-muted); font-size: 0.92rem; margin: 0;">
+                                    Fotos von Wettkämpfen, Absenden, Vereinsreisen und gesellschaftlichen Anlässen direkt aus unserem privaten Fotoarchiv.
+                                </p>
+                            </div>
+                            <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                                <span id="immich-status-pill" style="background: rgba(16, 185, 129, 0.08); color: #059669; font-weight: 600; padding: 5px 12px; border-radius: 20px; font-size: 0.82rem; display: inline-flex; align-items: center; gap: 7px; border: 1px solid rgba(16, 185, 129, 0.25); cursor: default; user-select: none;" title="Immich-Fotoarchiv auf CT 116 ist online und betriebsbereit">
+                                    <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);"></span>
+                                    <span>Fotoarchiv online</span>
+                                </span>
+                                <a href="verein.html#galerie" class="btn btn-outline" style="font-size: 0.88rem; padding: 0.45rem 1.2rem; border-radius: 20px;">
+                                    🖼️ Vollständige Fotogalerie öffnen
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- UPLOAD-CONTAINER FÜR MITGLIEDER -->
+                    <div class="glass-card mb-4" id="member-upload-box" style="background: #ffffff; border: 2px dashed rgba(15, 60, 92, 0.25); border-radius: 16px; padding: 2rem; transition: var(--transition);">
+                        <div style="text-align: center; max-width: 580px; margin: 0 auto;">
+                            <div style="font-size: 3rem; margin-bottom: 0.5rem; line-height: 1;">📸</div>
+                            <h3 style="margin: 0 0 0.5rem 0; color: var(--primary-color); font-size: 1.35rem;">Fotos vom Anlass oder Training hochladen</h3>
+                            <p style="color: var(--text-muted); font-size: 0.95rem; line-height: 1.5; margin: 0 0 1.25rem 0;">
+                                Ziehe Fotos hierher oder wähle sie aus deiner Fotogalerie. iPhone-Aufnahmen (HEIC) werden automatisch umgewandelt und sicher im Vereinsarchiv gespeichert.
+                            </p>
+                            
+                            <input type="file" id="member-upload-file-input" accept="image/*,.heic,.heif,video/*" multiple style="display: none;">
+                            <input type="file" id="member-upload-camera-input" accept="image/*" capture="environment" style="display: none;">
+
+                            <div style="display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap;">
+                                <button type="button" class="btn btn-primary" onclick="document.getElementById('member-upload-file-input').click()" style="padding: 0.65rem 1.6rem; border-radius: 25px; font-weight: 700; display: inline-flex; align-items: center; gap: 0.5rem; box-shadow: 0 4px 15px rgba(15, 60, 92, 0.15);">
+                                    <span>📁</span> <span>Fotos auswählen</span>
+                                </button>
+                                <button type="button" class="btn btn-outline" onclick="document.getElementById('member-upload-camera-input').click()" style="padding: 0.65rem 1.3rem; border-radius: 25px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem;">
+                                    <span>📷</span> <span>Foto aufnehmen</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Upload Queue / Progress -->
+                        <div id="member-upload-queue" style="display: none; margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid rgba(15, 60, 92, 0.08);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem;">
+                                <div>
+                                    <h4 style="margin: 0; font-size: 1rem; color: var(--primary-color);">
+                                        Warteschlange (<span id="queue-count-badge">0</span> Dateien)
+                                    </h4>
+                                    <span id="queue-size-info" style="font-size: 0.8rem; color: var(--text-muted);"></span>
+                                </div>
+                                <div style="display: flex; gap: 0.5rem;">
+                                    <button type="button" id="btn-do-upload" class="btn btn-primary" style="padding: 0.45rem 1.2rem; font-size: 0.88rem; border-radius: 20px; font-weight: 700;">
+                                        🚀 Hochladen starten
+                                    </button>
+                                    <button type="button" id="btn-cancel-queue" class="btn btn-outline" style="padding: 0.45rem 0.9rem; font-size: 0.88rem; border-radius: 20px;">
+                                        Leeren
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Progress Bar -->
+                            <div id="upload-progress-container" style="display: none; margin-bottom: 1.25rem;">
+                                <div style="display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.35rem; font-weight: 600;">
+                                    <span id="upload-current-file-text">Bereite Upload vor...</span>
+                                    <span id="upload-pct-text">0%</span>
+                                </div>
+                                <div style="height: 7px; width: 100%; background: rgba(15, 60, 92, 0.08); border-radius: 4px; overflow: hidden;">
+                                    <div id="upload-progress-fill" style="height: 100%; width: 0%; background: linear-gradient(90deg, var(--primary-color), var(--accent-color)); transition: width 0.2s ease;"></div>
+                                </div>
+                            </div>
+
+                            <!-- Preview Grid -->
+                            <div id="member-upload-previews" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.75rem; max-height: 320px; overflow-y: auto; padding-right: 4px;"></div>
+                        </div>
+
+                        <!-- Alert Box -->
+                        <div id="upload-message-box" style="display: none; margin-top: 1.25rem; padding: 0.9rem 1.2rem; border-radius: 12px; font-size: 0.92rem; text-align: center;"></div>
+                    </div>
+
+                    <!-- DIE 3 VEREINHEITLICHTEN RUBRIKEN -->
+                    <div class="grid-3" id="immich-rubriken-grid" style="margin-bottom: 2rem;">
+                        <div class="glass-card" style="padding: 1.75rem; text-align: center; display: flex; flex-direction: column; justify-content: space-between;">
+                            <div>
+                                <div style="font-size: 2.8rem; margin-bottom: 0.5rem;">🎉</div>
+                                <h4 style="margin-bottom: 0.5rem; color: var(--primary-color);">Anlässe &amp; Events</h4>
+                                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1.25rem;">Wettkämpfe, Feste, Vereinsreisen und gesellige Momente im Schützenhaus.</p>
+                            </div>
+                            <a href="verein.html?kategorie=events#galerie" class="btn btn-outline" style="font-size: 0.85rem; width: 100%;">In Galerie öffnen</a>
+                        </div>
+                        <div class="glass-card" style="padding: 1.75rem; text-align: center; display: flex; flex-direction: column; justify-content: space-between;">
+                            <div>
+                                <div style="font-size: 2.8rem; margin-bottom: 0.5rem;">🎯</div>
+                                <h4 style="margin-bottom: 0.5rem; color: var(--primary-color);">Nachwuchs &amp; Jugend</h4>
+                                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1.25rem;">Nachwuchskurse, Jugendtage, Juniorentrainings und Schützen-Nachwuchs.</p>
+                            </div>
+                            <a href="verein.html?kategorie=nachwuchs#galerie" class="btn btn-outline" style="font-size: 0.85rem; width: 100%;">In Galerie öffnen</a>
+                        </div>
+                        <div class="glass-card" style="padding: 1.75rem; text-align: center; display: flex; flex-direction: column; justify-content: space-between;">
+                            <div>
+                                <div style="font-size: 2.8rem; margin-bottom: 0.5rem;">🏛️</div>
+                                <h4 style="margin-bottom: 0.5rem; color: var(--primary-color);">Vereinsgeschichte</h4>
+                                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1.25rem;">Historische Aufnahmen, Bau des Schützenhauses Rüteli und Chronik ab 1919.</p>
+                            </div>
+                            <a href="verein.html?kategorie=geschichte#galerie" class="btn btn-outline" style="font-size: 0.85rem; width: 100%;">In Galerie öffnen</a>
+                        </div>
+                    </div>
+
+                    <!-- DYNAMISCH PUBLIZIERTE ALBEN AUS SUPABASE -->
+                    <div style="margin-top: 1.5rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+                            <div>
+                                <h4 style="margin: 0; font-size: 1.15rem; color: var(--primary-color); display: flex; align-items: center; gap: 0.5rem;">
+                                    <span>📁</span> <span>Publizierte Fotoalben</span>
+                                </h4>
+                                <p style="margin: 0.2rem 0 0 0; font-size: 0.85rem; color: var(--text-muted);">
+                                    Kuratierte Alben direkt aus unserem privaten Fotoarchiv.
+                                </p>
+                            </div>
+                            <span id="member-albums-count" class="badge" style="background: rgba(15, 60, 92, 0.08); color: var(--primary-color); font-size: 0.8rem; font-weight: 700; padding: 4px 10px; border-radius: 12px;">Lade Alben...</span>
+                        </div>
+                        <div class="grid-3" id="immich-published-albums-grid">
+                            <div style="grid-column: 1 / -1; text-align: center; padding: 2rem; color: var(--text-muted);">
+                                <div class="loading-spinner">Lade publizierte Alben...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ========================================== -->
+                <!-- TAB 3: VORSTANDSBEREICH (RBAC geschützt)  -->
+                <!-- ========================================== -->
+                <div id="tab-content-vorstand" class="mb-tab-pane" style="display: none;">
+                    <div class="glass-card" style="border: 2px solid rgba(220, 38, 38, 0.25); background: rgba(220, 38, 38, 0.02); padding: 2rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+                            <div>
+                                <span class="badge" style="background: var(--accent-color); color: white; margin-bottom: 0.5rem; display: inline-block;">Vertraulich • Nur Vorstand</span>
+                                <h3 style="margin-bottom: 0.25rem;">📂 Vertrauliches Vorstandsarchiv &amp; Vorstandsportal</h3>
+                                <p style="color: var(--text-muted); font-size: 0.95rem; margin: 0;">Direktzugriff auf über 820 interne Sitzungsprotokolle (ab 1973), Verträge, Bauakten, Versicherungen und Schiessbetrieb.</p>
+                            </div>
+                            <a href="vorstand/index.html" class="btn btn-primary" style="font-size: 0.9rem; padding: 0.6rem 1.4rem; border-radius: 20px; text-decoration: none;">
+                                👑 Zum Vorstandsportal &amp; KI-Archivar wechseln
+                            </a>
+                        </div>
+                        
+                        <div class="grid-2" style="margin-bottom: 1.5rem;">
+                            <div style="background: white; border-radius: 12px; padding: 1.5rem; border: 1px solid var(--glass-border);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap;">
+                                    <h4 style="margin: 0; display: flex; align-items: center; gap: 0.5rem; font-size: 1.1rem;">
+                                        <span>📝</span> Vorstands-Dokumente (<span id="board-doc-count">0</span>)
+                                    </h4>
+                                    <select id="board-cat-filter" aria-label="Kategorie filtern" style="padding: 0.35rem 0.7rem; border-radius: 8px; border: 1px solid var(--glass-border); font-size: 0.82rem; font-weight: 600;">
+                                        <option value="all">Alle Vorstands-Kategorien</option>
+                                        <option value="vorstand">📋 Sitzungsprotokolle &amp; Führung</option>
+                                        <option value="gebaeude">🏠 Schützenhaus &amp; Bau</option>
+                                        <option value="versicherungen">🛡️ Versicherungen &amp; Verträge</option>
+                                        <option value="anlaesse">🎪 Vereinsanlässe &amp; Reisen</option>
+                                        <option value="schiessbetrieb">🎯 Schiessbetrieb &amp; Nachwuchs</option>
+                                    </select>
+                                </div>
+                                <input type="text" id="board-doc-search" aria-label="Vorstandsdokumente durchsuchen" placeholder="Vorstandsprotokolle oder Bauakten durchsuchen..." style="width: 100%; padding: 0.5rem 0.85rem; border-radius: 10px; border: 1px solid var(--glass-border); font-size: 0.85rem; margin-bottom: 0.75rem;">
+                                <ul id="board-protocol-list" style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.35rem; max-height: 360px; overflow-y: auto;">
+                                    <li style="padding: 0.75rem 0; color: var(--text-muted); font-size: 0.88rem;">Lade Vorstandsdokumente...</li>
+                                </ul>
+                            </div>
+                            <div style="background: white; border-radius: 12px; padding: 1.5rem; border: 1px solid var(--glass-border); display: flex; flex-direction: column; justify-content: space-between;">
+                                <div>
+                                    <h4 style="margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; font-size: 1.1rem;">
+                                        <span>🤖</span> Dokumenten-Management &amp; KI-Archivar
+                                    </h4>
+                                    <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.6; margin-bottom: 1rem;">
+                                        Im Vorstandsportal unter <strong>«Archiv &amp; KI-Wissen»</strong> kannst du neue Protokolle direkt hochladen, OCR-Volltexte im Split-Screen bearbeiten und dem KI-Archivar komplexe Fragen zu Beschlüssen und Verträgen stellen.
+                                    </p>
+                                </div>
+                                <a href="vorstand/index.html" class="btn btn-outline" style="font-size: 0.88rem; text-align: center; text-decoration: none; border-radius: 12px;">
+                                    📂 Archiv-Verwaltung im Vorstandsportal öffnen
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ========================================== -->
+    <!-- SPLIT-SCREEN LESEMODAL FÜR MITGLIEDER      -->
+    <!-- ========================================== -->
+    <div id="member-doc-reader-modal" role="dialog" aria-modal="true" aria-labelledby="reader-modal-title" style="display: none; position: fixed; inset: 0; z-index: 9999; background: rgba(15, 23, 42, 0.72); backdrop-filter: blur(5px); align-items: center; justify-content: center; padding: 1.25rem;">
+        <div style="background: #ffffff; width: 100%; max-width: 1240px; height: 88vh; border-radius: 18px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.4); display: flex; flex-direction: column; overflow: hidden;">
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; background: #0f3c5c; color: #ffffff; gap: 1rem; flex-wrap: wrap;">
+                <div>
+                    <div id="reader-modal-meta" style="font-size: 0.75rem; opacity: 0.85; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700;">Vereinsarchiv</div>
+                    <h3 id="reader-modal-title" style="margin: 0.15rem 0 0; font-size: 1.15rem; color: #ffffff;">Dokument</h3>
+                </div>
+                <div style="display: flex; gap: 0.6rem; align-items: center;">
+                    <a id="reader-modal-download" href="#" target="_blank" rel="noopener" class="btn btn-outline" style="background: rgba(255,255,255,0.12); color: #ffffff; border-color: rgba(255,255,255,0.3); font-size: 0.82rem; padding: 0.4rem 0.95rem; border-radius: 20px; text-decoration: none;">
+                        📥 Originaldatei öffnen
+                    </a>
+                    <button type="button" aria-label="Dokumentenansicht schliessen" onclick="closeMemberDocReaderModal()" style="background: rgba(255,255,255,0.15); border: none; color: #ffffff; width: 34px; height: 34px; border-radius: 50%; cursor: pointer; font-size: 1rem; font-weight: 700;">✕</button>
+                </div>
+            </div>
+            <div id="reader-modal-body" style="display: grid; grid-template-columns: 1fr 1fr; flex: 1; min-height: 0; background: #f8fafc;">
+                <div id="reader-modal-preview" style="border-right: 1px solid #e2e8f0; height: 100%; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #0f172a;"></div>
+                <div style="height: 100%; overflow-y: auto; padding: 1.5rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid #e2e8f0;">
+                        <strong style="color: #0f3c5c; font-size: 0.92rem;">📖 Extrahierter Volltext / Transkription</strong>
+                        <span id="reader-modal-charcount" style="font-size: 0.78rem; color: #64748b;"></span>
+                    </div>
+                    <div id="reader-modal-text" style="font-family: Georgia, 'Times New Roman', serif; font-size: 0.96rem; line-height: 1.7; color: #1e293b; white-space: pre-wrap;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <site-footer></site-footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js" integrity="sha384-OTofQ0MEeiSgh62havBcemCIK0gqj809wX6UA0uPISNMRnR6NZyCdGzX3SbLrgwL" crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
+    <script src="js/auth-session.js" defer></script>
+    <script src="js/member-shifts.js" defer></script>
+    <script src="js/components.js" defer></script>
+    <script src="js/main.js" defer></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const loggedOutView = document.getElementById('mb-logged-out');
+            const loggedInView = document.getElementById('mb-logged-in');
+            const userNameEl = document.getElementById('mb-user-fullname');
+            const userBadgeEl = document.getElementById('mb-user-badge');
+            const tabVorstandBtn = document.getElementById('tab-btn-vorstand');
+            const btnLogin = document.getElementById('btn-mb-login');
+            const btnLogout = document.getElementById('btn-mb-logout');
+
+            // Login Trigger -> Weiterleitung zum Web-App Login mit Rücksprung zu intern.html
+            if (btnLogin) {
+                btnLogin.addEventListener('click', () => {
+                    window.AuthSession.login('intern.html');
+                });
+            }
+
+            // Logout Trigger
+            if (btnLogout) {
+                btnLogout.addEventListener('click', () => {
+                    if (window.AuthSession) {
+                        window.AuthSession.logout();
+                    }
+                });
+            }
+
+            // Tab-Navigation im Mitgliederbereich (Standard: Dokumente)
+            const mainTabButtons = document.querySelectorAll('.intern-container .gallery-filters .gallery-filter-btn');
+            mainTabButtons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const targetTab = btn.getAttribute('data-tab');
+                    mainTabButtons.forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+
+                    document.querySelectorAll('.mb-tab-pane').forEach(pane => {
+                        pane.style.display = 'none';
+                    });
+                    const activePane = document.getElementById(`tab-content-${targetTab}`);
+                    if (activePane) {
+                        activePane.style.display = 'block';
+                        if (targetTab === 'fotos') {
+                            loadMemberAlbums();
+                        } else if (targetTab === 'schichten') {
+                            MemberShifts.load();
+                        }
+                    }
+                });
+            });
+
+            // Status-Variablen vor Auth-Listener initialisieren (verhindert TDZ-ReferenceError bei initialem Callback)
+            let clubDocuments = [];
+            let activeFolder = 'all';
+            let activeDecade = 'all';
+
+            // Status-Aktualisierung über AuthSession (strikt nur mit verifiziertem GoTrue-JWT)
+            if (window.AuthSession) {
+                window.AuthSession.onChange(async user => {
+                    const hasJwt = user ? await window.AuthSession.hasValidJwt() : false;
+                    if (user && hasJwt) {
+                        if (loggedOutView) loggedOutView.style.display = 'none';
+                        if (loggedInView) loggedInView.style.display = 'block';
+
+                        const displayName = user.name || (user.vorname ? `${user.vorname} ${user.nachname || ''}` : 'Vereinsmitglied');
+                        if (userNameEl) userNameEl.textContent = displayName;
+
+                        const isVorstand = window.AuthSession.isVorstand();
+                        if (userBadgeEl) {
+                            userBadgeEl.textContent = isVorstand ? 'Vorstand' : 'Mitglied';
+                            userBadgeEl.style.background = isVorstand ? 'var(--accent-color)' : 'var(--primary-color)';
+                        }
+
+                        // Vorstand-Tab nur für Vorstand/Admin einblenden
+                        if (tabVorstandBtn) {
+                            tabVorstandBtn.style.display = isVorstand ? 'inline-block' : 'none';
+                        }
+
+                        // Geschützte Daten erst nach verifiziertem JWT laden
+                        checkMemberModuleToggles();
+                        loadClubDocuments();
+                        const activeFotosTab = document.querySelector('.intern-container .gallery-filter-btn[data-tab="fotos"].active');
+                        if (activeFotosTab) {
+                            loadMemberAlbums();
+                        }
+                    } else {
+                        if (loggedOutView) loggedOutView.style.display = 'block';
+                        if (loggedInView) loggedInView.style.display = 'none';
+                        clubDocuments = [];
+                        const docGrid = document.getElementById('club-documents-grid');
+                        const boardList = document.getElementById('board-protocol-list');
+                        const albGrid = document.getElementById('member-albums-grid');
+                        if (docGrid) docGrid.innerHTML = '';
+                        if (boardList) boardList.innerHTML = '';
+                        if (albGrid) albGrid.innerHTML = '';
+                        if (user && !hasJwt) {
+                            const statusMsg = document.getElementById('pin-login-status') || (loggedOutView ? loggedOutView.querySelector('p') : null);
+                            if (statusMsg) {
+                                statusMsg.textContent = 'Aus Sicherheitsgründen benötigt der Mitgliederbereich eine bestätigte E-Mail-Anmeldung (OTP-Code). Bitte melde dich über die Schützen-App neu an.';
+                            }
+                        }
+                    }
+                });
+            }
+
+            // ============================================================
+            // Freigabesteuerung Schichtplan & Festkasse (über Vorstandsportal)
+            // ============================================================
+            function getSupabase() {
+                if (window.AuthSession && typeof window.AuthSession.getSupabase === 'function') {
+                    const client = window.AuthSession.getSupabase();
+                    if (client) return client;
+                }
+                if (window.AuthSession && window.AuthSession._supabase) {
+                    return window.AuthSession._supabase;
+                }
+                if (window.supabaseClient) {
+                    return window.supabaseClient;
+                }
+                if (window.supabase && typeof window.supabase.createClient === 'function') {
+                    const SUPABASE_URL = 'https://supabase-muhen.danfamily.uk';
+                    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
+                    return window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                }
+                return null;
+            }
+
+            async function checkMemberModuleToggles() {
+                try {
+                    if (!window.AuthSession || !(await window.AuthSession.hasValidJwt())) return;
+                    const supa = getSupabase();
+                    if (!supa) return;
+
+                    const { data, error } = await supa
+                        .from('system_app_configs')
+                        .select('key, value')
+                        .in('key', ['member_schichtplan_enabled', 'member_festkasse_enabled']);
+
+                    if (error || !data) return;
+
+                    const isSchichtEnabled = data.some(d => d.key === 'member_schichtplan_enabled' && d.value === 'true');
+                    const isKasseEnabled = data.some(d => d.key === 'member_festkasse_enabled' && d.value === 'true');
+                    const isVorstand = window.AuthSession && window.AuthSession.isVorstand();
+
+                    // Global merken (z.B. für Schnellstart-Banner in member-shifts.js)
+                    window.__member_festkasse_enabled = isKasseEnabled;
+
+                    const tabSchichten = document.getElementById('tab-btn-schichten');
+                    const linkKasse = document.getElementById('link-btn-kasse');
+
+                    if (tabSchichten) {
+                        if (isSchichtEnabled) {
+                            tabSchichten.style.display = 'inline-block';
+                            tabSchichten.title = 'Helfer- & Schichtplan für Vereinsanlässe';
+                            tabSchichten.innerHTML = '📅 Helfer- &amp; Schichtplan';
+                        } else {
+                            tabSchichten.style.display = 'none';
+                            // Falls Schichten-Tab gerade aktiv war, auf Dokumente zurückspringen
+                            if (tabSchichten.classList.contains('active')) {
+                                const docBtn = document.querySelector('[data-tab="dokumente"]');
+                                if (docBtn) docBtn.click();
+                            }
+                        }
+                    }
+
+                    if (linkKasse) {
+                        if (isKasseEnabled) {
+                            linkKasse.style.display = 'inline-flex';
+                            linkKasse.title = 'Festkasse für Helfer im Festzelt & Schützenhaus öffnen';
+                            linkKasse.innerHTML = '🛒 Festkasse (POS) ↗';
+                        } else {
+                            linkKasse.style.display = 'none';
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Fehler beim Prüfen der Modulfreigaben:', e);
+                }
+            }
+
+            // Modulfreigaben werden erst nach verifiziertem JWT im Auth-Listener geladen
+
+            // ============================================================
+            // Mitglieder Foto-Uploader (Immich Integration)
+            // ============================================================
+            function initPhotoUploader() {
+                const uploadBox = document.getElementById('member-upload-box');
+                const fileInput = document.getElementById('member-upload-file-input');
+                const cameraInput = document.getElementById('member-upload-camera-input');
+                const queueContainer = document.getElementById('member-upload-queue');
+                const queueCountBadge = document.getElementById('queue-count-badge');
+                const queueSizeInfo = document.getElementById('queue-size-info');
+                const previewGrid = document.getElementById('member-upload-previews');
+                const btnDoUpload = document.getElementById('btn-do-upload');
+                const btnCancelQueue = document.getElementById('btn-cancel-queue');
+                const progressContainer = document.getElementById('upload-progress-container');
+                const progressBar = document.getElementById('upload-progress-fill');
+                const progressText = document.getElementById('upload-current-file-text');
+                const progressPct = document.getElementById('upload-pct-text');
+                const messageBox = document.getElementById('upload-message-box');
+                const statusPill = document.getElementById('immich-status-pill');
+
+                if (!uploadBox || !fileInput) return;
+
+                let uploadQueue = [];
+
+                // 1. Healthcheck gegen Immich Edge Function (nur bei verifizierter Anmeldung)
+                const checkImmichHealth = async () => {
+                    if (!window.AuthSession || !(await window.AuthSession.hasValidJwt())) return;
+                    try {
+                        const res = await fetch('https://supabase-muhen.danfamily.uk/functions/v1/immich-upload');
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data && data.status === 'online' && statusPill) {
+                                const count = data.album?.count || 0;
+                                statusPill.style.background = 'rgba(16, 185, 129, 0.08)';
+                                statusPill.style.color = '#059669';
+                                statusPill.style.borderColor = 'rgba(16, 185, 129, 0.25)';
+                                statusPill.title = 'Immich-Fotoarchiv auf CT 116 ist online und betriebsbereit';
+                                statusPill.innerHTML = `
+                                    <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);"></span>
+                                    <span>Fotoarchiv verbunden (${count} Fotos)</span>
+                                `;
+                            } else if (statusPill) {
+                                setStatusPillOffline();
+                            }
+                        } else if (statusPill) {
+                            setStatusPillOffline();
+                        }
+                    } catch (e) {
+                        console.warn('Immich-Status konnte nicht geladen werden:', e);
+                        if (statusPill) setStatusPillOffline();
+                    }
+                };
+
+                function setStatusPillOffline() {
+                    if (!statusPill) return;
+                    statusPill.style.background = 'rgba(239, 68, 68, 0.08)';
+                    statusPill.style.color = '#dc2626';
+                    statusPill.style.borderColor = 'rgba(239, 68, 68, 0.25)';
+                    statusPill.title = 'Fotoarchiv ist vorübergehend offline';
+                    statusPill.innerHTML = `
+                        <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ef4444;"></span>
+                        <span>Fotoarchiv vorübergehend offline</span>
+                    `;
+                }
+                checkImmichHealth();
+
+                // 2. Drag & Drop Listener
+                ['dragenter', 'dragover'].forEach(evtName => {
+                    uploadBox.addEventListener(evtName, (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        uploadBox.style.borderColor = 'var(--primary-color)';
+                        uploadBox.style.background = 'rgba(15, 60, 92, 0.04)';
+                    });
+                });
+
+                ['dragleave', 'drop'].forEach(evtName => {
+                    uploadBox.addEventListener(evtName, (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        uploadBox.style.borderColor = 'rgba(15, 60, 92, 0.25)';
+                        uploadBox.style.background = '#ffffff';
+                    });
+                });
+
+                uploadBox.addEventListener('drop', (e) => {
+                    const dt = e.dataTransfer;
+                    if (dt && dt.files && dt.files.length > 0) {
+                        addFilesToQueue(Array.from(dt.files));
+                    }
+                });
+
+                fileInput.addEventListener('change', () => {
+                    if (fileInput.files && fileInput.files.length > 0) {
+                        addFilesToQueue(Array.from(fileInput.files));
+                        fileInput.value = '';
+                    }
+                });
+
+                if (cameraInput) {
+                    cameraInput.addEventListener('change', () => {
+                        if (cameraInput.files && cameraInput.files.length > 0) {
+                            addFilesToQueue(Array.from(cameraInput.files));
+                            cameraInput.value = '';
+                        }
+                    });
+                }
+
+                function formatBytes(bytes) {
+                    if (bytes < 1024) return bytes + ' B';
+                    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+                    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+                }
+
+                function addFilesToQueue(newFiles) {
+                    messageBox.style.display = 'none';
+                    newFiles.forEach(file => {
+                        const isImage = file.type.startsWith('image/') || file.name.match(/\.(heic|heif|jpg|jpeg|png|webp)$/i);
+                        const isVideo = file.type.startsWith('video/') || file.name.match(/\.(mp4|mov|quicktime)$/i);
+                        if (isImage || isVideo) {
+                            uploadQueue.push({
+                                file: file,
+                                id: 'upload_' + Math.random().toString(36).substring(2, 9),
+                                status: 'ready',
+                                previewUrl: isImage ? URL.createObjectURL(file) : null
+                            });
+                        }
+                    });
+                    renderQueue();
+                }
+
+                function renderQueue() {
+                    if (uploadQueue.length === 0) {
+                        queueContainer.style.display = 'none';
+                        return;
+                    }
+                    queueContainer.style.display = 'block';
+                    queueCountBadge.textContent = uploadQueue.length;
+
+                    const totalBytes = uploadQueue.reduce((sum, item) => sum + item.file.size, 0);
+                    queueSizeInfo.textContent = `Gesamtgrösse: ${formatBytes(totalBytes)}`;
+
+                    previewGrid.innerHTML = uploadQueue.map((item, idx) => {
+                        const isHeic = (item.file.name || '').match(/\.(heic|heif)$/i);
+                        const isVideo = (item.file.type || '').startsWith('video/');
+                        let thumbHtml = '';
+
+                        if (isVideo) {
+                            thumbHtml = `<div style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #0f3c5c; color: white; font-size: 1.5rem;">▶<span style="font-size: 0.65rem; margin-top: 4px; font-weight: 700;">VIDEO</span></div>`;
+                        } else if (isHeic) {
+                            thumbHtml = `<div style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #e2e8f0; color: #475569; font-size: 1.5rem;">📱<span style="font-size: 0.65rem; margin-top: 4px; font-weight: 700;">APPLE HEIC</span></div>`;
+                        } else if (item.previewUrl) {
+                            thumbHtml = `<img src="${item.previewUrl}" alt="Preview" style="width: 100%; height: 100%; object-fit: cover;">`;
+                        } else {
+                            thumbHtml = `<div style="height: 100%; display: flex; align-items: center; justify-content: center; background: #f1f5f9; font-size: 1.5rem;">🖼️</div>`;
+                        }
+
+                        let statusBadge = '';
+                        if (item.status === 'converting') statusBadge = '<span class="badge" style="position: absolute; bottom: 6px; left: 6px; background: #f59e0b; color: white; font-size: 0.65rem;">HEIC...</span>';
+                        else if (item.status === 'uploading') statusBadge = '<span class="badge" style="position: absolute; bottom: 6px; left: 6px; background: #3b82f6; color: white; font-size: 0.65rem;">Lade...</span>';
+                        else if (item.status === 'done') statusBadge = '<span class="badge" style="position: absolute; bottom: 6px; left: 6px; background: #10b981; color: white; font-size: 0.65rem;">✔ OK</span>';
+                        else if (item.status === 'error') statusBadge = '<span class="badge" style="position: absolute; bottom: 6px; left: 6px; background: #ef4444; color: white; font-size: 0.65rem;">Fehler</span>';
+
+                        const safeFileName = escapeHtmlSafe(item.file.name);
+                        return `
+                            <div style="position: relative; height: 110px; border-radius: 10px; overflow: hidden; border: 1px solid rgba(15, 60, 92, 0.12); background: #f8fafc;" title="${safeFileName}">
+                                ${thumbHtml}
+                                ${statusBadge}
+                                ${item.status === 'ready' ? `<button type="button" onclick="window.removeUploadItem(${idx})" style="position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,0.6); color: white; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1;">&times;</button>` : ''}
+                                <div style="position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.65); color: white; font-size: 0.68rem; padding: 2px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                    ${safeFileName}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+                window.removeUploadItem = function(idx) {
+                    if (uploadQueue[idx]) {
+                        if (uploadQueue[idx].previewUrl) URL.revokeObjectURL(uploadQueue[idx].previewUrl);
+                        uploadQueue.splice(idx, 1);
+                        renderQueue();
+                    }
+                };
+
+                btnCancelQueue.addEventListener('click', () => {
+                    uploadQueue.forEach(item => { if (item.previewUrl) URL.revokeObjectURL(item.previewUrl); });
+                    uploadQueue = [];
+                    renderQueue();
+                });
+
+                // 3. Upload-Vorgang starten
+                btnDoUpload.addEventListener('click', async () => {
+                    if (uploadQueue.length === 0) return;
+
+                    btnDoUpload.disabled = true;
+                    btnCancelQueue.disabled = true;
+                    progressContainer.style.display = 'block';
+
+                    let successCount = 0;
+                    let errorCount = 0;
+                    const totalFiles = uploadQueue.length;
+
+                    // Verifiziertes Auth-Token ermitteln (kein Anon-Key-Fallback)
+                    const authToken = window.AuthSession && typeof window.AuthSession.getAccessToken === 'function'
+                        ? await window.AuthSession.getAccessToken()
+                        : null;
+                    if (!authToken) {
+                        progressContainer.style.display = 'none';
+                        btnDoUpload.disabled = false;
+                        btnCancelQueue.disabled = false;
+                        messageBox.style.display = 'block';
+                        messageBox.style.background = 'rgba(239, 68, 68, 0.1)';
+                        messageBox.style.border = '1px solid #ef4444';
+                        messageBox.style.color = '#991b1b';
+                        messageBox.innerHTML = '<strong>🔒 Sitzung abgelaufen:</strong> Bitte melde dich erneut per E-Mail-Code in der Schützen-App an, um Fotos hochzuladen.';
+                        return;
+                    }
+
+                    const memberUser = window.AuthSession ? window.AuthSession.getUser() : null;
+                    const memberName = memberUser ? (memberUser.name || memberUser.vorname || 'Vereinsmitglied') : 'Vereinsmitglied';
+
+                    for (let i = 0; i < uploadQueue.length; i++) {
+                        const item = uploadQueue[i];
+                        const pct = Math.round(((i) / totalFiles) * 100);
+                        progressBar.style.width = pct + '%';
+                        progressPct.textContent = pct + '%';
+                        progressText.textContent = `Verarbeite ${i + 1}/${totalFiles}: ${item.file.name}...`;
+
+                        let fileToUpload = item.file;
+                        let fileName = item.file.name;
+
+                        // Apple HEIC Client-Konvertierung falls nötig
+                        const isHeic = (fileName || '').match(/\.(heic|heif)$/i);
+                        if (isHeic && typeof window.heic2any !== 'undefined') {
+                            item.status = 'converting';
+                            renderQueue();
+                            progressText.textContent = `Konvertiere iPhone HEIC ${i + 1}/${totalFiles}: ${fileName}...`;
+                            try {
+                                const converted = await window.heic2any({ blob: item.file, toType: 'image/jpeg', quality: 0.90 });
+                                fileToUpload = Array.isArray(converted) ? converted[0] : converted;
+                                fileName = fileName.replace(/\.(heic|heif)$/i, '.jpg');
+                            } catch (heicErr) {
+                                console.warn('HEIC Konvertierung fehlgeschlagen, lade Original hoch:', heicErr);
+                            }
+                        }
+
+                        item.status = 'uploading';
+                        renderQueue();
+
+                        const formData = new FormData();
+                        formData.append('file', fileToUpload, fileName);
+                        formData.append('memberName', memberName);
+
+                        try {
+                            const uploadRes = await fetch('https://supabase-muhen.danfamily.uk/functions/v1/immich-upload', {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': 'Bearer ' + authToken
+                                },
+                                body: formData
+                            });
+
+                            if (uploadRes.ok) {
+                                const data = await uploadRes.json();
+                                if (data && data.success) {
+                                    item.status = 'done';
+                                    successCount++;
+                                } else {
+                                    item.status = 'error';
+                                    errorCount++;
+                                }
+                            } else {
+                                item.status = 'error';
+                                errorCount++;
+                            }
+                        } catch (err) {
+                            console.error('Upload-Fehler bei ' + fileName, err);
+                            item.status = 'error';
+                            errorCount++;
+                        }
+
+                        renderQueue();
+                    }
+
+                    // Fertigstellung
+                    progressBar.style.width = '100%';
+                    progressPct.textContent = '100%';
+                    progressText.textContent = 'Upload abgeschlossen!';
+
+                    setTimeout(() => {
+                        progressContainer.style.display = 'none';
+                        btnDoUpload.disabled = false;
+                        btnCancelQueue.disabled = false;
+
+                        messageBox.style.display = 'block';
+                        if (errorCount === 0) {
+                            messageBox.style.background = 'rgba(16, 185, 129, 0.1)';
+                            messageBox.style.border = '1px solid #10b981';
+                            messageBox.style.color = '#065f46';
+                            messageBox.innerHTML = `<strong>🎉 ${successCount} Foto${successCount === 1 ? '' : 's'} erfolgreich ins Vereinsarchiv hochgeladen!</strong><br><span style="font-size: 0.85rem;">Vielen Dank für deinen Beitrag. Deine Bilder stehen dem Verein ab sofort zur Verfügung.</span>`;
+                            // Warteschlange nach Erfolg leeren
+                            setTimeout(() => {
+                                uploadQueue = [];
+                                renderQueue();
+                                checkImmichHealth();
+                            }, 3000);
+                        } else {
+                            messageBox.style.background = 'rgba(239, 68, 68, 0.1)';
+                            messageBox.style.border = '1px solid #ef4444';
+                            messageBox.style.color = '#991b1b';
+                            messageBox.innerHTML = `<strong>⚠️ ${successCount} von ${totalFiles} Fotos hochgeladen.</strong> Bei ${errorCount} Datei(en) ist ein Fehler aufgetreten.`;
+                        }
+                    }, 800);
+                });
+            }
+
+            // ============================================================
+            // Dokumentenarchiv: Laden, Ordner-Filter, Zeitleiste & Suche
+            // ============================================================
+            function escapeHtmlSafe(str) {
+                return String(str || '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+            }
+
+            function extractClubDocStoragePath(doc) {
+                if (!doc) return '';
+                if (doc.storage_path) return doc.storage_path;
+                const url = String(doc.file_url || '');
+                const marker = '/club-documents/';
+                const idx = url.indexOf(marker);
+                if (idx !== -1) {
+                    return decodeURIComponent(url.slice(idx + marker.length).split('?')[0]);
+                }
+                return '';
+            }
+
+            async function resolveMemberDocUrl(doc) {
+                if (!doc) return null;
+                const storagePath = extractClubDocStoragePath(doc);
+                if (storagePath && window.AuthSession && typeof window.AuthSession.createSignedStorageUrl === 'function') {
+                    const signed = await window.AuthSession.createSignedStorageUrl('club-documents', storagePath, 300);
+                    if (signed) return signed;
+                }
+                const rawUrl = String(doc.file_url || '');
+                if (rawUrl && !rawUrl.includes('/club-documents/')) {
+                    return `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
+                }
+                return null;
+            }
+
+            window.openMemberDocFile = async function(docId) {
+                const doc = clubDocuments.find(d => String(d.id) === String(docId));
+                if (!doc) return;
+                const win = window.open('about:blank', '_blank', 'noopener');
+                try {
+                    const signedUrl = await resolveMemberDocUrl(doc);
+                    if (!signedUrl) {
+                        if (win) win.close();
+                        let statusMsg = document.getElementById('doc-action-status');
+                        if (!statusMsg) {
+                            const grid = document.getElementById('club-documents-grid');
+                            if (grid && grid.parentNode) {
+                                statusMsg = document.createElement('div');
+                                statusMsg.id = 'doc-action-status';
+                                statusMsg.role = 'alert';
+                                statusMsg.style.cssText = 'background:#fef2f2; color:#991b1b; border:1px solid #fecaca; padding:0.75rem 1rem; border-radius:10px; margin-bottom:1rem; font-size:0.9rem;';
+                                grid.parentNode.insertBefore(statusMsg, grid);
+                            }
+                        }
+                        if (statusMsg) {
+                            statusMsg.textContent = 'Dokument-Link konnte nicht geladen werden. Bitte melde dich ggf. neu an.';
+                            statusMsg.style.display = 'block';
+                        }
+                        return;
+                    }
+                    if (win) {
+                        win.opener = null;
+                        win.location.replace(signedUrl);
+                    } else {
+                        window.location.href = signedUrl;
+                    }
+                } catch (e) {
+                    if (win) win.close();
+                    console.error('Fehler beim Öffnen des Dokuments:', e);
+                }
+            };
+
+            window.loadClubDocuments = async function loadClubDocuments() {
+                const grid = document.getElementById('club-documents-grid');
+                if (!grid) return;
+
+                const authHeader = (window.AuthSession && typeof window.AuthSession.getAuthHeader === 'function')
+                    ? await window.AuthSession.getAuthHeader()
+                    : null;
+                if (!authHeader) return;
+
+                const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+                const timeoutId = controller ? setTimeout(() => controller.abort(), 10000) : null;
+
+                try {
+                    const SUPABASE_REST_URL = 'https://supabase-muhen.danfamily.uk/rest/v1';
+                    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
+
+                    const res = await fetch(`${SUPABASE_REST_URL}/documents?select=*&order=year.desc.nullslast,sort_order.asc,title.asc&limit=2000`, {
+                        signal: controller ? controller.signal : undefined,
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': authHeader
+                        }
+                    });
+
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const data = await res.json();
+                    if (Array.isArray(data)) {
+                        clubDocuments = data;
+                        renderDocumentsGrid();
+                        renderBoardDocuments();
+                        return;
+                    }
+                } catch (e) {
+                    console.warn('Dokumente konnten nicht geladen werden:', e);
+                    grid.innerHTML = `
+                        <div class="glass-card" style="grid-column: 1 / -1; text-align: center; padding: 2.5rem 1.5rem;">
+                            <div style="font-size: 2rem; margin-bottom: 0.5rem;">⚠️</div>
+                            <p style="color: var(--text-muted); margin-bottom: 1rem;">Dokumente konnten nicht geladen werden. Bitte prüfe deine Internetverbindung oder Anmeldung.</p>
+                            <button type="button" class="btn btn-outline" onclick="loadClubDocuments()">Erneut versuchen</button>
+                        </div>
+                    `;
+                } finally {
+                    if (timeoutId) clearTimeout(timeoutId);
+                }
+            }
+
+            function renderDocumentsGrid() {
+                const grid = document.getElementById('club-documents-grid');
+                if (!grid) return;
+
+                const searchInput = document.getElementById('doc-search-input');
+                const query = searchInput ? searchInput.value.toLowerCase().trim() : '';
+
+                let filtered = clubDocuments.filter(doc => {
+                    if (doc.visibility === 'vorstand') return false;
+
+                    // Ordner-Filter
+                    if (activeFolder !== 'all') {
+                        if (doc.category !== activeFolder) return false;
+                    }
+
+                    // Jahrzehnt / Epochen-Filter
+                    if (activeDecade !== 'all') {
+                        const y = Number(doc.year) || 0;
+                        if (activeDecade === '2020' && (y < 2020 || y > 2029)) return false;
+                        if (activeDecade === '2010' && (y < 2010 || y > 2019)) return false;
+                        if (activeDecade === '2000' && (y < 2000 || y > 2009)) return false;
+                        if (activeDecade === '1990' && (y < 1990 || y > 1999)) return false;
+                        if (activeDecade === '1980' && (y < 1980 || y > 1989)) return false;
+                        if (activeDecade === '1950-1979' && (y < 1950 || y > 1979)) return false;
+                        if (activeDecade === '1919-1949' && (y < 1919 || y > 1949)) return false;
+                    }
+
+                    // Suche (Titel, Beschreibung, Jahr & Volltext)
+                    if (query) {
+                        const matchTitle = (doc.title || '').toLowerCase().includes(query);
+                        const matchDesc = (doc.description || '').toLowerCase().includes(query);
+                        const matchYear = doc.year ? String(doc.year).includes(query) : false;
+                        const matchContent = (doc.content_text || '').toLowerCase().includes(query);
+                        if (!matchTitle && !matchDesc && !matchYear && !matchContent) return false;
+                    }
+
+                    return true;
+                });
+
+                // Zähler aktualisieren
+                const countBadge = document.getElementById('doc-count-badge');
+                if (countBadge) {
+                    const folderNames = {
+                        'all': 'Dokumente insgesamt',
+                        'gv': 'in Generalversammlung',
+                        'berichte': 'in Jahresberichte',
+                        'einladungen': 'in Einladungen & Traktanden',
+                        'chronik': 'in Chronik & Presse',
+                        'statuten': 'in Statuten & Reglemente'
+                    };
+                    const label = folderNames[activeFolder] || '';
+                    countBadge.textContent = `${filtered.length} Dokument${filtered.length === 1 ? '' : 'e'} ${label}`;
+                }
+
+                if (filtered.length === 0) {
+                    grid.innerHTML = `
+                        <div class="glass-card" style="grid-column: 1 / -1; text-align: center; padding: 3rem 2rem;">
+                            <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">🔍</div>
+                            <p style="color: var(--text-muted); font-size: 1.05rem; margin: 0;">Keine Dokumente für diese Auswahl gefunden.</p>
+                            <button class="btn btn-outline" style="margin-top: 1rem; font-size: 0.85rem;" onclick="document.getElementById('doc-search-input').value=''; activeDecade='all'; document.querySelectorAll('.doc-decade-btn').forEach(b=>b.classList.toggle('active', b.getAttribute('data-decade')==='all')); renderDocumentsGrid();">Filter zurücksetzen</button>
+                        </div>
+                    `;
+                    return;
+                }
+
+                const catLabels = {
+                    'gv': 'Generalversammlung',
+                    'berichte': 'Jahresbericht',
+                    'einladungen': 'Einladung',
+                    'chronik': 'Chronik & Presse',
+                    'statuten': 'Statuten & Reglement'
+                };
+
+                const cacheBust = Date.now();
+
+                grid.innerHTML = filtered.map(doc => {
+                    const ft = (doc.file_type || 'pdf').toLowerCase();
+                    let icon = '📄';
+                    if (doc.category === 'chronik') icon = '📖';
+                    else if (doc.category === 'berichte') icon = '📊';
+                    else if (doc.category === 'statuten') icon = '📜';
+                    else if (doc.category === 'einladungen') icon = '✉️';
+                    else if (ft === 'html') icon = '🌐';
+                    else if (ft === 'docx' || ft === 'doc' || ft === 'odt') icon = '📝';
+                    else if (ft === 'xlsx' || ft === 'xls') icon = '📊';
+                    else if (ft === 'msg') icon = '✉️';
+
+                    const sizeBadge = doc.file_size_kb ? `${doc.file_size_kb} KB` : '';
+                    const yearBadge = doc.year ? `${doc.year}` : '';
+                    const catLabel = catLabels[doc.category] || doc.category;
+                    const hasFulltext = Boolean(doc.content_text && doc.content_text.trim().length > 25);
+                    const fileUrlWithBust = doc.file_url ? `${doc.file_url}${doc.file_url.includes('?') ? '&' : '?'}t=${cacheBust}` : '#';
+
+                    let snippetHtml = '';
+                    if (query && doc.content_text && doc.content_text.toLowerCase().includes(query)) {
+                        const lowText = doc.content_text.toLowerCase();
+                        const idx = lowText.indexOf(query);
+                        const start = Math.max(0, idx - 40);
+                        const end = Math.min(doc.content_text.length, idx + query.length + 75);
+                        const rawSnip = doc.content_text.substring(start, end).replace(/[\r\n]+/g, ' ').trim();
+                        const safeSnip = escapeHtmlSafe(rawSnip).replace(
+                            new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'),
+                            '<mark style="background:#fef08a; padding:0 2px; border-radius:3px;">$1</mark>'
+                        );
+                        snippetHtml = `
+                            <div style="font-size: 0.8rem; background: rgba(15, 60, 92, 0.04); padding: 6px 10px; border-radius: 8px; margin: 0.5rem 0 0.85rem; border-left: 3px solid var(--primary-color); color: var(--text-color); line-height: 1.4;">
+                                <strong style="color: var(--primary-color); font-size: 0.72rem; display: block; margin-bottom: 2px;">🔍 Gefundene Textstelle im Dokument:</strong>
+                                <em>«...${safeSnip}...»</em>
+                            </div>
+                        `;
+                    }
+
+                    return `
+                        <div class="doc-card">
+                            <div>
+                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; gap: 0.5rem;">
+                                    <span style="font-size: 2rem; line-height: 1;">${icon}</span>
+                                    <div style="display: flex; gap: 0.35rem; flex-wrap: wrap; justify-content: flex-end;">
+                                        ${yearBadge ? `<span class="badge" style="font-size: 0.75rem; background: rgba(15, 60, 92, 0.08); color: var(--primary-color); font-weight: 700;">📅 ${yearBadge}</span>` : ''}
+                                        <span class="badge" style="font-size: 0.75rem; background: rgba(0, 0, 0, 0.05); color: var(--text-color);">${escapeHtmlSafe(catLabel)}</span>
+                                        <span class="badge" style="font-size: 0.75rem; background: var(--primary-color); color: white; text-transform: uppercase;">${escapeHtmlSafe(ft)}</span>
+                                    </div>
+                                </div>
+                                <h4 style="margin: 0 0 0.4rem; color: var(--primary-color); font-size: 1.05rem; line-height: 1.35;">
+                                    ${escapeHtmlSafe(doc.title)}
+                                </h4>
+                                <p style="font-size: 0.88rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 0.4rem;">
+                                    ${escapeHtmlSafe(doc.description || '')}
+                                </p>
+                                ${snippetHtml}
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--glass-border); padding-top: 0.75rem; margin-top: 0.5rem; gap: 0.5rem; flex-wrap: wrap;">
+                                <span style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">
+                                    ${sizeBadge} ${hasFulltext ? '• <span style="color:#059669;">📝 Volltext</span>' : ''}
+                                </span>
+                                <div style="display: flex; gap: 0.4rem;">
+                                    ${hasFulltext ? `
+                                        <button type="button" onclick="openMemberDocReaderModal('${escapeHtmlSafe(doc.id)}')" class="btn btn-outline" style="padding: 0.42rem 0.85rem; font-size: 0.82rem; border-radius: 20px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer;">
+                                            <span>📖</span> <span>Lesen</span>
+                                        </button>
+                                    ` : ''}
+                                    <button type="button" onclick="openMemberDocFile('${escapeHtmlSafe(doc.id)}')" class="btn btn-outline" style="padding: 0.42rem 0.9rem; font-size: 0.82rem; border-radius: 20px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer;">
+                                        <span>📥</span> <span>Öffnen</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            window.openMemberDocReaderModal = async function(docId) {
+                const doc = clubDocuments.find(d => String(d.id) === String(docId));
+                if (!doc) return;
+                const modal = document.getElementById('member-doc-reader-modal');
+                if (!modal) return;
+
+                const ft = (doc.file_type || 'pdf').toLowerCase();
+                const ftSafe = escapeHtmlSafe(ft.toUpperCase());
+
+                document.getElementById('reader-modal-title').textContent = doc.title || 'Dokument';
+                document.getElementById('reader-modal-meta').textContent = `${doc.year ? doc.year + ' • ' : ''}${(doc.category || '').toUpperCase()} • ${ft.toUpperCase()}`;
+
+                const downloadBtn = document.getElementById('reader-modal-download');
+                if (downloadBtn) {
+                    downloadBtn.href = '#';
+                    downloadBtn.onclick = (e) => {
+                        e.preventDefault();
+                        window.openMemberDocFile(doc.id);
+                    };
+                }
+
+                const textEl = document.getElementById('reader-modal-text');
+                const rawText = (doc.content_text || '').trim();
+                textEl.textContent = rawText || 'Für dieses Dokument ist noch keine Text-Transkription hinterlegt.';
+                document.getElementById('reader-modal-charcount').textContent = rawText ? `${rawText.length.toLocaleString('de-CH')} Zeichen` : '';
+
+                const previewEl = document.getElementById('reader-modal-preview');
+                previewEl.innerHTML = `<div style="color:#cbd5e1; padding:2rem; text-align:center;">Lade sichere Dokumentvorschau...</div>`;
+                modal.style.display = 'flex';
+
+                const signedUrl = await resolveMemberDocUrl(doc);
+                if (!signedUrl) {
+                    previewEl.innerHTML = `<div style="color:#fca5a5; padding:2rem; text-align:center;">Vorschau konnte nicht geladen werden (keine gültige Signatur).</div>`;
+                    return;
+                }
+                if (downloadBtn) downloadBtn.href = signedUrl;
+                const safeSignedUrl = escapeHtmlSafe(signedUrl);
+
+                if (ft === 'pdf') {
+                    previewEl.innerHTML = `<iframe src="${safeSignedUrl}" style="width:100%; height:100%; border:none; background:#fff;" title="PDF Vorschau"></iframe>`;
+                } else if (['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ft)) {
+                    previewEl.innerHTML = `<img src="${safeSignedUrl}" alt="Vorschau" style="max-width:100%; max-height:100%; object-fit:contain;">`;
+                } else {
+                    previewEl.innerHTML = `
+                        <div style="text-align:center; color:#cbd5e1; padding:2rem;">
+                            <div style="font-size:3.5rem; margin-bottom:0.75rem;">📄</div>
+                            <h4 style="color:#fff; margin-bottom:0.5rem;">Office-/Originaldatei (${ftSafe})</h4>
+                            <p style="font-size:0.88rem; max-width:340px; margin:0 auto 1.25rem;">Rechts siehst du den vollständig extrahierten Text. Du kannst die Originaldatei jederzeit herunterladen.</p>
+                            <button type="button" onclick="openMemberDocFile('${escapeHtmlSafe(doc.id)}')" class="btn btn-primary" style="border-radius:20px; padding:0.55rem 1.25rem; font-size:0.85rem; cursor:pointer;">📥 Originaldatei herunterladen</button>
+                        </div>
+                    `;
+                }
+            };
+
+            window.closeMemberDocReaderModal = function() {
+                const modal = document.getElementById('member-doc-reader-modal');
+                if (modal) {
+                    modal.style.display = 'none';
+                    const previewEl = document.getElementById('reader-modal-preview');
+                    if (previewEl) previewEl.innerHTML = '';
+                }
+            };
+
+            document.addEventListener('keydown', (e) => {
+                const modal = document.getElementById('member-doc-reader-modal');
+                if (e.key === 'Escape' && modal && modal.style.display === 'flex') {
+                    window.closeMemberDocReaderModal();
+                }
+            });
+
+            function renderBoardDocuments() {
+                const list = document.getElementById('board-protocol-list');
+                const countEl = document.getElementById('board-doc-count');
+                if (!list) return;
+
+                const catFilterEl = document.getElementById('board-cat-filter');
+                const searchEl = document.getElementById('board-doc-search');
+                const catVal = catFilterEl ? catFilterEl.value : 'all';
+                const q = searchEl ? searchEl.value.toLowerCase().trim() : '';
+
+                const boardDocs = clubDocuments.filter(d => {
+                    if (d.visibility !== 'vorstand' && d.category !== 'protokoll') return false;
+                    if (catVal !== 'all' && d.category !== catVal) return false;
+                    if (q) {
+                        const mTitle = (d.title || '').toLowerCase().includes(q);
+                        const mYear = d.year ? String(d.year).includes(q) : false;
+                        const mText = (d.content_text || '').toLowerCase().includes(q);
+                        if (!mTitle && !mYear && !mText) return false;
+                    }
+                    return true;
+                });
+
+                if (countEl) countEl.textContent = String(boardDocs.length);
+
+                if (boardDocs.length === 0) {
+                    list.innerHTML = `<li style="padding: 0.75rem 0; color: var(--text-muted); font-size: 0.88rem;">Keine Vorstandsdokumente für diesen Filter gefunden.</li>`;
+                    return;
+                }
+
+                list.innerHTML = boardDocs.slice(0, 80).map(d => {
+                    const hasText = Boolean(d.content_text && d.content_text.trim().length > 25);
+                    const safeId = escapeHtmlSafe(d.id);
+                    return `
+                        <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.55rem 0; border-bottom: 1px solid var(--glass-border); gap: 0.5rem;">
+                            <a href="#" onclick="event.preventDefault(); openMemberDocFile('${safeId}')" style="color: var(--primary-color); font-weight: 600; text-decoration: none; font-size: 0.88rem; flex: 1;">
+                                📄 ${escapeHtmlSafe(d.title)} ${d.year ? `<span style="color:var(--text-muted); font-weight:400;">(${escapeHtmlSafe(d.year)})</span>` : ''}
+                            </a>
+                            <div style="display: flex; gap: 0.35rem; align-items: center;">
+                                ${hasText ? `<button type="button" onclick="openMemberDocReaderModal('${safeId}')" style="border:1px solid rgba(15,60,92,0.2); background:#f8fafc; color:var(--primary-color); border-radius:12px; padding:2px 8px; font-size:0.74rem; font-weight:600; cursor:pointer;">📖 Lesen</button>` : ''}
+                                <span class="badge" style="background: rgba(220, 38, 38, 0.1); color: var(--accent-color); font-size: 0.72rem;">${escapeHtmlSafe((d.file_type || 'PDF').toUpperCase())}</span>
+                            </div>
+                        </li>
+                    `;
+                }).join('');
+            }
+
+            // Ordner-Filter Button Listeners
+            const folderBtns = document.querySelectorAll('.doc-folder-btn');
+            folderBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    folderBtns.forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    activeFolder = btn.getAttribute('data-folder');
+                    renderDocumentsGrid();
+                });
+            });
+
+            // Jahrzehnt-Filter Button Listeners
+            const decadeBtns = document.querySelectorAll('.doc-decade-btn');
+            decadeBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    decadeBtns.forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    activeDecade = btn.getAttribute('data-decade');
+                    renderDocumentsGrid();
+                });
+            });
+
+            // Vorstands-Filter Listeners
+            const boardCatFilter = document.getElementById('board-cat-filter');
+            if (boardCatFilter) boardCatFilter.addEventListener('change', renderBoardDocuments);
+            const boardDocSearch = document.getElementById('board-doc-search');
+            if (boardDocSearch) boardDocSearch.addEventListener('input', renderBoardDocuments);
+
+            // Dokumenten-Suche Listener
+            const docSearch = document.getElementById('doc-search-input');
+            if (docSearch) {
+                docSearch.addEventListener('input', () => {
+                    renderDocumentsGrid();
+                });
+            }
+
+            // Publizierte Alben aus Supabase laden & darstellen
+            window.loadMemberAlbums = async function loadMemberAlbums() {
+                const grid = document.getElementById('immich-published-albums-grid');
+                const countBadge = document.getElementById('member-albums-count');
+                if (!grid) return;
+
+                const authHeader = (window.AuthSession && typeof window.AuthSession.getAuthHeader === 'function')
+                    ? await window.AuthSession.getAuthHeader()
+                    : null;
+                if (!authHeader) return;
+
+                const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+                const timeoutId = controller ? setTimeout(() => controller.abort(), 10000) : null;
+
+                try {
+                    const SUPABASE_REST_URL = 'https://supabase-muhen.danfamily.uk/rest/v1';
+                    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
+
+                    const [albumsRes, photosRes] = await Promise.all([
+                        fetch(`${SUPABASE_REST_URL}/gallery_albums?select=*&order=created_at.desc`, {
+                            signal: controller ? controller.signal : undefined,
+                            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': authHeader }
+                        }),
+                        fetch(`${SUPABASE_REST_URL}/gallery_photos?select=album,thumbnail_url,image_url&order=created_at.desc&limit=500`, {
+                            signal: controller ? controller.signal : undefined,
+                            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': authHeader }
+                        })
+                    ]);
+
+                    if (!albumsRes.ok) throw new Error('Alben konnten nicht geladen werden');
+                    const albums = await albumsRes.json();
+                    const photos = photosRes.ok ? await photosRes.json() : [];
+
+                    const coverMap = {};
+                    photos.forEach(p => {
+                        if (p.album && !coverMap[p.album]) {
+                            coverMap[p.album] = p.thumbnail_url || p.image_url;
+                        }
+                    });
+
+                    if (countBadge) {
+                        countBadge.textContent = `${albums.length} Alben verfügbar`;
+                    }
+
+                    if (!albums || albums.length === 0) {
+                        grid.innerHTML = '<p class="text-center text-muted" style="grid-column: 1 / -1; padding: 2rem;">Noch keine Alben publiziert.</p>';
+                        return;
+                    }
+
+                    const categoryIcons = {
+                        'events': '🎉',
+                        'nachwuchs': '🎯',
+                        'geschichte': '🏛️'
+                    };
+
+                    grid.innerHTML = albums.map(alb => {
+                        const title = escapeHtmlSafe(alb.website_title || alb.album_name);
+                        const cover = escapeHtmlSafe(alb.cover_url || coverMap[alb.album_name] || '');
+                        const icon = categoryIcons[alb.category] || '📷';
+                        const mediaCount = Number(alb.media_count) || 0;
+
+                        return `
+                            <div class="glass-card" style="padding: 1.25rem; display: flex; flex-direction: column; justify-content: space-between; border-radius: 14px; overflow: hidden;">
+                                <div>
+                                    <div style="position: relative; width: 100%; height: 150px; border-radius: 10px; overflow: hidden; margin-bottom: 0.85rem; background: #0f3c5c; display: flex; align-items: center; justify-content: center;">
+                                        ${cover ? `
+                                            <img src="${cover}" alt="${title}" loading="lazy" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';">
+                                            <div style="display: none; width: 100%; height: 100%; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(135deg, #0f3c5c, #1a5276); color: white;">
+                                                <img src="assets/logo.png" alt="Sportschützen Muhen" style="height: 48px; opacity: 0.9; margin-bottom: 6px;">
+                                                <span style="font-size: 0.75rem; font-weight: 600; opacity: 0.85; letter-spacing: 0.5px;">SPORTSCHÜTZEN MUHEN</span>
+                                            </div>
+                                        ` : `
+                                            <div style="display: flex; width: 100%; height: 100%; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(135deg, #0f3c5c, #1a5276); color: white;">
+                                                <img src="assets/logo.png" alt="Sportschützen Muhen" style="height: 48px; opacity: 0.9; margin-bottom: 6px;">
+                                                <span style="font-size: 0.75rem; font-weight: 600; opacity: 0.85; letter-spacing: 0.5px;">SPORTSCHÜTZEN MUHEN</span>
+                                            </div>
+                                        `}
+                                        <span style="position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.72); color: #fff; font-size: 0.72rem; font-weight: 700; padding: 3px 8px; border-radius: 6px;">
+                                            ${mediaCount} Medien
+                                        </span>
+                                        <span style="position: absolute; top: 8px; left: 8px; background: rgba(255,255,255,0.92); font-size: 0.75rem; font-weight: 700; padding: 2px 7px; border-radius: 6px;">
+                                            ${icon}
+                                        </span>
+                                    </div>
+                                    <h4 style="margin: 0 0 0.4rem 0; font-size: 1rem; color: var(--primary-color);">${title}</h4>
+                                    <p style="font-size: 0.82rem; color: var(--text-muted); margin: 0 0 1rem 0;">Aus unserem privaten Fotoarchiv.</p>
+                                </div>
+                                <a href="verein.html?album_name=${encodeURIComponent(alb.album_name || '')}#galerie" class="btn btn-outline" style="font-size: 0.82rem; width: 100%; padding: 0.45rem; text-align: center; border-radius: 20px;">
+                                    In Galerie öffnen
+                                </a>
+                            </div>
+                        `;
+                    }).join('');
+
+                } catch (e) {
+                    console.warn('Fehler beim Laden der Mitglieder-Alben:', e);
+                    if (grid) {
+                        grid.innerHTML = '<div class="text-center text-muted" style="grid-column: 1 / -1; padding: 1.5rem;"><p style="margin-bottom:0.75rem;">Alben konnten nicht geladen werden.</p><button type="button" class="btn btn-outline" onclick="loadMemberAlbums()">Erneut versuchen</button></div>';
+                    }
+                } finally {
+                    if (timeoutId) clearTimeout(timeoutId);
+                }
+            }
+
+            // Uploader initialisieren; Dokumente & Alben werden erst nach verifiziertem JWT über AuthSession geladen
+            initPhotoUploader();
+        });
+    </script>
+</body>
+</html>

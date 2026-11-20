@@ -1,0 +1,81 @@
+# Environment & Secrets
+.env
+.env.*
+.env.local
+*.pem
+*.key
+*.cert
+Goolge Kalender API Zugriff/
+*Kalender*API*
+service-account*.json
+kalender-api-*.json
+
+# Antigravity & IDEs
+.antigravity/
+.vscode/
+.idea/
+
+# Dependencies & Build
+node_modules/
+
+# Local & Backend Projects / Clones
+GAS/
+WORKER/
+
+
+# Backup & Temporary files
+*.bak
+*.tmp
+*.temp
+*.zip
+*~
+*.swp
+scratch/
+downloads_drive_test/
+supabase-local/
+*.bat
+WORKER_ANLEITUNG.md
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# OS specific
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Datenschutz: SSV Mitgliederdaten & Personenlisten
+SSV Daten/
+SSV/
+*.xlsx
+*.xlsm
+*.xls
+*.csv
+/Jahresmeisterschaft/
+
+CAMT/
+
+Ranglisten/
+*.bak*
+
+# Sensible Daten-Seeds & Test-Migrationen (bleiben lokal erhalten, nicht ins Public-Repo)
+supabase/migrations/26_admin_save_password_and_fix_dan.sql
+supabase/migrations/47_setup_test_personas_and_fix_auth.sql
+supabase/migrations/52_fix_jm_shooters_data.sql
+supabase/migrations/78_seed_endschiessen_2026_data.sql
+supabase/migrations/118_enrich_members_from_access.sql
+supabase/migrations/119_apply_gv_minutes_member_history.sql
+supabase/migrations/53_sync_contest_results_mannschaft_gruppe.sql
+supabase/migrations/59_admin_profiles_address_and_update_my_profile.sql
+supabase/migrations/76_fix_sync_jm_to_contest_mannschaft.sql
+supabase/migrations/83_website_gallery_sync.sql
+supabase/migrations/117_fix_ssv_import_license_conflict.sql
+supabase/migrations/122_fix_variable_contributions_positions.sql
+kasse/test-twint.html
+.agents/
+skills-lock.json
+
+
+

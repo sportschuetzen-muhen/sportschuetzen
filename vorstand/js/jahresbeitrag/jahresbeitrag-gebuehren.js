@@ -1,0 +1,1627 @@
+// vorstand/js/jahresbeitrag/jahresbeitrag-gebuehren.js
+// ============================================================
+// GEBÜHREN-KONFIGURATION (MEMBERS100) - MANAGEMENT IM FRONTEND
+// ============================================================
+
+let _jbGebuehrenSearch = '';
+let _jbGebuehrenKategorieFilter = '';
+let _jbGebuehrenGruppeFilter = '';
+let _jbGebSortCol = 'sort';
+let _jbGebSortAsc = true;
+
+function renderGebuehrenConfigTab() {
+  return `
+    <div class="card border-0 shadow-sm p-4 bg-white rounded-3">
+      
+      <!-- Kopfbereich -->
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 pb-3 mb-3 border-bottom">
+        <div>
+          <h4 class="mb-1 text-primary fw-bold">
+            <i class="fas fa-sliders-h me-2"></i>Gebühren-Konfiguration
+          </h4>
+          <p class="text-muted small mb-0">
+            Verwalte hier alle Tarife, Wettkampfgebühren und UI-Darstellungstypen (<code>gebuehren_config</code>).
+          </p>
+        </div>
+        <div class="d-flex gap-2">
+          <button id="btnJbReloadGebuehren" class="btn btn-sm btn-outline-secondary" onclick="jbReloadGebuehrenData()">
+            <i class="fas fa-sync-alt me-1"></i> Neu laden
+          </button>
+          <button class="btn btn-sm btn-success fw-bold shadow-sm" onclick="jbOpenEditGebuehrModal('')">
+            <i class="fas fa-plus me-1"></i> Neue Gebühr anlegen
+          </button>
+        </div>
+      </div>
+
+      <!-- Filterleiste -->
+      <div class="row g-2 mb-3 align-items-center">
+        <div class="col-md-4">
+          <div class="input-group input-group-sm">
+            <span class="input-group-text bg-light"><i class="fas fa-search"></i></span>
+            <input type="text" class="form-control" id="jbGebuehrSearch" placeholder="Suche nach Key, Bezeichnung, Konto..." oninput="jbFilterGebuehrenTable()">
+          </div>
+        </div>
+        <div class="col-md-3">
+          <select class="form-select form-select-sm" id="jbGebuehrKatFilter" onchange="jbFilterGebuehrenTable()">
+            <option value="">Alle Kategorien (Kategorie)</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <select class="form-select form-select-sm" id="jbGebuehrGruppeFilter" onchange="jbFilterGebuehrenTable()">
+            <option value="">Alle UI-Gruppen (ui_gruppe)</option>
+          </select>
+        </div>
+        <div class="col-md-2" id="jbGebuehrenColToggleContainer">
+          <!-- TableKit Spaltenauswahl Dropdown -->
+        </div>
+        <div class="col-md-2 text-end text-muted small ms-auto" id="jbGebuehrenCount">
+          <!-- Anzahl -->
+        </div>
+      </div>
+
+      <!-- Tabelle (Globales TableKit Modell mit Spaltensortierung) -->
+      <div class="table-responsive border rounded-3 overflow-hidden shadow-sm">
+        <table class="table table-hover table-sm align-middle mb-0" id="jbGebuehrenTable">
+          <thead class="table-light small text-muted text-uppercase" style="font-size: 11px;">
+            <tr>
+              <th data-col-id="key" data-col-name="Key" data-sort-key="key" onclick="jbSortGebuehren('key')" class="tk-sortable" style="cursor: pointer; user-select: none; width: 85px;">Key <span class="tk-sort-ind">${_jbGebSortCol === 'key' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
+              <th data-col-id="kategorie" data-col-name="Kategorie" data-sort-key="kategorie" onclick="jbSortGebuehren('kategorie')" class="tk-sortable" style="cursor: pointer; user-select: none; width: 110px;">Kategorie <span class="tk-sort-ind">${_jbGebSortCol === 'kategorie' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
+              <th data-col-id="zielgruppe" data-col-name="Zielgruppe" data-sort-key="zielgruppe" onclick="jbSortGebuehren('zielgruppe')" class="tk-sortable" style="cursor: pointer; user-select: none; width: 100px;">Zielgruppe <span class="tk-sort-ind">${_jbGebSortCol === 'zielgruppe' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
+              <th data-col-id="bezeichnung" data-col-name="Bezeichnung Frontend" data-sort-key="bezeichnung" onclick="jbSortGebuehren('bezeichnung')" class="tk-sortable" style="cursor: pointer; user-select: none;">Bezeichnung Frontend <span class="tk-sort-ind">${_jbGebSortCol === 'bezeichnung' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
+              <th data-col-id="betrag" data-col-name="Betrag" data-sort-key="betrag" onclick="jbSortGebuehren('betrag')" class="tk-sortable text-end" style="cursor: pointer; user-select: none; width: 95px;">Betrag <span class="tk-sort-ind">${_jbGebSortCol === 'betrag' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
+              <th data-col-id="konto" data-col-name="Haben-Konto" data-sort-key="konto" onclick="jbSortGebuehren('konto')" class="tk-sortable" style="cursor: pointer; user-select: none; width: 110px;">Haben-Konto <span class="tk-sort-ind">${_jbGebSortCol === 'konto' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
+              <th data-col-id="ui_gruppe" data-col-name="UI-Gruppe" data-sort-key="ui_gruppe" onclick="jbSortGebuehren('ui_gruppe')" class="tk-sortable" style="cursor: pointer; user-select: none;">UI-Gruppe <span class="tk-sort-ind">${_jbGebSortCol === 'ui_gruppe' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
+              <th data-col-id="ui_feld" data-col-name="UI-Feld" data-sort-key="ui_feld" onclick="jbSortGebuehren('ui_feld')" class="tk-sortable" style="cursor: pointer; user-select: none;">UI-Feld <span class="tk-sort-ind">${_jbGebSortCol === 'ui_feld' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
+              <th data-col-id="ui_typ" data-col-name="UI-Typ" data-sort-key="ui_typ" onclick="jbSortGebuehren('ui_typ')" class="tk-sortable" style="cursor: pointer; user-select: none; width: 110px;">UI-Typ <span class="tk-sort-ind">${_jbGebSortCol === 'ui_typ' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
+              <th data-col-id="sort" data-col-name="Sortierung" data-sort-key="sort" onclick="jbSortGebuehren('sort')" class="tk-sortable text-center" style="cursor: pointer; user-select: none; width: 65px;">Sort <span class="tk-sort-ind">${_jbGebSortCol === 'sort' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
+              <th data-col-id="aktiv" data-col-name="Aktiv" data-sort-key="aktiv" onclick="jbSortGebuehren('aktiv')" class="tk-sortable text-center" style="cursor: pointer; user-select: none; width: 65px;">Aktiv <span class="tk-sort-ind">${_jbGebSortCol === 'aktiv' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
+              <th data-col-id="actions" data-col-name="Aktion" class="text-end" style="width: 65px;">Aktion</th>
+            </tr>
+          </thead>
+          <tbody id="jbGebuehrenTableBody">
+            <!-- Dynamisch gerendert -->
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  `;
+}
+
+function jbEnsureGebuehrModals() {
+  if (document.getElementById('jbModalGebuehrEdit')) return;
+  let host = document.getElementById('jbGebuehrModalsContainer');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'jbGebuehrModalsContainer';
+    document.body.appendChild(host);
+  }
+  host.innerHTML = renderGebuehrenConfigModals();
+}
+
+function renderGebuehrenConfigModals() {
+  return `
+    <div class="modal fade" id="jbModalGebuehrEdit" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden position-relative">
+          <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4" style="cursor: grab; user-select: none;">
+            <h5 class="modal-title fw-bold mb-0" id="jbModalGebuehrTitle"><i class="fas fa-sliders-h me-2"></i>Gebühr bearbeiten</h5>
+            <div class="d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-sm text-white p-1 border-0 shadow-none rn-modal-maximize-btn" title="Maximieren / Wiederherstellen" style="opacity: 0.85; line-height: 1;">
+                <i class="fas fa-expand"></i>
+              </button>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+            </div>
+          </div>
+          <div class="modal-body p-4">
+            <!-- ⚠️ Fehler- und Hilfe-Banner bei Validierungsproblemen -->
+            <div id="jbGebuehrErrorAlert"></div>
+
+            <form id="jbFormGebuehr" onsubmit="event.preventDefault(); jbSaveGebuehrFromModal();">
+              
+              <!-- 💡 Aufklappbarer Spickzettel & Erklärung der UI-Felder -->
+              <div class="card border-info-subtle bg-light-subtle mb-3">
+                <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center" style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#jbGebuehrenHelpCollapse">
+                  <span class="fw-bold text-primary small">
+                    <i class="fas fa-question-circle me-1 text-info"></i> 💡 Spickzettel: Wie funktionieren die 5 UI-Felder & Zielgruppen?
+                  </span>
+                  <span class="badge bg-light text-muted border small"><i class="fas fa-chevron-down"></i></span>
+                </div>
+                <div class="collapse" id="jbGebuehrenHelpCollapse">
+                  <div class="card-body p-3 small text-muted" style="font-size: 11.5px; line-height: 1.5;">
+                    <div class="row g-2">
+                      <div class="col-md-6">
+                        <div class="p-2 border rounded bg-white h-100">
+                          <strong class="text-dark d-block mb-1">🏷️ UI-Gruppe & UI-Feld</strong>
+                          <ul class="ps-3 mb-0">
+                            <li><strong>UI-Gruppe:</strong> Überschrift der Card in der Schnellerfassung (z. B. <code>50m Wettschiessen (KK)</code>).</li>
+                            <li><strong>UI-Feld:</strong> Beschriftung des Elements oder Gruppenname (z. B. <code>SSV Dezernat</code>).</li>
+                            <li><strong>Sortierung (ui_sort):</strong> Reihenfolge innerhalb der Gruppe (z. B. <code>10</code>, <code>20</code>, <code>30</code>).</li>
+                          </ul>
+                        </div>
+                      </div>
+                      <div class="col-md-6">
+                        <div class="p-2 border rounded bg-white h-100">
+                          <strong class="text-dark d-block mb-1">🎛️ UI-Typ & Steuerelement</strong>
+                          <ul class="ps-3 mb-0">
+                            <li><code>checkbox</code>: Häkchen (Ja / Nein) für Einzelstiche.</li>
+                            <li><code>counter</code>: Stiche-Zähler (0, 1, 2, 3 Stiche, multipliziert Betrag × Stiche).</li>
+                            <li><code>singleselect</code>: Radio-Pills (nur 1 Option aus der Gruppe wählbar).</li>
+                            <li><code>multiselect</code>: Mehrfachauswahl als Pill-Buttons.</li>
+                            <li><code>amount</code>: Freier Betrag mit Schutzkonto (Variable Zusatzkosten).</li>
+                          </ul>
+                        </div>
+                      </div>
+                      <div class="col-12">
+                        <div class="p-2 border rounded bg-white">
+                          <strong class="text-dark d-block mb-1">🎯 Zielgruppe (Variante A) & Buchhaltung</strong>
+                          <div class="d-flex gap-3 flex-wrap">
+                            <div><code>Alle</code>: Für alle Mitglieder wählbar.</div>
+                            <div><code>Aktive</code>: Nur für erwachsene Aktivmitglieder (Zahlung durch Mitglied).</div>
+                            <div><code>Junioren</code>: Nur für Junioren (wird auf der Rechnung automatisch via <strong>Jugendförderung Konto 3420</strong> vom Verein übernommen).</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Basisdaten Zeile 1 -->
+              <div class="row g-3 mb-3">
+                <div class="col-md-3">
+                  <label class="form-label small fw-bold text-muted">Schlüssel (Key) *</label>
+                  <input type="text" class="form-control form-control-sm font-monospace fw-bold" id="g_key" placeholder="z.B. KK009" required readonly style="background-color: #f8f9fa;">
+                  <div class="form-text small" id="g_key_help" style="font-size: 10px;">Eindeutiger Code (automatisch vergeben)</div>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label small fw-bold text-muted">Kategorie *</label>
+                  <select class="form-select form-select-sm" id="g_kategorie_select" onchange="jbOnModalKategorieSelectChanged(this)">
+                    <!-- Dynamisch geladen -->
+                  </select>
+                  <input type="text" class="form-control form-control-sm mt-1" id="g_kategorie" placeholder="Kategorie eingeben" required style="display: none;" oninput="jbOnModalCustomKategorieInput(this.value)">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label small fw-bold text-muted">🎯 Zielgruppe *</label>
+                  <select class="form-select form-select-sm fw-semibold" id="g_zielgruppe" onchange="jbUpdateGebuehrLivePreview()">
+                    <option value="Alle">👥 Alle (Aktive & Junioren)</option>
+                    <option value="Aktive">🎯 Nur Aktive (Erwachsene)</option>
+                    <option value="Junioren">👦 Nur Junioren (Vereinsübernahme)</option>
+                  </select>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label small fw-bold text-muted">Betrag (CHF)</label>
+                  <div class="input-group input-group-sm">
+                    <span class="input-group-text">CHF</span>
+                    <input type="number" step="0.05" class="form-control text-end" id="g_betrag" placeholder="0.00 (offen/variabel)" oninput="jbUpdateGebuehrLivePreview()">
+                  </div>
+                </div>
+              </div>
+
+              <!-- Zeile 2: Bezeichnungen -->
+              <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                  <label class="form-label small fw-bold text-muted">Bezeichnung Frontend *</label>
+                  <input type="text" class="form-control form-control-sm" id="g_bezeichnungfrontend" placeholder="z.B. 50m Liegend Nachdoppel" required oninput="jbOnModalBezeichnungFrontendInput(this.value)">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label small fw-bold text-muted">Vollständige Bezeichnung (Rechnungsdruck)</label>
+                  <input type="text" class="form-control form-control-sm" id="g_bezeichnung" placeholder="Wird auf PDF-Rechnung gedruckt" oninput="this.dataset.manualEdit='1'">
+                </div>
+              </div>
+
+              <!-- Zeile 3: Buchhaltungskonto (Kontenrahmen-Anbindung) -->
+              <div class="row g-3 mb-3">
+                <div class="col-md-5">
+                  <label class="form-label small fw-bold text-muted">Haben-Konto (Ertragskonto) *</label>
+                  <div class="input-group input-group-sm">
+                    <input type="text" class="form-control font-monospace fw-bold" id="g_konto" list="jb-konten-datalist" placeholder="z.B. 3000 oder 3200" onchange="jbOnGebuehrKontoChanged(this.value); jbUpdateGebuehrLivePreview();" required>
+                    <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Aus Kontenrahmen wählen">
+                      <i class="fas fa-book"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow p-2" id="jb-gebuehr-konten-dropdown" style="max-height: 280px; overflow-y: auto; font-size: 12px; min-width: 280px;">
+                      <!-- Dynamisch aus Kontenrahmen befüllt -->
+                    </ul>
+                  </div>
+                  <div class="form-text text-muted small" style="font-size: 10px;">Aus KMU-Kontenrahmen wählen oder eingeben</div>
+                </div>
+                <div class="col-md-7">
+                  <label class="form-label small fw-bold text-muted">Kontobezeichnung (KMU-Kontenrahmen)</label>
+                  <input type="text" class="form-control form-control-sm bg-light" id="g_kontobezeichnung" placeholder="Wird automatisch ermittelt..." readonly>
+                </div>
+              </div>
+
+              <!-- UI-Darstellung Card -->
+              <div class="card p-3 bg-light border-0 rounded-3 mb-3">
+                <h6 class="text-secondary fw-bold mb-2 small text-uppercase" style="font-size: 11px;">
+                  <i class="fas fa-desktop me-1 text-primary"></i> UI-Darstellung in der Schnellerfassung
+                </h6>
+                <div class="row g-3">
+                  <div class="col-md-4">
+                    <label class="form-label small fw-bold text-muted">UI-Gruppe (Card-Überschrift) *</label>
+                    <select class="form-select form-select-sm" id="g_ui_gruppe_select" onchange="jbOnModalGruppeSelectChanged(this)">
+                      <!-- Dynamisch geladen -->
+                    </select>
+                    <input type="text" class="form-control form-control-sm mt-1" id="g_ui_gruppe" placeholder="UI-Gruppe eingeben" style="display: none;" oninput="jbOnModalCustomGruppeInput(this.value)">
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label small fw-bold text-muted">UI-Feld (Steuerelement-Name) *</label>
+                    <select class="form-select form-select-sm" id="g_ui_feld_select" onchange="jbHandleSmartSelect(this, 'g_ui_feld'); jbUpdateGebuehrLivePreview();">
+                      <!-- Dynamisch geladen -->
+                    </select>
+                    <input type="text" class="form-control form-control-sm mt-1" id="g_ui_feld" placeholder="UI-Feld eingeben" style="display: none;" oninput="jbUpdateGebuehrLivePreview()">
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label small fw-bold text-muted">UI-Typ *</label>
+                    <select class="form-select form-select-sm fw-semibold" id="g_ui_typ" onchange="jbUpdateGebuehrLivePreview()">
+                      <option value="checkbox">☑️ Checkbox (Toggle Ja/Nein)</option>
+                      <option value="counter">🔢 Counter (Stiche-Zähler: 0, 1, 2, 3)</option>
+                      <option value="multiselect">🔲 Mehrfachauswahl (Pill-Gruppe)</option>
+                      <option value="singleselect">🔘 Einzelauswahl (Radio-Pills)</option>
+                      <option value="amount">💵 Freier Betrag (Variable Zusatzkosten)</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="row g-3 mt-1">
+                  <div class="col-md-4">
+                    <label class="form-label small fw-bold text-muted">Sortierung (ui_sort)</label>
+                    <input type="number" class="form-control form-control-sm" id="g_ui_sort" value="10" oninput="jbUpdateGebuehrLivePreview()">
+                  </div>
+                  <div class="col-md-4 d-flex align-items-center mt-4">
+                    <div class="form-check form-switch mb-0">
+                      <input class="form-check-input" type="checkbox" id="g_aktiv" checked onchange="jbUpdateGebuehrLivePreview()">
+                      <label class="form-check-label small fw-semibold" for="g_aktiv">In Schnellerfassung aktiv</label>
+                    </div>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label small fw-bold text-muted">Bemerkung</label>
+                    <input type="text" class="form-control form-control-sm" id="g_bem" placeholder="Optionale Notiz">
+                  </div>
+                </div>
+              </div>
+
+              <!-- 👁️ Live-Vorschau in der Schnellerfassung -->
+              <div class="card border border-2 border-primary-subtle p-3 rounded-3 bg-white mb-3 shadow-sm">
+                <div class="d-flex justify-content-between align-items-center mb-2 pb-1 border-bottom">
+                  <span class="small fw-bold text-primary text-uppercase" style="font-size: 11px;">
+                    <i class="fas fa-eye me-1"></i> Live-Vorschau: Schnellerfassungs-Card & Anordnung
+                  </span>
+                  <span class="badge bg-primary-subtle text-primary border border-primary-subtle small font-monospace" id="jbGebuehrPreviewTypeBadge">Card-Vorschau</span>
+                </div>
+                <div class="p-2 bg-light rounded-2 border" id="jbGebuehrLivePreviewContainer">
+                  <!-- Dynamisch gerendert über jbUpdateGebuehrLivePreview() -->
+                </div>
+              </div>
+
+              <div class="modal-footer bg-light border-top px-4 py-3 rounded-bottom-4 d-flex justify-content-between">
+                <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Abbrechen</button>
+                <button type="submit" class="btn btn-success fw-bold px-4 shadow-sm" id="btnSaveGebuehr">
+                  <i class="fas fa-save me-1"></i> Gebühr speichern
+                </button>
+              </div>
+
+            </form>
+          </div>
+          <div class="rn-modal-resizer" title="Grösse durch Ziehen verändern" style="position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 1060; display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px; color: #94a3b8; user-select: none;">
+            <i class="fas fa-arrows-alt-diagonal" style="font-size: 10px; opacity: 0.5;"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================
+// SPALTENSORTIERUNG & TABLEKIT INTEGRATION
+// ============================================================
+function jbSortGebuehren(col) {
+  if (_jbGebSortCol === col) {
+    _jbGebSortAsc = !_jbGebSortAsc;
+  } else {
+    _jbGebSortCol = col;
+    _jbGebSortAsc = true;
+  }
+  jbApplyGebuehrenSorting();
+  jbRenderGebuehrenTable();
+  jbUpdateGebuehrenHeaderVisuals();
+}
+window.jbSortGebuehren = jbSortGebuehren;
+
+function jbApplyGebuehrenSorting() {
+  const fees = window._jbGebuehren || [];
+  fees.sort((a, b) => {
+    let valA = '';
+    let valB = '';
+    if (_jbGebSortCol === 'key') {
+      valA = String(a.key || '').toUpperCase();
+      valB = String(b.key || '').toUpperCase();
+    } else if (_jbGebSortCol === 'kategorie') {
+      valA = String(a.kategorie || '').toLowerCase();
+      valB = String(b.kategorie || '').toLowerCase();
+    } else if (_jbGebSortCol === 'zielgruppe') {
+      valA = String(a.zielgruppe || '').toLowerCase();
+      valB = String(b.zielgruppe || '').toLowerCase();
+    } else if (_jbGebSortCol === 'bezeichnung') {
+      valA = String(a.bezeichnungfrontend || a.bezeichnung || '').toLowerCase();
+      valB = String(b.bezeichnungfrontend || b.bezeichnung || '').toLowerCase();
+    } else if (_jbGebSortCol === 'betrag') {
+      valA = Number(a.betrag || 0);
+      valB = Number(b.betrag || 0);
+      return _jbGebSortAsc ? (valA - valB) : (valB - valA);
+    } else if (_jbGebSortCol === 'konto') {
+      valA = String(a['Haben-Konto-Jahresbeitrag-Buchhaltung'] || a.konto || '');
+      valB = String(b['Haben-Konto-Jahresbeitrag-Buchhaltung'] || b.konto || '');
+    } else if (_jbGebSortCol === 'ui_gruppe') {
+      valA = String(a.ui_gruppe || '').toLowerCase();
+      valB = String(b.ui_gruppe || '').toLowerCase();
+    } else if (_jbGebSortCol === 'ui_feld') {
+      valA = String(a.ui_feld || '').toLowerCase();
+      valB = String(b.ui_feld || '').toLowerCase();
+    } else if (_jbGebSortCol === 'ui_typ') {
+      valA = String(a.ui_typ || '').toLowerCase();
+      valB = String(b.ui_typ || '').toLowerCase();
+    } else if (_jbGebSortCol === 'sort') {
+      valA = Number(a.ui_sort !== undefined && a.ui_sort !== null && a.ui_sort !== '' ? a.ui_sort : (a.sort_order || 99));
+      valB = Number(b.ui_sort !== undefined && b.ui_sort !== null && b.ui_sort !== '' ? b.ui_sort : (b.sort_order || 99));
+      return _jbGebSortAsc ? (valA - valB) : (valB - valA);
+    } else if (_jbGebSortCol === 'aktiv') {
+      valA = (a.aktiv !== false && a.aktiv !== '0' && a.aktiv !== 0) ? 1 : 0;
+      valB = (b.aktiv !== false && b.aktiv !== '0' && b.aktiv !== 0) ? 1 : 0;
+      return _jbGebSortAsc ? (valA - valB) : (valB - valA);
+    }
+    return _jbGebSortAsc ? valA.localeCompare(valB, 'de') : valB.localeCompare(valA, 'de');
+  });
+}
+
+function jbUpdateGebuehrenHeaderVisuals() {
+  document.querySelectorAll('#jbGebuehrenTable th[data-sort-key]').forEach(th => {
+    const key = th.dataset.sortKey;
+    const ind = th.querySelector('.tk-sort-ind');
+    if (ind) {
+      ind.textContent = (key === _jbGebSortCol) ? (_jbGebSortAsc ? '▲' : '▼') : '↕';
+      ind.style.opacity = (key === _jbGebSortCol) ? '1' : '0.4';
+    }
+  });
+}
+
+function jbInitGebuehrenConfig() {
+  jbApplyGebuehrenSorting();
+  jbPopulateFilterDropdowns();
+  jbRenderGebuehrenTable();
+  jbUpdateGebuehrenHeaderVisuals();
+}
+
+function jbPopulateFilterDropdowns() {
+  const fees = window._jbGebuehren || [];
+  const kats = Array.from(new Set(fees.map(f => String(f.kategorie || '').trim()).filter(Boolean))).sort();
+  const gruppen = Array.from(new Set(fees.map(f => String(f.ui_gruppe || '').trim()).filter(Boolean))).sort();
+
+  const katEl = document.getElementById('jbGebuehrKatFilter');
+  if (katEl) {
+    katEl.innerHTML = '<option value="">Alle Kategorien (kategorie)</option>' +
+      kats.map(k => `<option value="${k}">${k}</option>`).join('');
+  }
+
+  const grpEl = document.getElementById('jbGebuehrGruppeFilter');
+  if (grpEl) {
+    grpEl.innerHTML = '<option value="">Alle UI-Gruppen (ui_gruppe)</option>' +
+      gruppen.map(g => `<option value="${g}">${g}</option>`).join('');
+  }
+}
+
+function jbFilterGebuehrenTable() {
+  _jbGebuehrenSearch = (document.getElementById('jbGebuehrSearch')?.value || '').toLowerCase().trim();
+  _jbGebuehrenKategorieFilter = document.getElementById('jbGebuehrKatFilter')?.value || '';
+  _jbGebuehrenGruppeFilter = document.getElementById('jbGebuehrGruppeFilter')?.value || '';
+  jbRenderGebuehrenTable();
+}
+
+function jbRenderGebuehrenTable() {
+  const tbody = document.getElementById('jbGebuehrenTableBody');
+  const countEl = document.getElementById('jbGebuehrenCount');
+  if (!tbody) return;
+
+  const fees = window._jbGebuehren || [];
+  const filtered = fees.filter(f => {
+    const k = String(f.key || '').toLowerCase();
+    const bez = String(f.bezeichnungfrontend || f.bezeichnung || '').toLowerCase();
+    const konto = String(f['Haben-Konto-Jahresbeitrag-Buchhaltung'] || f.konto || '').toLowerCase();
+    const grp = String(f.ui_gruppe || '').toLowerCase();
+
+    const matchesSearch = !_jbGebuehrenSearch || k.includes(_jbGebuehrenSearch) || bez.includes(_jbGebuehrenSearch) || konto.includes(_jbGebuehrenSearch) || grp.includes(_jbGebuehrenSearch);
+    const matchesKat = !_jbGebuehrenKategorieFilter || String(f.kategorie || '').trim() === _jbGebuehrenKategorieFilter;
+    const matchesGrp = !_jbGebuehrenGruppeFilter || String(f.ui_gruppe || '').trim() === _jbGebuehrenGruppeFilter;
+
+    return matchesSearch && matchesKat && matchesGrp;
+  });
+
+  if (countEl) {
+    countEl.textContent = `${filtered.length} von ${fees.length} Gebühren`;
+  }
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="12" class="text-center py-4 text-muted">
+          <i class="fas fa-info-circle me-1"></i> Keine Gebühren entsprechen den Filterkriterien.
+        </td>
+      </tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(f => {
+    const k = String(f.key || '').trim().toUpperCase();
+    const konto = f['Haben-Konto-Jahresbeitrag-Buchhaltung'] || f.konto || '–';
+    const kontoBezeichnung = f['Kontobezeichnung im KMU-Kontenrahmen'] || f.kontobezeichnung || '';
+    const isAktiv = f.aktiv !== false && f.aktiv !== 'FALSE' && f.aktiv !== '0' && f.aktiv !== 0;
+    const uiTyp = (f.ui_typ || 'checkbox').toLowerCase();
+
+    let typBadge = `<span class="badge bg-secondary">checkbox</span>`;
+    if (uiTyp === 'counter') typBadge = `<span class="badge bg-info text-dark">counter (1-3)</span>`;
+    else if (uiTyp === 'multiselect') typBadge = `<span class="badge bg-primary">multiselect</span>`;
+    else if (uiTyp === 'singleselect') typBadge = `<span class="badge bg-warning text-dark">singleselect</span>`;
+    else if (uiTyp === 'amount') typBadge = `<span class="badge bg-success">amount</span>`;
+
+    const zg = String(f.zielgruppe || 'Alle').trim();
+    let zgBadge = `<span class="badge bg-light text-muted border">Alle</span>`;
+    if (zg.toLowerCase() === 'junioren') zgBadge = `<span class="badge bg-success text-white">👦 Junioren</span>`;
+    else if (zg.toLowerCase() === 'aktive') zgBadge = `<span class="badge bg-primary text-white">🎯 Aktive</span>`;
+
+    return `
+      <tr class="${isAktiv ? '' : 'table-light opacity-75'}">
+        <td class="tk-col-key" data-col-id="key"><strong class="font-monospace text-primary">${k}</strong></td>
+        <td class="tk-col-kategorie" data-col-id="kategorie"><span class="badge bg-light text-secondary border">${f.kategorie || '–'}</span></td>
+        <td class="tk-col-zielgruppe" data-col-id="zielgruppe">${zgBadge}</td>
+        <td class="tk-col-bezeichnung" data-col-id="bezeichnung">
+          <div class="fw-semibold text-dark">${f.bezeichnungfrontend || f.bezeichnung || '–'}</div>
+          ${f.bezeichnung && f.bezeichnung !== f.bezeichnungfrontend ? `<div class="text-muted small" style="font-size:10px;">${f.bezeichnung}</div>` : ''}
+        </td>
+        <td class="tk-col-betrag text-end fw-bold text-dark" data-col-id="betrag">CHF ${Number(f.betrag || 0).toFixed(2)}</td>
+        <td class="tk-col-konto" data-col-id="konto">
+          <span class="badge bg-light text-dark border font-monospace">${konto}</span>
+          ${kontoBezeichnung ? `<div class="text-muted small" style="font-size:10px;">${jbEscHtml(kontoBezeichnung)}</div>` : ''}
+        </td>
+        <td class="tk-col-ui_gruppe" data-col-id="ui_gruppe"><small class="text-secondary">${f.ui_gruppe || '<span class="text-muted fst-italic">Auto</span>'}</small></td>
+        <td class="tk-col-ui_feld" data-col-id="ui_feld"><small class="text-dark">${f.ui_feld || '<span class="text-muted fst-italic">Auto</span>'}</small></td>
+        <td class="tk-col-ui_typ" data-col-id="ui_typ">${typBadge}</td>
+        <td class="tk-col-sort text-center small" data-col-id="sort">${f.ui_sort !== undefined && f.ui_sort !== '' ? f.ui_sort : '–'}</td>
+        <td class="tk-col-aktiv text-center" data-col-id="aktiv">
+          <i class="fas ${isAktiv ? 'fa-check-circle text-success' : 'fa-times-circle text-danger'}"></i>
+        </td>
+        <td class="tk-col-actions text-end" data-col-id="actions">
+          <button class="btn btn-xs btn-outline-primary py-1 px-2 rounded" onclick="jbOpenEditGebuehrModal('${k}')" title="Gebühr bearbeiten">
+            <i class="fas fa-edit"></i>
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  if (window.TableKit && typeof window.TableKit.initTable === 'function') {
+    window.TableKit.initTable('#jbGebuehrenTable', {
+      id: 'jb_gebuehren',
+      storageKeyWidths: 'jb_gebuehren_table_col_widths',
+      storageKeyCols: 'jb_gebuehren_table_cols',
+      reorderable: false,
+      columnToggle: document.getElementById('jbGebuehrenColToggleContainer') ? '#jbGebuehrenColToggleContainer' : null,
+      minWidth: 40
+    });
+  }
+}
+
+function jbOnGebuehrKontoChanged(val) {
+  const code = String(val || '').split('|')[0].trim();
+  const inputEl = document.getElementById('g_konto');
+  if (inputEl) inputEl.value = code;
+
+  const bezeichnungEl = document.getElementById('g_kontobezeichnung');
+  const konten = window._bhKontenrahmen || [];
+  const acc = konten.find(a => String(a.konto).trim() === code);
+  if (bezeichnungEl) {
+    bezeichnungEl.value = acc ? acc.bezeichnung : '';
+  }
+}
+window.jbOnGebuehrKontoChanged = jbOnGebuehrKontoChanged;
+
+let _jbModalSiblingSortChanges = {};
+
+function jbPopulateModalDropdowns(selectedKat, selectedGrp, selectedFeld) {
+  const fees = window._jbGebuehren || [];
+  
+  // 1. Kategorie Select
+  const kats = Array.from(new Set(fees.map(f => String(f.kategorie || '').trim()).filter(Boolean))).sort();
+  const katSelect = document.getElementById('g_kategorie_select');
+  const katInput = document.getElementById('g_kategorie');
+  if (katSelect && katInput) {
+    let html = '<option value="">-- Kategorie wählen --</option>';
+    let found = false;
+    kats.forEach(k => {
+      const sel = k === selectedKat;
+      if (sel) found = true;
+      html += `<option value="${jbEscHtml(k)}"${sel ? ' selected' : ''}>${jbEscHtml(k)}</option>`;
+    });
+    html += '<option value="__custom__">➕ [ Neue Kategorie erfassen… ]</option>';
+    katSelect.innerHTML = html;
+    if (!found && selectedKat) {
+      katSelect.value = '__custom__';
+      katInput.value = selectedKat;
+      katInput.style.display = 'block';
+    } else {
+      katInput.value = selectedKat || '';
+      katInput.style.display = 'none';
+    }
+  }
+
+  // 2. UI-Gruppe Select
+  const gruppen = Array.from(new Set(fees.map(f => String(f.ui_gruppe || '').trim()).filter(Boolean))).sort();
+  const grpSelect = document.getElementById('g_ui_gruppe_select');
+  const grpInput = document.getElementById('g_ui_gruppe');
+  if (grpSelect && grpInput) {
+    let html = '<option value="">-- UI-Gruppe wählen --</option>';
+    let found = false;
+    gruppen.forEach(g => {
+      const sel = g === selectedGrp;
+      if (sel) found = true;
+      html += `<option value="${jbEscHtml(g)}"${sel ? ' selected' : ''}>${jbEscHtml(g)}</option>`;
+    });
+    html += '<option value="__custom__">➕ [ Neue UI-Gruppe erfassen… ]</option>';
+    grpSelect.innerHTML = html;
+    if (!found && selectedGrp) {
+      grpSelect.value = '__custom__';
+      grpInput.value = selectedGrp;
+      grpInput.style.display = 'block';
+    } else {
+      grpInput.value = selectedGrp || '';
+      grpInput.style.display = 'none';
+    }
+  }
+
+  // 3. UI-Feld Select kaskadiert nach UI-Gruppe
+  jbPopulateUiFeldDropdown(selectedGrp, selectedFeld);
+}
+
+// Kaskadierendes UI-Feld Dropdown basierend auf UI-Gruppe
+function jbPopulateUiFeldDropdown(selectedGrp, selectedFeld) {
+  const fees = window._jbGebuehren || [];
+  const grpClean = String(selectedGrp || '').trim().toLowerCase();
+
+  let filteredFees = fees;
+  if (grpClean) {
+    filteredFees = fees.filter(f => String(f.ui_gruppe || '').trim().toLowerCase() === grpClean);
+  }
+
+  const felder = Array.from(new Set(filteredFees.map(f => String(f.ui_feld || '').trim()).filter(Boolean))).sort();
+  const feldSelect = document.getElementById('g_ui_feld_select');
+  const feldInput = document.getElementById('g_ui_feld');
+  if (!feldSelect || !feldInput) return;
+
+  const placeholder = grpClean ? `-- Feld in «${jbEscHtml(selectedGrp)}» wählen --` : '-- UI-Feld wählen oder neu --';
+  let html = `<option value="">${placeholder}</option>`;
+  let found = false;
+
+  felder.forEach(fld => {
+    const sel = fld === selectedFeld;
+    if (sel) found = true;
+    html += `<option value="${jbEscHtml(fld)}"${sel ? ' selected' : ''}>${jbEscHtml(fld)}</option>`;
+  });
+  html += '<option value="__custom__">➕ [ Neues Feld erfassen… ]</option>';
+  feldSelect.innerHTML = html;
+
+  if (selectedFeld) {
+    if (found) {
+      feldSelect.value = selectedFeld;
+      feldInput.value = selectedFeld;
+      feldInput.style.display = 'none';
+    } else {
+      feldSelect.value = '__custom__';
+      feldInput.value = selectedFeld;
+      feldInput.style.display = 'block';
+    }
+  } else {
+    if (felder.length === 0 && grpClean) {
+      feldSelect.value = '__custom__';
+      feldInput.value = '';
+      feldInput.style.display = 'block';
+      feldInput.placeholder = 'Neues Feld für diese Gruppe eingeben';
+    } else {
+      feldSelect.value = '';
+      feldInput.value = '';
+      feldInput.style.display = 'none';
+    }
+  }
+}
+window.jbPopulateUiFeldDropdown = jbPopulateUiFeldDropdown;
+
+function jbOnModalGruppeSelectChanged(selectEl) {
+  jbHandleSmartSelect(selectEl, 'g_ui_gruppe');
+  const grpVal = document.getElementById('g_ui_gruppe')?.value || selectEl.value;
+  const currentFeld = document.getElementById('g_ui_feld')?.value || document.getElementById('g_ui_feld_select')?.value || '';
+  jbPopulateUiFeldDropdown(grpVal, currentFeld);
+  jbUpdateGebuehrLivePreview();
+}
+window.jbOnModalGruppeSelectChanged = jbOnModalGruppeSelectChanged;
+
+function jbOnModalCustomGruppeInput(val) {
+  const currentFeld = document.getElementById('g_ui_feld')?.value || document.getElementById('g_ui_feld_select')?.value || '';
+  jbPopulateUiFeldDropdown(val, currentFeld);
+  jbUpdateGebuehrLivePreview();
+}
+window.jbOnModalCustomGruppeInput = jbOnModalCustomGruppeInput;
+
+function jbHandleSmartSelect(selectEl, inputId) {
+  const inputEl = document.getElementById(inputId);
+  if (!inputEl) return;
+  if (selectEl.value === '__custom__') {
+    inputEl.style.display = 'block';
+    inputEl.value = '';
+    inputEl.focus();
+  } else if (selectEl.value) {
+    inputEl.value = selectEl.value;
+    inputEl.style.display = 'none';
+  } else {
+    inputEl.value = '';
+    inputEl.style.display = 'none';
+  }
+}
+
+let _jbGebuehrIsNewModal = false;
+
+// Hilfsfunktion: Automatische Schlüssel-Ableitung basierend auf Kategorie (verhindert Dubletten)
+function jbDeriveNextFeeKey(kategorie) {
+  const kat = String(kategorie || '').trim().toLowerCase();
+  let prefix = 'Z';
+  if (kat.includes('jahresbeitrag')) prefix = 'JB';
+  else if (kat.includes('kleinkaliber') || kat.includes('50m') || kat.includes('kk')) prefix = 'KK';
+  else if (kat.includes('luftgewehr') || kat.includes('10m') || kat.includes('lg')) prefix = 'LG';
+  else if (kat.includes('lizenz')) prefix = 'LI';
+  else if (kat.includes('rabatt') || kat.includes('gutschrift')) prefix = 'RA';
+  else if (kat.includes('gebäude') || kat.includes('infrastruktur') || kat.includes('schützenhaus')) prefix = 'GE';
+  else if (kat.includes('variabel') || kat.includes('zusatz')) prefix = 'Z';
+  else prefix = 'SO';
+
+  const existingKeys = (window._jbGebuehren || []).map(g => String(g.key || '').trim().toUpperCase());
+  let maxNum = 0;
+  existingKeys.forEach(k => {
+    if (k.startsWith(prefix)) {
+      const numPart = parseInt(k.substring(prefix.length), 10);
+      if (!isNaN(numPart) && numPart > maxNum) {
+        maxNum = numPart;
+      }
+    }
+  });
+  const nextNum = maxNum + 1;
+  const padded = String(nextNum).padStart(3, '0');
+  return `${prefix}${padded}`;
+}
+window.jbDeriveNextFeeKey = jbDeriveNextFeeKey;
+
+function jbOnModalKategorieSelectChanged(selectEl) {
+  jbHandleSmartSelect(selectEl, 'g_kategorie');
+  const katVal = document.getElementById('g_kategorie')?.value || selectEl.value;
+  if (_jbGebuehrIsNewModal) {
+    const keyInput = document.getElementById('g_key');
+    if (keyInput) {
+      keyInput.value = jbDeriveNextFeeKey(katVal);
+    }
+  }
+  jbUpdateGebuehrLivePreview();
+}
+window.jbOnModalKategorieSelectChanged = jbOnModalKategorieSelectChanged;
+
+function jbOnModalCustomKategorieInput(val) {
+  if (_jbGebuehrIsNewModal) {
+    const keyInput = document.getElementById('g_key');
+    if (keyInput) {
+      keyInput.value = jbDeriveNextFeeKey(val);
+    }
+  }
+  jbUpdateGebuehrLivePreview();
+}
+window.jbOnModalCustomKategorieInput = jbOnModalCustomKategorieInput;
+
+function jbOnModalBezeichnungFrontendInput(val) {
+  const bezInput = document.getElementById('g_bezeichnung');
+  const fldInput = document.getElementById('g_ui_feld');
+  if (bezInput && !bezInput.dataset.manualEdit) {
+    bezInput.value = val;
+  }
+  if (fldInput && fldInput.style.display !== 'none' && !fldInput.dataset.manualEdit) {
+    fldInput.value = val;
+  }
+  jbUpdateGebuehrLivePreview();
+}
+window.jbOnModalBezeichnungFrontendInput = jbOnModalBezeichnungFrontendInput;
+
+// Live-Vorschau der gesamten Schnellerfassungs-Card inkl. Drag & Drop
+function jbUpdateGebuehrLivePreview() {
+  const container = document.getElementById('jbGebuehrLivePreviewContainer');
+  const badge = document.getElementById('jbGebuehrPreviewTypeBadge');
+  if (!container) return;
+
+  const key = (document.getElementById('g_key')?.value || 'NEU').trim().toUpperCase();
+  const grpInput = document.getElementById('g_ui_gruppe');
+  const grpSelect = document.getElementById('g_ui_gruppe_select');
+  const ui_gruppe = (grpInput?.value || grpSelect?.value || '').trim();
+
+  const fldInput = document.getElementById('g_ui_feld');
+  const fldSelect = document.getElementById('g_ui_feld_select');
+  const bezeichnung = document.getElementById('g_bezeichnungfrontend')?.value?.trim() || '';
+  const ui_feld = (fldInput?.value || fldSelect?.value || bezeichnung || 'Muster-Gebühr').trim();
+
+  const ui_typ = document.getElementById('g_ui_typ')?.value || 'checkbox';
+  const betrag = parseFloat(document.getElementById('g_betrag')?.value) || 0;
+  const konto = document.getElementById('g_konto')?.value?.trim() || '';
+  const zielgruppe = document.getElementById('g_zielgruppe')?.value || 'Alle';
+  const rawSort = document.getElementById('g_ui_sort')?.value;
+  const parsedSort = parseInt(rawSort, 10);
+  const ui_sort = Number.isNaN(parsedSort) ? 10 : parsedSort;
+  const aktiv = document.getElementById('g_aktiv')?.checked !== false;
+
+  if (badge) {
+    const typeNames = {
+      checkbox: '☑️ Checkbox',
+      counter: '🔢 Counter (1-3)',
+      singleselect: '🔘 Singleselect',
+      multiselect: '🔲 Multiselect',
+      amount: '💵 Freier Betrag'
+    };
+    badge.textContent = `Typ: ${typeNames[ui_typ] || ui_typ}`;
+  }
+
+  if (!ui_gruppe) {
+    container.innerHTML = `
+      <div class="alert alert-light border text-center text-muted py-3 small mb-0">
+        <i class="fas fa-info-circle me-1 text-primary"></i>
+        Bitte wähle oben eine <strong>UI-Gruppe</strong> aus, um die Schnellerfassungs-Card und Sortierung anzuzeigen.
+      </div>`;
+    return;
+  }
+
+  // Icon der Gruppe bestimmen
+  let icon = 'fa-bullseye text-primary';
+  const gLower = ui_gruppe.toLowerCase();
+  if (gLower.includes('50m') || gLower.includes('kk')) icon = 'fa-bullseye text-danger';
+  else if (gLower.includes('10m') || gLower.includes('lg')) icon = 'fa-bullseye text-primary';
+  else if (gLower.includes('300m')) icon = 'fa-crosshairs text-success';
+  else if (gLower.includes('pistole')) icon = 'fa-shield-alt text-warning';
+  else if (gLower.includes('infrastruktur') || gLower.includes('schützenhaus')) icon = 'fa-home text-success';
+  else if (gLower.includes('zusatz') || gLower.includes('variabel')) icon = 'fa-plus-circle text-info';
+  else icon = 'fa-trophy text-info';
+
+  // Geschwister-Elemente sammeln
+  const allFees = window._jbGebuehren || [];
+  const siblings = allFees.filter(f => {
+    const fGrp = String(f.ui_gruppe || '').trim().toLowerCase();
+    const fKey = String(f.key || '').trim().toUpperCase();
+    return fGrp === ui_gruppe.toLowerCase() && fKey !== key;
+  }).map(f => {
+    const fKey = String(f.key || '').trim().toUpperCase();
+    const sortVal = _jbModalSiblingSortChanges[fKey] !== undefined ? _jbModalSiblingSortChanges[fKey] : (f.ui_sort !== undefined && f.ui_sort !== '' ? Number(f.ui_sort) : (f.sort_order || 99));
+    return {
+      key: fKey,
+      ui_gruppe: f.ui_gruppe,
+      ui_feld: f.ui_feld || f.bezeichnungfrontend || f.bezeichnung || fKey,
+      ui_typ: (f.ui_typ || 'checkbox').toLowerCase(),
+      betrag: Number(f.betrag || 0),
+      konto: f.konto_haben || f.konto || '',
+      zielgruppe: f.zielgruppe || 'Alle',
+      ui_sort: sortVal,
+      isCurrent: false
+    };
+  });
+
+  const currentItem = {
+    key: key,
+    ui_gruppe: ui_gruppe,
+    ui_feld: ui_feld,
+    ui_typ: ui_typ,
+    betrag: betrag,
+    konto: konto,
+    zielgruppe: zielgruppe,
+    ui_sort: ui_sort,
+    isCurrent: true
+  };
+
+  const groupItems = [...siblings, currentItem];
+  groupItems.sort((a, b) => (a.ui_sort || 99) - (b.ui_sort || 99));
+
+  // Items rendern
+  const itemsHtml = groupItems.map(item => {
+    let controlHtml = '';
+    if (item.ui_typ === 'checkbox') {
+      controlHtml = `
+        <div class="d-flex align-items-center justify-content-between p-2 bg-light rounded-2 border">
+          <div class="form-check mb-0">
+            <input class="form-check-input" type="checkbox" checked disabled>
+            <label class="form-check-label small fw-semibold text-dark ms-1">${jbEscHtml(item.ui_feld)}</label>
+            ${item.zielgruppe === 'Junioren' ? '<span class="badge bg-info-subtle text-info ms-2" style="font-size:9px;">Jugend</span>' : ''}
+          </div>
+          <span class="badge bg-white text-dark border font-monospace small">CHF ${item.betrag.toFixed(2)}</span>
+        </div>
+      `;
+    } else if (item.ui_typ === 'counter') {
+      controlHtml = `
+        <div class="p-2 bg-light rounded-2 border">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="small fw-semibold text-dark">${jbEscHtml(item.ui_feld)}</span>
+            <span class="badge bg-white text-muted border small font-monospace">CHF ${item.betrag.toFixed(2)} / Stich</span>
+          </div>
+          <div class="btn-group btn-group-sm w-100 opacity-75">
+            <button type="button" class="btn btn-outline-secondary py-0.5">Kein Stich</button>
+            <button type="button" class="btn btn-primary active py-0.5 fw-bold">1 Stich</button>
+            <button type="button" class="btn btn-outline-secondary py-0.5">2 Stiche</button>
+            <button type="button" class="btn btn-outline-secondary py-0.5">3 Stiche</button>
+          </div>
+        </div>
+      `;
+    } else if (item.ui_typ === 'singleselect') {
+      controlHtml = `
+        <div class="p-2 bg-light rounded-2 border">
+          <div class="small fw-semibold text-dark mb-1">${jbEscHtml(item.ui_feld)} <span class="badge bg-light text-muted border" style="font-size:9px;">Einzelauswahl</span></div>
+          <div class="d-flex gap-1.5 flex-wrap">
+            <button type="button" class="btn btn-sm btn-primary active py-0.5 px-2.5 rounded-pill fw-bold" style="font-size:11px;">
+              ${jbEscHtml(item.ui_feld)} (CHF ${item.betrag.toFixed(2)})
+            </button>
+            <button type="button" class="btn btn-sm btn-light border py-0.5 px-2 rounded-pill text-muted" style="font-size:11px;" disabled>
+              Weitere Stufe…
+            </button>
+          </div>
+        </div>
+      `;
+    } else if (item.ui_typ === 'multiselect') {
+      controlHtml = `
+        <div class="p-2 bg-light rounded-2 border">
+          <div class="small fw-semibold text-dark mb-1">${jbEscHtml(item.ui_feld)} <span class="badge bg-info text-dark" style="font-size:9px;">Mehrfachauswahl</span></div>
+          <div class="d-flex gap-1.5 flex-wrap">
+            <button type="button" class="btn btn-sm btn-primary active py-0.5 px-2 rounded-pill" style="font-size:11px;">
+              <i class="fas fa-check me-1"></i>${jbEscHtml(item.ui_feld)} (CHF ${item.betrag.toFixed(2)})
+            </button>
+          </div>
+        </div>
+      `;
+    } else if (item.ui_typ === 'amount') {
+      controlHtml = `
+        <div class="p-2 bg-light rounded-2 border">
+          <div class="row g-2 align-items-center">
+            <div class="col-auto">
+              <input class="form-check-input" type="checkbox" checked disabled>
+            </div>
+            <div class="col">
+              <input type="text" class="form-control form-control-sm bg-white" value="${jbEscHtml(item.ui_feld)}" readonly style="font-size: 11px;">
+            </div>
+            <div class="col-3">
+              <div class="input-group input-group-sm">
+                <span class="input-group-text px-1" style="font-size:10px;">CHF</span>
+                <input type="text" class="form-control form-control-sm text-end fw-bold bg-white" value="${item.betrag.toFixed(2)}" readonly style="font-size: 11px;">
+              </div>
+            </div>
+            <div class="col-auto">
+              <div class="input-group input-group-sm" style="width: 110px;">
+                <input type="text" class="form-control form-control-sm font-monospace" value="${jbEscHtml(item.konto)}" readonly style="background-color: #e9ecef; font-size:10px;">
+                <button class="btn btn-outline-secondary" type="button" disabled><i class="fas fa-lock" style="font-size:9px;"></i></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    const isCurrent = item.isCurrent;
+    const cardBorder = isCurrent ? 'border-primary border-2 shadow-sm bg-primary-subtle bg-opacity-10' : 'border bg-white shadow-2xs';
+
+    return `
+      <div class="tk-draggable-item card p-2 mb-2 rounded-2 ${cardBorder}" data-id="${jbEscHtml(item.key)}" draggable="true" style="transition: all 0.15s ease;">
+        <div class="d-flex align-items-center justify-content-between mb-1.5 pb-1 border-bottom">
+          <div class="d-flex align-items-center gap-1.5">
+            <span class="tk-drag-handle text-muted cursor-grab px-1 py-0.5 rounded" title="Anfassen und verschieben" style="cursor: grab;">
+              <i class="fas fa-grip-vertical"></i>
+            </span>
+            <div class="btn-group btn-group-xs me-1">
+              <button type="button" class="btn btn-outline-secondary py-0 px-1 border" onclick="jbMovePreviewItem('${jbEscHtml(item.key)}', -1); return false;" title="Nach oben">
+                <i class="fas fa-chevron-up" style="font-size: 9px;"></i>
+              </button>
+              <button type="button" class="btn btn-outline-secondary py-0 px-1 border" onclick="jbMovePreviewItem('${jbEscHtml(item.key)}', 1); return false;" title="Nach unten">
+                <i class="fas fa-chevron-down" style="font-size: 9px;"></i>
+              </button>
+            </div>
+            <strong class="font-monospace small ${isCurrent ? 'text-primary' : 'text-dark'}">${jbEscHtml(item.key)}</strong>
+            ${isCurrent ? '<span class="badge bg-primary text-white" style="font-size: 9px;"><i class="fas fa-pen me-1"></i>In Bearbeitung</span>' : '<span class="badge bg-light text-muted border" style="font-size: 9px;">Bestehend</span>'}
+          </div>
+          <div class="d-flex align-items-center gap-1">
+            <span class="badge bg-light text-dark border font-monospace" style="font-size: 10px;">
+              Pos (ui_sort): <strong>${item.ui_sort}</strong>
+            </span>
+          </div>
+        </div>
+        ${controlHtml}
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="card p-3 border-0 shadow-sm rounded-3 bg-white" id="jbPreviewDraggableContainer">
+      <div class="d-flex justify-content-between align-items-center mb-2.5 pb-2 border-bottom">
+        <h6 class="text-secondary fw-bold mb-0 text-uppercase" style="font-size: 12px; letter-spacing: 0.5px;">
+          <i class="fas ${icon} me-2"></i>${jbEscHtml(ui_gruppe)}
+        </h6>
+        <span class="badge bg-light text-muted border font-monospace small">
+          ${groupItems.length} Elemente in Card
+        </span>
+      </div>
+      <div class="d-flex align-items-center justify-content-between text-muted small mb-2 px-1" style="font-size: 11px;">
+        <span><i class="fas fa-arrows-alt-v me-1 text-primary"></i><strong>Drag & Drop oder ▲/▼:</strong> An gewünschte Position verschieben.</span>
+        <span class="text-success fw-semibold"><i class="fas fa-check-circle me-1"></i>ui_sort synchron</span>
+      </div>
+      <div id="jbPreviewItemsList">
+        ${itemsHtml}
+      </div>
+    </div>
+  `;
+
+  // TableKit Drag & Drop initialisieren
+  const listEl = document.getElementById('jbPreviewItemsList');
+  if (listEl && window.TableKit && typeof window.TableKit.makeDraggable === 'function') {
+    window.TableKit.makeDraggable(listEl, {
+      itemSelector: '.tk-draggable-item',
+      onReorder: (newOrderKeys) => {
+        jbApplyNewPreviewOrder(newOrderKeys);
+      }
+    });
+  }
+}
+window.jbUpdateGebuehrLivePreview = jbUpdateGebuehrLivePreview;
+
+// Anordnung bei Drag & Drop oder Verschieben übernehmen
+function jbApplyNewPreviewOrder(newOrderKeys) {
+  if (!Array.isArray(newOrderKeys) || newOrderKeys.length === 0) return;
+  const currentKey = (document.getElementById('g_key')?.value || 'NEU').trim().toUpperCase();
+
+  newOrderKeys.forEach((k, idx) => {
+    const kUpper = String(k || '').trim().toUpperCase();
+    const newSort = (idx + 1) * 10;
+    if (kUpper === currentKey || kUpper === 'NEU') {
+      const sortInput = document.getElementById('g_ui_sort');
+      if (sortInput) sortInput.value = newSort;
+    } else {
+      _jbModalSiblingSortChanges[kUpper] = newSort;
+    }
+  });
+
+  jbUpdateGebuehrLivePreview();
+}
+window.jbApplyNewPreviewOrder = jbApplyNewPreviewOrder;
+
+function jbMovePreviewItem(itemKey, delta) {
+  const listEl = document.getElementById('jbPreviewItemsList');
+  if (!listEl) return;
+  const items = Array.from(listEl.querySelectorAll('.tk-draggable-item'));
+  const keys = items.map(el => el.dataset.id).filter(Boolean);
+  const idx = keys.indexOf(itemKey);
+  if (idx < 0) return;
+
+  const targetIdx = idx + delta;
+  if (targetIdx < 0 || targetIdx >= keys.length) return;
+
+  const temp = keys[idx];
+  keys[idx] = keys[targetIdx];
+  keys[targetIdx] = temp;
+
+  jbApplyNewPreviewOrder(keys);
+}
+window.jbMovePreviewItem = jbMovePreviewItem;
+window.jbUpdateGebuehrLivePreview = jbUpdateGebuehrLivePreview;
+
+function jbOpenEditGebuehrModal(key) {
+  if (typeof jbEnsureGebuehrModals === 'function') jbEnsureGebuehrModals();
+  const modalEl = document.getElementById('jbModalGebuehrEdit');
+  if (!modalEl) return;
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+
+  if (window.UIModalKit && typeof window.UIModalKit.makeMovableAndResizable === 'function') {
+    window.UIModalKit.makeMovableAndResizable(modalEl);
+  } else if (window.TableKit && typeof window.TableKit.setupDraggableModal === 'function') {
+    window.TableKit.setupDraggableModal(modalEl);
+  }
+
+  const titleEl = document.getElementById('jbModalGebuehrTitle');
+  const keyInput = document.getElementById('g_key');
+  const keyHelp = document.getElementById('g_key_help');
+  const isNew = !key;
+  _jbGebuehrIsNewModal = isNew;
+  _jbModalSiblingSortChanges = {};
+
+  modalEl.addEventListener('hidden.bs.modal', () => {
+    _jbModalSiblingSortChanges = {};
+  }, { once: true });
+
+  // Fehlermeldungen zurücksetzen
+  document.querySelectorAll('#jbFormGebuehr .is-invalid').forEach(el => el.classList.remove('is-invalid'));
+  document.querySelectorAll('#jbFormGebuehr .invalid-feedback').forEach(el => el.remove());
+  const errorContainer = document.getElementById('jbGebuehrErrorAlert');
+  if (errorContainer) errorContainer.innerHTML = '';
+
+  // Dropdown für Kontenrahmen initialisieren
+  const ddEl = document.getElementById('jb-gebuehr-konten-dropdown');
+  if (ddEl) {
+    const list = window._bhKontenrahmen || [];
+    ddEl.innerHTML = list.map(k => `
+      <li>
+        <a class="dropdown-item py-1 px-2 d-flex justify-content-between align-items-center cursor-pointer" href="#" onclick="jbOnGebuehrKontoChanged('${k.konto}'); jbUpdateGebuehrLivePreview(); return false;">
+          <span>${jbEscHtml(k.bezeichnung)}</span>
+          <span class="badge bg-light text-primary font-monospace ms-2 border">${jbEscHtml(k.konto)}</span>
+        </a>
+      </li>
+    `).join('') || '<li class="text-muted small px-2">Keine Konten geladen</li>';
+  }
+
+  if (isNew) {
+    if (titleEl) titleEl.innerHTML = '➕ Neue Gebühr erfassen';
+    keyInput.readOnly = true;
+    keyInput.style.backgroundColor = '#f8f9fa';
+    const initialKat = 'variabel';
+    keyInput.value = jbDeriveNextFeeKey(initialKat);
+    if (keyHelp) {
+      keyHelp.innerHTML = '<span class="text-success fw-semibold"><i class="fas fa-magic me-1"></i>Automatisch vergeben: nächster freier Schlüssel (Dubletten ausgeschlossen).</span>';
+    }
+
+    jbPopulateModalDropdowns(initialKat, 'Variable Zusatzpositionen', '');
+    document.getElementById('g_zielgruppe').value = 'Alle';
+    const bezFrontEl = document.getElementById('g_bezeichnungfrontend');
+    const bezEl = document.getElementById('g_bezeichnung');
+    if (bezFrontEl) bezFrontEl.value = '';
+    if (bezEl) {
+      bezEl.value = '';
+      delete bezEl.dataset.manualEdit;
+    }
+    document.getElementById('g_betrag').value = '';
+    jbOnGebuehrKontoChanged('');
+    document.getElementById('g_ui_typ').value = 'amount';
+    document.getElementById('g_ui_sort').value = '30';
+    document.getElementById('g_aktiv').checked = true;
+    document.getElementById('g_bem').value = '';
+  } else {
+    if (titleEl) titleEl.innerHTML = `⚙️ Gebühr bearbeiten: <span class="font-monospace">${key}</span>`;
+    keyInput.readOnly = true;
+    keyInput.style.backgroundColor = '#e9ecef';
+    keyInput.value = key;
+    if (keyHelp) {
+      keyHelp.innerHTML = '<span class="text-muted"><i class="fas fa-lock me-1"></i>Bestehender Schlüssel (fest vergeben, schützt vor Dubletten).</span>';
+    }
+
+    const f = (window._jbGebuehren || []).find(x => String(x.key || '').trim().toUpperCase() === String(key).toUpperCase()) || {};
+    jbPopulateModalDropdowns(f.kategorie || '', f.ui_gruppe || '', f.ui_feld || '');
+    document.getElementById('g_zielgruppe').value = f.zielgruppe || 'Alle';
+    const frontVal = f.bezeichnung_frontend || f.bezeichnungfrontend || '';
+    document.getElementById('g_bezeichnungfrontend').value = frontVal;
+    const bezEl = document.getElementById('g_bezeichnung');
+    if (bezEl) {
+      bezEl.value = f.bezeichnung || '';
+      if (f.bezeichnung && f.bezeichnung !== frontVal) {
+        bezEl.dataset.manualEdit = '1';
+      } else {
+        delete bezEl.dataset.manualEdit;
+      }
+    }
+    const uiTypVal = (f.ui_typ || 'checkbox').toLowerCase();
+    document.getElementById('g_betrag').value = (uiTypVal === 'amount' && Number(f.betrag || 0) === 0) ? '' : (f.betrag !== undefined ? f.betrag : '');
+    const initialKonto = f['Haben-Konto-Jahresbeitrag-Buchhaltung'] || f.konto_haben || f.konto || '';
+    jbOnGebuehrKontoChanged(initialKonto);
+    document.getElementById('g_ui_typ').value = uiTypVal;
+    document.getElementById('g_ui_sort').value = f.ui_sort !== undefined ? f.ui_sort : '10';
+    document.getElementById('g_aktiv').checked = f.aktiv !== false && f.aktiv !== 'FALSE' && f.aktiv !== '0' && f.aktiv !== 0;
+    document.getElementById('g_bem').value = f.bem || f.bemerkung || '';
+  }
+
+  jbUpdateGebuehrLivePreview();
+  modal.show();
+}
+
+async function jbSaveGebuehrFromModal() {
+  const btn = document.getElementById('btnSaveGebuehr');
+  
+  // 1. Frühere Validierungsfehler zurücksetzen
+  document.querySelectorAll('#jbFormGebuehr .is-invalid').forEach(el => el.classList.remove('is-invalid'));
+  document.querySelectorAll('#jbFormGebuehr .invalid-feedback').forEach(el => el.remove());
+  const errorContainer = document.getElementById('jbGebuehrErrorAlert');
+  if (errorContainer) errorContainer.innerHTML = '';
+
+  const errors = [];
+
+  const keyInput = document.getElementById('g_key');
+  const key = (keyInput?.value || '').trim().toUpperCase();
+
+  const katSelect = document.getElementById('g_kategorie_select');
+  const katInput = document.getElementById('g_kategorie');
+  const kategorie = katSelect?.value === '__custom__'
+    ? (katInput?.value || '').trim()
+    : (katInput?.value || katSelect?.value || '').trim();
+
+  const zielgruppe = document.getElementById('g_zielgruppe')?.value || 'Alle';
+
+  const bezFrontInput = document.getElementById('g_bezeichnungfrontend');
+  const bezeichnungfrontend = (bezFrontInput?.value || '').trim();
+
+  const bezInput = document.getElementById('g_bezeichnung');
+  const bezeichnung = (bezInput?.value || '').trim() || bezeichnungfrontend;
+
+  const ui_typ = document.getElementById('g_ui_typ')?.value || 'checkbox';
+  const betragInput = document.getElementById('g_betrag');
+  const rawBetrag = (betragInput?.value || '').trim();
+  const betrag = (ui_typ === 'amount' && rawBetrag === '') ? 0 : parseFloat(rawBetrag);
+
+  const kontoInput = document.getElementById('g_konto');
+  const konto = (kontoInput?.value || '').trim();
+
+  const kontobezeichnung = (document.getElementById('g_kontobezeichnung')?.value || '').trim();
+
+  const grpInput = document.getElementById('g_ui_gruppe');
+  const grpSelect = document.getElementById('g_ui_gruppe_select');
+  const ui_gruppe = grpSelect?.value === '__custom__'
+    ? (grpInput?.value || '').trim()
+    : (grpInput?.value || grpSelect?.value || '').trim();
+
+  const fldInput = document.getElementById('g_ui_feld');
+  const fldSelect = document.getElementById('g_ui_feld_select');
+  const ui_feld = fldSelect?.value === '__custom__'
+    ? (fldInput?.value || '').trim()
+    : (fldInput?.value || fldSelect?.value || bezeichnungfrontend).trim();
+
+  const rawSort = document.getElementById('g_ui_sort')?.value;
+  const parsedSort = parseInt(rawSort, 10);
+  const ui_sort = Number.isNaN(parsedSort) ? 10 : parsedSort;
+  const aktiv = document.getElementById('g_aktiv')?.checked !== false;
+  const bem = (document.getElementById('g_bem')?.value || '').trim();
+
+  // Helper zum Setzen von Fehlern
+  const setFieldError = (inputEl, message) => {
+    if (!inputEl) return;
+    inputEl.classList.add('is-invalid');
+    const feedback = document.createElement('div');
+    feedback.className = 'invalid-feedback';
+    feedback.style.display = 'block';
+    feedback.innerHTML = `<i class="fas fa-exclamation-circle me-1"></i>${message}`;
+    inputEl.parentNode.appendChild(feedback);
+    errors.push(message);
+  };
+
+  // Validierung:
+  // A) Schlüssel
+  if (!key || key.length < 2) {
+    setFieldError(keyInput, 'Bitte einen gültigen Schlüssel angeben (z. B. KK009 oder Z003).');
+  }
+
+  // B) Kategorie
+  if (!kategorie) {
+    setFieldError(katInput?.style?.display !== 'none' ? katInput : katSelect, 
+      'Kategorie ist erforderlich (z. B. Kleinkaliber, Luftgewehr oder variabel).');
+  }
+
+  // C) Frontend-Bezeichnung
+  if (!bezeichnungfrontend || bezeichnungfrontend.length < 3) {
+    setFieldError(bezFrontInput, 'Bitte eine aussagekräftige Bezeichnung für das Portal angeben (mind. 3 Zeichen, z. B. "Beitrag Vereinsjacke").');
+  }
+
+  // D) Haben-Konto (Ertragskonto) - Pflichtprüfung gegen KMU-Kontenrahmen!
+  if (!konto) {
+    setFieldError(kontoInput, 'Haben-Konto ist ein Pflichtfeld. Wähle ein Ertragskonto aus dem Kontenrahmen (z. B. 1300, 3410 oder 8500).');
+  } else {
+    const konten = window._bhKontenrahmen || [];
+    const foundAcc = konten.find(a => String(a.konto).trim() === konto);
+    if (!foundAcc && konten.length > 0) {
+      setFieldError(kontoInput, `Das Haben-Konto '${konto}' existiert nicht im KMU-Kontenrahmen. Bitte wähle ein gültiges Konto über das Buch-Symbol, z.B. 1300 (Wettkampfbeiträge), 3410 (Mitgliederbeiträge), 3420 (Jugendförderung) oder 8500 (Zusatzerträge).`);
+    }
+  }
+
+  // E) Betrag
+  if (isNaN(betrag)) {
+    setFieldError(betragInput, 'Bitte einen gültigen Betrag in CHF eingeben (z. B. 15.00 oder 60.00).');
+  } else if (ui_typ === 'amount' && betrag < 0) {
+    setFieldError(betragInput, 'Bei einer variablen Zusatzposition darf der Standardbetrag nicht negativ sein (leer oder 0.00 = variabel je Schütze).');
+  } else if (ui_typ !== 'amount' && betrag === 0 && !['JB004', 'JB006', 'LI002', 'LI003'].includes(key)) {
+    setFieldError(betragInput, 'Der Betrag ist CHF 0.00. Sollte diese Gebühr kostenpflichtig sein, trage bitte den Tarif ein (0.00 ist nur für befreite Kategorien wie Ehrenmitglieder, Schüler oder variable Beträge zulässig).');
+  }
+
+  // F) UI-Gruppe & UI-Feld
+  if (!ui_gruppe) {
+    setFieldError(grpInput?.style?.display !== 'none' ? grpInput : grpSelect, 
+      'UI-Gruppe ist erforderlich. Sie bestimmt die Card-Überschrift in der Schnellerfassung (z. B. "50m Wettschiessen (KK)" oder "Variable Zusatzpositionen").');
+  }
+
+  if (!ui_feld) {
+    setFieldError(fldInput?.style?.display !== 'none' ? fldInput : fldSelect, 
+      'UI-Feld ist erforderlich (bestimmt die Beschriftung des Steuerelements in der Schnellerfassung).');
+  }
+
+  // Falls Fehler vorliegen: Abbruch mit Hilfe-Banner und Fokus auf erstes fehlerhaftes Feld
+  if (errors.length > 0) {
+    if (errorContainer) {
+      errorContainer.innerHTML = `
+        <div class="alert alert-danger shadow-sm border-danger border-2 rounded-3 mb-3 p-3">
+          <div class="d-flex align-items-center mb-2">
+            <i class="fas fa-exclamation-triangle fa-lg text-danger me-2"></i>
+            <h6 class="mb-0 fw-bold text-danger">Bitte korrigiere die folgenden ${errors.length} Eingaben:</h6>
+          </div>
+          <ul class="mb-0 ps-3 small" style="line-height: 1.6;">
+            ${errors.map(err => `<li>${err}</li>`).join('')}
+          </ul>
+        </div>
+      `;
+    }
+    const firstInvalid = document.querySelector('#jbFormGebuehr .is-invalid');
+    if (firstInvalid) {
+      firstInvalid.focus();
+      firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    return;
+  }
+
+  // Alles valide -> Speichern mit UIButtonKit Double-Submit-Schutz!
+  const runSave = async () => {
+    const existingIdx = (window._jbGebuehren || []).findIndex(x => String(x.key || '').trim().toUpperCase() === key);
+    const prevFee = existingIdx >= 0 ? { ...window._jbGebuehren[existingIdx] } : null;
+
+    const payload = {
+      key,
+      kategorie,
+      zielgruppe,
+      bezeichnung_frontend: bezeichnungfrontend,
+      bezeichnungfrontend,
+      bezeichnung,
+      betrag,
+      konto,
+      'Haben-Konto-Jahresbeitrag-Buchhaltung': konto,
+      konto_haben: konto,
+      'Kontobezeichnung im KMU-Kontenrahmen': kontobezeichnung,
+      kontobezeichnung,
+      ui_gruppe,
+      ui_feld,
+      ui_typ,
+      ui_sort,
+      aktiv,
+      bem,
+      bemerkung: bem
+    };
+
+    const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+    if (!supa) throw new Error('Supabase Client nicht verfügbar.');
+
+    const { error: supaErr } = await supa.from('gebuehren_config').upsert({
+      key: key,
+      bezeichnung: bezeichnung,
+      bezeichnung_frontend: bezeichnungfrontend,
+      betrag: Number(betrag || 0),
+      konto_haben: konto,
+      kategorie: kategorie,
+      sort_order: ui_sort,
+      ui_gruppe: ui_gruppe,
+      ui_feld: ui_feld,
+      ui_typ: ui_typ,
+      zielgruppe: zielgruppe,
+      aktiv: aktiv,
+      bemerkung: bem,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'key' });
+
+    if (supaErr) throw supaErr;
+    console.log(`✅ [Supabase] Gebühr ${key} erfolgreich mit allen UI-Spalten gespeichert.`);
+
+    // 2. Falls Geschwister-Elemente per Drag & Drop umsortiert wurden: Batch-Update!
+    const siblingEntries = Object.entries(_jbModalSiblingSortChanges);
+    if (siblingEntries.length > 0) {
+      for (const [sKey, sSort] of siblingEntries) {
+        const { error: sibErr } = await supa.from('gebuehren_config')
+          .update({ sort_order: Number(sSort), updated_at: new Date().toISOString() })
+          .eq('key', sKey);
+        if (sibErr) {
+          throw new Error(`Sortier-Update für ${sKey} fehlgeschlagen: ${sibErr.message}`);
+        }
+        const sibInMem = (window._jbGebuehren || []).find(x => String(x.key || '').trim().toUpperCase() === sKey.toUpperCase());
+        if (sibInMem) {
+          sibInMem.sort_order = Number(sSort);
+          sibInMem.ui_sort = Number(sSort);
+        }
+      }
+      console.log(`✅ [Supabase] ${siblingEntries.length} Geschwister-Gebühren mit neuer Sortierung synchronisiert.`);
+    }
+
+    _jbModalSiblingSortChanges = {};
+
+    showToast(`🎉 Gebühr ${key} erfolgreich in Supabase gespeichert!`);
+
+    const modalEl = document.getElementById('jbModalGebuehrEdit');
+    if (modalEl) {
+      const bsModal = bootstrap.Modal.getInstance(modalEl);
+      if (bsModal) bsModal.hide();
+    }
+
+    if (existingIdx >= 0) {
+      window._jbGebuehren[existingIdx] = { ...window._jbGebuehren[existingIdx], ...payload };
+    } else {
+      window._jbGebuehren.push(payload);
+    }
+
+    jbPopulateFilterDropdowns();
+    jbRenderGebuehrenTable();
+
+    // 3. Offene Beitragspositionen & Rechnungsentwürfe (noch nicht versendet/bezahlt) abgleichen
+    if (prevFee && !_jbGebuehrIsNewModal) {
+      const syncResult = await jbSyncUpdatedFeeToOpenDrafts(supa, key, prevFee, payload);
+      if (syncResult && (syncResult.updatedPositions > 0 || syncResult.updatedInvoices > 0)) {
+        showToast(
+          `🔄 ${syncResult.updatedPositions} offene Beitragsposition(en) und ${syncResult.updatedInvoices} Rechnungsentwurf/-würfe aktualisiert.`
+        );
+      }
+    }
+  };
+
+  try {
+    if (window.UIButtonKit && typeof window.UIButtonKit.withLoading === 'function') {
+      await window.UIButtonKit.withLoading(btn || '#btnSaveGebuehr', runSave);
+    } else {
+      await runSave();
+    }
+  } catch (err) {
+    await UIConfirmKit.alert({
+      title: 'Fehler beim Speichern',
+      message: 'Fehler beim Speichern der Gebühr: ' + err.message,
+      type: 'danger'
+    });
+  }
+}
+
+async function jbSyncUpdatedFeeToOpenDrafts(supa, key, prevFee, nextFee) {
+  const activeYear = (typeof _jbYear !== 'undefined' && _jbYear) ? Number(_jbYear) : new Date().getFullYear();
+  const isVariable = String(nextFee.ui_typ || '').toLowerCase() === 'amount'
+    || String(nextFee.kategorie || '').toLowerCase() === 'variabel'
+    || key.startsWith('Z');
+
+  const newLabel = String(nextFee.bezeichnung_frontend || nextFee.bezeichnungfrontend || nextFee.bezeichnung || key).trim();
+  const oldLabels = new Set(
+    [prevFee.bezeichnung_frontend, prevFee.bezeichnungfrontend, prevFee.bezeichnung, prevFee.ui_feld, key]
+      .map(v => String(v || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+  const oldBetrag = Number(prevFee.betrag || 0);
+  const newBetrag = Number(nextFee.betrag || 0);
+  const oldKonto = String(prevFee.konto_haben || prevFee.konto || '').trim();
+  const newKonto = String(nextFee.konto_haben || nextFee.konto || '').trim();
+
+  const labelChanged = !oldLabels.has(newLabel.toLowerCase()) || String(prevFee.bezeichnung_frontend || prevFee.bezeichnungfrontend || '').trim() !== newLabel;
+  const betragChanged = !isVariable && oldBetrag !== newBetrag;
+  const kontoChanged = newKonto && oldKonto !== newKonto;
+
+  if (!labelChanged && !betragChanged && !kontoChanged) {
+    return { updatedPositions: 0, updatedInvoices: 0 };
+  }
+
+  const { data: posRows, error: posErr } = await supa
+    .from('contributions_positions')
+    .select('id, header_id, position_nr, beschreibung, betrag, konto, source_field')
+    .eq('year', activeYear)
+    .eq('source_field', key);
+
+  if (posErr) throw new Error(`Fehler beim Laden betroffener Beitragspositionen: ${posErr.message}`);
+  if (!Array.isArray(posRows) || posRows.length === 0) {
+    return { updatedPositions: 0, updatedInvoices: 0 };
+  }
+
+  const headerIds = Array.from(new Set(posRows.map(p => p.header_id).filter(Boolean)));
+  const { data: headers, error: hdrErr } = await supa
+    .from('contributions_header')
+    .select('id, invoice_id, status')
+    .in('id', headerIds);
+
+  if (hdrErr) throw new Error(`Fehler beim Laden betroffener Beitrags-Header: ${hdrErr.message}`);
+  if (!Array.isArray(headers)) {
+    return { updatedPositions: 0, updatedInvoices: 0 };
+  }
+
+  const headerMap = Object.fromEntries(headers.map(h => [h.id, h]));
+  const invoiceIds = Array.from(new Set(headers.map(h => h.invoice_id).filter(Boolean)));
+  const invoiceMap = {};
+
+  if (invoiceIds.length > 0) {
+    const [{ data: invRows, error: invErr }, { data: payRows, error: payErr }] = await Promise.all([
+      supa.from('invoices').select('id, mail_status, send_date, status, total_amount, open_amount').in('id', invoiceIds),
+      supa.from('invoice_payments').select('invoice_id').in('invoice_id', invoiceIds)
+    ]);
+    if (invErr) throw new Error(`Fehler beim Prüfen verknüpfter Rechnungen: ${invErr.message}`);
+    if (payErr) throw new Error(`Fehler beim Prüfen von Rechnungszahlungen: ${payErr.message}`);
+
+    (invRows || []).forEach(inv => { invoiceMap[inv.id] = inv; });
+    const paidInvSet = new Set((payRows || []).map(p => p.invoice_id));
+    Object.values(invoiceMap).forEach(inv => {
+      inv._hasPayments = paidInvSet.has(inv.id);
+    });
+  }
+
+  let updatedPositions = 0;
+  const touchedHeaderIds = new Set();
+  const touchedDraftInvoices = new Map(); // invoiceId -> array of matched cp rows
+
+  for (const cp of posRows) {
+    const hdr = headerMap[cp.header_id];
+    const hdrSt = String(hdr?.status || '').toLowerCase();
+    if (!hdr || hdrSt === 'bezahlt' || hdrSt === 'teilbezahlt' || hdrSt === 'versendet' || hdrSt === 'gesendet') continue;
+
+    const inv = hdr.invoice_id ? invoiceMap[hdr.invoice_id] : null;
+    if (inv) {
+      const isDraftInv = (!inv.mail_status || inv.mail_status === 'entwurf')
+        && !inv.send_date
+        && !inv._hasPayments
+        && inv.status !== 'bezahlt'
+        && inv.status !== 'teilbezahlt'
+        && inv.status !== 'storniert'
+        && Math.abs(Number(inv.open_amount ?? inv.total_amount ?? 0) - Number(inv.total_amount ?? 0)) < 0.01;
+      if (!isDraftInv) continue; // Bereits versendet/bezahlt -> Revisionssicherheit strikt wahren
+    }
+
+    const curDesc = String(cp.beschreibung || '').trim();
+    const matchesOldDefaultDesc = oldLabels.has(curDesc.toLowerCase());
+    const updateFields = {};
+
+    if (labelChanged && matchesOldDefaultDesc && curDesc !== newLabel) {
+      updateFields.beschreibung = newLabel;
+    }
+    if (betragChanged && Number(cp.betrag || 0) === oldBetrag) {
+      updateFields.betrag = newBetrag;
+    }
+    if (kontoChanged && String(cp.konto || '').trim() === oldKonto) {
+      updateFields.konto = newKonto;
+    }
+
+    if (Object.keys(updateFields).length > 0) {
+      updateFields.last_upd = new Date().toISOString();
+      const { error: updErr } = await supa
+        .from('contributions_positions')
+        .update(updateFields)
+        .eq('id', cp.id);
+      if (updErr) throw new Error(`Fehler beim Aktualisieren der Beitragsposition (${cp.id}): ${updErr.message}`);
+      updatedPositions++;
+      touchedHeaderIds.add(cp.header_id);
+      if (inv) {
+        if (!touchedDraftInvoices.has(inv.id)) touchedDraftInvoices.set(inv.id, []);
+        touchedDraftInvoices.get(inv.id).push({
+          position_nr: cp.position_nr,
+          oldDesc: curDesc,
+          newDesc: updateFields.beschreibung || curDesc,
+          newBetrag: updateFields.betrag,
+          newKonto: updateFields.konto
+        });
+      }
+    }
+  }
+
+  // Bei Betragsänderung Summen der betroffenen Beitrags-Header neu berechnen
+  const updatedHeaderTotals = {};
+  if (betragChanged && touchedHeaderIds.size > 0) {
+    for (const hid of touchedHeaderIds) {
+      const { data: allPos, error: allPosErr } = await supa
+        .from('contributions_positions')
+        .select('betrag, source_field')
+        .eq('header_id', hid);
+      if (allPosErr) throw new Error(`Fehler beim Laden der Positions-Summen (${hid}): ${allPosErr.message}`);
+      if (Array.isArray(allPos)) {
+        const hasRa002 = allPos.some(x => String(x.source_field || '').toUpperCase() === 'RA002');
+        let sum = allPos.reduce((acc, x) => acc + Number(x.betrag || 0), 0);
+        if (!hasRa002 && sum < 0) sum = 0;
+        sum = Number(sum.toFixed(2));
+        updatedHeaderTotals[hid] = sum;
+        const { error: hdrUpdErr } = await supa.from('contributions_header').update({ gesamt: sum, updated_at: new Date().toISOString() }).eq('id', hid);
+        if (hdrUpdErr) throw hdrUpdErr;
+      }
+    }
+  }
+
+  // Verknüpfte Rechnungsentwürfe synchronisieren & PDF neu rendern
+  let updatedInvoices = 0;
+  for (const [invId, changes] of touchedDraftInvoices.entries()) {
+    const { data: invPosRows, error: invPosErr } = await supa
+      .from('invoice_positions')
+      .select('id, position_nr, description, source_field')
+      .eq('invoice_id', invId);
+    if (invPosErr) throw new Error(`Fehler beim Laden der Rechnungspositionen (${invId}): ${invPosErr.message}`);
+
+    let invModified = false;
+    for (const ch of changes) {
+      const targetIp = (invPosRows || []).find(ip =>
+        String(ip.source_field || '').trim().toUpperCase() === key
+        || (!ip.source_field && Number(ip.position_nr) === Number(ch.position_nr) && String(ip.description || '').trim().toLowerCase() === ch.oldDesc.toLowerCase())
+      );
+      if (targetIp) {
+        const ipPatch = { source_field: key };
+        if (ch.newDesc && ch.newDesc !== targetIp.description) ipPatch.description = ch.newDesc;
+        if (ch.newBetrag !== undefined) {
+          ipPatch.unit_price = ch.newBetrag;
+          ipPatch.amount = ch.newBetrag;
+        }
+        if (ch.newKonto) ipPatch.konto = ch.newKonto;
+        const { error: ipErr } = await supa.from('invoice_positions').update(ipPatch).eq('id', targetIp.id);
+        if (ipErr) throw new Error(`Fehler beim Aktualisieren der Rechnungsposition (${targetIp.id}): ${ipErr.message}`);
+        invModified = true;
+      }
+    }
+
+    if (invModified) {
+      const hdrForInv = headers.find(h => h.invoice_id === invId);
+      const invPatch = {
+        pdf_url: null,
+        pdf_storage_path: null,
+        updated_at: new Date().toISOString()
+      };
+      if (hdrForInv && updatedHeaderTotals[hdrForInv.id] !== undefined) {
+        invPatch.total_amount = updatedHeaderTotals[hdrForInv.id];
+        invPatch.open_amount = updatedHeaderTotals[hdrForInv.id];
+      }
+      const { error: invUpdErr } = await supa.from('invoices').update(invPatch).eq('id', invId);
+      if (invUpdErr) throw invUpdErr;
+      if (window._invoicePositionsCache) delete window._invoicePositionsCache[String(invId).trim()];
+      if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
+        window.RechnungsCore.renderPdf(invId, { forceRecreate: true }).catch(err => {
+          console.warn(`⚠️ PDF-Neugenerierung für ${invId} Hinweis:`, err);
+        });
+      }
+      updatedInvoices++;
+    }
+  }
+
+  if (updatedPositions > 0 && typeof loadJahresbeitragData === 'function') {
+    await loadJahresbeitragData(true, updatedInvoices > 0);
+  } else if (updatedInvoices > 0 && typeof loadRechnungenData === 'function') {
+    await loadRechnungenData(true, true);
+  }
+
+  return { updatedPositions, updatedInvoices };
+}
+
+async function jbReloadGebuehrenData() {
+  const btn = document.getElementById('btnJbReloadGebuehren');
+  const runReload = async () => {
+    try {
+      showToast("Lade Gebührenkonfiguration aus Supabase neu…");
+      const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+      if (!supa) throw new Error('Supabase Client nicht verfügbar.');
+      const { data, error } = await supa.from('gebuehren_config').select('*').order('sort_order', { ascending: true });
+      if (error) throw new Error(error.message);
+      if (Array.isArray(data)) {
+        window._jbGebuehren = data.map(g => ({
+          key: g.key,
+          bezeichnung: g.bezeichnung,
+          bezeichnung_frontend: g.bezeichnung_frontend || g.bezeichnung,
+          bezeichnungfrontend: g.bezeichnung_frontend || g.bezeichnung,
+          betrag: Number(g.betrag || 0),
+          konto_haben: g.konto_haben || '',
+          konto: g.konto_haben || '',
+          'Haben-Konto-Jahresbeitrag-Buchhaltung': g.konto_haben || '',
+          kategorie: g.kategorie || 'Jahresbeitrag',
+          sort_order: g.sort_order || 10,
+          ui_gruppe: g.ui_gruppe || '',
+          ui_feld: g.ui_feld || g.bezeichnung_frontend || g.bezeichnung || '',
+          ui_typ: (g.ui_typ || 'checkbox').toLowerCase(),
+          ui_sort: Number(g.sort_order || 10),
+          zielgruppe: g.zielgruppe || 'Alle',
+          aktiv: g.aktiv !== false && g.aktiv !== 'FALSE' && g.aktiv !== '0' && g.aktiv !== 0,
+          bem: g.bemerkung || '',
+          bemerkung: g.bemerkung || ''
+        }));
+        jbPopulateFilterDropdowns();
+        jbRenderGebuehrenTable();
+        showToast("✅ Gebühren aus Supabase aktualisiert!");
+      }
+    } catch (e) {
+      console.error("Fehler beim Neuladen der Gebühren aus Supabase:", e);
+      if (window.UIConfirmKit) {
+        await UIConfirmKit.alert({
+          title: 'Fehler beim Laden der Gebühren',
+          message: e.message || String(e),
+          type: 'danger'
+        });
+      }
+    }
+  };
+  if (window.UIButtonKit && btn) {
+    await UIButtonKit.withLoading(btn, runReload);
+  } else {
+    await runReload();
+  }
+}

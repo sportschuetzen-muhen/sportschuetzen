@@ -1,0 +1,388 @@
+/**
+ * Sportschützen Muhen - Central Auth & Member Session Manager (SSO)
+ * 
+ * Verwaltet den Mitglieder-Anmeldestatus auf der Homepage:
+ * - Übernimmt Session-Tickets aus der Schützen-Web-App (?auth_session=...)
+ * - Synchronisiert Session über localStorage und Storage-Events
+ * - Ermöglicht nahtlosen Absprung zum Web-App Login mit automatischem Rücksprung
+ * - Bereitstellung von Rollen-Checks (member, vorstand, admin)
+ */
+
+(function(window) {
+    'use strict';
+
+    const STORAGE_KEY = 'sm_member_session';
+    const MAX_SESSION_AGE_DAYS = 60;
+    const SUPABASE_URL = 'https://supabase-muhen.danfamily.uk';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
+
+    class AuthSessionManager {
+        constructor() {
+            this._listeners = [];
+            this._session = null;
+            this._supabase = null;
+            this._hasVerifiedJwt = false;
+            this.init();
+        }
+
+        async init() {
+            // 0. Supabase Client initialisieren
+            this._initSupabase();
+
+            // 1. URL-Parameter prüfen (Rücksprung von der Web-App mit auth_session)
+            this._checkUrlForAuthTicket();
+
+            // 2. Lokale Session laden
+            this._loadSession();
+
+            // 3. Native Supabase Session verifizieren (falls GoTrue aktiv ist)
+            await this._checkSupabaseSession();
+
+            // 4. Tab-übergreifendes Synchronisieren
+            window.addEventListener('storage', (e) => {
+                if (e.key === STORAGE_KEY || e.key === 'sportschuetzen_user') {
+                    this._loadSession();
+                    this._notify();
+                }
+            });
+        }
+
+        _initSupabase() {
+            try {
+                if (window.supabase && typeof window.supabase.createClient === 'function') {
+                    this._supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                    window.supabaseClient = this._supabase;
+                    this._supabase.auth.onAuthStateChange(async (event, session) => {
+                        if (event === 'SIGNED_IN' && session) {
+                            await this._syncFromSupabaseUser(session.user);
+                        } else if (event === 'SIGNED_OUT') {
+                            this.logout(false);
+                        }
+                    });
+                }
+            } catch (err) {
+                console.warn('Supabase Client konnte nicht initialisiert werden:', err);
+            }
+        }
+
+        async _checkSupabaseSession() {
+            if (!this._supabase) return;
+            try {
+                const { data, error } = await this._supabase.auth.getSession();
+                if (!error && data?.session?.user) {
+                    this._hasVerifiedJwt = true;
+                    await this._syncFromSupabaseUser(data.session.user);
+                } else {
+                    this._hasVerifiedJwt = false;
+                }
+            } catch (e) {
+                this._hasVerifiedJwt = false;
+                console.warn('Fehler bei Supabase Session-Prüfung:', e);
+            }
+        }
+
+        async _syncFromSupabaseUser(user) {
+            try {
+                let authedUser = null;
+                const { data: syncRes } = await this._supabase.rpc('sync_member_auth_session');
+                if (syncRes && syncRes.success) {
+                    authedUser = {
+                        id: String(syncRes.person_number || syncRes.address_number || user.id),
+                        lizenz: String(syncRes.person_number || syncRes.address_number || '').padStart(6, '0'),
+                        vorname: syncRes.firstname || syncRes.display_name,
+                        nachname: syncRes.lastname || '',
+                        name: syncRes.display_name,
+                        email: syncRes.email || user.email,
+                        role: syncRes.primary_role || 'member',
+                        roles: syncRes.roles || ['member'],
+                        is_board: Boolean(syncRes.is_board),
+                        savedAt: Date.now()
+                    };
+                } else {
+                    const emailName = (user.email || '').split('@')[0];
+                    authedUser = {
+                        id: user.id,
+                        name: emailName,
+                        vorname: emailName,
+                        email: user.email,
+                        role: 'member',
+                        roles: ['member'],
+                        savedAt: Date.now()
+                    };
+                }
+
+                this._hasVerifiedJwt = true;
+                this._session = authedUser;
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(authedUser));
+                localStorage.setItem('sportschuetzen_user', JSON.stringify(authedUser));
+                this._notify();
+            } catch (err) {
+                console.error('Konnte Mitgliedsdaten nicht über Supabase synchronisieren:', err);
+            }
+        }
+
+        /**
+         * Prüft, ob ein auth_session Ticket in der URL übergeben wurde.
+         */
+        _checkUrlForAuthTicket() {
+            try {
+                const urlParams = new URLSearchParams(window.location.search);
+                const ticket = urlParams.get('auth_session');
+                if (!ticket) return;
+
+                // Base64 decodieren (sicher mit UTF-8 Sonderzeichen)
+                const decodedStr = decodeURIComponent(atob(ticket));
+                const sessionData = JSON.parse(decodedStr);
+
+                if (sessionData && (sessionData.id || sessionData.name)) {
+                    // Unsignierte URL-Tickets dürfen niemals Vorstands-/Admin-Rechte gewähren.
+                    // Verifizierte Rollen werden ausschliesslich über die aktive GoTrue-JWT-Session geladen.
+                    const safeTicket = {
+                        id: String(sessionData.id || ''),
+                        lizenz: String(sessionData.lizenz || ''),
+                        vorname: String(sessionData.vorname || sessionData.name || 'Mitglied'),
+                        nachname: String(sessionData.nachname || ''),
+                        name: String(sessionData.name || sessionData.vorname || 'Mitglied'),
+                        email: '',
+                        role: 'member',
+                        roles: ['member'],
+                        is_board: false,
+                        savedAt: Date.now()
+                    };
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(safeTicket));
+                    localStorage.setItem('sportschuetzen_user', JSON.stringify(safeTicket));
+                }
+
+                // URL sauber bereinigen ohne Neuladen
+                urlParams.delete('auth_session');
+                const cleanQuery = urlParams.toString() ? `?${urlParams.toString()}` : '';
+                const cleanUrl = window.location.pathname + cleanQuery + window.location.hash;
+                window.history.replaceState({}, document.title, cleanUrl);
+            } catch (err) {
+                console.warn('⚠️ Fehler beim Einlesen des Auth-Tickets:', err);
+            }
+        }
+
+        /**
+         * Lädt und validiert die Session aus localStorage.
+         */
+        _loadSession() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('sportschuetzen_user');
+                if (!raw) {
+                    this._session = null;
+                    return;
+                }
+
+                const data = JSON.parse(raw);
+                const now = Date.now();
+
+                // Ablauf nach 60 Tagen prüfen
+                if (data.savedAt && (now - data.savedAt > MAX_SESSION_AGE_DAYS * 24 * 60 * 60 * 1000)) {
+                    console.info('Session ist abgelaufen.');
+                    localStorage.removeItem(STORAGE_KEY);
+                    localStorage.removeItem('sportschuetzen_user');
+                    this._session = null;
+                    return;
+                }
+
+                this._session = data;
+            } catch (e) {
+                console.error('Fehler beim Laden der Session:', e);
+                this._session = null;
+            }
+        }
+
+        /**
+         * Ist der Benutzer aktuell als Vereinsmitglied angemeldet?
+         */
+        isLoggedIn() {
+            return !!(this._session && (this._session.id || this._session.name));
+        }
+
+        /**
+         * Liefert das Profil des angemeldeten Mitglieds oder null.
+         */
+        getUser() {
+            return this._session ? { ...this._session } : null;
+        }
+
+        /**
+         * Prüft, ob der Benutzer eine bestimmte Rolle hat (z. B. 'vorstand' oder 'admin').
+         */
+        hasRole(role) {
+            if (!this.isLoggedIn()) return false;
+            const r = String(this._session.role || '').toLowerCase();
+            const roles = Array.isArray(this._session.roles) 
+                ? this._session.roles.map(x => String(x).toLowerCase()) 
+                : [];
+
+            if (r === 'admin' || roles.includes('admin')) return true; // Admin hat alle Rechte
+            return r === role.toLowerCase() || roles.includes(role.toLowerCase());
+        }
+
+        /**
+         * Ist der Nutzer Vorstandsmitglied oder Admin (nur bei verifiziertem JWT)?
+         */
+        isVorstand() {
+            if (!this._hasVerifiedJwt) return false;
+            return this.hasRole('vorstand') || this.hasRole('admin') || Boolean(this._session?.is_board);
+        }
+
+        /**
+         * Löst die Basis-URLs für die drei Frontends (Website, Web-App, Vorstandsportal) dynamisch auf.
+         */
+        getAppUrls() {
+            const loc = window.location;
+            const hostname = loc.hostname;
+            let root = '';
+
+            if (hostname === 'localhost' || hostname === '127.0.0.1') {
+                const path = loc.pathname;
+                if (path.includes('/sportschuetzen-website/frontend/')) {
+                    root = loc.origin + path.replace(/\/sportschuetzen-website\/frontend\/.*$/, '/');
+                } else if (path.includes('/vorstand/')) {
+                    root = loc.origin + path.replace(/\/vorstand\/.*$/, '/');
+                } else {
+                    root = loc.origin + path.replace(/\/[^/]*$/, '/');
+                }
+            } else if (hostname.includes('pages.dev')) {
+                root = loc.origin + '/';
+            } else if (hostname.includes('github.io')) {
+                const match = loc.pathname.match(/^(\/[^/]+\/)/);
+                root = loc.origin + (match ? match[1] : '/');
+            } else if (hostname.includes('sportschuetzen-muhen.ch')) {
+                root = 'https://sportschuetzen-muhen.ch/';
+            } else {
+                root = loc.origin + '/';
+            }
+
+            if (!root.endsWith('/')) root += '/';
+
+            return {
+                root: root,
+                webApp: root + 'index.html',
+                portal: root + 'vorstand/index.html',
+                website: root + 'sportschuetzen-website/frontend/index.html',
+                intern: root + 'sportschuetzen-website/frontend/intern.html'
+            };
+        }
+
+        /**
+         * Generiert die Ziel-URL zur Schützen-Web-App mit automatischem Rücksprung.
+         */
+        getLoginUrl(returnTarget) {
+            const currentFullUrl = returnTarget 
+                ? (returnTarget.startsWith('http') ? returnTarget : `${window.location.origin}${window.location.pathname.replace(/[^/]+$/, '')}${returnTarget.replace(/^\//, '')}`)
+                : window.location.href;
+
+            const urls = this.getAppUrls();
+            const webAppBase = urls.webApp;
+
+            const sep = webAppBase.includes('?') ? '&' : '?';
+            return `${webAppBase}${sep}redirect=${encodeURIComponent(currentFullUrl)}`;
+        }
+
+        /**
+         * Startet den Login-Prozess durch Weiterleitung zur Schützen-Web-App.
+         */
+        login(returnTarget) {
+            const target = this.getLoginUrl(returnTarget);
+            window.location.href = target;
+        }
+
+        /**
+         * Meldet das Mitglied auf der Homepage ab.
+         */
+        logout(signOutSupabase = true) {
+            if (signOutSupabase && this._supabase) {
+                try {
+                    this._supabase.auth.signOut().catch(() => {});
+                } catch (_) {}
+            }
+            localStorage.removeItem(STORAGE_KEY);
+            localStorage.removeItem('sportschuetzen_user');
+            this._hasVerifiedJwt = false;
+            this._session = null;
+            this._notify();
+            console.log('Mitglied abgemeldet.');
+        }
+
+        /**
+         * Gibt den initialisierten Supabase Client zurück (inkl. Authentifizierung)
+         */
+        getSupabase() {
+            return this._supabase;
+        }
+
+        /**
+         * Liefert das aktive Supabase GoTrue Access-Token (JWT) oder null.
+         */
+        async getAccessToken() {
+            if (!this._supabase || !this._supabase.auth) return null;
+            try {
+                const { data, error } = await this._supabase.auth.getSession();
+                if (!error && data?.session?.access_token) {
+                    return data.session.access_token;
+                }
+            } catch (_) {}
+            return null;
+        }
+
+        /**
+         * Liefert den Bearer-Authorization-Header für authentifizierte Supabase-REST-Aufrufe.
+         */
+        async getAuthHeader() {
+            const token = await this.getAccessToken();
+            return token ? `Bearer ${token}` : null;
+        }
+
+        /**
+         * Prüft, ob eine kryptografisch gültige Supabase-Session (JWT) vorliegt.
+         */
+        async hasValidJwt() {
+            const token = await this.getAccessToken();
+            return Boolean(token);
+        }
+
+        /**
+         * Erzeugt eine zeitlich begrenzte signierte Storage-URL für private Buckets.
+         */
+        async createSignedStorageUrl(bucket, storagePath, expiresInSeconds = 300) {
+            if (!this._supabase || !this._supabase.storage || !bucket || !storagePath) return null;
+            try {
+                const { data, error } = await this._supabase.storage.from(bucket).createSignedUrl(storagePath, expiresInSeconds);
+                if (!error && data?.signedUrl) {
+                    const sep = data.signedUrl.includes('?') ? '&' : '?';
+                    return `${data.signedUrl}${sep}t=${Date.now()}`;
+                }
+            } catch (e) {
+                console.warn('Signed URL Fehler:', e);
+            }
+            return null;
+        }
+
+        /**
+         * Registriert einen Callback bei Login/Logout-Änderungen.
+         */
+        onChange(callback) {
+            if (typeof callback === 'function') {
+                this._listeners.push(callback);
+                // Direkt mit aktuellem Status aufrufen
+                callback(this.getUser());
+            }
+        }
+
+        _notify() {
+            const user = this.getUser();
+            this._listeners.forEach(fn => {
+                try { fn(user); } catch (e) { console.error(e); }
+            });
+            window.dispatchEvent(new CustomEvent('sm:auth-change', { detail: { user } }));
+        }
+    }
+
+    // Global instanziieren
+    window.AuthSession = new AuthSessionManager();
+
+})(window);

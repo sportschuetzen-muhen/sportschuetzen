@@ -1,0 +1,98 @@
+# Projekt-Richtlinien: Migration auf Supabase (Sportschützen Muhen)
+
+## 1. Striktes Verbot von stillen GAS-Fallbacks (Entkopplung)
+- **Keine stillen Fallbacks auf Google Apps Script (GAS) oder Google Sheets** in allen Fachmodulen inklusive Vermietung.
+- Tritt bei einer Supabase-Abfrage oder einem Supabase-Schreibvorgang ein Fehler auf, darf der Code **nicht** stillschweigend auf Google Apps Script / Google Sheets zurückfallen. Stattdessen ist ein klarer UI-Fehler anzuzeigen.
+
+## 2. Single Source of Truth
+- **Supabase PostgreSQL** ist die verbindliche Single Source of Truth für alle migrierten Fachbereiche (Vermietung, Mitglieder, Termine, Inventar, Rechnungen, Jahresbeitrag, Finanzbuchhaltung, Resultate, Umfragen/Eventplaner, Generalversammlung, Team Manager, System-Mails, Logins & Authentifizierung).
+- Jede durch das System ausgelöste Transaktion (z.B. Vermietungsbuchungen, Statusänderungen, Rechnungsstellung, Login-Session-Tracking) muss unmittelbar in die entsprechenden Supabase-Tabellen (`rental_requests`, `rental_status_logs`, `invoices`, `invoice_positions`, `mail_logs`, `login_sessions`, `admin_profiles` etc.) geschrieben werden.
+## 3. Strikte Rückfragepflicht vor Code-Änderungen
+- **Immer rückfragen vor Code-Änderungen:** Vor jeder Änderung an Code-Dateien ist dem Benutzer zuerst die Analyse und der genaue Änderungsplan vorzulegen und dessen ausdrückliche Freigabe einzuholen.
+- Keine eigenmächtigen oder ungefragten Anpassungen an bestehenden Funktionen oder Architektur-Komponenten.
+
+## 4. Stabilität des zentralen Rechnungsmoduls (`RechnungsCore`)
+- Das Rechnungsmodul (`vorstand/js/rechnungen/`) und der `RechnungsCore` sind der verbindliche zentrale Standard für das gesamte Vereinsportal und bleiben in ihrer Architektur und Schnittstellendefinition (`InvoiceOrder`-Payload) unverändert wie spezifiziert.
+- Fachmodule (Inventar, Vermietung, Jahresbeitrag etc.) müssen ihre Datenanlieferung strikt an die `InvoiceOrder`-Schnittstelle des `RechnungsCore` anpassen. Der `RechnungsCore` wird nicht durch modulspezifische Sonderlogiken verwässert.
+
+## 5. Verbindliche Synchronisations- & Deployment-Pflicht (CT 117 & GitHub Push)
+Nach **jeder** vorgenommenen Code- oder Schemaänderung müssen der lokale Entwicklungsstand (`scratch`), die Live-Supabase-Instanz auf Proxmox Container **CT 117** (`192.168.68.117`) und das GitHub-Repository (`migration-supabase`) unmittelbar synchronisiert werden.
+
+### Standard-Ablauf nach Änderungen:
+
+1. **Edge Functions übertragen & neustarten (bei Änderungen in `supabase/functions/`):**
+   ```powershell
+   # Datei(en) auf CT 117 kopieren:
+   scp supabase/functions/generate-pdf/index.ts root@192.168.68.117:/opt/supabase/docker/volumes/functions/generate-pdf/index.ts
+   
+   # Deno Edge Functions Container neustarten:
+   ssh root@192.168.68.117 "docker restart supabase-edge-functions"
+   ```
+
+2. **Datenbank-Migrationen einspielen (bei neuen/geänderten SQL-Dateien in `supabase/migrations/`):**
+   ```powershell
+   # Migration direkt per Pipe in den PostgreSQL-Container einspielen:
+   Get-Content -Raw 'supabase/migrations/<dateiname>.sql' | ssh root@192.168.68.117 'docker exec -i supabase-db psql -U postgres -d postgres'
+   ```
+
+3. **Verifikation (Smoke- / E2E-Test):**
+   - Bei Edge Functions: Test-Aufruf an `https://supabase-muhen.danfamily.uk/functions/v1/<funktion>` senden und `200 OK` prüfen.
+   - Bei DB-Migrationen: Schema-Integrität (Tabellen, Spalten, RLS-Policies) per `psql`-Query verifizieren.
+
+4. **Dokumentations-Prüfung & Nachführung (Fachdokument in `docs/`):**
+   - Wurden fachliche Invarianten, Caching-Mechanismen, Datenflüsse oder Schnittstellen angepasst (auch im Rahmen von Bugfixes!), ist vor dem Commit zwingend das betroffene Fachdokument in `docs/` (z. B. `docs/JAHRESBEITRAG.md`, `docs/RECHNUNGSWESEN.md`) um 2–3 prägnante Sätze zu ergänzen.
+
+5. **GitHub Commit & Push (Single Source of Truth im Repository):**
+   ```powershell
+   git add <dateien>
+   git commit -m "<typ>(<scope>): <prägnante beschreibung>"
+   git push origin migration-supabase
+   ```
+
+## 6. Rechnungs-Lebenszyklus, Adress-Kontrakt & PDF-Synchronisation
+- **Lebenszyklus & Mutations-Sperren:**
+  - `mail_status === 'entwurf'` & `total_paid === 0`: Rechnung und Positionen dürfen frei bearbeitet oder gelöscht werden.
+  - `mail_status === 'versendet'` & `total_paid === 0`: Bearbeitung (`rnOpenEditModal` / `rnSaveEditInvoice`) ist **strikt gesperrt** (Schutz vor Debitor-Diskrepanzen und Belegverfälschung, da das PDF bereits zugestellt wurde). Löschen nur mit expliziter Warnung; fachlich bevorzugt ist die Stornierung via `RechnungsCore.cancelInvoice()`.
+  - `status === 'bezahlt'` oder `total_paid > 0`: Bearbeitung und Löschung sind **vollständig gesperrt** (Revisionssicherheit & GoBD-Grundsätze).
+  - Typ `Jahresbeitrag`: Bearbeitung im Rechnungsmodul generell gesperrt; Steuerung erfolgt ausschliesslich über das Jahresbeitragsmodul (`jahresbeitrag-overview.js`).
+- **Adress- & Empfänger-Kontrakt (DIN 5008 & SIX Swiss QR SPC 0200 1):**
+  - **Privatperson / Mitglied:** Anrede (`Herr`/`Frau`) in separater Zeile, Vorname Nachname im normalen Schriftgewicht (**kein Fett**, keine Doppelung des Namens!). Das Feld `firma` muss zwingend **leer / `null`** sein!
+  - **Firma / Institution:** Firmenname in Zeile 1 (**fett**), danach optionale Abteilung/Zusatz, danach Ansprechperson mit Anrede (`Herr`/`Frau` Vorname Nachname im normalen Schriftgewicht).
+  - **Externe Kontakte:** Bei `typ === 'privat'` darf niemals der Personenname in das Feld `firma` geschrieben werden. Bei `typ === 'firma'` ist `firma` ein Pflichtfeld.
+- **Automatische PDF-Neugenerierung & Cache-Busting:**
+  - Jede Mutation an einer Rechnung (Erstellen, Bearbeiten, Zahlung, Storno) muss im Hintergrund automatisch die Neugenerierung anstossen: `RechnungsCore.renderPdf(invoiceId, { forceRecreate: true })`.
+  - Jede PDF-Anzeige oder Verlinkung im Frontend muss zwingend mit Cache-Busting aufgerufen werden (`?t=${Date.now()}`), um veraltete Browser- und CDN-Caches zu umgehen.
+
+## 7. Einheitliches Berechtigungsmodell («View & Manage» Kontrakt)
+- **Symmetrisches 2-Stufen-Modell:** Jedes Fachmodul (inklusive des Moduls `logins`) besitzt exakt zwei Berechtigungsschlüssel:
+  - `<modul>.view` (👁️ Einsehen): Freischaltung Kachel & Navigation (Read-Only).
+  - `<modul>.manage` (✏️ Verwalten): Freischaltung aller Mutations- und Schreibaktionen (autorisiert DB-Schreibzugriff). Wer `manage` besitzt, hat automatisch auch Einsicht (`view`).
+  - Die System-Rolle `admin` besitzt als Superuser automatisch Vollzugriff auf alle Module (`*`).
+- **Verbindliche Pflicht bei neuen Modulen:** Wird durch die KI oder Entwickler ein neues Fachmodul hinzugefügt, muss dieses **stillschweigend und automatisch ohne Aufforderung durch den Benutzer** in das Schema integriert werden:
+  1. Schlüssel `<neues_modul>.view` und `<neues_modul>.manage` in `public.role_permissions` und initialem Seed anlegen.
+  2. Modul in `RBAC_MODULES` (`vorstand/js/logins/logins-core.js`) und `Perms.VIEW_ACCESS` (`vorstand/js/permissions.js`) registrieren.
+  3. Manage-Zuordnung in `MODULE_MANAGE_PERMS` (`vorstand/js/main.js`) hinterlegen.
+  4. RLS-Policies der Tabellen auf `SELECT -> <modul>.view|<modul>.manage` und `WRITE -> <modul>.manage` setzen.
+
+## 8. Einheitliche Du-Form in der Benutzeransprache
+- **Vereinsnahe Tonalität (Du-Kultur):** Im gesamten Vereinsportal (Hilfetexte, Tipps, Erklärungen, Tooltips, Modale, Alerts, Infobanner, Eingabehinweise, Bestätigungs- und Fehlerdialoge) werden Benutzer grundsätzlich und ausnahmslos in der **Du-Form** angesprochen («du», «dein», «wähle aus», «trage ein»).
+- Die distanzierte Sie-Form («Sie», «Ihre») ist im internen Vorstand- und Mitgliederportal zu vermeiden. Externe Dokumente (offizielle Rechnungs-PDFs an externe Firmen/Kunden) richten sich weiterhin nach den dortigen Adress- und Vorlagenstandards.
+
+## 9. Verbindliche Nutzung der globalen UI-Toolkits (`vorstand/js/ui-table-kit.js`)
+Für sämtliche bestehende und neu implementierte Module im Vorstands- und Vereinsportal gelten zwingend die zentralen UI-Toolkits:
+- **Dialoge (`UIConfirmKit`):** Striktes Verbot von nativem, blockierendem `window.confirm(...)` und `window.alert(...)`. Es ist ausnahmslos `await UIConfirmKit.confirm({ title, message, type: 'danger'|'warning'|'primary', confirmText, cancelText })` (liefert `Promise<boolean>`) und `await UIConfirmKit.alert({ title, message, type: 'info'|'warning'|'danger' })` (liefert `Promise<void>`) zu verwenden. Stornierungen und Löschungen sind rot (`danger`), Warnungen gelb/orange (`warning`), normale Bestätigungen blau (`primary`).
+- **Schweizer Standard-Formatierung (`UIFormatKit`):** Alle Beträge sind via `UIFormatKit.formatCurrency(val)` (Schweizer Format `CHF 1'234.50`) darzustellen. Kalenderdaten via `UIFormatKit.formatDate(isoDate)` (`DD.MM.YYYY` ohne Zeitzonenverzerrung), Uhrzeiten via `UIFormatKit.formatTime(isoStr)` (`HH:mm`), IBAN via `UIFormatKit.formatIban(iban)` und Telefonnummern via `UIFormatKit.formatPhone(phone)`.
+- **Double-Submit Schutz (`UIButtonKit`):** Sämtliche asynchronen Speicher-, Buchungs-, Berechnungs- oder Sende-Aktionen an Buttons müssen mit `await UIButtonKit.withLoading(buttonSelector, async () => { ... })` gewrappt werden, um Mehrfachklicks abzufangen und den Button-Zustand (inklusive Originaltext und Spinner) im `finally`-Block garantiert zurückzusetzen.
+- **Tabellen & Excel-Export (`TableKit` & `UIExportKit`):** Tabellen nutzen `TableKit.initTable`. Tabellen- und Datenexporte nach Excel erfolgen zentral über `UIExportKit.exportTableToExcel('#tableId', 'Dateiname.xlsx')` oder `UIExportKit.dataToExcel(data, cols, 'Dateiname.xlsx')`.
+- **Ergonomie & Session-Schutz (`UIHotkeyKit` & `UIConnectivityKit`):** Standard-Tastenkombinationen (`Strg+S` Speichern, `Escape` hierarchisches Schliessen, `Strg+K` / `/` Suchfokus) sowie der fixe Offline-Banner am oberen Bildschirmrand und der transparente JWT-Auth-Heartbeat sind im Portal global aktiv.
+
+## 10. Verbindlicher Sicherheitsprüfungs- und Dokumentationsprozess (`docs/SICHERHEITSPRUEFUNG_UND_FREIGABE.md`)
+- **Grundsatz & Inkrementelles Vorgehen:** Sicherheitsprüfungen werden systematisch, nachvollziehbar und versionsbezogen (Git-Commit + Prüfdatum) durchgeführt. Jede Prüfung baut zwingend auf dem letzten dokumentierten Stand in `docs/SICHERHEITSPRUEFUNG_UND_FREIGABE.md` auf (Diff seit dem letzten geprüften Commit, keine Wiederholung bereits abgeschlossener Prüfungen ohne Anlass, Verbot endloser Prüf- und Verbesserungszyklen).
+- **Klassifizierung (`P0` bis `P4` & `MUSS` / `SOLLTE` / `KANN`):** Jeder Befund erhält eine eindeutige ID (`SEC-xxx`) und einen Schweregrad (`P0` Kritisch, `P1` Hoch, `P2` Mittel, `P3` Niedrig, `P4` Hinweis). Zwischen tatsächlichen Sicherheitslücken, potenziellen Risiken, Architekturverbesserungen und Codequalitätshinweisen ist strikt zu unterscheiden (keine theoretischen Spekulationen ohne technischen Nachweis).
+- **Dauerhafte 5-teilige Dokumentation (`A`–`E`):** In `docs/SICHERHEITSPRUEFUNG_UND_FREIGABE.md` werden dauerhaft geführt: **A.** Sicherheitsprüfungen (`SP-YYYY-NNN`), **B.** Sicherheitsbefunde (`SEC-xxx`), **C.** Änderungsprotokoll, **D.** Regressionstests (`RT-xx`) und **E.** Sicherheitsfreigabe inkl. Abschlussbericht (9 Pflichtpunkte).
+- **Abschlusskriterien:** Eine Prüfung gilt als abgeschlossen und freigabefähig, sobald alle vereinbarten Prüfbereiche untersucht, alle `P0`- und `P1`-Befunde behoben und verifiziert, alle Regressionstests bestanden sowie `P2`/`P3`-Befunde, akzeptierte Restrisiken und nicht geprüfte Bereiche transparent ausgewiesen sind.
+
+
+
+
+

@@ -1,0 +1,797 @@
+// === SUB-MODUL: VERMIETUNG - UI ===
+
+// Dynamische CSS-Styles für Premium-Aesthetics
+function ensureVermietungStylesOnce() {
+  if (document.getElementById('vermietung-inline-style')) return;
+  const s = document.createElement('style');
+  s.id = 'vermietung-inline-style';
+  s.textContent = `
+    #vermietung-container {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    }
+    .vermietung-stat-card {
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid rgba(0,0,0,0.06) !important;
+    }
+    .vermietung-stat-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 16px rgba(15, 58, 93, 0.08) !important;
+    }
+    .filter-pill {
+      border: 1px solid #dee2e6;
+      background: white;
+      border-radius: 20px;
+      padding: 5px 14px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #495057;
+      transition: all 0.2s ease;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      user-select: none;
+    }
+    .filter-pill:hover {
+      background: #f1f3f5;
+      border-color: #ced4da;
+    }
+    .filter-pill.active {
+      background: #0f3a5d;
+      color: white;
+      border-color: #0f3a5d;
+    }
+    .filter-pill .badge {
+      font-size: 0.72rem;
+      background: rgba(0,0,0,0.08);
+      color: inherit;
+    }
+    .filter-pill.active .badge {
+      background: rgba(255,255,255,0.22);
+      color: white;
+    }
+    .bg-orange {
+      background-color: #fd7e14 !important;
+      color: white;
+    }
+    .feedback-card {
+      border-left: 4px solid #64748b !important;
+      border-radius: 8px;
+      transition: all 0.2s ease;
+      background: white;
+      border: 1px solid rgba(0,0,0,0.06);
+    }
+    .feedback-card.urgent {
+      border-left: 5px solid #d00000 !important;
+      background: #fff8f8;
+    }
+    .feedback-card:hover {
+      transform: translateX(3px);
+      box-shadow: 0 5px 12px rgba(0,0,0,0.05) !important;
+    }
+    .timeline-steps {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: relative;
+      margin: 25px 0 35px;
+    }
+    .timeline-steps::after {
+      content: '';
+      position: absolute;
+      height: 3px;
+      background: #e9ecef;
+      top: 18px;
+      left: 10%;
+      right: 10%;
+      z-index: 1;
+    }
+    .timeline-step {
+      text-align: center;
+      position: relative;
+      z-index: 2;
+      flex: 1;
+    }
+    .timeline-circle {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #e9ecef;
+      color: #6c757d;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 8px;
+      font-size: 0.9rem;
+      font-weight: bold;
+      transition: all 0.3s ease;
+      border: 3px solid white;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+    }
+    .timeline-step.completed .timeline-circle {
+      background: #28a745;
+      color: white;
+    }
+    .timeline-step.active .timeline-circle {
+      background: #0f3a5d;
+      color: white;
+      animation: pulseGlow 2s infinite;
+    }
+    .timeline-step.storniert .timeline-circle {
+      background: #dc3545;
+      color: white;
+    }
+    .timeline-title {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #6c757d;
+    }
+    .timeline-step.completed .timeline-title {
+      color: #28a745;
+    }
+    .timeline-step.active .timeline-title {
+      color: #0f3a5d;
+    }
+    .timeline-step.storniert .timeline-title {
+      color: #dc3545;
+    }
+    @keyframes pulseGlow {
+      0% { box-shadow: 0 0 0 0 rgba(15, 58, 93, 0.4); }
+      70% { box-shadow: 0 0 0 8px rgba(15, 58, 93, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(15, 58, 93, 0); }
+    }
+  `;
+  document.head.appendChild(s);
+}
+
+// Baut das Haupt-Cockpit (Kennzahlen, Kalender und Registerkarten) auf
+function renderVermietungCockpit(daten) {
+  ensureVermietungStylesOnce();
+
+  const isOffen = d => {
+    const s = String(d.status || '').toLowerCase();
+    return s.includes("01") || s === 'contract_sent';
+  };
+  const isGemahnt = d => {
+    const s = String(d.status || '').toLowerCase();
+    return s.includes("02") || s === 'reminded';
+  };
+  const isBezahlt = d => {
+    const s = String(d.status || '').toLowerCase();
+    return s.includes("03") || s.includes("04") || s === 'paid' || s === 'keys_issued' || s === 'completed';
+  };
+  const isStorniert = d => {
+    const s = String(d.status || '').toLowerCase();
+    return s.includes("05") || s === 'cancelled';
+  };
+  const isInquiry = d => {
+    const s = String(d.status || '').toLowerCase();
+    return d.is_inquiry === true || s === 'inquiry';
+  };
+
+  const stats = {
+    offen:     daten.filter(isOffen).length,
+    gemahnt:   daten.filter(isGemahnt).length,
+    bezahlt:   daten.filter(isBezahlt).length,
+    storniert: daten.filter(isStorniert).length,
+    anfragen:  daten.filter(isInquiry).length
+  };
+
+  const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('vermietung') : true;
+
+  // Nächste Vermietung bestimmen
+  const heute = new Date();
+  heute.setHours(0,0,0,0);
+  const aktive = daten
+    .filter(d => !isStorniert(d) && String(d.status).indexOf("00") === -1 && d.status !== 'conflict')
+    .filter(d => {
+      if (d.start_date_iso) {
+        return new Date(d.start_date_iso) >= heute;
+      }
+      const p = (d.mietdatum || "").split(".");
+      return p.length === 3 && new Date(p[2], p[1]-1, p[0]) >= heute;
+    })
+    .sort((a, b) => {
+      const da = a.start_date_iso ? new Date(a.start_date_iso) : (a.mietdatum ? new Date(a.mietdatum.split(".")[2], a.mietdatum.split(".")[1]-1, a.mietdatum.split(".")[0]) : new Date(0));
+      const db = b.start_date_iso ? new Date(b.start_date_iso) : (b.mietdatum ? new Date(b.mietdatum.split(".")[2], b.mietdatum.split(".")[1]-1, b.mietdatum.split(".")[0]) : new Date(0));
+      return da - db;
+    });
+  const naechste = aktive[0];
+
+  // Einnahmen für das gefilterte Jahr berechnen
+  const einnahmen = berechneEinnahmen(daten, einnahmenJahr);
+
+  // Verfügbare Jahre für Auswahl ermitteln
+  const jahre = [...new Set(daten.map(d => {
+    if (d.start_date_iso) return d.start_date_iso.split('-')[0];
+    const p = (d.mietdatum || "").split(".");
+    return p.length === 3 ? p[2] : null;
+  }).filter(Boolean))].sort().reverse();
+  if (!jahre.includes(String(einnahmenJahr))) {
+    jahre.unshift(String(einnahmenJahr));
+  }
+
+  // Zähler für Filter-Badges
+  const countAll = daten.length;
+  const countOffen = stats.offen;
+  const countGemahnt = stats.gemahnt;
+  const countBezahlt = stats.bezahlt;
+  const countStorniert = stats.storniert;
+  const countAnfragen = stats.anfragen;
+
+  document.getElementById('vermietung-container').innerHTML = `
+    <!-- STATISTIK-KACHELN -->
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-2">
+        <div class="card vermietung-stat-card border-0 shadow-sm text-center p-3 h-100" style="border-left:4px solid #ffc107 !important; cursor:pointer;" onclick="filterVermietungPill('offen')">
+          <div style="font-size:1.8rem;font-weight:bold;color:#ffc107">
+            <i class="fas fa-clock me-2" style="font-size: 1.3rem; opacity: 0.85;"></i>${stats.offen}
+          </div>
+          <div class="small text-muted fw-bold mt-1">🟡 Offen</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-2">
+        <div class="card vermietung-stat-card border-0 shadow-sm text-center p-3 h-100" style="border-left:4px solid #fd7e14 !important; cursor:pointer;" onclick="filterVermietungPill('gemahnt')">
+          <div style="font-size:1.8rem;font-weight:bold;color:#fd7e14">
+            <i class="fas fa-exclamation-circle me-2" style="font-size: 1.3rem; opacity: 0.85;"></i>${stats.gemahnt}
+          </div>
+          <div class="small text-muted fw-bold mt-1">🟠 Gemahnt</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-2">
+        <div class="card vermietung-stat-card border-0 shadow-sm text-center p-3 h-100" style="border-left:4px solid #28a745 !important; cursor:pointer;" onclick="filterVermietungPill('bezahlt')">
+          <div style="font-size:1.8rem;font-weight:bold;color:#28a745">
+            <i class="fas fa-check-double me-2" style="font-size: 1.3rem; opacity: 0.85;"></i>${stats.bezahlt}
+          </div>
+          <div class="small text-muted fw-bold mt-1">🟢 Bezahlt</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-2">
+        <div class="card vermietung-stat-card border-0 shadow-sm text-center p-3 h-100" style="border-left:4px solid #dc3545 !important; cursor:pointer;" onclick="filterVermietungPill('storniert')">
+          <div style="font-size:1.8rem;font-weight:bold;color:#dc3545">
+            <i class="fas fa-times-circle me-2" style="font-size: 1.3rem; opacity: 0.85;"></i>${stats.storniert}
+          </div>
+          <div class="small text-muted fw-bold mt-1">⚫ Storniert</div>
+        </div>
+      </div>
+
+      <!-- EINNAHMEN mit Jahresauswahl -->
+      <div class="col-6 col-md-2">
+        <div class="card vermietung-stat-card border-0 shadow-sm text-center p-3 h-100" style="border-left:4px solid #0f3a5d !important;">
+          <div style="font-size:1.1rem;font-weight:bold;color:#0f3a5d" id="einnahmen-betrag">
+            ${window.UIFormatKit ? UIFormatKit.formatCurrency(einnahmen) : `CHF ${einnahmen.toFixed(2)}`}
+          </div>
+          <div class="small text-muted fw-bold mb-1">💰 Einnahmen</div>
+          <select class="form-select form-select-sm border-0 bg-light" style="font-size: 0.8rem; font-weight: 600;" onchange="updateEinnahmen(this.value)">
+            ${jahre.map(j => `<option value="${j}" ${j == einnahmenJahr ? 'selected' : ''}>${j}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+
+      ${canWrite ? `
+      <!-- NEU: NEUE RESERVATION ERFASSEN (Ersetzt Clubdesk) -->
+      <div class="col-6 col-md-2">
+        <div class="card vermietung-stat-card border-0 shadow-sm text-center p-3 h-100"
+             style="border-left:4px solid #0d6efd !important; cursor:pointer; background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%);"
+             onclick="openNewReservationModal()">
+          <div style="font-size:1.6rem;color:#0d6efd;"><i class="fas fa-plus-circle"></i></div>
+          <div class="small text-primary fw-bold mt-1">Neue Miete erfassen</div>
+        </div>
+      </div>` : ''}
+    </div>
+
+    <!-- NÄCHSTE VERMIETUNG -->
+    ${naechste ? `
+    <div class="alert mb-4 shadow-sm border-0 d-flex justify-content-between align-items-center flex-wrap gap-2" style="background:#eef2ff;border-left:4px solid #0f3a5d !important;border-radius:8px;">
+      <div>
+        <i class="fas fa-calendar-check text-primary me-2" style="font-size: 1.1rem;"></i>
+        <strong>Nächste Vermietung:</strong>
+        ${escapeHtml(naechste.mietdatum)} – ${escapeHtml(naechste.vorname)} ${escapeHtml(naechste.nachname)}
+        <span class="badge ms-2" style="background:#0f3a5d">${escapeHtml(naechste.vertragsnr)}</span>
+        <span class="badge ms-1 bg-secondary">${escapeHtml(naechste.mietbetrag)}</span>
+      </div>
+      <button class="btn btn-sm btn-outline-primary" style="font-weight:600; font-size:0.8rem;"
+              onclick="openVermietungModal('${naechste.row}')"><i class="fas fa-external-link-alt me-1"></i>Details</button>
+    </div>`
+    : '<div class="alert alert-success mb-4 border-0 shadow-sm"><i class="fas fa-info-circle me-2"></i>Keine bevorstehenden Vermietungen</div>'}
+
+    <!-- KALENDER + TABELLE -->
+    <div class="row g-4">
+      <div class="col-12 col-lg-5">
+        <div class="card border-0 shadow-sm p-3">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0 fw-bold text-dark"><i class="fas fa-calendar-alt text-primary me-2"></i>Belegungskalender</h5>
+            <small class="text-muted"><i class="fas fa-shield-alt text-success me-1"></i>Google Calendar Master</small>
+          </div>
+          <iframe
+            src="https://calendar.google.com/calendar/embed?src=c3BvcnRzY2h1ZXR6ZW4ubXVoZW5AZ21haWwuY29t&ctz=Europe%2FZurich&mode=MONTH&showTitle=0&showPrint=0&showTabs=0&showCalendars=0&showTz=0&wkst=2&bgcolor=%23ffffff&color=%23009688&_cb=${Date.now()}"
+            style="border:none;border-radius:8px;width:100%;height:380px;"
+            frameborder="0" scrolling="no">
+          </iframe>
+        </div>
+      </div>
+
+      <!-- RECHTE SEITE: REGISTERKARTEN (RESERVATIONEN & FEEDBACK) -->
+      <div class="col-12 col-lg-7">
+        <div class="card border-0 shadow-sm p-3">
+          <!-- REGISTER-TABS -->
+          <ul class="nav nav-pills mb-3 border-bottom pb-2" id="vermietung-cockpit-tabs" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active fw-bold btn-sm me-2" id="reservations-tab" data-bs-toggle="pill" data-bs-target="#tab-reservations" type="button" role="tab" aria-controls="tab-reservations" aria-selected="true">
+                <i class="fas fa-clipboard-list me-1"></i> Reservationen
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link fw-bold btn-sm text-secondary me-2" id="feedback-tab" data-bs-toggle="pill" data-bs-target="#tab-feedback" type="button" role="tab" aria-controls="tab-feedback" aria-selected="false" onclick="renderFeedbackCards()">
+                <i class="fas fa-comment-slash me-1"></i> Stornorückmeldungen (${stornoFeedbackDaten.length})
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link fw-bold btn-sm text-secondary me-2" id="rental-settings-tab" data-bs-toggle="pill" data-bs-target="#tab-rental-settings" type="button" role="tab" aria-controls="tab-rental-settings" aria-selected="false" onclick="renderRentalSettingsForm()">
+                <i class="fas fa-cog me-1"></i> Tarife & Einstellungen
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link fw-bold btn-sm text-secondary" id="bank-automation-tab" data-bs-toggle="pill" data-bs-target="#tab-bank-automation" type="button" role="tab" aria-controls="tab-bank-automation" aria-selected="false" onclick="if(typeof renderBankAutomationTab==='function')renderBankAutomationTab();">
+                <i class="fas fa-robot text-primary me-1"></i> Bank-Automation ${!canWrite ? '<i class="fas fa-lock text-warning ms-1" title="Schreibgeschützt (nur Lesezugriff)"></i>' : ''}
+              </button>
+            </li>
+          </ul>
+
+          <div class="tab-content" id="vermietung-cockpit-tabs-content">
+            <!-- TAB 1: RESERVATIONEN -->
+            <div class="tab-pane fade show active" id="tab-reservations" role="tabpanel" aria-labelledby="reservations-tab">
+              <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <div class="position-relative" style="width: 250px;">
+                  <input type="text" class="form-control form-control-sm ps-4" id="res-search-input" placeholder="Suche Name, E-Mail, Datum, Nr..." oninput="searchReservations(this.value)">
+                  <i class="fas fa-search position-absolute text-muted" style="left: 10px; top: 9px; font-size: 0.8rem;"></i>
+                </div>
+                <div class="d-flex gap-2 align-items-center">
+                  <!-- Spalten-Ausblender (TableKit Standard) -->
+                  <div id="vermietungColToggleContainer" class="d-inline-block"></div>
+                  <button class="btn btn-sm btn-outline-success py-1 fw-bold" onclick="if(window.UIExportKit)UIExportKit.exportTableToExcel('#vermietung-table', 'Vermietungen_Muhen.xlsx')" title="Tabelle als Excel exportieren">
+                    <i class="fas fa-file-excel me-1"></i>Excel
+                  </button>
+                  ${canWrite ? `
+                  <button class="btn btn-sm btn-outline-secondary py-1 fw-bold" onclick="syncNotfallBuchungen()" id="btn-sync-notfall" title="Prüft das Google Notfall-Sheet auf neue Buchungen und überträgt sie nach Supabase">
+                    <i class="fas fa-cloud-download-alt text-primary me-1"></i>Notfall-Sync
+                  </button>
+                  <button class="btn btn-sm btn-primary py-1 fw-bold write-protected" onclick="openNewReservationModal()">
+                    <i class="fas fa-plus me-1"></i>Neue Miete
+                  </button>` : ''}
+                </div>
+              </div>
+
+              <!-- FILTER PILLS -->
+              <div class="d-flex flex-wrap gap-2 mb-3" id="vermietung-filter-pills">
+                <div class="filter-pill ${aktuellerFilter === 'alle' ? 'active' : ''}" onclick="filterVermietungPill('alle')">
+                  Alle <span class="badge rounded-pill">${countAll}</span>
+                </div>
+                <div class="filter-pill ${aktuellerFilter === 'offen' ? 'active' : ''}" onclick="filterVermietungPill('offen')">
+                  Offen <span class="badge rounded-pill bg-warning text-dark">${countOffen}</span>
+                </div>
+                <div class="filter-pill ${aktuellerFilter === 'gemahnt' ? 'active' : ''}" onclick="filterVermietungPill('gemahnt')">
+                  Gemahnt <span class="badge rounded-pill bg-orange">${countGemahnt}</span>
+                </div>
+                <div class="filter-pill ${aktuellerFilter === 'bezahlt' ? 'active' : ''}" onclick="filterVermietungPill('bezahlt')">
+                  Bezahlt <span class="badge rounded-pill bg-success">${countBezahlt}</span>
+                </div>
+                <div class="filter-pill ${aktuellerFilter === 'storniert' ? 'active' : ''}" onclick="filterVermietungPill('storniert')">
+                  Storniert <span class="badge rounded-pill bg-danger">${countStorniert}</span>
+                </div>
+                ${countAnfragen > 0 ? `
+                <div class="filter-pill ${aktuellerFilter === 'anfragen' ? 'active' : ''}" onclick="filterVermietungPill('anfragen')">
+                  Vorab-Anfragen <span class="badge rounded-pill bg-info text-dark">${countAnfragen}</span>
+                </div>` : ''}
+              </div>
+
+              <div style="overflow-x:auto;max-height:420px;overflow-y:auto;" class="border rounded shadow-sm bg-white">
+                <table class="table table-hover mb-0" id="vermietung-table" style="font-size: 0.88rem;">
+                  <thead class="table-light" style="position:sticky;top:0;background:#f8f9fa;z-index:10;border-bottom: 2px solid #dee2e6;">
+                    <tr>
+                      <th class="tk-sortable text-nowrap" data-col-id="mietdatum" onclick="sortVermietung('datum')">Datum <i class="fas fa-sort text-muted ms-1 tk-sort-icon"></i></th>
+                      <th class="tk-sortable" data-col-id="name" onclick="sortVermietung('name')">Name <i class="fas fa-sort text-muted ms-1 tk-sort-icon"></i></th>
+                      <th class="tk-sortable text-nowrap" data-col-id="vertragsnr" onclick="sortVermietung('vertragsnr')">Vertrags-Nr. <i class="fas fa-sort text-muted ms-1 tk-sort-icon"></i></th>
+                      <th class="tk-sortable text-nowrap" data-col-id="festbeginn" onclick="sortVermietung('festbeginn')">Festbeginn <i class="fas fa-sort text-muted ms-1 tk-sort-icon"></i></th>
+                      <th class="tk-sortable" data-col-id="kontakt" onclick="sortVermietung('kontakt')">Kontakt <i class="fas fa-sort text-muted ms-1 tk-sort-icon"></i></th>
+                      <th class="tk-sortable text-nowrap" data-col-id="mietbetrag" onclick="sortVermietung('betrag')">Mietbetrag <i class="fas fa-sort text-muted ms-1 tk-sort-icon"></i></th>
+                      <th class="tk-sortable text-nowrap" data-col-id="status" onclick="sortVermietung('status')">Status <i class="fas fa-sort text-muted ms-1 tk-sort-icon"></i></th>
+                      <th class="text-end" data-col-id="aktionen"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="vermietung-tbody">
+                    ${renderVermietungRows(daten)}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- TAB 2: STORNORÜCKMELDUNGEN -->
+            <div class="tab-pane fade" id="tab-feedback" role="tabpanel" aria-labelledby="feedback-tab">
+              <div class="mb-3">
+                <div class="position-relative" style="width: 250px;">
+                  <input type="text" class="form-control form-control-sm ps-4" id="fb-search-input" placeholder="Feedback filtern (Grund, V-Nr...)" oninput="searchFeedback(this.value)">
+                  <i class="fas fa-search position-absolute text-muted" style="left: 10px; top: 9px; font-size: 0.8rem;"></i>
+                </div>
+              </div>
+
+              <div id="feedback-cards-container" style="max-height: 420px; overflow-y: auto; padding-right: 5px;">
+                <!-- Dynamisch durch renderFeedbackCards gerendert -->
+              </div>
+            </div>
+
+            <!-- TAB 3: TARIFE & EINSTELLUNGEN -->
+            <div class="tab-pane fade" id="tab-rental-settings" role="tabpanel" aria-labelledby="rental-settings-tab">
+              <div id="rental-settings-container" class="p-1">
+                <!-- Dynamisch durch renderRentalSettingsForm gerendert -->
+              </div>
+            </div>
+
+            <!-- TAB 4: BANK-AUTOMATION (GMAIL & CRON) -->
+            <div class="tab-pane fade" id="tab-bank-automation" role="tabpanel" aria-labelledby="bank-automation-tab">
+              <!-- Dynamisch durch renderBankAutomationTab gerendert -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DETAILS MODAL -->
+    <div class="modal fade" id="vermietungModal" tabindex="-1">
+      <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+          <div class="modal-header border-0" style="background:#0f3a5d;color:white;border-radius:8px 8px 0 0;">
+            <h5 class="modal-title fw-bold"><i class="fas fa-file-signature me-2"></i>Reservation Details</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body p-4" id="vermietung-modal-body"></div>
+          <div class="modal-footer border-0 bg-light" id="vermietung-modal-footer"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- NEUE RESERVATION MODAL (SCHNELLERFASSUNG) -->
+    <div class="modal fade" id="newReservationModal" tabindex="-1">
+      <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+          <div class="modal-header border-0" style="background:#0f3a5d;color:white;border-radius:8px 8px 0 0;">
+            <h5 class="modal-title fw-bold"><i class="fas fa-plus-circle me-2"></i>Neue Reservation erfassen</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body p-4" id="new-reservation-modal-body"></div>
+          <div class="modal-footer border-0 bg-light">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+            <button type="button" class="btn btn-primary fw-bold" id="btn-save-new-reservation" onclick="saveNewReservation()"><i class="fas fa-save me-1"></i>Reservation speichern</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // TableKit Spalten-Ausblender nach DOM-Aufbau initialisieren
+  setTimeout(() => {
+    initVermietungColToggle();
+  }, 50);
+}
+
+// Initialisiert TableKit Column Features für die Vermietungstabelle
+function initVermietungColToggle() {
+  if (window.TableKit && typeof window.TableKit.initTable === 'function') {
+    window._vmTableController = window.TableKit.initTable('#vermietung-table', {
+      id: 'vermietung',
+      storageKeyWidths: 'tk_cols_vermietung_widths',
+      storageKeyOrder: 'tk_cols_vermietung_order',
+      storageKeyCols: 'tk_cols_vermietung',
+      resizable: {
+        minWidth: 45,
+        columns: {
+          'aktionen': { resizable: false, defaultWidth: 60 }
+        }
+      },
+      reorderable: {
+        lockedColumns: ['aktionen']
+      },
+      columnToggle: document.getElementById('vermietungColToggleContainer') ? {
+        container: '#vermietungColToggleContainer',
+        columns: [
+          { id: 'mietdatum', name: 'Datum', defaultVisible: true },
+          { id: 'name', name: 'Mieter Name', defaultVisible: true },
+          { id: 'vertragsnr', name: 'Vertragsnummer', defaultVisible: true },
+          { id: 'festbeginn', name: 'Festbeginn', defaultVisible: false },
+          { id: 'kontakt', name: 'Kontakt (Mail/Tel)', defaultVisible: false },
+          { id: 'mietbetrag', name: 'Mietbetrag', defaultVisible: true },
+          { id: 'status', name: 'Status', defaultVisible: true },
+          { id: 'aktionen', name: 'Aktionen', defaultVisible: true }
+        ]
+      } : null
+    });
+  }
+}
+
+// Rendert das Einstellungs- und Tarifformular (Tab 3)
+function renderRentalSettingsForm() {
+  const container = document.getElementById('rental-settings-container');
+  if (!container) return;
+  const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('vermietung') : true;
+
+  const s = window._rentalSettings || {};
+  const pricing = window._rentalPricing || [];
+
+  const stdPricing = pricing.find(p => p.tariff_code === 'standard_tag') || {};
+  const mbrPricing = pricing.find(p => p.tariff_code === 'mitglied_rabatt') || {};
+
+  const stdPrice = stdPricing.base_price_chf !== undefined ? Number(stdPricing.base_price_chf) : 300;
+  const mbrPrice = mbrPricing.base_price_chf !== undefined ? Number(mbrPricing.base_price_chf) : 150;
+  const deposit = stdPricing.deposit_chf !== undefined ? Number(stdPricing.deposit_chf) : (s.deposit_amount ? Number(s.deposit_amount) : 200);
+
+  const stornoFee = s.storno_fee ? Number(s.storno_fee) : 100;
+  const woodFee = s.wood_fee ? Number(s.wood_fee) : 20;
+  const cleanFee = s.cleaning_fee_per_hour ? Number(s.cleaning_fee_per_hour) : 35;
+  const garbageFee = s.garbage_bag_fee ? Number(s.garbage_bag_fee) : 4;
+  const glassFee = s.glass_fee ? Number(s.glass_fee) : 2;
+  const plateFee = s.plate_fee ? Number(s.plate_fee) : 5;
+  const paymentDueDays = s.payment_due_days ? parseInt(s.payment_due_days, 10) : 14;
+
+  const sFirst = s.sender_first_name || 'Daniel';
+  const sLast = s.sender_last_name || 'Hunziker';
+  const sPhone = s.sender_phone || '+41 79 123 45 67';
+  const clubEmail = s.club_email || 'info@sportschuetzen-muhen.ch';
+
+  const wName = s.wirtschaft_name || 'Wirtschaftsteam';
+  const wPhone = s.wirtschaft_phone || '+41 79 987 65 43';
+  const wEmail = s.wirtschaft_email || 'wirtschaft@sportschuetzen-muhen.ch';
+
+  const iban = s.iban || 'CH06 8080 8003 6331 3189 2';
+  const mapsUrl = s.maps_url || 'https://www.google.com/maps/search/?api=1&query=Schützenhaus+Muhen';
+  const fbUrl = s.feedback_base_url || 'https://sps-b55.pages.dev/sportschuetzen-website/frontend/storno_feedback';
+
+  container.innerHTML = `
+    <form id="rental-settings-form" onsubmit="event.preventDefault(); saveRentalSettings();">
+      <div class="row g-3">
+        <!-- 1. Tarife & Gebühren -->
+        <div class="col-12 col-md-6">
+          <div class="card border rounded-3 p-3 shadow-xs h-100 bg-white">
+            <h6 class="fw-bold text-primary mb-3 border-bottom pb-2">
+              <i class="fas fa-coins me-2"></i>Mietpreise & Tarife (CHF)
+            </h6>
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Standardmiete (Ganzer Tag)</label>
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text">CHF</span>
+                  <input type="number" step="0.50" class="form-control fw-bold" id="cfg-price-standard" value="${stdPrice.toFixed(2)}" required>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Mitglieder-Tarif (Rabatt)</label>
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text">CHF</span>
+                  <input type="number" step="0.50" class="form-control" id="cfg-price-member" value="${mbrPrice.toFixed(2)}" required>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Glasbruch (pro Glas)</label>
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text">CHF</span>
+                  <input type="number" step="0.50" class="form-control" id="cfg-glass-fee" value="${glassFee.toFixed(2)}" required>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Teller (pro Stk.)</label>
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text">CHF</span>
+                  <input type="number" step="0.50" class="form-control" id="cfg-plate-fee" value="${plateFee.toFixed(2)}" required>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Stornogebühr</label>
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text">CHF</span>
+                  <input type="number" step="0.50" class="form-control" id="cfg-storno-fee" value="${stornoFee.toFixed(2)}" required>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Zusatz-Cheminéeholz (Kiste)</label>
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text">CHF</span>
+                  <input type="number" step="0.50" class="form-control" id="cfg-wood-fee" value="${woodFee.toFixed(2)}" required>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Nachreinigung (pro Stunde)</label>
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text">CHF</span>
+                  <input type="number" step="0.50" class="form-control" id="cfg-cleaning-fee" value="${cleanFee.toFixed(2)}" required>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Kehrichtsack (pro Stk.)</label>
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text">CHF</span>
+                  <input type="number" step="0.50" class="form-control" id="cfg-garbage-fee" value="${garbageFee.toFixed(2)}" required>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted"><i class="fas fa-calendar-day me-1 text-primary"></i>Zahlungsfrist (Tage)</label>
+                <div class="input-group input-group-sm">
+                  <input type="number" step="1" min="1" max="90" class="form-control fw-bold text-end" id="cfg-payment-due-days" value="${paymentDueDays}" required>
+                  <span class="input-group-text">Tage</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Vermieter / Absender -->
+        <div class="col-12 col-md-6">
+          <div class="card border rounded-3 p-3 shadow-xs h-100 bg-white">
+            <h6 class="fw-bold text-primary mb-3 border-bottom pb-2">
+              <i class="fas fa-user-tie me-2"></i>Vermieter (Absender)
+            </h6>
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Vorname</label>
+                <input type="text" class="form-control form-control-sm" id="cfg-sender-firstname" value="${escapeHtml(sFirst)}" required>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Nachname</label>
+                <input type="text" class="form-control form-control-sm" id="cfg-sender-lastname" value="${escapeHtml(sLast)}" required>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Telefon / Mobil</label>
+                <input type="tel" class="form-control form-control-sm" id="cfg-sender-phone" value="${escapeHtml(sPhone)}" required>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">E-Mail Absender (Hauptkontakt)</label>
+                <input type="email" class="form-control form-control-sm" id="cfg-club-email" value="${escapeHtml(clubEmail)}" required>
+              </div>
+              <div class="col-12 mt-2">
+                <label class="form-label small fw-bold text-muted">Zentraler E-Mail-Verteiler Vermietung (CC für alle Mails)</label>
+                <input type="text" class="form-control form-control-sm" id="cfg-cc-emails" value="${escapeHtml(s.rental_cc_emails !== undefined ? s.rental_cc_emails : clubEmail)}" placeholder="info@sportschuetzen-muhen.ch, wirtschaft@...">
+                <small class="text-muted"><i class="fas fa-info-circle me-1"></i>An diesen Verteiler geht bei <strong>jeder</strong> Vermietungs-E-Mail (Vertrag, Bestätigung, Mahnung, Schlüssel, Storno, Notfall-Alarm) automatisch eine Kopie. Mehrere Adressen mit Komma trennen.</small>
+              </div>
+              <div class="col-12 mt-1">
+                <small class="text-muted"><i class="fas fa-check-circle text-success me-1"></i>Diese Angaben erscheinen auf dem Mietvertrag und steuern alle Mailverteiler.</small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Wirtschaftsteam (Schlüsselübergabe) -->
+        <div class="col-12 col-md-6">
+          <div class="card border rounded-3 p-3 shadow-xs h-100 bg-white">
+            <h6 class="fw-bold text-primary mb-3 border-bottom pb-2">
+              <i class="fas fa-key me-2"></i>Wirtschaftsteam (Schlüsselübergabe)
+            </h6>
+            <div class="row g-2">
+              <div class="col-12">
+                <label class="form-label small fw-bold text-muted">Kontaktperson / Bezeichnung</label>
+                <input type="text" class="form-control form-control-sm" id="cfg-wirtschaft-name" value="${escapeHtml(wName)}" placeholder="z.B. Wirtschaftsteam / Andrea Rossi" required>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Telefon / WhatsApp</label>
+                <input type="tel" class="form-control form-control-sm" id="cfg-wirtschaft-phone" value="${escapeHtml(wPhone)}" required>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">E-Mail für Benachrichtigung</label>
+                <input type="email" class="form-control form-control-sm" id="cfg-wirtschaft-email" value="${escapeHtml(wEmail)}" required>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. Bankverbindung & Links -->
+        <div class="col-12 col-md-6">
+          <div class="card border rounded-3 p-3 shadow-xs h-100 bg-white">
+            <h6 class="fw-bold text-primary mb-3 border-bottom pb-2">
+              <i class="fas fa-university me-2"></i>Bank & System-Links
+            </h6>
+            <div class="row g-2">
+              <div class="col-12">
+                <label class="form-label small fw-bold text-muted">IBAN (für QR-Rechnung)</label>
+                <input type="text" class="form-control form-control-sm font-monospace" id="cfg-iban" value="${escapeHtml(iban)}" required>
+              </div>
+              <div class="col-12">
+                <label class="form-label small fw-bold text-muted">Google Maps Link Schützenhaus</label>
+                <input type="url" class="form-control form-control-sm" id="cfg-maps-url" value="${escapeHtml(mapsUrl)}">
+              </div>
+              <div class="col-12">
+                <label class="form-label small fw-bold text-muted">Feedback-Formular Basis-URL</label>
+                <input type="url" class="form-control form-control-sm" id="cfg-feedback-url" value="${escapeHtml(fbUrl)}">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Speichern Knopf -->
+        ${canWrite ? `
+        <div class="col-12 text-end mt-3">
+          <button type="submit" class="btn btn-primary px-4 fw-bold shadow-sm write-protected" id="cfg-save-btn">
+            <i class="fas fa-save me-1.5"></i> Einstellungen & Tarife speichern
+          </button>
+        </div>` : ''}
+      </div>
+    </form>
+  `;
+
+  if (!canWrite) {
+    container.querySelectorAll('input, select, textarea').forEach(el => {
+      el.setAttribute('disabled', 'true');
+      el.setAttribute('readonly', 'true');
+    });
+  }
+}
+
+// Generiert die HTML-Visualisierung der Reservierungs-Zeitleiste (Timeline)
+function getTimelineHtml(status) {
+  const s = String(status || '').toLowerCase();
+  const isStorniert = s.includes("05") || s === 'cancelled';
+  const isKonflikt  = s.includes("00") || s === 'conflict';
+  const isInquiry   = s === 'inquiry';
+  
+  if (isKonflikt) {
+    return `
+      <div class="timeline-steps">
+        <div class="timeline-step storniert">
+          <div class="timeline-circle"><i class="fas fa-exclamation-triangle"></i></div>
+          <div class="timeline-title">Konflikt</div>
+        </div>
+      </div>`;
+  }
+
+  if (isInquiry) {
+    return `
+      <div class="timeline-steps">
+        <div class="timeline-step active">
+          <div class="timeline-circle"><i class="fas fa-clock"></i></div>
+          <div class="timeline-title">Vorab-Anfrage (Prüfung)</div>
+        </div>
+      </div>`;
+  }
+  
+  if (isStorniert) {
+    return `
+      <div class="timeline-steps">
+        <div class="timeline-step completed">
+          <div class="timeline-circle">1</div>
+          <div class="timeline-title">Vertrag</div>
+        </div>
+        <div class="timeline-step storniert">
+          <div class="timeline-circle">✕</div>
+          <div class="timeline-title">Storniert</div>
+        </div>
+      </div>`;
+  }
+
+  const step1Class = 'completed'; // Vertrag versandt
+  const step2Class = s.includes("02") || s === 'reminded' ? 'storniert' : (s.includes("03") || s.includes("04") || s === 'paid' || s === 'keys_issued' || s === 'completed' ? 'completed' : 'active');
+  const step3Class = (s.includes("03") || s.includes("04") || s === 'paid' || s === 'keys_issued' || s === 'completed') ? 'completed' : '';
+  const step4Class = (s.includes("04") || s === 'keys_issued' || s === 'completed') ? 'completed' : '';
+
+  const step2Icon = s.includes("02") || s === 'reminded' ? '<i class="fas fa-exclamation"></i>' : '2';
+  const step2Title = s.includes("02") || s === 'reminded' ? 'Gemahnt' : 'Zahlung';
+  const step3Icon = (s.includes("03") || s.includes("04") || s === 'paid' || s === 'keys_issued' || s === 'completed') ? '<i class="fas fa-check"></i>' : '3';
+  const step4Icon = (s.includes("04") || s === 'keys_issued' || s === 'completed') ? '<i class="fas fa-key"></i>' : '4';
+
+  return `
+    <div class="timeline-steps">
+      <div class="timeline-step ${step1Class}">
+        <div class="timeline-circle">1</div>
+        <div class="timeline-title">Vertrag versandt</div>
+      </div>
+      <div class="timeline-step ${step2Class}">
+        <div class="timeline-circle">${step2Icon}</div>
+        <div class="timeline-title">${step2Title}</div>
+      </div>
+      <div class="timeline-step ${step3Class}">
+        <div class="timeline-circle">${step3Icon}</div>
+        <div class="timeline-title">Bezahlt</div>
+      </div>
+      <div class="timeline-step ${step4Class}">
+        <div class="timeline-circle">${step4Icon}</div>
+        <div class="timeline-title">Schlüssel</div>
+      </div>
+    </div>`;
+}

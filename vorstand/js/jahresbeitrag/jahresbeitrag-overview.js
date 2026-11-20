@@ -1,0 +1,2176 @@
+// vorstand/js/jahresbeitrag/jahresbeitrag-overview.js
+// ============================================================
+// STATUS-HELPER FÜR JAHRESBEITRAG (ARCHITEKTUR-STAND 2026)
+// Status-Lebenszyklus:
+// 1. 'berechnet': Beitrag kalkuliert, Betrag > 0, aber noch kein Rechnungsentwurf im RechnungsCore
+// 2. 'entwurf': Rechnung im RechnungsCore angelegt (JB-XX-XXXX), aber noch nicht an Mitglied gesendet
+// 3. 'versendet': Rechnung per E-Mail oder Druck versendet, Zahlung ausstehend
+// 4. 'teilbezahlt': Teilzahlung verbucht, Restbetrag offen
+// 5. 'bezahlt': Vollständig bezahlt
+// 6. 'befreit': Betrag ist CHF 0.00 (z.B. Schüler oder voll befreites Ehrenmitglied)
+// ============================================================
+function jbGetEffectiveStatus(r) {
+  if (!r) return 'berechnet';
+  if (r.status === 'bezahlt' || (r.payment_date && r.payment_method)) {
+    return 'bezahlt';
+  }
+  if (Number(r.Gesamt || 0) === 0) {
+    return 'befreit';
+  }
+  
+  const invId = r.invoiceId || r.invoice_id;
+  if (!invId) {
+    return 'berechnet';
+  }
+  
+  const allInvoices = window._invoices || window._jbAllInvoices || [];
+  const inv = allInvoices.find(i =>
+    String(i.id).trim() === String(invId).trim() &&
+    String(i.status || '').toLowerCase() !== 'storniert'
+  );
+  if (inv) {
+    const invStatus = String(inv.status || '').toLowerCase();
+    const totalAmt = Number(inv.total_amount || 0);
+    const openAmt = (inv.open_amount !== undefined && inv.open_amount !== null) ? Number(inv.open_amount) : totalAmt;
+    if (invStatus === 'bezahlt' || (totalAmt > 0 && openAmt <= 0.01)) {
+      return 'bezahlt';
+    }
+    if (invStatus === 'teilbezahlt' || (totalAmt > 0 && openAmt < (totalAmt - 0.01))) {
+      return 'teilbezahlt';
+    }
+    if (inv.mail_status === 'versendet' || inv.mail_status === 'gesendet' || inv.send_date) {
+      return 'versendet';
+    }
+    return 'entwurf';
+  }
+  
+  if (r.mail_status === 'versendet' || r.mail_status === 'gesendet') {
+    return 'versendet';
+  }
+  return 'berechnet';
+}
+window.jbGetEffectiveStatus = jbGetEffectiveStatus;
+
+// ============================================================
+// MULTI-SELECT FILTER STATE & HANDLERS (ÜBERSICHT)
+// ============================================================
+let _jbOverviewCategoryFilter = new Set();
+let _jbOverviewStatusFilter = new Set();
+window._jbOverviewCategoryFilter = _jbOverviewCategoryFilter;
+window._jbOverviewStatusFilter = _jbOverviewStatusFilter;
+
+function jbOverviewToggleCategoryItem(catVal, isChecked) {
+  if (isChecked) {
+    _jbOverviewCategoryFilter.add(catVal);
+  } else {
+    _jbOverviewCategoryFilter.delete(catVal);
+  }
+  jbOverviewUpdateCategoryDropdownUI();
+  jbFilter();
+}
+
+function jbOverviewToggleAllCategories(checked) {
+  _jbOverviewCategoryFilter.clear();
+  document.querySelectorAll('.jb-overview-cat-chk').forEach(c => { c.checked = false; });
+  const allChk = document.getElementById('jbOverviewCatAll');
+  if (allChk) allChk.checked = true;
+  jbOverviewUpdateCategoryDropdownUI();
+  jbFilter();
+}
+
+function jbOverviewResetCategoryFilter() {
+  _jbOverviewCategoryFilter.clear();
+  document.querySelectorAll('.jb-overview-cat-chk').forEach(c => { c.checked = false; });
+  const allChk = document.getElementById('jbOverviewCatAll');
+  if (allChk) allChk.checked = true;
+  jbOverviewUpdateCategoryDropdownUI();
+  jbFilter();
+}
+
+function jbOverviewUpdateCategoryDropdownUI() {
+  const btnText = document.getElementById('jbOverviewCategoryLabel');
+  const badge = document.getElementById('jbOverviewCategoryBadge');
+  const allChk = document.getElementById('jbOverviewCatAll');
+  if (!btnText) return;
+
+  const count = _jbOverviewCategoryFilter.size;
+  if (count === 0) {
+    btnText.textContent = 'Alle Kategorien';
+    if (badge) badge.classList.add('d-none');
+    if (allChk) allChk.checked = true;
+  } else if (count === 1) {
+    const singleVal = Array.from(_jbOverviewCategoryFilter)[0];
+    btnText.textContent = singleVal;
+    if (badge) {
+      badge.textContent = '1';
+      badge.classList.remove('d-none');
+    }
+    if (allChk) allChk.checked = false;
+  } else {
+    btnText.textContent = `${count} Kategorien`;
+    if (badge) {
+      badge.textContent = String(count);
+      badge.classList.remove('d-none');
+    }
+    if (allChk) allChk.checked = false;
+  }
+}
+
+function jbOverviewToggleStatusItem(stVal, isChecked) {
+  if (isChecked) {
+    _jbOverviewStatusFilter.add(stVal);
+  } else {
+    _jbOverviewStatusFilter.delete(stVal);
+  }
+  jbOverviewUpdateStatusDropdownUI();
+  jbFilter();
+}
+
+function jbOverviewToggleAllStatus(checked) {
+  _jbOverviewStatusFilter.clear();
+  document.querySelectorAll('.jb-overview-st-chk').forEach(c => { c.checked = false; });
+  const allChk = document.getElementById('jbOverviewStatusAll');
+  if (allChk) allChk.checked = true;
+  jbOverviewUpdateStatusDropdownUI();
+  jbFilter();
+}
+
+function jbOverviewResetStatusFilter() {
+  _jbOverviewStatusFilter.clear();
+  document.querySelectorAll('.jb-overview-st-chk').forEach(c => { c.checked = false; });
+  const allChk = document.getElementById('jbOverviewStatusAll');
+  if (allChk) allChk.checked = true;
+  jbOverviewUpdateStatusDropdownUI();
+  jbFilter();
+}
+
+function jbOverviewUpdateStatusDropdownUI() {
+  const btnText = document.getElementById('jbOverviewStatusLabel');
+  const badge = document.getElementById('jbOverviewStatusBadge');
+  const allChk = document.getElementById('jbOverviewStatusAll');
+  if (!btnText) return;
+
+  const count = _jbOverviewStatusFilter.size;
+  if (count === 0) {
+    btnText.textContent = 'Alle Status';
+    if (badge) badge.classList.add('d-none');
+    if (allChk) allChk.checked = true;
+  } else if (count === 1) {
+    const singleVal = Array.from(_jbOverviewStatusFilter)[0];
+    const item = (window.JB_FILTER_STATUSES || []).find(s => s.value === singleVal);
+    btnText.textContent = item ? item.label.split(' ')[0] : singleVal;
+    if (badge) {
+      badge.textContent = '1';
+      badge.classList.remove('d-none');
+    }
+    if (allChk) allChk.checked = false;
+  } else {
+    btnText.textContent = `${count} Status`;
+    if (badge) {
+      badge.textContent = String(count);
+      badge.classList.remove('d-none');
+    }
+    if (allChk) allChk.checked = false;
+  }
+}
+
+// ============================================================
+// TAB 1: OVERVIEW TAB RENDER
+// ============================================================
+function renderOverviewTab(canEdit, years) {
+  const total    = _jbData.reduce((s, r) => s + Number(r.Gesamt || 0), 0);
+  const bezahlt  = _jbData.filter(r => jbGetEffectiveStatus(r) === 'bezahlt').reduce((s, r) => s + Number(r.Gesamt || 0), 0);
+  const offen    = total - bezahlt;
+  const offenCount     = _jbData.filter(r => jbGetEffectiveStatus(r) !== 'bezahlt' && jbGetEffectiveStatus(r) !== 'befreit').length;
+  const bezahltCount   = _jbData.filter(r => jbGetEffectiveStatus(r) === 'bezahlt').length;
+  const entwurfCount   = _jbData.filter(r => jbGetEffectiveStatus(r) === 'entwurf').length;
+  const berechnetCount = _jbData.filter(r => jbGetEffectiveStatus(r) === 'berechnet').length;
+  const uncreatedCount = _jbData.filter(r => {
+    const hasInv = r.invoiceId && String(r.invoiceId).trim().length > 0;
+    return !hasInv && Number(r.Gesamt || 0) > 0;
+  }).length;
+
+  const yearOptions = years.map(y =>
+    `<option value="${y}" ${y == _jbYear ? 'selected' : ''}>${y}</option>`
+  ).join('');
+
+  return `
+    <!-- Toolbar -->
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+      <select class="form-select form-select-sm" style="width:100px" id="jbYearSel" onchange="jbChangeYear(this.value)">
+        ${yearOptions}
+      </select>
+      <input type="text" class="form-control form-control-sm" style="width:220px"
+             id="jbSearch" placeholder="🔍 Name / PersonenNummer…" oninput="jbFilter()">
+      <!-- Kategorie Multi-Select Filter -->
+      <div class="dropdown d-inline-block" id="jbOverviewCategoryDropdownContainer">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle d-flex align-items-center justify-content-between text-truncate shadow-xs"
+                type="button" 
+                id="jbOverviewCategoryDropdownBtn" 
+                data-bs-toggle="dropdown" 
+                data-bs-auto-close="outside" 
+                aria-expanded="false" 
+                style="min-width: 170px; max-width: 220px;"
+                title="Tabelle nach Schützen-Kategorien filtern">
+          <span class="text-truncate" id="jbOverviewCategoryLabel">Alle Kategorien</span>
+          <span class="badge bg-primary ms-1 d-none" id="jbOverviewCategoryBadge">0</span>
+        </button>
+        <ul class="dropdown-menu shadow-sm py-1" style="min-width: 230px; font-size: 12px; max-height: 380px; overflow-y: auto;">
+          <li class="px-2 py-1 border-bottom bg-light d-flex justify-content-between align-items-center">
+            <div class="form-check m-0">
+              <input class="form-check-input" type="checkbox" id="jbOverviewCatAll" ${(!_jbOverviewCategoryFilter || _jbOverviewCategoryFilter.size === 0) ? 'checked' : ''} onchange="jbOverviewToggleAllCategories(this.checked)">
+              <label class="form-check-label fw-bold" for="jbOverviewCatAll" style="cursor: pointer;">Alle Kategorien</label>
+            </div>
+            <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-muted" style="font-size: 11px;" onclick="jbOverviewResetCategoryFilter()">Leeren</button>
+          </li>
+          ${(window.JB_FILTER_CATEGORIES || []).map(cat => {
+            const checked = _jbOverviewCategoryFilter && _jbOverviewCategoryFilter.has(cat.value);
+            const safeId = 'jbOverviewCat_' + cat.value.replace(/[^a-zA-Z0-9]/g, '_');
+            return `
+              <li class="px-2 py-1">
+                <div class="form-check m-0">
+                  <input class="form-check-input jb-overview-cat-chk" type="checkbox" value="${cat.value}" id="${safeId}" ${checked ? 'checked' : ''} onchange="jbOverviewToggleCategoryItem('${cat.value}', this.checked)">
+                  <label class="form-check-label w-100" for="${safeId}" style="cursor: pointer;">${cat.label}</label>
+                </div>
+              </li>
+            `;
+          }).join('')}
+        </ul>
+      </div>
+
+      <!-- Status Multi-Select Filter -->
+      <div class="dropdown d-inline-block" id="jbOverviewStatusDropdownContainer">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle d-flex align-items-center justify-content-between text-truncate shadow-xs"
+                type="button" 
+                id="jbOverviewStatusDropdownBtn" 
+                data-bs-toggle="dropdown" 
+                data-bs-auto-close="outside" 
+                aria-expanded="false" 
+                style="min-width: 160px; max-width: 220px;"
+                title="Tabelle nach Rechnungs-Status filtern">
+          <span class="text-truncate" id="jbOverviewStatusLabel">Alle Status</span>
+          <span class="badge bg-primary ms-1 d-none" id="jbOverviewStatusBadge">0</span>
+        </button>
+        <ul class="dropdown-menu shadow-sm py-1" style="min-width: 230px; font-size: 12px; max-height: 380px; overflow-y: auto;">
+          <li class="px-2 py-1 border-bottom bg-light d-flex justify-content-between align-items-center">
+            <div class="form-check m-0">
+              <input class="form-check-input" type="checkbox" id="jbOverviewStatusAll" ${(!_jbOverviewStatusFilter || _jbOverviewStatusFilter.size === 0) ? 'checked' : ''} onchange="jbOverviewToggleAllStatus(this.checked)">
+              <label class="form-check-label fw-bold" for="jbOverviewStatusAll" style="cursor: pointer;">Alle Status</label>
+            </div>
+            <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-muted" style="font-size: 11px;" onclick="jbOverviewResetStatusFilter()">Leeren</button>
+          </li>
+          ${(window.JB_FILTER_STATUSES || []).map(st => {
+            const checked = _jbOverviewStatusFilter && _jbOverviewStatusFilter.has(st.value);
+            const safeId = 'jbOverviewSt_' + st.value.replace(/[^a-zA-Z0-9]/g, '_');
+            return `
+              <li class="px-2 py-1">
+                <div class="form-check m-0">
+                  <input class="form-check-input jb-overview-st-chk" type="checkbox" value="${st.value}" id="${safeId}" ${checked ? 'checked' : ''} onchange="jbOverviewToggleStatusItem('${st.value}', this.checked)">
+                  <label class="form-check-label w-100" for="${safeId}" style="cursor: pointer;">${st.label}</label>
+                </div>
+              </li>
+            `;
+          }).join('')}
+        </ul>
+      </div>
+
+      <!-- Spalten-Ausblender (TableKit Standard) -->
+      <div id="jbTableColToggleContainer" class="d-inline-block"></div>
+
+      ${canEdit ? `
+      <div class="ms-auto d-inline-flex gap-2 align-items-center flex-wrap">
+        <button class="btn btn-sm btn-outline-warning" id="btnJbBerechnen" onclick="jbBerechnen()" title="Beiträge für alle aktiven Mitglieder nach Gebührenordnung und Lizenzen berechnen">
+          <i class="fas fa-calculator me-1"></i> Alle Beiträge berechnen
+        </button>
+        <button class="btn btn-sm btn-outline-primary" id="btnJbRechnungenBereitstellen" onclick="jbRechnungenBereitstellenBatch()" title="Erzeugt für alle berechneten Beiträge offizielle Rechnungsentwürfe im RechnungsCore">
+          <i class="fas fa-file-invoice me-1"></i> Rechnungen bereitstellen ${uncreatedCount > 0 ? `<span class="badge bg-primary ms-1">${uncreatedCount}</span>` : ''}
+        </button>
+        <button class="btn btn-sm btn-outline-success" id="btnJbSammelversand" onclick="jbOpenSammelversandModal()" title="Alle Rechnungen für das aktive Jahr gesammelt per E-Mail versenden">
+          <i class="fas fa-paper-plane me-1"></i> Sammelversand E-Mail
+        </button>
+        <button class="btn btn-sm btn-outline-secondary d-flex align-items-center" id="btnJbResetCalculations" onclick="jbResetYear('calculations')" title="Löscht alle Rechnungs- und Posteneinträge des aktiven Jahres und berechnet sie basierend auf den Turnierteilnahmen neu. Erfasste Teilnahmen und manuelle Gebühren-Überschreibungen (z.B. Schützenhaus) bleiben erhalten.">
+          <i class="fas fa-history me-1"></i> Rechnungen zurücksetzen
+          <i class="fas fa-info-circle text-muted ms-1.5" style="font-size:11px;"></i>
+        </button>
+        <button class="btn btn-sm btn-outline-danger d-flex align-items-center" id="btnJbResetAll" onclick="jbResetYear('all')" title="Löscht sowohl die Rechnungen als auch ALLE Turnierteilnahmen und manuellen Gebührenüberschreibungen für das aktive Jahr komplett. Setzt das Jahr auf den Ausgangszustand zurück.">
+          <i class="fas fa-trash-alt me-1"></i> Alles zurücksetzen
+          <i class="fas fa-info-circle text-muted ms-1.5" style="font-size:11px;"></i>
+        </button>
+      </div>` : ''}
+    </div>
+
+    <!-- KPI-Karten -->
+    <div class="row g-3 mb-3">
+      <div class="col-12 col-md-4">
+        <div class="card border-0 shadow-sm p-3 border-start border-4 border-primary">
+          <div class="small text-muted">Total</div>
+          <div class="fs-5 fw-bold">${fmtChf(total)}</div>
+          <div class="text-muted small">${_jbData.length} Beiträge</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-4">
+        <div class="card border-0 shadow-sm p-3 border-start border-4 border-success">
+          <div class="small text-muted">Bezahlt</div>
+          <div class="fs-5 fw-bold text-success">${fmtChf(bezahlt)}</div>
+          <div class="text-muted small">${bezahltCount} Mitglieder</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-4">
+        <div class="card border-0 shadow-sm p-3 border-start border-4 border-danger">
+          <div class="small text-muted">Ausstehend</div>
+          <div class="fs-5 fw-bold text-danger">${fmtChf(offen)}</div>
+          <div class="text-muted small">${offenCount} offen (${entwurfCount} Entwurf${berechnetCount > 0 ? `, ${berechnetCount} unübertragen` : ''})</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabelle -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover table-sm mb-0" id="jbTable">
+            <thead class="table-light sticky-top small text-muted text-uppercase" style="font-size: 11px;">
+              <tr>
+                <th data-col-id="name" data-col-name="Name" data-sort-key="name" onclick="jbSortTable('name')" style="cursor: pointer; user-select: none;">Name${_jbSortCol === 'name' ? (_jbSortAsc ? ' ▲' : ' ▼') : ''}</th>
+                <th data-col-id="kat" data-col-name="Kategorie" data-sort-key="kat" onclick="jbSortTable('kat')" style="cursor: pointer; user-select: none;">Kategorie${_jbSortCol === 'kat' ? (_jbSortAsc ? ' ▲' : ' ▼') : ''}</th>
+                <th data-col-id="gesamt" data-col-name="Gesamt" data-sort-key="gesamt" onclick="jbSortTable('gesamt')" class="text-end pe-4" style="cursor: pointer; user-select: none;">Gesamt${_jbSortCol === 'gesamt' ? (_jbSortAsc ? ' ▲' : ' ▼') : ''}</th>
+                <th data-col-id="status" data-col-name="Status" data-sort-key="status" onclick="jbSortTable('status')" style="cursor: pointer; user-select: none;">Status${_jbSortCol === 'status' ? (_jbSortAsc ? ' ▲' : ' ▼') : ''}</th>
+                <th data-col-id="date" data-col-name="Bezahlt am" data-sort-key="date" onclick="jbSortTable('date')" style="cursor: pointer; user-select: none;">Bezahlt am${_jbSortCol === 'date' ? (_jbSortAsc ? ' ▲' : ' ▼') : ''}</th>
+                <th data-col-id="method" data-col-name="Methode" data-sort-key="method" onclick="jbSortTable('method')" style="cursor: pointer; user-select: none;">Methode${_jbSortCol === 'method' ? (_jbSortAsc ? ' ▲' : ' ▼') : ''}</th>
+                <th data-col-id="beleg" data-col-name="Beleg / Ref" data-sort-key="beleg" onclick="jbSortTable('beleg')" style="cursor: pointer; user-select: none;">Beleg${_jbSortCol === 'beleg' ? (_jbSortAsc ? ' ▲' : ' ▼') : ''}</th>
+                ${canEdit ? '<th data-col-id="actions" data-col-name="Aktionen" class="text-end" style="width: 140px;">Aktionen</th>' : ''}
+              </tr>
+            </thead>
+            <tbody id="jbTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card-footer text-muted small" id="jbCount"></div>
+    </div>
+
+    <!-- Modals für Zahlung und Positionen -->
+    ${renderOverviewModals()}
+  `;
+}
+
+function jbCleanupModals(modalId) {
+  if (modalId) {
+    const el = document.getElementById(modalId);
+    if (el) {
+      const bsModal = bootstrap.Modal.getInstance(el);
+      if (bsModal) {
+        try { bsModal.hide(); } catch (_) {}
+      }
+    }
+  }
+  document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+  document.body.classList.remove('modal-open');
+  document.body.style.overflow = '';
+  document.body.style.paddingRight = '';
+}
+window.jbCleanupModals = jbCleanupModals;
+
+window.jbOpenInvoicePdfSafe = async function(url, ev) {
+  if (ev) {
+    try { ev.preventDefault(); } catch (_) {}
+    try { ev.stopPropagation(); } catch (_) {}
+  }
+  if (!url) return;
+  const resolvedUrl = (typeof window.resolvePrivateStorageUrl === 'function')
+    ? await window.resolvePrivateStorageUrl(url, 3600)
+    : url;
+  const sep = resolvedUrl.includes('?') ? '&' : '?';
+  window.open(`${resolvedUrl}${sep}t=${Date.now()}`, '_blank');
+};
+
+function jbEnsureOverviewModals() {
+  if (!document.getElementById('jbModalPositionen') || !document.getElementById('jbModalZahlung')) {
+    let container = document.getElementById('jbModalsContainer');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'jbModalsContainer';
+      document.body.appendChild(container);
+    }
+    container.innerHTML = `
+    <!-- Modal: Zahlung (Globaler Modal-Standard) -->
+    <div class="modal fade" id="jbModalZahlung" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden position-relative">
+          <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4" style="cursor: grab; user-select: none;">
+            <h5 class="modal-title fw-bold mb-0">
+              <i class="fas fa-credit-card me-2"></i>Zahlung erfassen
+            </h5>
+            <div class="d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-sm text-white p-1 border-0 shadow-none rn-modal-maximize-btn" title="Maximieren / Wiederherstellen" style="opacity: 0.85; line-height: 1;">
+                <i class="fas fa-expand"></i>
+              </button>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+            </div>
+          </div>
+          <div class="modal-body p-4">
+            <input type="hidden" id="jbZahlungId">
+            <div class="card border-0 bg-light p-3 rounded-3 mb-3">
+              <div class="d-flex justify-content-between align-items-center">
+                <div>
+                  <span class="text-muted small d-block">Mitglied</span>
+                  <div class="fw-bold fs-6 text-dark" id="jbZahlungName"></div>
+                </div>
+                <div class="text-end">
+                  <span class="text-muted small d-block">Fälliger Betrag</span>
+                  <div class="fs-4 fw-extrabold text-danger" id="jbZahlungBetrag"></div>
+                </div>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold small text-secondary">Bezahlt am *</label>
+              <input type="date" class="form-control" id="jbZahlungDatum" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold small text-secondary">Zahlungsmethode</label>
+              <select class="form-select" id="jbZahlungMethode">
+                <option value="Überweisung">Überweisung (Bank)</option>
+                <option value="Bar">Barzahlung</option>
+                <option value="TWINT">TWINT</option>
+                <option value="E-Banking">E-Banking</option>
+                <option value="Dauerauftrag">Dauerauftrag</option>
+              </select>
+            </div>
+            <div class="mb-2">
+              <label class="form-label fw-semibold small text-secondary">Belegnummer / Referenz</label>
+              <input type="text" class="form-control" id="jbZahlungBeleg" placeholder="z. B. REF-2026-001 oder Bankbeleg">
+            </div>
+          </div>
+          <div class="modal-footer bg-light border-top px-4 py-3 rounded-bottom-4 d-flex justify-content-between">
+            <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Abbrechen</button>
+            <button type="button" id="jbZahlungSaveBtn" class="btn btn-success fw-bold px-4 shadow-sm" onclick="jbSaveZahlung()">
+              <i class="fas fa-check me-1"></i> Zahlung speichern
+            </button>
+          </div>
+          <div class="rn-modal-resizer" title="Grösse durch Ziehen verändern" style="position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 1060; display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px; color: #94a3b8; user-select: none;">
+            <i class="fas fa-arrows-alt-diagonal" style="font-size: 10px; opacity: 0.5;"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Positionen / Rechnungs-Inspektor (Globaler Modal-Standard) -->
+    <div class="modal fade" id="jbModalPositionen" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden position-relative">
+          <div class="modal-header bg-dark text-white border-0 py-3 rounded-top-4" style="cursor: grab; user-select: none;">
+            <h5 class="modal-title fw-bold mb-0">
+              <i class="fas fa-file-invoice-dollar me-2 text-warning"></i>Rechnungsdetails &amp; Positionen
+            </h5>
+            <div class="d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-sm text-white p-1 border-0 shadow-none rn-modal-maximize-btn" title="Maximieren / Wiederherstellen" style="opacity: 0.85; line-height: 1;">
+                <i class="fas fa-expand"></i>
+              </button>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+            </div>
+          </div>
+          <div class="modal-body p-4" id="jbModalBody"></div>
+          <div class="rn-modal-resizer" title="Grösse durch Ziehen verändern" style="position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 1060; display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px; color: #94a3b8; user-select: none;">
+            <i class="fas fa-arrows-alt-diagonal" style="font-size: 10px; opacity: 0.5;"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+    `;
+  }
+}
+
+function renderOverviewModals() {
+  jbEnsureOverviewModals();
+  return '';
+}
+
+// ============================================================
+// TAB 1 UTILS (CLASSIC CALCULATOR & PAYMENT HANDLERS)
+// ============================================================
+function jbRenderRows(data) {
+  const canEdit = typeof hasWriteAccess === 'function' ? hasWriteAccess('jahresbeitrag') : (typeof userHasRole === 'function' ? userHasRole('admin') : false);
+  const tbody = document.getElementById('jbTableBody');
+  if (!tbody) return;
+
+  tbody.innerHTML = data.map(r => {
+    const m    = _jbMemberMap[String(r.PersonNumber)] || {};
+    const name = m.FirstName ? `${m.FirstName} ${m.LastName}` : (r._name || r.PersonNumber);
+    const effStatus = jbGetEffectiveStatus(r);
+    const isPaid = effStatus === 'bezahlt';
+    const isOffen = effStatus !== 'bezahlt' && effStatus !== 'befreit';
+
+    // 1. Kategorien & Junior Badges
+    let katHtml = '';
+    if (m._kategorien && m._kategorien.length > 0) {
+      katHtml = m._kategorien.map(k => typeof mglKatBadge === 'function' ? mglKatBadge(k) : `<span class="badge bg-secondary">${k}</span>`).join(' ');
+    } else if (m._kategorie) {
+      katHtml = m._kategorie.split(',').map(k => typeof mglKatBadge === 'function' ? mglKatBadge(k.trim()) : `<span class="badge bg-secondary">${k.trim()}</span>`).join(' ');
+    } else {
+      const fallbackKat = (r._kategorie || '').replace('Aktiv-', 'Aktiv ');
+      katHtml = typeof mglKatBadge === 'function' ? mglKatBadge(fallbackKat) : `<span class="badge bg-secondary">${fallbackKat || '–'}</span>`;
+    }
+    
+    const refYear = Number((typeof _jbYear !== 'undefined' && _jbYear) ? _jbYear : new Date().getFullYear());
+    const age = m.BirthDate ? (refYear - new Date(m.BirthDate).getFullYear()) : 0;
+    const isJunior = age > 0 && age <= 20;
+    if (isJunior && !katHtml.toLowerCase().includes('junior') && !katHtml.toLowerCase().includes('schüler')) {
+      if (typeof mglKatBadge === 'function') {
+        katHtml += ' ' + mglKatBadge('Junior');
+      } else {
+        katHtml += ' <span class="badge bg-success">Junior</span>';
+      }
+    }
+
+    // 2. Zahlungsmethode Badges
+    let methodHtml = '–';
+    if (r.payment_method) {
+      const pm = String(r.payment_method).toLowerCase();
+      if (pm === 'überweisung' || pm.includes('camt') || pm === 'bank' || pm === 'e-banking') {
+        methodHtml = `<span class="badge bg-light text-dark border border-secondary-subtle px-2 py-1"><i class="fas fa-university me-1 text-success" style="font-size:10px;"></i>Bank</span>`;
+      } else if (pm === 'twint') {
+        methodHtml = `<span class="badge bg-light text-dark border border-secondary-subtle px-2 py-1"><i class="fas fa-mobile-alt me-1 text-primary" style="font-size:10px;"></i>TWINT</span>`;
+      } else if (pm === 'bar') {
+        methodHtml = `<span class="badge bg-light text-dark border border-secondary-subtle px-2 py-1"><i class="fas fa-coins me-1 text-warning" style="font-size:10px;"></i>Bar</span>`;
+      } else {
+        methodHtml = `<span class="badge bg-light text-muted border border-secondary-subtle px-2 py-1">${r.payment_method}</span>`;
+      }
+    }
+
+    // 3. Status Badges nach 4-Stufen-Workflow
+    let statusHtml = '';
+    if (effStatus === 'bezahlt') {
+      statusHtml = `<span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1.5 fw-bold text-uppercase" style="font-size: 11px;"><i class="fas fa-check-circle me-1"></i>Bezahlt</span>`;
+    } else if (effStatus === 'versendet') {
+      statusHtml = `<span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1.5 fw-bold text-uppercase" style="font-size: 11px;"><i class="fas fa-paper-plane me-1"></i>Versendet</span>`;
+    } else if (effStatus === 'entwurf') {
+      statusHtml = `<span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1.5 fw-bold text-uppercase" style="font-size: 11px;"><i class="fas fa-file-invoice me-1"></i>Entwurf</span>`;
+    } else if (effStatus === 'berechnet') {
+      statusHtml = `<span class="badge bg-info-subtle text-info border border-info-subtle px-2 py-1.5 fw-bold text-uppercase" style="font-size: 11px;"><i class="fas fa-calculator me-1"></i>Berechnet</span>`;
+    } else if (effStatus === 'teilbezahlt') {
+      statusHtml = `<span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1.5 fw-bold text-uppercase" style="font-size: 11px;"><i class="fas fa-adjust me-1"></i>Teilbezahlt</span>`;
+    } else {
+      statusHtml = `<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1.5 fw-bold text-uppercase" style="font-size: 11px;"><i class="fas fa-check me-1"></i>Befreit (0.-)</span>`;
+    }
+
+    const rowBg = isPaid ? 'table-light text-muted' : (effStatus === 'befreit' ? 'table-light text-muted' : '');
+    const rowStyle = (isPaid || effStatus === 'befreit') ? 'style="opacity: 0.85;"' : '';
+
+    const safeName = typeof escapeJs === 'function' ? escapeJs(name || '') : (name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const escName = typeof escapeHtml === 'function' ? escapeHtml(name || '') : (name || '');
+    const isSent = effStatus === 'versendet';
+
+    // Gruppengewinn-Abzug (Konto 1301) ermitteln
+    const mPos = _jbPositionsCache[r.id] || [];
+    const winPos = mPos.filter(p => p.source_field === '1301' || p.sourcefield === '1301' || p.konto === '1301');
+    const totalWin = winPos.reduce((sum, p) => sum + Math.abs(Number(p.betrag || 0)), 0);
+    const winBadgeHtml = totalWin > 0 
+      ? `<div class="small text-success fw-normal mt-0.5" style="font-size: 10px;" title="Abzug Gruppengewinn auswärtige Schiessen (Konto 1301): -${fmtChf(totalWin)}"><i class="fas fa-trophy text-warning me-0.5"></i>-${fmtChf(totalWin)}</div>` 
+      : '';
+
+    return `<tr class="${rowBg}" ${rowStyle}>
+      <td class="align-middle py-2 tk-col-name" data-col-id="name">
+        <a href="#" class="text-decoration-none fw-semibold ${isOffen ? 'text-primary' : 'text-secondary'}"
+           onclick="jbShowPositionen('${r.id}'); return false;">${escName}</a>
+        <div class="text-muted small" style="font-size: 11px;">
+          ${r.PersonNumber}
+          ${r.invoiceId ? `· <span class="font-monospace text-primary">${r.invoiceId}</span>` : ''}
+        </div>
+      </td>
+      <td class="align-middle tk-col-kat" data-col-id="kat">${katHtml}</td>
+      <td class="text-end fw-bold align-middle pe-4 ${isOffen ? 'text-danger' : 'text-muted'} tk-col-gesamt" data-col-id="gesamt" style="font-size: 14px;">
+        ${fmtChf(r.Gesamt)}
+        ${winBadgeHtml}
+      </td>
+      <td class="align-middle tk-col-status" data-col-id="status">${statusHtml}</td>
+      <td class="small align-middle tk-col-date" data-col-id="date">${fmtDate(r.payment_date)}</td>
+      <td class="align-middle tk-col-method" data-col-id="method">${methodHtml}</td>
+      <td class="small align-middle text-muted tk-col-beleg" data-col-id="beleg">${r.document_ref || '–'}</td>
+      ${canEdit ? `
+      <td class="align-middle text-end tk-col-actions" data-col-id="actions">
+        <div class="d-inline-flex gap-1">
+          <!-- 0. IN SCHNELLERFASSUNG BEARBEITEN -->
+          <button class="btn btn-xs btn-outline-primary btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center"
+                  onclick="jbSwitchToSchnellerfassung('${r.PersonNumber}')"
+                  title="In Schnellerfassung bearbeiten" style="min-width: 32px;">
+            <i class="fas fa-edit"></i>
+          </button>
+
+          <!-- 1. IN RECHNUNGSMODUL ÜBERTRAGEN (NUR WENN NOCH NICHT ÜBERTRAGEN & GESAMT > 0) -->
+          ${(!r.invoiceId && Number(r.Gesamt || 0) > 0) ? `
+          <button class="btn btn-xs btn-outline-primary btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center"
+                  onclick="jbTransferSingleInvoice('${r.id}', '${r.PersonNumber}')"
+                  id="btn-transfer-${r.id}"
+                  title="In Rechnungsmodul übertragen (Rechnungsentwurf erstellen)" style="min-width: 32px;">
+            <i class="fas fa-file-export"></i>
+          </button>` : ''}
+
+          <!-- 2. PDF RECHNUNG -->
+          ${r.pdf_url ? `
+            <a href="${r.pdf_url}${r.pdf_url.includes('?') ? '&' : '?'}t=${Date.now()}" onclick="jbOpenInvoicePdfSafe('${escapeJs(r.pdf_url)}', event)" target="_blank" class="btn btn-xs btn-outline-danger btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center"
+               title="PDF-Rechnung öffnen" style="min-width: 32px;">
+              <i class="fas fa-file-pdf"></i>
+            </a>` : (Number(r.Gesamt || 0) > 0 ? `
+            <button class="btn btn-xs btn-outline-secondary btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center"
+                    onclick="jbGenerateInvoicePdfRemote('${r.id}', '${r.PersonNumber}')"
+                    id="btn-pdf-${r.id}"
+                    title="PDF-Rechnung generieren" style="min-width: 32px;">
+              <i class="fas fa-file-invoice"></i>
+            </button>` : '')}
+
+          <!-- 3. ZAHLUNG ERFASSEN -->
+          ${isOffen ? `
+            <button class="btn btn-xs btn-success btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center"
+                    onclick="jbOpenZahlung('${r.id}', '${safeName}', ${r.Gesamt})"
+                    title="Zahlung erfassen" style="min-width: 32px;">
+              <i class="fas fa-check"></i>
+            </button>` : ''}
+        </div>
+      </td>` : ''}
+    </tr>`;
+  }).join('');
+
+  const openCount = data.filter(r => jbGetEffectiveStatus(r) !== 'bezahlt' && jbGetEffectiveStatus(r) !== 'befreit').length;
+  document.getElementById('jbCount').textContent =
+    `${data.length} Einträge · ${openCount} offen`;
+
+  if (window.TableKit && typeof window.TableKit.initTable === 'function') {
+    window._jbOverviewTableCtrl = window.TableKit.initTable('#jbTable', {
+      id: 'jb_overview',
+      storageKeyOrder: 'jb_overview_col_order',
+      storageKeyWidths: 'jb_overview_col_widths',
+      storageKeyCols: 'portal_jb_overview_cols',
+      lockedColumns: ['actions'],
+      columnToggle: document.getElementById('jbTableColToggleContainer') ? '#jbTableColToggleContainer' : null,
+      resizable: {
+        minWidth: 50,
+        columns: {
+          actions: { minWidth: 100, defaultWidth: 140 }
+        }
+      }
+    });
+  }
+}
+
+function jbFilter() {
+  const search = (document.getElementById('jbSearch')?.value || '').toLowerCase();
+
+  const filtered = _jbData.filter(r => {
+    const m    = _jbMemberMap[String(r.PersonNumber)] || {};
+    const name = ((m.FirstName || '') + ' ' + (m.LastName || '') + ' ' + r.PersonNumber).toLowerCase();
+    const matchSearch = !search || name.includes(search);
+    const effStatus = jbGetEffectiveStatus(r);
+    
+    // Status Multi-Filter
+    let matchStatus = true;
+    if (_jbOverviewStatusFilter && _jbOverviewStatusFilter.size > 0) {
+      matchStatus = Array.from(_jbOverviewStatusFilter).some(st => {
+        if (st === 'offen') {
+          return effStatus !== 'bezahlt' && effStatus !== 'befreit';
+        }
+        return effStatus === st;
+      });
+    }
+
+    // Kategorie Multi-Filter
+    let matchCategory = true;
+    if (_jbOverviewCategoryFilter && _jbOverviewCategoryFilter.size > 0) {
+      matchCategory = Array.from(_jbOverviewCategoryFilter).some(cat => {
+        if (typeof jbMemberMatchesCategory === 'function') {
+          return jbMemberMatchesCategory(m, r, cat);
+        }
+        const cats = m._kategorien || (m._kategorie ? [m._kategorie] : []);
+        return cats.some(c => String(c).toLowerCase().includes(cat.toLowerCase()));
+      });
+    }
+
+    return matchSearch && matchStatus && matchCategory;
+  });
+
+  jbRenderRows(filtered);
+}
+
+// ============================================================
+// RECHNUNGS-INSPEKTOR / DETAIL-MODAL (READ-ONLY MIT SCHNELL-AKTIONEN)
+// ============================================================
+async function jbShowPositionen(headerId) {
+  const modalEl = document.getElementById('jbModalPositionen');
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  
+  const modalBody = document.getElementById('jbModalBody');
+  modalBody.innerHTML = `
+    <div class="text-center py-5">
+      <div class="spinner-border text-primary" role="status"></div>
+      <p class="mt-2 text-muted">Lade Rechnungsdetails…</p>
+    </div>`;
+  modal.show();
+
+  if (window.UIModalKit && typeof window.UIModalKit.makeMovableAndResizable === 'function') {
+    window.UIModalKit.makeMovableAndResizable(modalEl);
+  } else if (window.TableKit && typeof window.TableKit.setupDraggableModal === 'function') {
+    window.TableKit.setupDraggableModal(modalEl);
+  }
+
+  try {
+    // 1. Hole Rechnungskopf direkt aus der lokalen Liste in Memory
+    const header = _jbData.find(x => String(x.id) === String(headerId));
+    if (!header) throw new Error('Beitragsrechnung nicht gefunden: ' + headerId);
+
+    const pn = String(header.PersonNumber || '').trim();
+    const m = _jbMemberMap[pn] || {};
+    const name = m.FirstName ? `${m.FirstName} ${m.LastName}` : (header._name || pn);
+
+    // 2. Hole Positionen direkt aus dem lokalen Browser-Cache
+    const pos = _jbPositionsCache[headerId] || [];
+
+    // 3. Render das aufgeräumte Rechnungs-Inspektor-Layout
+    jbRenderModalContent(header, pos, m, name);
+  } catch(e) {
+    modalBody.innerHTML = `<div class="alert alert-danger">Fehler beim Laden: ${e.message}</div>`;
+  }
+}
+
+function jbRenderModalContent(header, pos, m, name) {
+  const modalBody = document.getElementById('jbModalBody');
+  const canEdit = typeof hasWriteAccess === 'function'
+    ? hasWriteAccess('jahresbeitrag')
+    : (typeof Perms !== 'undefined' && typeof Perms.has === 'function' ? Perms.has('jahresbeitrag.manage') : false);
+  const effStatus = jbGetEffectiveStatus(header);
+  const lockState = typeof jbGetContributionLockState === 'function'
+    ? jbGetContributionLockState(header)
+    : { isLocked: (effStatus === 'versendet' || effStatus === 'bezahlt' || effStatus === 'teilbezahlt') };
+  const isPaid = effStatus === 'bezahlt';
+  const refYear = Number((typeof _jbYear !== 'undefined' && _jbYear) ? _jbYear : new Date().getFullYear());
+  const age = m.BirthDate ? (refYear - new Date(m.BirthDate).getFullYear()) : 0;
+  const isJunior = age > 0 && age <= 20;
+
+  // Kategorien-Badges
+  let katHtml = '';
+  if (m._kategorien && m._kategorien.length > 0) {
+    katHtml = m._kategorien.map(k => typeof mglKatBadge === 'function' ? mglKatBadge(k) : `<span class="badge bg-secondary">${k}</span>`).join(' ');
+  } else if (m._kategorie) {
+    katHtml = m._kategorie.split(',').map(k => typeof mglKatBadge === 'function' ? mglKatBadge(k.trim()) : `<span class="badge bg-secondary">${k.trim()}</span>`).join(' ');
+  } else {
+    const fallbackKat = (header._kategorie || '').replace('Aktiv-', 'Aktiv ');
+    katHtml = typeof mglKatBadge === 'function' ? mglKatBadge(fallbackKat) : `<span class="badge bg-secondary">${fallbackKat || '–'}</span>`;
+  }
+  if (isJunior && !katHtml.toLowerCase().includes('junior') && !katHtml.toLowerCase().includes('schüler')) {
+    if (typeof mglKatBadge === 'function') katHtml += ' ' + mglKatBadge('Junior');
+  }
+
+  // Positions-Zeilen mit Haben-Konto
+  const posRows = pos.length > 0 ? pos.map(p => {
+    const rawKonto = p.konto || (typeof window.jbResolveAccountForPosition === 'function' ? window.jbResolveAccountForPosition(p.source_field || p.sourcefield || p.key, p.beschreibung || p.name) : '');
+    const isCredit = (p.typ === 'Kredit' || p.typ === 'Credit' || Number(p.betrag) < 0);
+    const isGroupWin = (p.source_field === '1301' || p.sourcefield === '1301' || rawKonto === '1301');
+
+    return `
+    <tr class="${isGroupWin ? 'table-warning-subtle' : ''}">
+      <td class="text-muted small tk-col-nr">${p.position_nr || p.positionnr || '–'}</td>
+      <td class="fw-semibold text-dark tk-col-desc">
+        ${isGroupWin ? '<i class="fas fa-trophy text-warning me-1.5" title="Gruppengewinn auswärtiges Schiessen (Konto 1301)"></i>' : ''}
+        ${typeof escapeHtml === 'function' ? escapeHtml(p.beschreibung || p.name || '–') : (p.beschreibung || p.name || '–')}
+        ${isGroupWin ? `<div class="text-muted small fw-normal d-flex align-items-center flex-wrap gap-2 mt-1" style="font-size: 10px;">
+          <span><i class="fas fa-info-circle me-1 text-primary"></i>Auswärtiges Schiessen · Verrechnung via Transitkonto 1301</span>
+          <button type="button" class="btn btn-xs btn-outline-primary py-0 px-1.5" style="font-size: 10px;" onclick="if(window.jmOpenShooterGruppengewinnePreviewModal) window.jmOpenShooterGruppengewinnePreviewModal('${header.PersonNumber}', ${header.year || new Date().getFullYear()})">
+            <i class="fas fa-link me-1"></i>Einzelberechnung & Ranglisten-Links (180 Tage)
+          </button>
+        </div>` : ''}
+      </td>
+      <td class="tk-col-typ">
+        <span class="badge ${isCredit ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-primary-subtle text-primary border border-primary-subtle'}">
+          ${isCredit ? 'Gutschrift' : 'Belastung'}
+        </span>
+      </td>
+      <td class="tk-col-konto">
+        <span class="badge bg-light text-primary font-monospace border" style="font-size: 11px;">
+          ${escapeHtml(rawKonto)}
+        </span>
+      </td>
+      <td class="text-end fw-bold ${isCredit ? 'text-success' : 'text-dark'} tk-col-amount">
+        ${isCredit ? '-' : ''}${fmtChf(Math.abs(p.betrag))}
+      </td>
+    </tr>
+  `;
+  }).join('') : `
+    <tr>
+      <td colspan="5" class="text-center py-4 text-muted">
+        <i class="fas fa-info-circle me-1"></i> Keine separaten Einzelpositionen vorhanden.
+      </td>
+    </tr>
+  `;
+
+  const safeName = typeof escapeHtml === 'function' ? escapeHtml(name) : (typeof escHtml === 'function' ? escHtml(name) : name);
+  const safeJsName = typeof escapeJs === 'function' ? escapeJs(name || '') : String(name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+  modalBody.innerHTML = `
+    <!-- 1. Header-Karte: Mitglieds- und Betragsübersicht -->
+    <div class="card border-0 bg-light shadow-sm p-3 mb-3 rounded-3">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+        <div>
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <h5 class="mb-0 text-primary fw-bold">${safeName}</h5>
+            <span class="badge bg-secondary font-monospace" style="font-size: 11px;">${header.PersonNumber}</span>
+          </div>
+          <div class="small text-muted d-flex align-items-center flex-wrap gap-2">
+            <span>Jahr: <strong>${header.year}</strong></span>
+            <span>·</span>
+            <span>${isJunior ? 'Junior' : 'Erwachsen'}${age > 0 ? ` (${age} J.)` : ''}</span>
+            <span>·</span>
+            <div>${katHtml}</div>
+          </div>
+        </div>
+        <div class="text-end">
+          <div class="small text-muted fw-semibold">Rechnungsbetrag</div>
+          <div class="fs-3 fw-extrabold ${isPaid ? 'text-success' : 'text-danger'}">${fmtChf(header.Gesamt)}</div>
+          <div class="d-flex align-items-center justify-content-end gap-1 mt-1">
+            ${effStatus === 'bezahlt' ? '<span class="badge bg-success px-2 py-1 text-uppercase" style="font-size:10px;"><i class="fas fa-check-circle me-1"></i>Bezahlt</span>' :
+              (effStatus === 'versendet' ? '<span class="badge bg-danger px-2 py-1 text-uppercase" style="font-size:10px;"><i class="fas fa-paper-plane me-1"></i>Versendet</span>' :
+              (effStatus === 'entwurf' ? '<span class="badge bg-warning text-dark px-2 py-1 text-uppercase" style="font-size:10px;"><i class="fas fa-file-invoice me-1"></i>Entwurf</span>' :
+              (effStatus === 'berechnet' ? '<span class="badge bg-info text-dark px-2 py-1 text-uppercase" style="font-size:10px;"><i class="fas fa-calculator me-1"></i>Berechnet</span>' :
+              (effStatus === 'teilbezahlt' ? '<span class="badge bg-primary px-2 py-1 text-uppercase" style="font-size:10px;"><i class="fas fa-adjust me-1"></i>Teilbezahlt</span>' :
+              '<span class="badge bg-secondary px-2 py-1 text-uppercase" style="font-size:10px;"><i class="fas fa-check me-1"></i>Befreit</span>'))))}
+            ${header.invoiceId ? `<span class="badge bg-light text-primary border font-monospace" style="font-size:10px;" title="Verknüpfte Rechnungsnummer"><i class="fas fa-hashtag me-0.5"></i>${header.invoiceId}</span>` : `<span class="badge bg-light text-muted border" style="font-size:10px;">Keine RE</span>`}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Rechnungs-Positionen -->
+    <div class="card border shadow-sm mb-3 rounded-3 overflow-hidden">
+      <div class="card-header bg-white py-2 px-3 d-flex justify-content-between align-items-center border-bottom">
+        <span class="fw-bold small text-secondary text-uppercase" style="font-size: 11px; letter-spacing: 0.5px;">
+          <i class="fas fa-list-ol me-1 text-primary"></i> Aufstellung der Rechnungsposten
+        </span>
+        <button class="btn btn-xs btn-outline-primary fw-bold shadow-sm" onclick="jbSwitchToSchnellerfassung('${header.PersonNumber}')" title="Teilnahmen & Posten in Schnellerfassung anpassen">
+          <i class="fas fa-edit me-1"></i> In Schnellerfassung bearbeiten
+        </button>
+      </div>
+      <div class="table-responsive mb-0">
+        <table class="table table-hover table-sm align-middle mb-0" id="jbModalPositionsTable">
+          <thead class="table-light small text-muted text-uppercase" style="font-size: 11px;">
+            <tr>
+              <th data-col-id="nr" data-col-name="#" style="width: 45px;">#</th>
+              <th data-col-id="desc" data-col-name="Bezeichnung">Bezeichnung</th>
+              <th data-col-id="typ" data-col-name="Typ" style="width: 90px;">Typ</th>
+              <th data-col-id="konto" data-col-name="Konto (Haben)" style="width: 130px;">Konto (Haben)</th>
+              <th data-col-id="amount" data-col-name="Betrag" class="text-end" style="width: 120px;">Betrag</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${posRows}
+          </tbody>
+          <tfoot class="table-secondary fw-bold">
+            <tr>
+              <td colspan="4" class="text-end">Gesamtsumme</td>
+              <td class="text-end text-dark">${fmtChf(header.Gesamt)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- 3. Status-, Beleg- und Zahlungs-Information -->
+    ${isPaid ? `
+      <div class="alert alert-success d-flex align-items-center justify-content-between p-3 rounded-3 mb-3 shadow-sm border-success-subtle">
+        <div class="d-flex align-items-center">
+          <i class="fas fa-check-circle text-success fs-3 me-3"></i>
+          <div>
+            <div class="fw-bold text-success">Rechnung vollständig bezahlt</div>
+            <div class="small text-muted">
+              Datum: <strong>${fmtDate(header.payment_date)}</strong> · 
+              Methode: <strong>${header.payment_method || '–'}</strong> · 
+              Beleg / Ref: <strong>${header.document_ref || '–'}</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+    ` : `
+      <div class="alert alert-warning d-flex align-items-center justify-content-between p-3 rounded-3 mb-3 shadow-sm border-warning-subtle">
+        <div class="d-flex align-items-center">
+          <i class="fas fa-exclamation-circle text-warning fs-3 me-3"></i>
+          <div>
+            <div class="fw-bold text-dark">Zahlung noch ausstehend</div>
+            <div class="small text-muted">Offener Betrag: ${fmtChf(header.Gesamt)}</div>
+          </div>
+        </div>
+        ${(canEdit && Number(header.Gesamt || 0) > 0) ? `
+          <button id="jbModalPayBtn" class="btn btn-sm btn-success fw-bold px-3 shadow-sm" onclick="jbOpenZahlungFromModal('${header.id}', '${safeJsName}', ${header.Gesamt})">
+            <i class="fas fa-check me-1"></i> Zahlung jetzt verbuchen
+          </button>
+        ` : ''}
+      </div>
+    `}
+
+    <!-- 4. Dokumenten-Aktionen (PDF / Mail) -->
+    <div class="card p-2.5 bg-light border rounded-3 mb-3 shadow-sm">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div class="small fw-bold text-secondary">
+          <i class="fas fa-file-invoice me-1 text-primary"></i> Rechnungsdokumente & Versand
+        </div>
+        <div class="d-flex gap-2">
+          ${header.pdf_url ? `
+            <a href="${header.pdf_url}${header.pdf_url.includes('?') ? '&' : '?'}t=${Date.now()}" onclick="jbOpenInvoicePdfSafe('${escapeJs(header.pdf_url)}', event)" target="_blank" class="btn btn-sm btn-outline-danger shadow-sm fw-semibold">
+              <i class="fas fa-file-pdf me-1"></i> PDF-Rechnung öffnen
+            </a>
+          ` : ((canEdit && Number(header.Gesamt || 0) > 0) ? `
+            <button id="jbModalPdfBtn" class="btn btn-sm btn-outline-secondary shadow-sm fw-semibold" onclick="jbGenerateInvoicePdfRemote('${header.id}', '${header.PersonNumber}')">
+              <i class="fas fa-file-invoice me-1"></i> PDF generieren
+            </button>
+          ` : '')}
+          ${(canEdit && m.PrimaryEmail && Number(header.Gesamt || 0) > 0 && !isPaid) ? `
+            <button id="jbModalMailBtn" class="btn btn-sm ${(header.mail_status === 'versendet' || header.mail_status === 'gesendet') ? 'btn-success text-white' : 'btn-outline-primary'} shadow-sm fw-semibold"
+                    onclick="jbSendInvoiceEmailRemote('${header.id}', '${header.PersonNumber}', '${typeof escapeJs === 'function' ? escapeJs(m.PrimaryEmail) : m.PrimaryEmail}')">
+              <i class="fas ${(header.mail_status === 'versendet' || header.mail_status === 'gesendet') ? 'fa-envelope-open-text' : 'fa-paper-plane'} me-1"></i>
+              ${(header.mail_status === 'versendet' || header.mail_status === 'gesendet') ? 'Erneut senden' : 'Per E-Mail senden'}
+            </button>
+          ` : ''}
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. Modal Footer / Schnellwechsel -->
+    <div class="d-flex justify-content-between align-items-center pt-2 border-top">
+      <button class="btn btn-secondary" data-bs-dismiss="modal">Schliessen</button>
+      ${canEdit ? `
+        <button class="btn ${lockState.isLocked ? 'btn-outline-secondary' : 'btn-primary'} fw-bold px-3 shadow-sm" onclick="jbSwitchToSchnellerfassung('${header.PersonNumber}')">
+          <i class="fas ${lockState.isLocked ? 'fa-eye' : 'fa-edit'} me-1"></i> ${lockState.isLocked ? 'In Schnellerfassung ansehen' : 'In Schnellerfassung bearbeiten'}
+        </button>
+      ` : ''}
+    </div>
+  `;
+
+  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
+    window.TableKit.makeResizable('#jbModalPositionsTable', {
+      storageKey: 'jb_modal_positions_col_widths',
+      minWidth: 40
+    });
+  }
+}
+
+function jbOpenZahlungFromModal(id, name, betrag) {
+  jbCleanupModals('jbModalPositionen');
+  jbOpenZahlung(id, name, betrag);
+}
+
+window.jbSwitchToSchnellerfassung = function(pn) {
+  const pnClean = String(pn || '').trim();
+  jbCleanupModals('jbModalPositionen');
+
+  _jbActiveTab = 'entry';
+  _jbSelectedMemberPN = pnClean;
+  renderJahresbeitragView();
+
+  if (pnClean && typeof jbEntrySelectMember === 'function') {
+    jbEntrySelectMember(pnClean);
+    setTimeout(() => {
+      if (typeof jbScrollToActiveMember === 'function') {
+        jbScrollToActiveMember();
+      }
+    }, 150);
+  }
+};
+
+function jbOpenZahlung(id, name, betrag) {
+  document.getElementById('jbZahlungId').value    = id;
+  document.getElementById('jbZahlungName').textContent  = name;
+  document.getElementById('jbZahlungBetrag').textContent = fmtChf(betrag);
+  document.getElementById('jbZahlungDatum').value  = new Date().toISOString().split('T')[0];
+  document.getElementById('jbZahlungBeleg').value  = '';
+  const modalEl = document.getElementById('jbModalZahlung');
+  bootstrap.Modal.getOrCreateInstance(modalEl).show();
+
+  if (window.UIModalKit && typeof window.UIModalKit.makeMovableAndResizable === 'function') {
+    window.UIModalKit.makeMovableAndResizable(modalEl);
+  } else if (window.TableKit && typeof window.TableKit.setupDraggableModal === 'function') {
+    window.TableKit.setupDraggableModal(modalEl);
+  }
+}
+
+async function jbSaveZahlung() {
+  const id     = document.getElementById('jbZahlungId').value;
+  const datum  = document.getElementById('jbZahlungDatum').value;
+  const methode= document.getElementById('jbZahlungMethode').value;
+  const beleg  = document.getElementById('jbZahlungBeleg').value;
+
+  if (!datum) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Fehlendes Datum',
+        message: 'Bitte gib ein gültiges Zahlungsdatum an.',
+        type: 'warning'
+      });
+    }
+    return;
+  }
+
+  const runSave = async () => {
+    const r = _jbData.find(x => String(x.id) === String(id));
+    if (!r) throw new Error('Beitragseintrag wurde nicht gefunden.');
+    const docRef = String(beleg || '').trim() || `PAY-${r.invoiceId || id}`;
+
+    const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+    if (!supa) throw new Error('Supabase Client nicht verfügbar.');
+
+    // 1. Zahlung in RechnungsCore erfassen (ohne automatische FiBu-Buchung, da nachfolgend exakt nach Konten gesplittet gebucht wird)
+    const linkedInv = r.invoiceId
+      ? (window._invoices || window._jbAllInvoices || []).find(i => String(i.id).trim() === String(r.invoiceId).trim())
+      : null;
+    const payAmount = (linkedInv && linkedInv.open_amount !== undefined && linkedInv.open_amount !== null)
+      ? Math.max(0, Number(linkedInv.open_amount))
+      : Number(r.Gesamt || r.betrag || 0);
+
+    if (r.invoiceId) {
+      if (window.RechnungsCore && typeof window.RechnungsCore.recordPayment === 'function') {
+        await window.RechnungsCore.recordPayment(r.invoiceId, {
+          amount: payAmount,
+          paymentDate: datum,
+          paymentMethod: methode || 'Bank',
+          documentRef: docRef,
+          syncBookkeeping: false,
+          notes: `Jahresbeitrag Zahlung ${r.year} (${r.PersonNumber})`
+        });
+      } else {
+        throw new Error('RechnungsCore.recordPayment ist nicht verfügbar.');
+      }
+    }
+
+    // 2. contributions_header als bezahlt markieren
+    const { error: hdrPayErr } = await supa.from('contributions_header').update({
+      status: 'bezahlt',
+      payment_date: datum,
+      payment_method: methode,
+      document_ref: docRef,
+      updated_at: new Date().toISOString()
+    }).eq('id', id);
+    if (hdrPayErr) {
+      throw new Error(`Fehler beim Aktualisieren des Beitragsstatus: ${hdrPayErr.message}`);
+    }
+
+    // 3. In Finanzbuchhaltung (accounting_journal) exakt per Splitbuchung verbuchen (einmalig)
+    if (typeof window.jbGetSplitBookings === 'function') {
+      const isBar = String(methode || '').toLowerCase().includes('bar');
+      const bankKonto = isBar ? '1000' : '1020';
+      const member = _jbMemberMap ? _jbMemberMap[String(r.PersonNumber)] : null;
+      const bookingYear = Number(r.year || _jbYear || new Date().getFullYear());
+      const splits = window.jbGetSplitBookings({
+        headerId: id,
+        member: member,
+        paidAmount: payAmount,
+        bookingDate: datum,
+        belegNr: docRef,
+        bankAccount: bankKonto,
+        year: bookingYear
+      });
+      if (splits && splits.length > 0) {
+        const rowsToInsert = splits.map(s => {
+          const row = {
+            jahr: bookingYear,
+            datum: datum,
+            beleg_nr: docRef,
+            beschreibung: s.beschreibung,
+            konto_soll: String(s.konto_soll).trim(),
+            konto_haben: String(s.konto_haben).trim(),
+            betrag: Number(s.betrag || 0),
+            typ: isBar ? 'Kassa' : 'Bank',
+            buchungstyp: s.buchungstyp || ((typeof getBuchungstyp === 'function') ? getBuchungstyp(s.konto_soll, s.konto_haben) : 'ERTRAG'),
+            created_at: new Date().toISOString()
+          };
+          if (typeof s.id === 'number') row.id = s.id;
+          return row;
+        });
+        const { error: journalErr } = await supa.from('accounting_journal').insert(rowsToInsert);
+        if (journalErr) {
+          throw new Error(`Zahlung gespeichert, aber FiBu-Journalbuchung fehlgeschlagen: ${journalErr.message}`);
+        }
+      }
+    }
+
+    jbCleanupModals('jbModalZahlung');
+
+    const header = _jbData.find(x => String(x.id) === String(id));
+    if (header) {
+      header.status = 'bezahlt';
+      header.payment_date = datum;
+      header.payment_method = methode;
+      header.document_ref = docRef;
+    }
+    if (typeof showToast === 'function') {
+      showToast('✅ Zahlung erfolgreich verbucht!');
+    }
+    await loadJahresbeitragData(true, true);
+    if (typeof renderJahresbeitragView === 'function') {
+      renderJahresbeitragView();
+    }
+  };
+
+  try {
+    const saveBtn = document.getElementById('jbZahlungSaveBtn') || document.querySelector('#jbModalZahlung .btn-success');
+    if (window.UIButtonKit && saveBtn) {
+      await UIButtonKit.withLoading(saveBtn, runSave);
+    } else {
+      await runSave();
+    }
+  } catch(e) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Fehler bei der Zahlung',
+        message: 'Fehler: ' + (e.message || e),
+        type: 'danger'
+      });
+    }
+  }
+}
+
+// Ermittelt ein Vorstandsmitglied anhand einer bestimmten Funktion (z.B. 'Kassier', 'Juniorenleiter Gewehr 50 m')
+function jbFindBoardMemberByFunction(funcCategory) {
+  if (!window._mglData || !window._mglFunktionenCache) {
+    console.warn("⚠️ Mitgliederdaten oder Funktionen-Cache nicht geladen.");
+    return null;
+  }
+  
+  // Suche das Mitglied, das diese Funktion aktiv innehat (kein ExitDate)
+  const found = window._mglData.find(m => {
+    const mFunctions = window._mglFunktionenCache[String(m.PersonNumber)] || [];
+    return mFunctions.some(f => 
+      String(f.OfficialFunctionCategory).trim().toLowerCase() === String(funcCategory).trim().toLowerCase() && 
+      (typeof mglIsFunctionActive === 'function' ? mglIsFunctionActive(f) : !String(f.OfficialFunctionExitDate || '').trim())
+    );
+  });
+  
+  return found || null;
+}
+
+// Baut das dynamische Absender-Objekt basierend auf dem Rechnungstyp
+function jbGetSenderForInvoiceType(invoiceType) {
+  // Jahresbeitrag wird standardmässig vom Kassier versandt
+  // Schulsport vom Juniorenleiter Gewehr 50 m
+  // Fallback ist immer der Kassier
+  let roleToFind = 'Kassier';
+  
+  const typeClean = String(invoiceType || '').toLowerCase();
+  if (typeClean.includes('schulsport') || typeClean.includes('schüler') || typeClean.includes('junior')) {
+    roleToFind = 'Juniorenleiter Gewehr 50 m';
+  } else if (typeClean.includes('vermietung') || typeClean.includes('miete')) {
+    roleToFind = 'Kassier'; // Standard für Vermietungen
+  }
+  
+  let member = jbFindBoardMemberByFunction(roleToFind);
+  
+  // Falls die spezifische Rolle nicht gefunden wurde, weichen wir auf den Kassier aus
+  if (!member && roleToFind !== 'Kassier') {
+    console.log(`ℹ️ Rolle '${roleToFind}' nicht gefunden. Nutze Fallback 'Kassier'…`);
+    member = jbFindBoardMemberByFunction('Kassier');
+  }
+  
+  if (member) {
+    return {
+      verein:   'Sportschützen Muhen',
+      vorname:  member.FirstName || '',
+      nachname: member.LastName || '',
+      strasse:  member.Street || '',
+      plz:      member.PostCode || '',
+      ort:      member.City || '',
+      mobil:    member.PrivateMobilePhone || member.BusinessMobilePhone || '',
+      email:    member.PrimaryEmail || '',
+      funktion: roleToFind
+    };
+  }
+  
+  console.warn(`⚠️ Kein Vorstandsmitglied für die Rolle '${roleToFind}' (oder Fallback 'Kassier') in Members gefunden.`);
+  return null; // Backend nutzt dann DEFAULT_ABSENDER
+}
+
+// Interne Hilfsfunktion: Stellt sicher, dass eine Rechnung in Rechnungen_GAS existiert.
+// Falls nicht, wird sie zuerst angelegt. Falls sie existiert aber sich der Betrag geändert hat, wird sie aktualisiert.
+async function ensureInvoiceCreatedRemote(r, m, name) {
+  const invoicesList = window._invoices || window._jbAllInvoices || [];
+  
+  // 1. Suche nach existierender (nicht stornierter) Rechnung:
+  // a) Über gespeicherte r.invoiceId
+  // b) Über PersonNumber + Jahr + Typ 'Jahresbeitrag'
+  // c) Über Legacy-Format 'RE-JB-...'
+  const isNotCancelled = (inv) => String(inv?.status || '').toLowerCase() !== 'storniert';
+  let existingInv = null;
+  if (r.invoiceId) {
+    existingInv = invoicesList.find(i => String(i.id).trim() === String(r.invoiceId).trim() && isNotCancelled(i));
+  }
+  if (!existingInv) {
+    existingInv = invoicesList.find(i => 
+      String(i.PersonNumber).trim() === String(r.PersonNumber).trim() && 
+      Number(i.year) === Number(r.year) && 
+      String(i.type || '').toLowerCase() === 'jahresbeitrag' &&
+      isNotCancelled(i)
+    );
+  }
+  if (!existingInv) {
+    existingInv = invoicesList.find(i => String(i.id).trim() === `RE-JB-${r.year}-${r.PersonNumber}` && isNotCancelled(i));
+  }
+
+  const invoiceId = existingInv 
+    ? existingInv.id 
+    : ((typeof window.generateSafeInvoiceId === 'function') ? window.generateSafeInvoiceId('RE', r.year) : `RE-JB-${r.year}-${r.PersonNumber}`);
+  
+  const cachedPos = _jbPositionsCache[r.id] || [];
+  if (cachedPos.length === 0) {
+    throw new Error("Keine berechneten Positionen für dieses Mitglied gefunden. Bitte zuerst Beiträge berechnen.");
+  }
+  
+  const positions = cachedPos.map((p, idx) => {
+    const desc = p.beschreibung || p.name || '';
+    const sf = p.source_field || p.sourcefield || p.key || '';
+    let posKonto = p.konto || '';
+    if (!posKonto && typeof window.jbResolveAccountForPosition === 'function') {
+      posKonto = window.jbResolveAccountForPosition(sf, desc);
+    }
+
+    if (!posKonto) {
+      throw new Error(`Fehlendes Haben-Konto für Jahresbeitrag-Position ${p.position_nr || (idx + 1)} („${desc}“, Key: ${sf || '–'}) bei Mitglied ${name}. Bitte im Tab «Gebühren» das Gegenkonto eintragen.`);
+    }
+
+    return {
+      position_nr: p.position_nr || (idx + 1),
+      description: desc,
+      quantity: Number(p.quantity || 1),
+      unit_price: Number(p.betrag || 0),
+      amount: Number(p.betrag || 0),
+      type: p.typ || 'Debit',
+      source_field: sf,
+      konto: posKonto
+    };
+  });
+
+  // 1. Wenn Rechnung bereits existiert: offenen Entwurf synchronisieren (Revisionssicherheit wahren)
+  if (existingInv) {
+    const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+    if (typeof window.jbSyncOpenDraftInvoice === 'function') {
+      const syncRes = await window.jbSyncOpenDraftInvoice(supa, existingInv, {
+        totalAmount: Number(r.Gesamt || 0),
+        positions: positions,
+        headerId: r.id,
+        backgroundPdf: true
+      });
+      if (syncRes && syncRes.synced) {
+        r.pdf_url = null;
+      }
+    }
+    r.invoiceId = existingInv.id;
+    return existingInv.id;
+  }
+
+  // 2. RechnungsCore-Integration für Neuanlage (verbindlicher Standard ohne Direkt-Insert-Fallback)
+  if (!window.RechnungsCore || typeof window.RechnungsCore.createInvoice !== 'function') {
+    throw new Error("RechnungsCore.createInvoice ist nicht verfügbar. Rechnung kann nicht angelegt werden.");
+  }
+
+  const invoiceOrder = {
+    source: {
+      module: 'jahresbeitrag',
+      id: String(r.id),
+      entityId: String(r.id)
+    },
+    year: Number(r.year),
+    prefix: 'JB',
+    type: 'Jahresbeitrag',
+    recipient: {
+      memberId: m.id || null,
+      personNumber: String(r.PersonNumber || '').trim(),
+      name: name,
+      firstName: m.FirstName || m.Vorname || '',
+      lastName: m.LastName || m.Nachname || '',
+      salutation: m.Salutation || m.Anrede || '',
+      street: m.Street || m.Strasse || '',
+      zip: String(m.PostCode || m.PLZ || '5037'),
+      city: m.City || m.Ort || 'Muhen',
+      email: m.PrimaryEmail || m.Email || ''
+    },
+    sender: {
+      bereich: 'Jahresbeitrag',
+      funktion: 'Kassier'
+    },
+    positions: positions.map(p => ({
+      title: p.description,
+      quantity: p.quantity,
+      unitPrice: p.unit_price,
+      total: p.amount,
+      amount: p.amount,
+      konto: String(p.konto).trim(),
+      accountHaben: String(p.konto).trim(),
+      account: String(p.konto).trim(),
+      sourceField: p.source_field || null
+    })),
+    options: {
+      dueDateDays: 30,
+      type: 'Jahresbeitrag',
+      year: Number(r.year),
+      notes: `Jahresbeitrag ${r.year} (${name})`
+    }
+  };
+
+  const createdRes = await window.RechnungsCore.createInvoice(invoiceOrder);
+  const actualInv = (createdRes && createdRes.invoice) ? createdRes.invoice : createdRes;
+  const createdId = actualInv ? (actualInv.id || actualInv.invoice_number) : null;
+
+  if (!createdId) {
+    throw new Error("RechnungsCore.createInvoice hat keine gültige Rechnungs-ID zurückgegeben.");
+  }
+
+  r.invoiceId = createdId;
+  const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+  if (supa) {
+    const { error: linkErr } = await supa.from('contributions_header').update({ invoice_id: createdId }).eq('id', r.id);
+    if (linkErr) {
+      throw new Error(`Rechnung ${createdId} erstellt, aber Verknüpfung in contributions_header fehlgeschlagen: ${linkErr.message}`);
+    }
+  }
+  console.log(`✅ [RechnungsCore] Jahresbeitrags-Rechnung ${createdId} erstellt & verknüpft.`);
+  return createdId;
+}
+
+// Einzelnes Mitglied in Rechnungsmodul übertragen (Rechnungsentwurf anlegen)
+async function jbTransferSingleInvoice(rId, pn) {
+  const btn = document.getElementById(`btn-transfer-${rId}`);
+  const runTransfer = async () => {
+    const r = _jbData.find(x => String(x.id) === String(rId));
+    if (!r) throw new Error("Beitrags-Eintrag nicht gefunden.");
+    const m = _jbMemberMap[String(pn)] || {};
+    const name = m.FirstName ? `${m.FirstName} ${m.LastName}` : pn;
+
+    const invoiceId = await ensureInvoiceCreatedRemote(r, m, name);
+    if (!invoiceId) throw new Error("Rechnung konnte nicht erstellt werden.");
+
+    showToast(`✅ Rechnungsentwurf ${invoiceId} für ${name} erfolgreich im Rechnungsmodul erstellt!`);
+    await loadJahresbeitragData(true, true);
+    if (typeof renderJahresbeitragView === 'function') {
+      renderJahresbeitragView();
+    }
+  };
+
+  try {
+    if (window.UIButtonKit && btn) {
+      await UIButtonKit.withLoading(btn, runTransfer);
+    } else {
+      await runTransfer();
+    }
+  } catch (err) {
+    console.error("Fehler bei Rechnungs-Übertrag:", err);
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Fehler beim Rechnungs-Übertrag',
+        message: err.message || String(err),
+        type: 'danger'
+      });
+    }
+  }
+}
+window.jbTransferSingleInvoice = jbTransferSingleInvoice;
+
+// PDF Rechnung auf Knopfdruck generieren & anzeigen
+async function jbGenerateInvoicePdfRemote(rId, pn) {
+  const btn = document.getElementById(`btn-pdf-${rId}`) || document.getElementById('jbModalPdfBtn');
+  const runPdf = async () => {
+    const r = _jbData.find(x => String(x.id) === String(rId));
+    if (!r) throw new Error("Rechnungs-Eintrag nicht gefunden in Memory.");
+    const m = _jbMemberMap[String(pn)] || {};
+    const name = m.FirstName ? `${m.FirstName} ${m.LastName}` : pn;
+    const totalVal = Number(r.Gesamt ?? r.total_amount ?? r.betrag ?? 0);
+
+    // 1. Sicherstellen, dass die Rechnung existiert
+    const invoiceId = await ensureInvoiceCreatedRemote(r, m, name);
+
+    // 2. Primär: Zentrale RechnungsCore.renderPdf-Methode (mit forceRecreate: true gemäss Richtlinie 6)
+    let engineRes = null;
+    if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
+      try {
+        engineRes = await window.RechnungsCore.renderPdf(invoiceId, { forceRecreate: true });
+      } catch (cErr) {
+        console.warn("⚠️ RechnungsCore.renderPdf fehlgeschlagen, versuche Engine-Fallback:", cErr);
+      }
+    }
+
+    // Fallback falls RechnungsCore nicht verfügbar
+    if (!engineRes && typeof window.generatePdfViaEngine === 'function') {
+      engineRes = await window.generatePdfViaEngine({
+        action: 'generate-invoice',
+        invoiceId: invoiceId,
+        forceRecreate: true,
+        recipient: {
+          vorname: m.FirstName || '',
+          nachname: m.LastName || '',
+          name: name,
+          strasse: m.Street || '',
+          plz: m.PostCode || '',
+          ort: m.City || '',
+          email: m.PrimaryEmail || ''
+        },
+        totalAmount: totalVal,
+        year: r.year || _jbYear || new Date().getFullYear(),
+        type: 'Jahresbeitrag'
+      });
+    }
+
+    if (engineRes && engineRes.success) {
+      showToast("🎉 Schweizer QR-Rechnung erfolgreich generiert!");
+      if (engineRes.pdfUrl && engineRes.pdfUrl.startsWith('http')) {
+        jbOpenInvoicePdfSafe(engineRes.pdfUrl);
+      } else if (engineRes.pdfBase64 && typeof openPdfBase64 === 'function') {
+        openPdfBase64(engineRes.pdfBase64);
+      }
+      await loadJahresbeitragData(true, true);
+      if (typeof renderJahresbeitragView === 'function') {
+        renderJahresbeitragView();
+      }
+      const modalEl = document.getElementById('jbModalPositionen');
+      if (modalEl && modalEl.classList.contains('show')) {
+        const updatedHeader = _jbData.find(x => String(x.id) === String(rId));
+        if (updatedHeader) {
+          const updatedPos = _jbPositionsCache[rId] || [];
+          jbRenderModalContent(updatedHeader, updatedPos, m, name);
+        }
+      }
+      return;
+    }
+    throw new Error(engineRes?.error || "Fehler bei PDF-Generierung");
+  };
+
+  try {
+    if (window.UIButtonKit && btn) {
+      await UIButtonKit.withLoading(btn, runPdf);
+    } else {
+      await runPdf();
+    }
+  } catch (err) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Fehler bei PDF-Erstellung',
+        message: err.message || String(err),
+        type: 'danger'
+      });
+    }
+  }
+}
+
+// Rechnung per E-Mail versenden
+async function jbSendInvoiceEmailRemote(rId, pn, email) {
+  const r = _jbData.find(x => String(x.id) === String(rId));
+  if (!r) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Eintrag nicht gefunden',
+        message: 'Der Beitragseintrag wurde nicht gefunden.',
+        type: 'danger'
+      });
+    }
+    return;
+  }
+  const m = _jbMemberMap[String(pn)] || {};
+  const name = m.FirstName ? `${m.FirstName} ${m.LastName}` : pn;
+  const esc = window.jbEscHtml || window.escapeHtml || (s => String(s || ''));
+
+  const ok = window.UIConfirmKit
+    ? await UIConfirmKit.confirm({
+        title: 'Jahresbeitrag per E-Mail versenden?',
+        message: `Möchtest du die Jahresbeitrag-Rechnung für <strong>${esc(name)}</strong> an die E-Mail-Adresse <strong>${esc(email)}</strong> versenden?`,
+        type: 'primary',
+        confirmText: 'Rechnung senden'
+      })
+    : false;
+
+  if (!ok) {
+    return;
+  }
+
+  const btn = document.getElementById('jbModalMailBtn') || document.getElementById(`btn-mail-${rId}`);
+  const runMail = async () => {
+    // 1. Sicherstellen, dass die Rechnung existiert
+    const invoiceId = await ensureInvoiceCreatedRemote(r, m, name);
+
+    // 2. Absender ermitteln
+    const sender = (typeof rnGetLoggedInSender === 'function')
+      ? rnGetLoggedInSender('Jahresbeitrag')
+      : jbGetSenderForInvoiceType(r.type || 'Jahresbeitrag');
+
+    // 3. PDF vorbereiten falls nötig (primär via RechnungsCore.renderPdf)
+    let pdfUrl = r.pdf_url || '';
+    let pdfStoragePath = null;
+    let pdfBase64 = null;
+
+    if (!pdfUrl && window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
+      try {
+        const cRes = await window.RechnungsCore.renderPdf(invoiceId, { forceRecreate: true });
+        if (cRes && cRes.success) {
+          pdfUrl = cRes.pdfUrl || '';
+          pdfStoragePath = cRes.storagePath || null;
+          pdfBase64 = cRes.pdfBase64 || null;
+          if (pdfUrl) r.pdf_url = pdfUrl;
+        }
+      } catch (cErr) {
+        console.warn("⚠️ RechnungsCore.renderPdf Vorbereitung Hinweis:", cErr);
+      }
+    }
+
+    if (!pdfUrl && !pdfStoragePath && !pdfBase64 && typeof window.generatePdfViaEngine === 'function') {
+      try {
+        const engineRes = await window.generatePdfViaEngine({
+          action: 'generate-invoice',
+          invoiceId: invoiceId,
+          recipient: {
+            vorname: m.FirstName || '',
+            nachname: m.LastName || '',
+            name: name,
+            strasse: m.Street || '',
+            plz: m.PostCode || '',
+            ort: m.City || '',
+            email: email
+          },
+          totalAmount: r.total_amount || r.betrag || r.Gesamt || 0,
+          year: r.year || _jbYear || new Date().getFullYear(),
+          type: 'Jahresbeitrag'
+        });
+        if (engineRes && engineRes.success) {
+          pdfUrl = engineRes.pdfUrl || '';
+          pdfStoragePath = engineRes.storagePath || null;
+          pdfBase64 = engineRes.pdfBase64 || null;
+          if (pdfUrl) r.pdf_url = pdfUrl;
+        }
+      } catch (pErr) {
+        console.warn("⚠️ PDF-Engine Vorbereitung Hinweis:", pErr);
+      }
+    }
+
+    const attachments = [];
+    if (pdfStoragePath) {
+      attachments.push({ filename: `Rechnung_${invoiceId}.pdf`, storagePath: pdfStoragePath, contentType: 'application/pdf' });
+    } else if (pdfBase64) {
+      attachments.push({ filename: `Rechnung_${invoiceId}.pdf`, contentBase64: pdfBase64, contentType: 'application/pdf' });
+    } else if (pdfUrl && pdfUrl.includes('/operatives-storage/')) {
+      const parts = pdfUrl.split('/operatives-storage/');
+      if (parts[1]) {
+        attachments.push({ filename: `Rechnung_${invoiceId}.pdf`, storagePath: decodeURIComponent(parts[1].split('?')[0]), contentType: 'application/pdf' });
+      }
+    }
+
+    // 4. E-Mail über Supabase Mail-Engine senden
+    if (typeof window.sendMailViaEngine !== 'function') {
+      throw new Error("Mail-Engine nicht verfügbar");
+    }
+
+    const totalBetrag = Number(r.total_amount || r.betrag || r.Gesamt || 0);
+    const senderDisplayName = sender ? [sender.vorname, sender.nachname].filter(Boolean).join(' ') : (window.currentUserName || window.currentUser || 'Vorstand');
+    const senderRole = sender?.funktion || 'Kassier';
+
+    // Persönliche Einzelberechnung Gruppengewinne (Konto 1301) inkl. 180-Tage-Links + PDF «Zusammensetzung_Gruppengewinne_<Jahr>.pdf» ermitteln
+    let ggSupp = null;
+    if (typeof window.jmBuildShooterGruppengewinneMailSupplement === 'function') {
+      try {
+        ggSupp = await window.jmBuildShooterGruppengewinneMailSupplement(pn, r.year || _jbYear || new Date().getFullYear());
+        if (ggSupp && ggSupp.hasCredits && ggSupp.pdfAttachment && ggSupp.pdfAttachment.contentBase64) {
+          attachments.push({
+            filename: ggSupp.pdfAttachment.filename,
+            contentBase64: ggSupp.pdfAttachment.contentBase64,
+            contentType: 'application/pdf'
+          });
+        }
+      } catch (ggErr) {
+        console.warn('[Jahresbeitrag-Mail] Konnte Gruppengewinn-Einzelberechnung nicht laden:', ggErr);
+      }
+    }
+
+    const ggHtml = (ggSupp && ggSupp.hasCredits) ? ggSupp.htmlBlock : '';
+    const ggText = (ggSupp && ggSupp.hasCredits) ? `\n\n${ggSupp.textBlock}\n` : '';
+    const billingYear = r.year || _jbYear || new Date().getFullYear();
+
+    const bodyHtml = `<p>Guten Tag ${esc(name)},</p><p>anbei senden wir dir die Rechnung für den Jahresbeitrag ${billingYear} mit der Rechnungsnummer <strong>${esc(invoiceId)}</strong> über CHF ${totalBetrag.toFixed(2)} inkl. beiliegender QR-Rechnung.</p>${ggHtml}<p>Vielen Dank für deine wertvolle Unterstützung als Mitglied!</p><p>Freundliche Grüsse<br><strong>Sportschützen Muhen</strong><br>${esc(senderDisplayName)}<br>${esc(senderRole)}</p>`;
+
+    const emailHtml = (typeof window.renderClubEmailHtml === 'function')
+      ? window.renderClubEmailHtml({
+          title: `Rechnung Jahresbeitrag ${billingYear}`,
+          subtitle: 'Jahresbeitrag',
+          contentHtml: bodyHtml
+        })
+      : bodyHtml;
+
+    const mailRes = await window.sendMailViaEngine({
+      to: email,
+      subject: `Rechnung Jahresbeitrag ${billingYear} – ${invoiceId} | Sportschützen Muhen`,
+      html: emailHtml,
+      text: `Guten Tag ${name},\n\nanbei die Rechnung für den Jahresbeitrag ${billingYear} (${invoiceId}).${ggText}\nVielen Dank für deine wertvolle Unterstützung als Mitglied!\n\nFreundliche Grüsse\nSportschützen Muhen\n${senderDisplayName}\n${senderRole}`,
+      senderName: sender?.name || 'Sportschützen Muhen',
+      senderEmail: 'info@sportschuetzen-muhen.ch',
+      attachments: attachments,
+      moduleRef: 'rechnung',
+      recordId: String(invoiceId)
+    });
+
+    if (!mailRes.success) {
+      throw new Error(mailRes.error || "E-Mail-Versand fehlgeschlagen.");
+    }
+
+    // Status lokal & in Supabase verbindlich auf 'versendet' (Regel 6) setzen
+    const nowSwissStr = (typeof formatSwissDate === 'function') ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH');
+    r.mail_status = 'versendet';
+    r.send_date = nowSwissStr;
+    const allInvs = window._invoices || window._jbAllInvoices || [];
+    const targetInv = allInvs.find(i => String(i.id).trim() === String(invoiceId).trim());
+    if (targetInv) {
+      targetInv.mail_status = 'versendet';
+      targetInv.send_date = nowSwissStr;
+      targetInv.updated_at = nowSwissStr;
+      if (pdfUrl) targetInv.pdf_url = pdfUrl;
+    }
+
+    const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+    if (supa) {
+      const invUpdatePayload = {
+        mail_status: 'versendet',
+        send_date: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      if (pdfUrl || r.pdf_url) {
+        invUpdatePayload.pdf_url = pdfUrl || r.pdf_url;
+      }
+      const { error: invUpdErr } = await supa.from('invoices').update(invUpdatePayload).eq('id', invoiceId);
+      if (invUpdErr) {
+        throw new Error(`E-Mail gesendet, aber Versandstatus in Supabase konnte nicht gespeichert werden: ${invUpdErr.message}`);
+      }
+    }
+
+    showToast(`✉️ E-Mail-Rechnung erfolgreich an ${name} (${email}) gesendet!`);
+
+    await loadJahresbeitragData(true, true);
+    if (typeof rnRenderTable === 'function') {
+      rnRenderTable();
+    }
+    if (typeof renderJahresbeitragView === 'function') {
+      renderJahresbeitragView();
+    }
+
+    const modalEl = document.getElementById('jbModalPositionen');
+    if (modalEl && modalEl.classList.contains('show')) {
+      const updatedHeader = _jbData.find(x => String(x.id) === String(rId));
+      if (updatedHeader) {
+        const updatedPos = _jbPositionsCache[rId] || [];
+        jbRenderModalContent(updatedHeader, updatedPos, m, name);
+      }
+    }
+  };
+
+  try {
+    if (window.UIButtonKit && btn) {
+      await UIButtonKit.withLoading(btn, runMail);
+    } else {
+      await runMail();
+    }
+  } catch (err) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Fehler beim E-Mail-Versand',
+        message: err.message || String(err),
+        type: 'danger'
+      });
+    }
+  }
+}
+
+// Batch-Bereitstellung aller Rechnungen für berechnete Jahresbeiträge im RechnungsCore
+window.jbRechnungenBereitstellenBatch = async function(silent = false) {
+  // 1. Finde alle berechneten Datensätze des aktuellen Jahres, die noch keine invoiceId haben und Gesamt > 0 sind
+  const toProcess = (_jbData || []).filter(r => {
+    const hasInvoice = r.invoiceId && String(r.invoiceId).trim().length > 0;
+    return !hasInvoice && Number(r.Gesamt || 0) > 0;
+  });
+
+  if (toProcess.length === 0) {
+    if (!silent && window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Rechnungen bereits bereitgestellt',
+        message: `Alle beitragspflichtigen Mitglieder für das Jahr ${_jbYear} besitzen bereits einen Rechnungsentwurf im RechnungsCore!`,
+        type: 'info'
+      });
+    }
+    return 0;
+  }
+
+  if (!silent) {
+    const ok = window.UIConfirmKit
+      ? await UIConfirmKit.confirm({
+          title: 'Rechnungsentwürfe anlegen?',
+          message: `Möchtest du für <strong>${toProcess.length}</strong> berechnete Mitglieder offizielle Rechnungsentwürfe im RechnungsCore anlegen?<br><br>Die Rechnungen erhalten eine fortlaufende JB-Nummer und Schweizer QR-Referenz, verbleiben aber im Status <em>Entwurf</em> (noch nicht versendet).`,
+          type: 'primary',
+          confirmText: 'Entwürfe anlegen'
+        })
+      : false;
+
+    if (!ok) {
+      return 0;
+    }
+  }
+
+  const runBatch = async () => {
+    if (typeof showLoadingOverlay === 'function') {
+      showLoadingOverlay(`Erzeuge Rechnungsentwürfe im RechnungsCore (0 / ${toProcess.length})…`);
+    }
+
+    let createdCount = 0;
+    let failCount = 0;
+
+    try {
+      for (let i = 0; i < toProcess.length; i++) {
+        const r = toProcess[i];
+        const m = _jbMemberMap[String(r.PersonNumber)] || {};
+        const name = m.FirstName ? `${m.FirstName} ${m.LastName}` : (r._name || r.PersonNumber);
+        if (typeof showLoadingOverlay === 'function') {
+          showLoadingOverlay(`Erzeuge Rechnungsentwurf (${i + 1} / ${toProcess.length}): ${name}…`);
+        }
+
+        try {
+          await ensureInvoiceCreatedRemote(r, m, name);
+          createdCount++;
+        } catch (err) {
+          console.error(`❌ Fehler bei Rechnungsanlage für ${name} (${r.PersonNumber}):`, err);
+          failCount++;
+        }
+      }
+    } finally {
+      if (typeof hideLoadingOverlay === 'function') {
+        hideLoadingOverlay();
+      }
+    }
+
+    // Rechnungen und Beitragsdaten neu laden & Ansicht aktualisieren
+    await loadJahresbeitragData(true, true);
+    if (typeof renderJahresbeitragView === 'function') {
+      renderJahresbeitragView();
+    }
+
+    if (!silent) {
+      if (failCount > 0 && window.UIConfirmKit) {
+        await UIConfirmKit.alert({
+          title: 'Bereitstellung teilweise fehlgeschlagen',
+          message: `${createdCount} Rechnungsentwurf/-würfe erstellt, <strong>${failCount}</strong> Fehler aufgetreten. Details findest du in der Konsole.`,
+          type: 'warning'
+        });
+      } else if (typeof showToast === 'function') {
+        showToast(`🎉 ${createdCount} Rechnungsentwürfe erfolgreich im RechnungsCore bereitgestellt!`);
+      } else if (window.UIConfirmKit) {
+        await UIConfirmKit.alert({
+          title: 'Rechnungsentwürfe bereitgestellt',
+          message: `🎉 ${createdCount} Rechnungsentwürfe erfolgreich im RechnungsCore bereitgestellt!`,
+          type: 'success'
+        });
+      }
+    }
+    return createdCount;
+  };
+
+  const btn = document.getElementById('btnJbRechnungenBereitstellen');
+  if (window.UIButtonKit && btn) {
+    return await UIButtonKit.withLoading(btn, runBatch);
+  }
+  return await runBatch();
+};
+
+// Sammelversand für Jahresbeiträge: Öffnet das Massenversand-Modal vorselektiert mit allen Rechnungen des aktiven Jahres
+window.jbOpenSammelversandModal = async function() {
+  if (typeof rnOpenMassSendModal !== 'function') {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Modul nicht verfügbar',
+        message: 'Das Massenversand-Modul steht momentan nicht zur Verfügung.',
+        type: 'warning'
+      });
+    }
+    return;
+  }
+
+  const runOpen = async () => {
+    // Stelle sicher, dass die Rechnungen geladen sind
+    if (typeof loadRechnungenData === 'function') {
+      await loadRechnungenData(true, true);
+    }
+
+    // Pre-Flight: Prüfe, ob es berechnete Mitglieder (Betrag > 0) ohne Rechnungsentwurf gibt
+    const uncreated = (_jbData || []).filter(r => {
+      const hasInvoice = r.invoiceId && String(r.invoiceId).trim().length > 0;
+      return !hasInvoice && Number(r.Gesamt || 0) > 0;
+    });
+
+    if (uncreated.length > 0) {
+      const doCreate = window.UIConfirmKit
+        ? await UIConfirmKit.confirm({
+            title: 'Fehlende Rechnungsentwürfe anlegen?',
+            message: `Es gibt noch <strong>${uncreated.length}</strong> berechnete Mitglieder ohne Rechnungsentwurf im RechnungsCore.<br><br>Sollen diese jetzt automatisch als Entwurf angelegt werden, damit sie für den Sammelversand verfügbar sind?`,
+            type: 'warning',
+            confirmText: 'Jetzt anlegen'
+          })
+        : false;
+      if (doCreate) {
+        await window.jbRechnungenBereitstellenBatch(true);
+        if (typeof loadRechnungenData === 'function') {
+          await loadRechnungenData(true, true);
+        }
+      }
+    }
+
+    // Filter auf Jahresbeitrag setzen
+    window._rnMassSendTypeFilter = 'Jahresbeitrag';
+
+    // Alle Rechnungs-IDs des aktuellen Jahres filtern
+    const jbInvs = (window._invoices || []).filter(inv =>
+      String(inv.type || '').toLowerCase() === 'jahresbeitrag' &&
+      Number(inv.year) === Number(_jbYear) &&
+      String(inv.status || '').toLowerCase() !== 'storniert'
+    );
+
+    const jbIds = jbInvs.map(i => i.id);
+    if (jbIds.length === 0) {
+      const msg = `Keine Rechnungen für das Jahr ${_jbYear} gefunden. Bitte zuerst «Beiträge berechnen» und «Rechnungen bereitstellen».`;
+      if (window.UIConfirmKit) {
+        await UIConfirmKit.alert({
+          title: 'Keine Rechnungen gefunden',
+          message: msg,
+          type: 'warning'
+        });
+      }
+      return;
+    }
+    window.rnOpenMassSendModal(jbIds.length > 0 ? jbIds : []);
+  };
+
+  const btn = document.getElementById('btnJbSammelversand');
+  if (window.UIButtonKit && btn) {
+    await UIButtonKit.withLoading(btn, runOpen);
+  } else {
+    await runOpen();
+  }
+};
+
+
+async function jbBerechnen() {
+  const ok = window.UIConfirmKit
+    ? await UIConfirmKit.confirm({
+        title: 'Beiträge berechnen?',
+        message: `Möchtest du die Jahresbeiträge für <strong>${_jbYear}</strong> berechnen?<br><br>Bereits versendete oder bezahlte Rechnungen werden geschützt und übersprungen.`,
+        type: 'primary',
+        confirmText: 'Beiträge berechnen'
+      })
+    : false;
+
+  if (!ok) return;
+
+  const btn = document.getElementById('btnJbBerechnen') || document.querySelector('button[onclick="jbBerechnen()"]');
+  const runCalc = async () => {
+    const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+    if (!supa) throw new Error("Supabase Client nicht verfügbar");
+
+    const yr = Number(_jbYear);
+    console.log(`🤖 Starte serverseitige Beitragsberechnung für ${yr} via Supabase RPC...`);
+
+    const { data: rpcRes, error: rpcErr } = await supa.rpc('calculate_member_contributions', {
+      p_year: yr,
+      p_target_pns: null
+    });
+
+    if (rpcErr) {
+      console.error("❌ RPC calculate_member_contributions Fehler:", rpcErr);
+      throw new Error(rpcErr.message || "Fehler bei der Beitragsberechnung in Supabase");
+    }
+
+    await loadJahresbeitragData(true, true);
+
+    // Offene Rechnungsentwürfe (mail_status === 'entwurf', unbezahlt, nicht storniert) bei Abweichungen mit RechnungsCore synchronisieren
+    let syncedDrafts = 0;
+    if (typeof window.jbSyncOpenDraftInvoice === 'function' && typeof window.jbGetContributionLockState === 'function') {
+      const openDraftTargets = (_jbData || []).filter(r => {
+        const lock = window.jbGetContributionLockState(r);
+        return !lock.isLocked && lock.invoice;
+      });
+      if (openDraftTargets.length > 0) {
+        const invIds = openDraftTargets.map(r => r.invoiceId).filter(Boolean);
+        const { data: existingInvPos } = invIds.length > 0
+          ? await supa.from('invoice_positions').select('invoice_id, position_nr, description, amount, konto, source_field').in('invoice_id', invIds)
+          : { data: [] };
+        const invPosByInv = {};
+        (existingInvPos || []).forEach(ip => {
+          const k = String(ip.invoice_id || '').trim();
+          if (!invPosByInv[k]) invPosByInv[k] = [];
+          invPosByInv[k].push(ip);
+        });
+
+        for (const r of openDraftTargets) {
+          const lock = window.jbGetContributionLockState(r);
+          const inv = lock.invoice;
+          const newPos = _jbPositionsCache[r.id] || [];
+          const curInvPos = (invPosByInv[String(inv.id).trim()] || []).slice().sort((a, b) => Number(a.position_nr || 0) - Number(b.position_nr || 0));
+          const sortedNewPos = newPos.slice().sort((a, b) => Number(a.position_nr || 0) - Number(b.position_nr || 0));
+          const sameTotal = Math.abs(Number(inv.total_amount || 0) - Number(r.Gesamt || 0)) <= 0.005;
+          const samePos = curInvPos.length === sortedNewPos.length && curInvPos.every((cp, idx) => {
+            const np = sortedNewPos[idx];
+            return Math.abs(Number(cp.amount || 0) - Number(np.betrag || 0)) <= 0.005 &&
+                   String(cp.konto || '').trim() === String(np.konto || '').trim() &&
+                   String(cp.description || '').trim() === String(np.beschreibung || np.name || '').trim();
+          });
+
+          if (!sameTotal || !samePos) {
+            const syncRes = await window.jbSyncOpenDraftInvoice(supa, inv, {
+              totalAmount: Number(r.Gesamt || 0),
+              positions: sortedNewPos,
+              headerId: r.id,
+              backgroundPdf: true
+            });
+            if (syncRes && syncRes.synced) syncedDrafts++;
+          }
+        }
+      }
+    }
+
+    if (syncedDrafts > 0) {
+      await loadJahresbeitragData(true, true);
+    }
+    if (typeof renderJahresbeitragView === 'function') {
+      renderJahresbeitragView();
+    }
+
+    const calcCount = rpcRes?.calculated_count ?? 0;
+    const skippedCount = rpcRes?.skipped_locked_count ?? 0;
+    let msg = rpcRes?.message || `Beiträge für ${yr} erfolgreich berechnet (${calcCount} Mitglieder).`;
+    if (skippedCount > 0) msg += ` ${skippedCount} gesperrte übersprungen.`;
+    if (syncedDrafts > 0) msg += ` ${syncedDrafts} Rechnungsentwurf/-würfe aktualisiert.`;
+    console.log(`✅ [Supabase RPC] ${msg}`);
+
+    if (typeof showToast === 'function') {
+      showToast(`✅ ${msg}`, 'success');
+    } else if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Berechnung abgeschlossen',
+        message: msg,
+        type: 'success'
+      });
+    }
+  };
+
+  try {
+    if (window.UIButtonKit && btn) {
+      await UIButtonKit.withLoading(btn, runCalc);
+    } else {
+      await runCalc();
+    }
+  } catch(e) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Fehler bei der Beitragsberechnung',
+        message: e.message || String(e),
+        type: 'danger'
+      });
+    }
+  }
+}
+
+async function jbResetYear(mode) {
+  if (typeof hasWriteAccess === 'function' && !hasWriteAccess('jahresbeitrag')) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Keine Berechtigung',
+        message: 'Dir fehlt die Berechtigung (jahresbeitrag.manage) zum Zurücksetzen eines Beitragsjahres.',
+        type: 'danger'
+      });
+    }
+    return;
+  }
+
+  const yr = Number(_jbYear);
+  const supa = typeof getJahresbeitragSupabaseClient === 'function' ? getJahresbeitragSupabaseClient() : null;
+  if (!supa) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Verbindungsfehler',
+        message: 'Supabase Client nicht verfügbar.',
+        type: 'danger'
+      });
+    }
+    return;
+  }
+
+  // Revisions-Check vor Bestätigung: Sind bereits versendete oder (teil-)bezahlte Rechnungen bzw. gesperrte Header für dieses Jahr vorhanden?
+  const [{ data: yearInvs, error: invCheckErr }, { data: lockedHeaders, error: hdrCheckErr }] = await Promise.all([
+    supa.from('invoices')
+      .select('id, status, mail_status, send_date, open_amount, total_amount')
+      .eq('year', yr)
+      .eq('type', 'Jahresbeitrag'),
+    supa.from('contributions_header')
+      .select('id, status')
+      .eq('year', yr)
+      .in('status', ['bezahlt', 'teilbezahlt', 'versendet', 'gesendet'])
+  ]);
+
+  if (invCheckErr || hdrCheckErr) {
+    const errMsg = (invCheckErr?.message || hdrCheckErr?.message || 'Unbekannter Fehler');
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: 'Prüfung fehlgeschlagen',
+        message: `Bestehende Rechnungen/Beiträge für ${yr} konnten nicht geprüft werden: ${errMsg}`,
+        type: 'danger'
+      });
+    }
+    return;
+  }
+
+  const protectedInvs = (yearInvs || []).filter(i => {
+    const st = String(i.status || '').toLowerCase();
+    if (st === 'storniert') return false;
+    const mst = String(i.mail_status || '').toLowerCase();
+    const paidByDiff = Number(i.total_amount || 0) > 0 && Number(i.open_amount ?? i.total_amount) < (Number(i.total_amount) - 0.01);
+    return st === 'bezahlt' || st === 'teilbezahlt' || mst === 'versendet' || mst === 'gesendet' || Boolean(i.send_date) || paidByDiff;
+  });
+
+  if (protectedInvs.length > 0 || (lockedHeaders && lockedHeaders.length > 0)) {
+    const lockCount = Math.max(protectedInvs.length, lockedHeaders ? lockedHeaders.length : 0);
+    const sampleIds = protectedInvs.slice(0, 3).map(x => x.id).join(', ') || (lockedHeaders || []).slice(0, 3).map(x => x.id).join(', ');
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: `Beitragsjahr ${yr} gesperrt`,
+        message: `Für das Jahr ${yr} existieren bereits <strong>${lockCount} versendete oder (teil-)bezahlte Einträge</strong> (z. B. ${sampleIds}).<br><br>Aus Gründen der Revisionssicherheit ist das Komplett-Zurücksetzen gesperrt. Storniere betroffene Rechnungen bei Bedarf einzeln im Rechnungsmodul.`,
+        type: 'warning'
+      });
+    }
+    return;
+  }
+
+  const modeText = mode === 'all'
+    ? 'alle Berechnungen, offenen Entwurfs-Rechnungen SOWIE ALLE Turnierteilnahmen und manuellen Gebührenüberschreibungen'
+    : 'alle Berechnungen, Posten und noch unversendeten Rechnungsentwürfe (Turnierteilnahmen bleiben erhalten)';
+
+  const ok = window.UIConfirmKit
+    ? await UIConfirmKit.confirm({
+        title: `Beitragsjahr ${yr} zurücksetzen?`,
+        message: `Möchtest du wirklich <strong>${modeText}</strong> für das Beitragsjahr ${yr} unwiderruflich zurücksetzen?<br><br>Vorjahre bleiben unberührt. Diese Aktion kann <strong>nicht</strong> rückgängig gemacht werden!`,
+        type: 'danger',
+        confirmText: 'Unwiderruflich zurücksetzen'
+      })
+    : false;
+
+  if (!ok) {
+    return;
+  }
+
+  const resetBtn = document.getElementById(mode === 'all' ? 'btnJbResetAll' : 'btnJbResetCalculations');
+  const runReset = async () => {
+    showLoadingOverlay(`Setze das Jahr ${yr} in Supabase zurück (${mode === 'all' ? 'Alles' : 'Berechnungen & Entwürfe'})…`);
+
+    try {
+      // 1. Offene (nicht versendete/bezahlte, nicht stornierte) Rechnungsentwürfe dieses Jahres sauber mitlöschen
+      const draftInvIds = (yearInvs || [])
+        .filter(i => String(i.status || '').toLowerCase() !== 'storniert')
+        .map(i => i.id)
+        .filter(Boolean);
+      if (draftInvIds.length > 0) {
+        const { error: invPosDelErr } = await supa.from('invoice_positions').delete().in('invoice_id', draftInvIds);
+        if (invPosDelErr) throw new Error(`Fehler beim Löschen der Entwurfs-Positionen: ${invPosDelErr.message}`);
+
+        const { error: invDelErr } = await supa.from('invoices').delete().in('id', draftInvIds);
+        if (invDelErr) throw new Error(`Fehler beim Löschen der Entwurfs-Rechnungen: ${invDelErr.message}`);
+      }
+
+      // 2. Beitragspositionen & Header löschen
+      const { error: posErr } = await supa.from('contributions_positions').delete().eq('year', yr);
+      if (posErr) throw new Error(`Fehler beim Löschen der Beitragspositionen: ${posErr.message}`);
+
+      const { error: headErr } = await supa.from('contributions_header').delete().eq('year', yr);
+      if (headErr) throw new Error(`Fehler beim Löschen der Beitrags-Header: ${headErr.message}`);
+
+      if (mode === 'all') {
+        const { error: partErr } = await supa.from('member_participations').delete().eq('year', yr);
+        if (partErr) throw new Error(`Fehler beim Löschen der Turnierteilnahmen: ${partErr.message}`);
+      }
+
+      // 3. Verrechnete Gruppengewinne für dieses Jahr wieder auf 'offen' zurücksetzen
+      const { data: compRows, error: compErr } = await supa.from('group_competitions').select('id').eq('jahr', yr);
+      if (compErr) throw new Error(`Fehler beim Laden der Gruppenwettkämpfe: ${compErr.message}`);
+      if (compRows && compRows.length > 0) {
+        const compIds = compRows.map(c => c.id);
+        const { error: gcmErr } = await supa.from('group_competition_members')
+          .update({ status: 'offen', contribution_position_id: null, updated_at: new Date().toISOString() })
+          .in('competition_id', compIds)
+          .eq('status', 'verrechnet');
+        if (gcmErr) throw new Error(`Fehler beim Zurücksetzen der Gruppengewinne: ${gcmErr.message}`);
+      }
+
+      showToast(`🎉 Zurücksetzen des Jahres ${yr} in Supabase erfolgreich abgeschlossen!`);
+      await loadJahresbeitragData(true, true);
+      if (typeof renderJahresbeitragView === 'function') {
+        renderJahresbeitragView();
+      }
+    } catch (e) {
+      if (window.UIConfirmKit) {
+        await UIConfirmKit.alert({
+          title: 'Fehler beim Zurücksetzen',
+          message: e.message || String(e),
+          type: 'danger'
+        });
+      }
+    } finally {
+      hideLoadingOverlay();
+    }
+  };
+
+  if (window.UIButtonKit && resetBtn) {
+    await UIButtonKit.withLoading(resetBtn, runReset);
+  } else {
+    await runReset();
+  }
+}
+
+function jbApplyTableSorting() {
+  _jbData.sort((a, b) => {
+    let valA, valB;
+    const mA = _jbMemberMap[String(a.PersonNumber)] || {};
+    const mB = _jbMemberMap[String(b.PersonNumber)] || {};
+
+    if (_jbSortCol === 'name') {
+      valA = `${mA.LastName || ''} ${mA.FirstName || ''}`.toLowerCase();
+      valB = `${mB.LastName || ''} ${mB.FirstName || ''}`.toLowerCase();
+    } else if (_jbSortCol === 'kat') {
+      valA = (mA._kategorie || '').toLowerCase();
+      valB = (mB._kategorie || '').toLowerCase();
+    } else if (_jbSortCol === 'gesamt') {
+      valA = Number(a.Gesamt || 0);
+      valB = Number(b.Gesamt || 0);
+    } else if (_jbSortCol === 'status') {
+      valA = jbGetEffectiveStatus(a).toLowerCase();
+      valB = jbGetEffectiveStatus(b).toLowerCase();
+    } else if (_jbSortCol === 'date') {
+      valA = a.payment_date || '';
+      valB = b.payment_date || '';
+    } else if (_jbSortCol === 'method') {
+      valA = (a.payment_method || '').toLowerCase();
+      valB = (b.payment_method || '').toLowerCase();
+    } else if (_jbSortCol === 'beleg') {
+      valA = (a.document_ref || '').toLowerCase();
+      valB = (b.document_ref || '').toLowerCase();
+    }
+
+    if (valA < valB) return _jbSortAsc ? -1 : 1;
+    if (valA > valB) return _jbSortAsc ? 1 : -1;
+    return 0;
+  });
+}
+
+function jbSortTable(col) {
+  if (_jbSortCol === col) {
+    _jbSortAsc = !_jbSortAsc;
+  } else {
+    _jbSortCol = col;
+    _jbSortAsc = true;
+  }
+  jbApplyTableSorting();
+  renderJahresbeitragView();
+}
+
+window.jbOverviewToggleCategoryItem = jbOverviewToggleCategoryItem;
+window.jbOverviewToggleAllCategories = jbOverviewToggleAllCategories;
+window.jbOverviewResetCategoryFilter = jbOverviewResetCategoryFilter;
+window.jbOverviewUpdateCategoryDropdownUI = jbOverviewUpdateCategoryDropdownUI;
+window.jbOverviewToggleStatusItem = jbOverviewToggleStatusItem;
+window.jbOverviewToggleAllStatus = jbOverviewToggleAllStatus;
+window.jbOverviewResetStatusFilter = jbOverviewResetStatusFilter;
+window.jbOverviewUpdateStatusDropdownUI = jbOverviewUpdateStatusDropdownUI;
+

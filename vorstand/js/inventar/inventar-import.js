@@ -1,0 +1,786 @@
+// =====================================================================
+// MODUL: INVENTAR - EXCEL & CSV IMPORT ENGINE (SheetJS)
+// Unterstützt .xlsx, .xls und .csv für Kleidung, Schlüssel, Gewehre
+// =====================================================================
+
+window.openInventarExcelImportModal = function() {
+    if (typeof canAdd === 'function' && !canAdd()) {
+        invAlert('Keine Berechtigung', 'Du hast keine Berechtigung zum Importieren von Inventargegenständen.', 'danger');
+        return;
+    }
+    let modalEl = document.getElementById('invModalExcelImport');
+    if (!modalEl) {
+        modalEl = document.createElement('div');
+        modalEl.id = 'invModalExcelImport';
+        modalEl.className = 'modal fade';
+        modalEl.tabIndex = -1;
+        modalEl.setAttribute('aria-hidden', 'true');
+        document.body.appendChild(modalEl);
+    }
+
+    const currentFilter = document.getElementById('filter-liste') ? document.getElementById('filter-liste').value : 'Inventar_Kleidung';
+    let defaultCat = 'kleidung';
+    if (currentFilter.includes('Gewehre')) defaultCat = 'gewehr';
+    else if (currentFilter.includes('Schluessel')) defaultCat = 'schluessel';
+    else if (currentFilter.includes('Schiessbekleidung')) defaultCat = 'schiessbekleidung';
+
+    modalEl.innerHTML = `
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content border-0 rounded-4 shadow-lg">
+                <div class="modal-header bg-success text-white border-0 py-3 rounded-top-4">
+                    <div>
+                        <h5 class="modal-title fw-bold mb-0">
+                            <i class="fas fa-file-excel me-2"></i>Inventar: Excel / CSV Import
+                        </h5>
+                        <div class="small text-white-50 mt-0.5">Schneller Massenimport von Inventargegenständen via .xlsx, .xls oder .csv</div>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+
+                <div class="modal-body p-4">
+                    <!-- Steuerungsleiste & Muster-Download -->
+                    <div class="row g-3 align-items-end mb-4 bg-light p-3 rounded-3 border">
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold small text-muted">Ziel-Kategorie</label>
+                            <select class="form-select form-select-sm" id="inv-import-category" onchange="invOnImportCategoryChange(this.value)">
+                                <option value="kleidung" ${defaultCat === 'kleidung' ? 'selected' : ''}>👕 Vereinskleidung (K-*)</option>
+                                <option value="schluessel" ${defaultCat === 'schluessel' ? 'selected' : ''}>🔑 Schlüssel (SCH-*)</option>
+                                <option value="gewehr" ${defaultCat === 'gewehr' ? 'selected' : ''}>🎯 Sportwaffen / Gewehre (G-*)</option>
+                                <option value="schiessbekleidung" ${defaultCat === 'schiessbekleidung' ? 'selected' : ''}>🧥 Schiessbekleidung (SB-*)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label fw-bold small text-muted">Datei auswählen (.xlsx, .xls, .csv)</label>
+                            <input type="file" class="form-control form-control-sm" id="inv-import-file-input" accept=".xlsx,.xls,.csv" onchange="invHandleImportFileSelect(event)">
+                        </div>
+                        <div class="col-md-3 text-md-end">
+                            <button type="button" class="btn btn-outline-success btn-sm fw-bold w-100" onclick="invDownloadExcelTemplate()">
+                                <i class="fas fa-download me-1"></i> Muster-Vorlage (.xlsx)
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Erklärung & Anleitung -->
+                    <div class="alert alert-light border border-info-subtle rounded-3 p-3 mb-3 small shadow-xs">
+                        <div class="d-flex align-items-start">
+                            <i class="fas fa-lightbulb text-warning fs-5 me-2.5 mt-0.5"></i>
+                            <div>
+                                <div class="fw-bold mb-1 text-dark">Hinweise zur Excel-Mustervorlage:</div>
+                                <ul class="mb-0 ps-3 text-secondary" style="line-height: 1.55;">
+                                    <li><strong>Zeile 1 (Spaltentitel):</strong> Nicht löschen oder umbenennen, damit das System die Felder korrekt zuordnen kann.</li>
+                                    <li><strong>Zeilen 2 bis 7 (Beispieldaten):</strong> Sind reine Muster zur Orientierung. Du kannst sie vor dem Import <u>löschen</u> oder durch deine echten Artikeldaten überschreiben.</li>
+                                    <li><strong>Spalte ID:</strong> Für neue Artikel einfach <u>leer lassen</u> – das System vergibt beim Import automatisch fortlaufende Nummern (z.&nbsp;B. <span class="font-monospace text-dark">K-54</span>). Trägst du eine bestehende ID ein, wird dieser Datensatz aktualisiert.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dropzone -->
+                    <div id="inv-import-dropzone" class="border border-2 border-dashed rounded-3 p-4 text-center mb-3 bg-white" 
+                         style="cursor: pointer; border-color: #cbd5e1 !important;"
+                         onclick="document.getElementById('inv-import-file-input').click()"
+                         ondragover="event.preventDefault(); this.style.borderColor='#198754';"
+                         ondragleave="this.style.borderColor='#cbd5e1';"
+                         ondrop="invHandleDrop(event)">
+                        <i class="fas fa-cloud-arrow-up text-success fs-1 mb-2"></i>
+                        <h6 class="fw-bold mb-1">Datei hier ablegen oder durchsuchen</h6>
+                        <p class="text-muted small mb-0">Unterstützt Excel-Dateien (.xlsx, .xls) sowie formatierte CSV-Dateien mit Kopfzeile</p>
+                    </div>
+
+                    <!-- Feedback & Info-Leiste -->
+                    <div id="inv-import-stats" class="d-none alert alert-info py-2 px-3 small rounded-3 mb-3 d-flex justify-content-between align-items-center">
+                        <div>
+                            <i class="fas fa-info-circle me-1"></i>
+                            <span id="inv-import-stats-text">0 Datensätze geladen</span>
+                        </div>
+                        <span class="badge bg-success" id="inv-import-badge-valid">0 bereit</span>
+                    </div>
+
+                    <!-- Vorschau-Tabelle -->
+                    <div class="table-responsive border rounded-3 mb-3 d-none" id="inv-import-preview-wrapper" style="max-height: 380px; overflow-y: auto;">
+                        <table class="table table-hover table-sm align-middle mb-0" id="inv-import-preview-table" style="font-size: 13px;">
+                            <thead class="table-light sticky-top border-bottom">
+                                <tr id="inv-import-preview-thead"></tr>
+                            </thead>
+                            <tbody id="inv-import-preview-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="modal-footer bg-light border-0 py-2.5 rounded-bottom-4">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                    <button type="button" class="btn btn-sm btn-success fw-bold px-4" id="btn-inv-do-import" disabled onclick="invExecuteImport()">
+                        <i class="fas fa-check-circle me-1"></i> Jetzt importieren
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    if (window.UIModalKit?.makeMovableAndResizable) {
+        window.UIModalKit.makeMovableAndResizable(modalEl);
+    }
+
+    window._invImportParsedRows = [];
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+};
+
+window.invOnImportCategoryChange = function(cat) {
+    if (window._invImportRawData) {
+        invProcessRawData(window._invImportRawData);
+    }
+};
+
+window.invHandleDrop = function(e) {
+    e.preventDefault();
+    document.getElementById('inv-import-dropzone').style.borderColor = '#cbd5e1';
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        document.getElementById('inv-import-file-input').files = e.dataTransfer.files;
+        invParseFile(e.dataTransfer.files[0]);
+    }
+};
+
+window.invHandleImportFileSelect = function(e) {
+    if (e.target.files && e.target.files.length > 0) {
+        invParseFile(e.target.files[0]);
+    }
+};
+
+window.invParseFile = function(file) {
+    if (!file) return;
+    if (typeof XLSX === 'undefined') {
+        invAlert('Bibliothek fehlt', 'SheetJS (XLSX) Bibliothek ist im Portal nicht verfügbar.', 'danger');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            const jsonRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+            if (!jsonRows || jsonRows.length < 2) {
+                invAlert('Leere Datei', 'Die ausgewählte Datei enthält keine Datenzeilen.', 'warning');
+                return;
+            }
+
+            window._invImportRawData = jsonRows;
+            invProcessRawData(jsonRows);
+        } catch (err) {
+            console.error("Fehler beim Lesen der Excel-Datei:", err);
+            invAlert('Lesefehler', 'Fehler beim Lesen der Datei: ' + invEscapeHtml(err.message), 'danger');
+        }
+    };
+    reader.readAsArrayBuffer(file);
+};
+
+window.invProcessRawData = function(jsonRows) {
+    const rawHeaders = (jsonRows[0] || []).map(h => String(h || '').trim());
+    const dataRows = jsonRows.slice(1).filter(r => r && r.some(c => c !== undefined && c !== null && String(c).trim() !== ''));
+
+    const category = document.getElementById('inv-import-category').value;
+    const norm = s => String(s || '').toLowerCase()
+        .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+        .replace(/[^a-z0-9]/g, '');
+
+    const headerIndices = {};
+    rawHeaders.forEach((h, idx) => {
+        const n = norm(h);
+        if (category === 'schluessel') {
+            if (n === 'id' || n === 'artikelid' || n === 'inventarid') headerIndices.id = idx;
+            else if (n === 'nummer' || n === 'schluesselnummer' || n === 'keynumber') headerIndices.seriennummer = idx;
+            else if (n === 'typ' || n === 'artikel' || n === 'bezeichnung' || n === 'kategorie' || n === 'keyname') headerIndices.typ = idx;
+            else if (n === 'status') headerIndices.status = idx;
+            else if (n === 'depot' || n === 'depotbetrag' || n === 'pfand' || n === 'kaution') headerIndices.depotbetrag = idx;
+        } else {
+            if (n === 'id' || n === 'artikelid' || n === 'inventarid') headerIndices.id = idx;
+            else if (n === 'typ' || n === 'artikel' || n === 'bezeichnung' || n === 'kategorie') headerIndices.typ = idx;
+            else if (n === 'modell' || n === 'model') headerIndices.modell = idx;
+            else if (n === 'hersteller' || n === 'marke') headerIndices.hersteller = idx;
+            else if (n === 'groesse' || n === 'grosse' || n === 'size') headerIndices.groesse = idx;
+            else if (n === 'status') headerIndices.status = idx;
+            else if (n === 'totaleinstandspreis' || n === 'kaufpreis' || n === 'ek' || n === 'selbstkosten' || n === 'einkaufspreis' || n === 'einstandspreistotal' || n === 'totaleinstand' || n === 'einstandspreis') headerIndices.kaufpreis = idx;
+            else if (n === 'endpreisfuermitglied' || n === 'verkaufspreis' || n === 'vk' || n === 'mitgliederpreis' || n === 'endpreis' || n === 'endpreismitglied' || n === 'endpreisfrmitglied') headerIndices.verkaufspreis = idx;
+            else if (n === 'verkaufspreisgerundet' || n === 'katalogpreis' || n === 'uvp' || n === 'bruttopreis' || n === 'vkgerundet') headerIndices.katalogpreis = idx;
+            else if (n === 'sponsoringbeitrag' || n === 'sponsoring' || n === 'rabatt' || n === 'subvention' || n === 'sponsorbeitrag') headerIndices.sponsoring = idx;
+            else if (n === 'sponsorfirma' || n === 'sponsor' || n === 'sponsor_firma' || n === 'firma' || n === 'sponsorunternehmen') headerIndices.sponsor = idx;
+            else if (n === 'einstandspreismaterial' || n === 'grundpreis' || n === 'netto' || n === 'grundpreisnetto' || n === 'ekmaterial' || n === 'material') headerIndices.grundpreis = idx;
+            else if (n === 'einstandspreisdruck' || n === 'veredelung' || n === 'veredelungskosten' || n === 'bestickung' || n === 'ekdruck' || n === 'druckkosten' || n === 'druck') headerIndices.veredelung = idx;
+            else if (n === 'depot' || n === 'depotbetrag' || n === 'pfand' || n === 'kaution') headerIndices.depotbetrag = idx;
+            else if (n === 'kaufdatum' || n === 'datum') headerIndices.kaufdatum = idx;
+            else if (n === 'laufnummer' || n === 'seriennummer' || n === 'nummer') headerIndices.seriennummer = idx;
+            else if (n === 'diopter') headerIndices.diopter = idx;
+            else if (n === 'ringkorn' || n === 'frontsight') headerIndices.ringkorn = idx;
+            else if (n === 'schaft' || n === 'stock' || n === 'schaftart' || n === 'schafttyp' || n === 'schaftausfuehrung') headerIndices.schaft = idx;
+            else if (n === 'distanz' || n === 'kaliber' || n === 'kaliberdistanz') headerIndices.distanz = idx;
+            else if (n === 'zubehoer' || n === 'zubehor') headerIndices.zubehoer = idx;
+            else if (n === 'spezielles' || n === 'bemerkung' || n === 'notizen') headerIndices.spezielles = idx;
+        }
+    });
+
+    const parsedItems = [];
+    const prefixMap = { kleidung: 'K', schluessel: 'SCH', gewehr: 'G', schiessbekleidung: 'SB' };
+    const prefix = prefixMap[category] || 'K';
+
+    const existingItems = inventarState?.[category === 'kleidung' ? 'kleidung' : (category === 'gewehr' ? 'gewehre' : (category === 'schluessel' ? 'schluessel' : 'schiessbekleidung'))] || [];
+    const usedIds = new Set();
+    let nextNum = 1;
+    const prefixRe = new RegExp(`^${prefix}-(\\d+)`, 'i');
+    existingItems.forEach(it => {
+        const rawId = String(it.ID || it.id || '').trim();
+        if (rawId) usedIds.add(rawId.toUpperCase());
+        const m = rawId.match(prefixRe);
+        if (m) nextNum = Math.max(nextNum, parseInt(m[1], 10) + 1);
+    });
+    // Explizit in der Importdatei vergebene IDs vorab reservieren, um Kollisionen mit Auto-IDs zu verhindern
+    dataRows.forEach(row => {
+        const explicitId = (headerIndices.id !== undefined && row[headerIndices.id]) ? String(row[headerIndices.id]).trim() : '';
+        if (explicitId) {
+            usedIds.add(explicitId.toUpperCase());
+            const m = explicitId.match(prefixRe);
+            if (m) nextNum = Math.max(nextNum, parseInt(m[1], 10) + 1);
+        }
+    });
+
+    const parseNum = v => {
+        if (v === undefined || v === null || v === '') return null;
+        const n = parseFloat(String(v).replace("'", "").replace("CHF", "").replace(",", ".").trim());
+        return isNaN(n) ? null : n;
+    };
+
+    const parseDateSafe = v => {
+        if (v === undefined || v === null || String(v).trim() === '') return new Date().toISOString().slice(0, 10);
+        if (typeof v === 'number') {
+            const date = new Date(Math.round((v - 25569) * 86400 * 1000));
+            return !isNaN(date.getTime()) ? date.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+        }
+        if (v instanceof Date) {
+            return !isNaN(v.getTime()) ? v.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+        }
+        const s = String(v).trim();
+        const deMatch = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+        if (deMatch) {
+            const day = deMatch[1].padStart(2, '0');
+            const month = deMatch[2].padStart(2, '0');
+            const year = deMatch[3];
+            return `${year}-${month}-${day}`;
+        }
+        const isoMatch = s.match(/^\d{4}-\d{2}-\d{2}/);
+        if (isoMatch) return isoMatch[0];
+        return new Date().toISOString().slice(0, 10);
+    };
+
+    dataRows.forEach((row) => {
+        let idVal = headerIndices.id !== undefined && row[headerIndices.id] ? String(row[headerIndices.id]).trim() : '';
+        if (!idVal) {
+            do {
+                idVal = `${prefix}-${nextNum++}`;
+            } while (usedIds.has(idVal.toUpperCase()));
+            usedIds.add(idVal.toUpperCase());
+        }
+
+        const itemObj = {
+            id: idVal,
+            category: category,
+            status: (headerIndices.status !== undefined && row[headerIndices.status]) ? String(row[headerIndices.status]).trim() : 'Im Lager',
+            item_type: (headerIndices.typ !== undefined && row[headerIndices.typ]) ? String(row[headerIndices.typ]).trim() : '',
+            model: (headerIndices.modell !== undefined && row[headerIndices.modell]) ? String(row[headerIndices.modell]).trim() : null,
+            manufacturer: (headerIndices.hersteller !== undefined && row[headerIndices.hersteller]) ? String(row[headerIndices.hersteller]).trim() : (category === 'kleidung' ? 'Erima' : null),
+            size: (headerIndices.groesse !== undefined && row[headerIndices.groesse]) ? String(row[headerIndices.groesse]).trim() : null,
+            purchase_price: parseNum(headerIndices.kaufpreis !== undefined ? row[headerIndices.kaufpreis] : null),
+            selling_price: parseNum(headerIndices.verkaufspreis !== undefined ? row[headerIndices.verkaufspreis] : null),
+            retail_price: parseNum(headerIndices.katalogpreis !== undefined ? row[headerIndices.katalogpreis] : null),
+            discount_amount: parseNum(headerIndices.sponsoring !== undefined ? row[headerIndices.sponsoring] : null),
+            sponsor_company: (headerIndices.sponsor !== undefined && row[headerIndices.sponsor]) ? String(row[headerIndices.sponsor]).trim() : null,
+            base_price: parseNum(headerIndices.grundpreis !== undefined ? row[headerIndices.grundpreis] : null),
+            finishing_price: parseNum(headerIndices.veredelung !== undefined ? row[headerIndices.veredelung] : null),
+            depot_amount: parseNum(headerIndices.depotbetrag !== undefined ? row[headerIndices.depotbetrag] : 0) || 0,
+            purchase_date: headerIndices.kaufdatum !== undefined ? parseDateSafe(row[headerIndices.kaufdatum]) : new Date().toISOString().slice(0, 10),
+            serial_number: (headerIndices.seriennummer !== undefined && row[headerIndices.seriennummer]) ? String(row[headerIndices.seriennummer]).trim() : null,
+            diopter: (headerIndices.diopter !== undefined && row[headerIndices.diopter]) ? String(row[headerIndices.diopter]).trim() : null,
+            front_sight: (headerIndices.ringkorn !== undefined && row[headerIndices.ringkorn]) ? String(row[headerIndices.ringkorn]).trim() : null,
+            stock: (headerIndices.schaft !== undefined && row[headerIndices.schaft]) ? String(row[headerIndices.schaft]).trim() : null,
+            caliber_distance: (headerIndices.distanz !== undefined && row[headerIndices.distanz]) ? String(row[headerIndices.distanz]).trim() : (category === 'gewehr' ? '50m' : null),
+            accessories: (headerIndices.zubehoer !== undefined && row[headerIndices.zubehoer]) ? String(row[headerIndices.zubehoer]).trim() : null,
+            special_notes: (headerIndices.spezielles !== undefined && row[headerIndices.spezielles]) ? String(row[headerIndices.spezielles]).trim() : null,
+            key_name: (category === 'schluessel' && headerIndices.typ !== undefined) ? String(row[headerIndices.typ]).trim() : null,
+            key_number: (category === 'schluessel' && headerIndices.seriennummer !== undefined) ? String(row[headerIndices.seriennummer]).trim() : null
+        };
+
+        // Smarte Toleranz bei Gewehren: Falls in der Spalte "Distanz" Schaft-Begriffe stehen
+        if (category === 'gewehr') {
+            const distNorm = (itemObj.caliber_distance || '').toLowerCase();
+            if (!itemObj.stock && (distNorm.includes('schaft') || distNorm.includes('alu') || distNorm.includes('holz') || distNorm.includes('bügel') || distNorm.includes('buegel') || distNorm.includes('standard'))) {
+                itemObj.stock = itemObj.caliber_distance;
+                itemObj.caliber_distance = '50m';
+            }
+        }
+
+        // Auf ganze Franken runden falls Dezimalstellen vorhanden (gemäss Vorstands-Vorgabe)
+        if (itemObj.purchase_price !== null) itemObj.purchase_price = Math.round(itemObj.purchase_price);
+        if (itemObj.selling_price !== null) itemObj.selling_price = Math.round(itemObj.selling_price);
+        if (itemObj.retail_price !== null) itemObj.retail_price = Math.round(itemObj.retail_price);
+        if (itemObj.discount_amount !== null) itemObj.discount_amount = Math.round(itemObj.discount_amount);
+        if (itemObj.base_price !== null) itemObj.base_price = Math.round(itemObj.base_price);
+        if (itemObj.finishing_price !== null) itemObj.finishing_price = Math.round(itemObj.finishing_price);
+
+        // Falls Katalogpreis fehlt, aus Kaufpreis oder Verkaufspreis + Sponsoring ableiten:
+        if (itemObj.retail_price === null && (category === 'kleidung' || category === 'schiessbekleidung')) {
+            if (itemObj.purchase_price !== null) {
+                itemObj.retail_price = itemObj.purchase_price;
+            } else if (itemObj.selling_price !== null && itemObj.discount_amount !== null) {
+                itemObj.retail_price = itemObj.selling_price + itemObj.discount_amount;
+            }
+        }
+
+        parsedItems.push(itemObj);
+    });
+
+    window._invImportParsedRows = parsedItems;
+    invRenderPreview(parsedItems, category);
+};
+
+window.invRenderPreview = function(items, category) {
+    const statsEl = document.getElementById('inv-import-stats');
+    const statsText = document.getElementById('inv-import-stats-text');
+    const badgeValid = document.getElementById('inv-import-badge-valid');
+    const tableWrap = document.getElementById('inv-import-preview-wrapper');
+    const thead = document.getElementById('inv-import-preview-thead');
+    const tbody = document.getElementById('inv-import-preview-tbody');
+    const btnImport = document.getElementById('btn-inv-do-import');
+
+    if (!items || items.length === 0) {
+        statsEl.classList.add('d-none');
+        tableWrap.classList.add('d-none');
+        btnImport.disabled = true;
+        return;
+    }
+
+    statsEl.classList.remove('d-none');
+    tableWrap.classList.remove('d-none');
+    btnImport.disabled = false;
+
+    statsText.innerText = `${items.length} Datensätze aus Datei erfolgreich analysiert`;
+    badgeValid.innerText = `${items.length} bereit zum Import`;
+
+    if (category === 'kleidung') {
+        thead.innerHTML = `
+            <th>ID</th>
+            <th>Typ</th>
+            <th>Modell</th>
+            <th>Grösse</th>
+            <th>Kaufdatum</th>
+            <th class="text-end">Total Einstand (CHF)</th>
+            <th class="text-end">Einstand Material (CHF)</th>
+            <th class="text-end">Einstand Druck (CHF)</th>
+            <th class="text-end">Verkauf gerundet (CHF)</th>
+            <th class="text-end">Sponsoring Beitrag (CHF)</th>
+            <th>Sponsor-Firma</th>
+            <th class="text-end">Endpreis Mitglied (CHF)</th>
+            <th>Status</th>
+        `;
+        tbody.innerHTML = items.map(it => `
+            <tr>
+                <td class="font-monospace fw-bold text-primary">${escapeHtml(it.id)}</td>
+                <td><span class="badge bg-light text-dark border">${escapeHtml(it.item_type || '-')}</span></td>
+                <td>${escapeHtml(it.model || '-')}</td>
+                <td><span class="badge bg-secondary-subtle text-secondary border">${escapeHtml(it.size || '-')}</span></td>
+                <td class="small text-muted font-monospace">${it.purchase_date || '-'}</td>
+                <td class="text-end font-monospace">${it.purchase_price !== null ? it.purchase_price + '.00' : '-'}</td>
+                <td class="text-end font-monospace text-muted">${it.base_price !== null ? it.base_price + '.00' : '-'}</td>
+                <td class="text-end font-monospace text-muted">${it.finishing_price !== null ? it.finishing_price + '.00' : '-'}</td>
+                <td class="text-end font-monospace text-muted">${it.retail_price !== null ? it.retail_price + '.00' : '-'}</td>
+                <td class="text-end font-monospace text-danger">${it.discount_amount !== null ? '-' + it.discount_amount + '.00' : '-'}</td>
+                <td>${escapeHtml(it.sponsor_company || '-')}</td>
+                <td class="text-end font-monospace fw-bold text-success">${it.selling_price !== null ? it.selling_price + '.00' : '-'}</td>
+                <td><span class="badge bg-success-subtle text-success border">${escapeHtml(it.status)}</span></td>
+            </tr>
+        `).join('');
+    } else if (category === 'schiessbekleidung') {
+        thead.innerHTML = `
+            <th>ID</th>
+            <th>Typ</th>
+            <th>Modell</th>
+            <th>Hersteller</th>
+            <th>Grösse</th>
+            <th>Kaufdatum</th>
+            <th class="text-end">Total Einstand (CHF)</th>
+            <th class="text-end">Depot (CHF)</th>
+            <th>Status</th>
+        `;
+        tbody.innerHTML = items.map(it => `
+            <tr>
+                <td class="font-monospace fw-bold text-primary">${escapeHtml(it.id)}</td>
+                <td><span class="badge bg-light text-dark border">${escapeHtml(it.item_type || '-')}</span></td>
+                <td>${escapeHtml(it.model || '-')}</td>
+                <td>${escapeHtml(it.manufacturer || '-')}</td>
+                <td><span class="badge bg-secondary-subtle text-secondary border">${escapeHtml(it.size || '-')}</span></td>
+                <td class="small text-muted font-monospace">${it.purchase_date || '-'}</td>
+                <td class="text-end font-monospace">${it.purchase_price !== null ? it.purchase_price + '.00' : '-'}</td>
+                <td class="text-end font-monospace text-primary">${it.depot_amount ? Number(it.depot_amount).toFixed(2) : '-'}</td>
+                <td><span class="badge bg-success-subtle text-success border">${escapeHtml(it.status)}</span></td>
+            </tr>
+        `).join('');
+    } else if (category === 'gewehr') {
+        thead.innerHTML = `
+            <th>ID</th>
+            <th>Hersteller & Modell</th>
+            <th>Laufnummer</th>
+            <th>Schaft</th>
+            <th>Distanz</th>
+            <th>Visierung</th>
+            <th>Kaufdatum</th>
+            <th class="text-end">Total Einstand (CHF)</th>
+            <th class="text-end">Depot (CHF)</th>
+            <th>Status</th>
+        `;
+        tbody.innerHTML = items.map(it => `
+            <tr>
+                <td class="font-monospace fw-bold text-primary">${escapeHtml(it.id)}</td>
+                <td>${escapeHtml([it.manufacturer, it.model].filter(Boolean).join(' ') || '-')}</td>
+                <td class="font-monospace">${escapeHtml(it.serial_number || '-')}</td>
+                <td>${escapeHtml(it.stock || '-')}</td>
+                <td><span class="badge bg-secondary-subtle text-secondary border">${escapeHtml(it.caliber_distance || '50m')}</span></td>
+                <td class="small text-muted">${escapeHtml([it.diopter, it.front_sight].filter(Boolean).join(' / ') || '-')}</td>
+                <td class="small text-muted font-monospace">${it.purchase_date || '-'}</td>
+                <td class="text-end font-monospace">${it.purchase_price !== null ? it.purchase_price + '.00' : '-'}</td>
+                <td class="text-end font-monospace text-primary">${it.depot_amount ? Number(it.depot_amount).toFixed(2) : '-'}</td>
+                <td><span class="badge bg-success-subtle text-success border">${escapeHtml(it.status)}</span></td>
+            </tr>
+        `).join('');
+    } else { // schluessel
+        thead.innerHTML = `
+            <th>ID</th>
+            <th>Bezeichnung</th>
+            <th>Schlüssel-Nummer</th>
+            <th class="text-end">Depot (CHF)</th>
+            <th>Status</th>
+        `;
+        tbody.innerHTML = items.map(it => `
+            <tr>
+                <td class="font-monospace fw-bold text-primary">${escapeHtml(it.id)}</td>
+                <td><span class="badge bg-light text-dark border">${escapeHtml(it.key_name || '-')}</span></td>
+                <td class="font-monospace">${escapeHtml(it.key_number || '-')}</td>
+                <td class="text-end font-monospace text-primary">${it.depot_amount ? Number(it.depot_amount).toFixed(2) : '-'}</td>
+                <td><span class="badge bg-success-subtle text-success border">${escapeHtml(it.status)}</span></td>
+            </tr>
+        `).join('');
+    }
+};
+
+window.invExecuteImport = async function() {
+    if (typeof canAdd === 'function' && !canAdd()) {
+        await invAlert('Keine Berechtigung', 'Du hast keine Berechtigung zum Importieren von Inventargegenständen.', 'danger');
+        return;
+    }
+
+    const items = window._invImportParsedRows;
+    if (!items || items.length === 0) return;
+
+    const ok = await invConfirm({
+        title: `${items.length} Datensätze importieren?`,
+        message: `Möchtest du <strong>${items.length} Datensätze</strong> jetzt verbindlich in die Supabase-Datenbank importieren?`,
+        type: 'primary',
+        confirmText: 'Jetzt importieren',
+        cancelText: 'Abbrechen'
+    });
+    if (!ok) return;
+
+    const runImport = async () => {
+        const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
+        if (!supa) {
+            await invAlert('Verbindungsfehler', 'Supabase Client ist nicht initialisiert.', 'danger');
+            return;
+        }
+
+        const category = document.getElementById('inv-import-category').value;
+        try {
+            const { error } = await supa.from('inventory_items').upsert(items, { onConflict: 'id' });
+            if (error) {
+                console.error("Import-Fehler:", error);
+                await invAlert('Importfehler', 'Fehler beim Importieren: ' + invEscapeHtml(error.message), 'danger');
+                return;
+            }
+
+            // Falls neue Kleidungstypen importiert wurden, in inventory_config ergänzen
+            if ((category === 'kleidung' || category === 'schiessbekleidung') && supa) {
+                try {
+                    const typKey = category === 'schiessbekleidung' ? 'Schiessbekleidung_Typ' : 'Kleidung_Typ';
+                    const knownTypes = (inventarState?.config || []).map(c => c[typKey]).filter(Boolean);
+                    const newTypes = [...new Set(items.map(it => it.item_type).filter(Boolean))].filter(t => !knownTypes.includes(t));
+                    for (const nt of newTypes) {
+                        await supa.from('inventory_config').insert([{
+                            config_key: typKey,
+                            value: nt,
+                            sort_order: 99
+                        }]);
+                    }
+                } catch (_) {}
+            }
+
+            // Audit Log
+            try {
+                await supa.from('inventory_audit_log').insert([{
+                    timestamp: new Date().toISOString(),
+                    user_name: (window.currentUser || localStorage.getItem('portal_user') || 'Vorstand'),
+                    action: 'excelImport',
+                    details: `Excel-Import: ${items.length} Artikel in Kategorie ${category} importiert.`
+                }]);
+            } catch (_) {}
+
+            const modalEl = document.getElementById('invModalExcelImport');
+            if (modalEl) {
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                if (modal) modal.hide();
+            }
+
+            // Neu laden
+            await loadInventarData(true);
+            await invAlert('Import erfolgreich', `<strong>${items.length} Datensätze</strong> wurden erfolgreich in Supabase importiert.`, 'success');
+        } catch (err) {
+            console.error("Import Exception:", err);
+            await invAlert('Ausnahmefehler', 'Ausnahme beim Import: ' + invEscapeHtml(err.message), 'danger');
+        }
+    };
+
+    if (window.UIButtonKit && typeof window.UIButtonKit.withLoading === 'function') {
+        await window.UIButtonKit.withLoading('#btn-inv-do-import', runImport);
+    } else {
+        await runImport();
+    }
+};
+
+window.invDownloadExcelTemplate = function() {
+    if (typeof XLSX === 'undefined') {
+        invAlert('Bibliothek fehlt', 'SheetJS ist im Portal nicht verfügbar.', 'danger');
+        return;
+    }
+
+    const category = document.getElementById('inv-import-category') ? document.getElementById('inv-import-category').value : 'kleidung';
+    let sampleData = [];
+    let fileName = `Muster_Inventar_${category}.xlsx`;
+
+    if (category === 'kleidung') {
+        sampleData = [
+            {
+                "ID": "",
+                "Typ": "Trainerjacke",
+                "Modell": "Erima Celebrate 125",
+                "Hersteller": "Erima",
+                "Groesse": "XS",
+                "Kaufdatum": "2024-05-01",
+                "Total Einstandspreis": 80,
+                "Einstandspreis Material": 42,
+                "Einstandspreis Druck": 38,
+                "Verkaufspreis gerundet": 83,
+                "Sponsoring Beitrag": 20,
+                "Sponsor-Firma": "Clientis",
+                "Endpreis für Mitglied": 63,
+                "Depotbetrag": 0,
+                "Status": "Im Lager"
+            },
+            {
+                "ID": "",
+                "Typ": "Softshell-Jacke",
+                "Modell": "Erima Function",
+                "Hersteller": "Erima",
+                "Groesse": "38",
+                "Kaufdatum": "2024-05-01",
+                "Total Einstandspreis": 122,
+                "Einstandspreis Material": 65,
+                "Einstandspreis Druck": 57,
+                "Verkaufspreis gerundet": 127,
+                "Sponsoring Beitrag": 31,
+                "Sponsor-Firma": "Clientis",
+                "Endpreis für Mitglied": 96,
+                "Depotbetrag": 0,
+                "Status": "Im Lager"
+            },
+            {
+                "ID": "",
+                "Typ": "Team-Jacke",
+                "Modell": "Erima Team Jacke m. abnehmb. Ärmeln",
+                "Hersteller": "Erima",
+                "Groesse": "S",
+                "Kaufdatum": "2024-05-01",
+                "Total Einstandspreis": 110,
+                "Einstandspreis Material": 60,
+                "Einstandspreis Druck": 50,
+                "Verkaufspreis gerundet": 114,
+                "Sponsoring Beitrag": 27,
+                "Sponsor-Firma": "Clientis",
+                "Endpreis für Mitglied": 87,
+                "Depotbetrag": 0,
+                "Status": "Im Lager"
+            },
+            {
+                "ID": "",
+                "Typ": "Poloshirt",
+                "Modell": "Erima Celebrate 125",
+                "Hersteller": "Erima",
+                "Groesse": "XXL",
+                "Kaufdatum": "2024-05-01",
+                "Total Einstandspreis": 69,
+                "Einstandspreis Material": 36,
+                "Einstandspreis Druck": 33,
+                "Verkaufspreis gerundet": 72,
+                "Sponsoring Beitrag": 17,
+                "Sponsor-Firma": "Clientis",
+                "Endpreis für Mitglied": 55,
+                "Depotbetrag": 0,
+                "Status": "Im Lager"
+            },
+            {
+                "ID": "",
+                "Typ": "T-Shirt",
+                "Modell": "Erima Celebrate 125",
+                "Hersteller": "Erima",
+                "Groesse": "S",
+                "Kaufdatum": "2024-05-01",
+                "Total Einstandspreis": 65,
+                "Einstandspreis Material": 34,
+                "Einstandspreis Druck": 31,
+                "Verkaufspreis gerundet": 68,
+                "Sponsoring Beitrag": 17,
+                "Sponsor-Firma": "Clientis",
+                "Endpreis für Mitglied": 51,
+                "Depotbetrag": 0,
+                "Status": "Im Lager"
+            },
+            {
+                "ID": "",
+                "Typ": "T-Shirt",
+                "Modell": "Erima Celebrate 125",
+                "Hersteller": "Erima",
+                "Groesse": "164",
+                "Kaufdatum": "2024-05-01",
+                "Total Einstandspreis": 62,
+                "Einstandspreis Material": 32,
+                "Einstandspreis Druck": 30,
+                "Verkaufspreis gerundet": 65,
+                "Sponsoring Beitrag": 16,
+                "Sponsor-Firma": "Clientis",
+                "Endpreis für Mitglied": 49,
+                "Depotbetrag": 0,
+                "Status": "Im Lager"
+            }
+        ];
+    } else if (category === 'schiessbekleidung') {
+        sampleData = [
+            {
+                "ID": "",
+                "Typ": "Schiessjacke",
+                "Modell": "Sauer Advantage",
+                "Hersteller": "Sauer",
+                "Groesse": "50",
+                "Kaufdatum": "2024-01-15",
+                "Total Einstandspreis": 650,
+                "Depotbetrag": 150,
+                "Status": "Im Lager"
+            },
+            {
+                "ID": "",
+                "Typ": "Schiesshose",
+                "Modell": "Capapie Match",
+                "Hersteller": "Capapie",
+                "Groesse": "48",
+                "Kaufdatum": "2024-01-15",
+                "Total Einstandspreis": 480,
+                "Depotbetrag": 100,
+                "Status": "Im Lager"
+            },
+            {
+                "ID": "",
+                "Typ": "Handschuh",
+                "Modell": "Kustermann Contact",
+                "Hersteller": "Kustermann",
+                "Groesse": "M",
+                "Kaufdatum": "2024-03-20",
+                "Total Einstandspreis": 85,
+                "Depotbetrag": 0,
+                "Status": "Im Lager"
+            }
+        ];
+    } else if (category === 'schluessel') {
+        sampleData = [
+            {
+                "ID": "",
+                "Bezeichnung": "allgemein",
+                "Nummer": "2410",
+                "Depotbetrag": 50,
+                "Status": "Im Lager"
+            },
+            {
+                "ID": "",
+                "Bezeichnung": "Wirtschaftsraum",
+                "Nummer": "5001",
+                "Depotbetrag": 50,
+                "Status": "Im Lager"
+            },
+            {
+                "ID": "",
+                "Bezeichnung": "Tresor 1",
+                "Nummer": "TR-01",
+                "Depotbetrag": 50,
+                "Status": "Im Lager"
+            }
+        ];
+    } else { // gewehr
+        sampleData = [
+            {
+                "ID": "",
+                "Hersteller": "Bleiker",
+                "Modell": "Challenger",
+                "Laufnummer": "CH-9812",
+                "Diopter": "Gehmann 510",
+                "Ringkorn": "Centra 3.8",
+                "Schaft": "Aluschaft mit verstellbarer Hakenkappe",
+                "Distanz": "50m",
+                "Zubehoer": "Handstop, Putzzeug, Koffer",
+                "Spezielles": "Vereinswaffe Nachwuchs",
+                "Kaufdatum": "2023-11-01",
+                "Total Einstandspreis": 2500,
+                "Depotbetrag": 200,
+                "Status": "Im Lager"
+            },
+            {
+                "ID": "",
+                "Hersteller": "Walther",
+                "Modell": "KK500",
+                "Laufnummer": "W-44321",
+                "Diopter": "Walther Insight Out",
+                "Ringkorn": "M18",
+                "Schaft": "Holzschaft mit Bügel",
+                "Distanz": "50m",
+                "Zubehoer": "Visierlinienerhöhung",
+                "Spezielles": "Sehr gepflegt",
+                "Kaufdatum": "2024-02-10",
+                "Total Einstandspreis": 3200,
+                "Depotbetrag": 250,
+                "Status": "Im Lager"
+            }
+        ];
+    }
+
+    const ws = XLSX.utils.json_to_sheet(sampleData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Inventar");
+
+    // Zweites Arbeitsblatt mit detaillierten Hinweisen
+    const guideData = [
+        { "Hinweis": "1. Spaltenzeile (Zeile 1)", "Erklärung": "Die oberste Zeile enthält die Feldnamen. Diese Zeile bitte nicht löschen oder umbenennen." },
+        { "Hinweis": "2. Beispieldaten (ab Zeile 2)", "Erklärung": "Die enthaltenen Zeilen sind Musterdaten zur Veranschaulichung. Du kannst sie vor dem Import löschen oder durch deine echten Artikel ersetzen." },
+        { "Hinweis": "3. Spalte ID", "Erklärung": "Für neue Artikel die Spalte ID einfach leer lassen. Das System vergibt beim Import automatisch die nächste fortlaufende Nummer (z.B. K-54, SCH-12, G-15). Wird eine bestehende ID eingetragen, wird der Datensatz aktualisiert." },
+        { "Hinweis": "4. Fachbegriffe Preise", "Erklärung": "Total Einstandspreis (Material + Druck), Einstandspreis Material (Grundpreis), Einstandspreis Druck (Veredelung), Verkaufspreis gerundet (Katalogpreis), Sponsoring Beitrag (vom Verein/Sponsor getragen), Sponsor-Firma (z.B. Clientis), Endpreis für Mitglied (effektiver Rechnungsbetrag)." },
+        { "Hinweis": "5. Beträge & Zahlen", "Erklärung": "Preise als Zahl eingeben (z.B. 80 oder 63.50). Währungsangaben wie CHF oder Tausendertrennzeichen werden automatisch bereinigt." },
+        { "Hinweis": "6. Datumsformat", "Erklärung": "Kaufdatum als JJJJ-MM-TT (z.B. 2024-05-01) oder TT.MM.JJJJ (z.B. 01.05.2024) eingeben." }
+    ];
+    const wsGuide = XLSX.utils.json_to_sheet(guideData);
+    XLSX.utils.book_append_sheet(wb, wsGuide, "Anleitung");
+
+    XLSX.writeFile(wb, fileName);
+};

@@ -1,0 +1,923 @@
+/**
+ * pdf-engine.js
+ * ==============================================================================
+ * Phase 21: Zentrale PDF-Engine Client-Integration für das Vorstand-Portal
+ * Projekt: Vereinsportal Sportschützen Muhen
+ *
+ * Stellt modulübergreifend bereit:
+ * - window.generatePdfViaEngine(options)
+ * - window.rnGeneratePDFOnly(invoiceId, name) [Ablösung GAS in Rechnungen & Faktura]
+ * - window.jbGenerateInvoicePdfRemote(rId, pn) [Ablösung GAS in Jahresbeitrag]
+ * - window.vmGenerateRentalContractPdf(bookingId) [Ablösung GAS in Vermietung]
+ * - Swiss QR-Bill (SIX SPC 0200 1) Vektor- & Browser-Engine mit Direktablage in
+ *   Supabase Storage (Bucket 'operatives-storage') und Paperless-NGX Anbindung.
+ * ==============================================================================
+ */
+
+(function () {
+    const SUPABASE_URL = 'https://supabase-muhen.danfamily.uk';
+    const FUNCTION_NAME = 'generate-pdf';
+    const STORAGE_BUCKET = 'operatives-storage';
+
+    const CLUB_IBAN = 'CH0680808003633131892';
+    const CLUB_IBAN_FORMATTED = 'CH06 8080 8003 6331 3189 2';
+    const CLUB_NAME = 'Sportschützen Muhen';
+    const CLUB_STREET = 'Schiessanlage Hard';
+    const CLUB_ZIP = '5037';
+    const CLUB_CITY = 'Muhen';
+    const CLUB_COUNTRY = 'CH';
+    const CLUB_EMAIL = 'info@sportschuetzen-muhen.ch';
+    const CLUB_WEBSITE = 'www.sportschuetzen-muhen.ch';
+
+    // Hilfsfunktion: Wandelt Ländereingaben in normierte 2-stellige ISO 3166-1 alpha-2 Codes um (SIX-Pflicht)
+    function normalizeCountryCode(country) {
+        if (!country) return "CH";
+        const c = String(country).trim().toUpperCase();
+        if (c === "CH" || c === "SCHWEIZ" || c === "SWITZERLAND" || c === "SUISSE" || c === "SVIZZERA") return "CH";
+        if (c === "LI" || c === "LIECHTENSTEIN" || c === "FL") return "LI";
+        if (c === "DE" || c === "DEUTSCHLAND" || c === "GERMANY") return "DE";
+        if (c === "AT" || c === "ÖSTERREICH" || c === "OESTERREICH" || c === "AUSTRIA") return "AT";
+        if (c === "FR" || c === "FRANKREICH" || c === "FRANCE") return "FR";
+        if (c === "IT" || c === "ITALIEN" || c === "ITALY") return "IT";
+        if (/^[A-Z]{2}$/.test(c)) return c;
+        return "CH";
+    }
+
+    /**
+     * Erzeugt den standardisierten Schweizer QR-Rechnungstext nach SIX SPC 0200 1
+     */
+    window.createSwissQrBillPayload = function (invoice, recipient = {}) {
+        const cleanIban = CLUB_IBAN.replace(/\s/g, '');
+        const isFirma = recipient.typ === 'firma' ||
+            Boolean(recipient.firma) ||
+            Boolean(recipient.name && recipient.name.match(/\b(AG|GmbH|Genossenschaft|Verein|Verband|Stiftung|Gemeinde)\b/i));
+
+        let debtorName = '';
+        if (isFirma) {
+            debtorName = recipient.firma || recipient.name || '';
+        } else {
+            debtorName = [recipient.vorname, recipient.nachname].filter(Boolean).join(' ').trim() || (recipient.name || '');
+        }
+        if (debtorName.length > 70) debtorName = debtorName.substring(0, 70);
+
+        // Strasse und Hausnummer aufteilen
+        const strasse = (recipient.strasse || '').trim();
+        const parts = strasse.split(/\s+(?=\d)/);
+        const streetName = (parts[0] || '').substring(0, 70);
+        const houseNumber = (parts.slice(1).join(' ') || '').substring(0, 16);
+
+        const totalAmount = Number(invoice.total_amount || invoice.amount || 0);
+        const formattedAmount = totalAmount > 0 ? totalAmount.toFixed(2) : '';
+        const qrRefText = `${invoice.id || 'RECHNUNG'} / ${invoice.type || 'Rechnung'} ${invoice.year || new Date().getFullYear()}`.substring(0, 140);
+
+        // Referenz-Typ nach SIX Spezifikation (QRR = 27-stellig, SCOR = ISO 11649, NON = Keine)
+        let refType = "NON";
+        let refValue = "";
+        const rawRef = (invoice.qr_reference || invoice.reference || '').replace(/\s/g, '');
+        if (rawRef.length === 27 && /^\d{27}$/.test(rawRef)) {
+            refType = "QRR";
+            refValue = rawRef;
+        } else if (rawRef.startsWith('RF') && rawRef.length >= 5 && rawRef.length <= 25) {
+            refType = "SCOR";
+            refValue = rawRef;
+        }
+
+        return [
+            "SPC", "0200", "1",
+            cleanIban,
+            "S", CLUB_NAME, CLUB_STREET, "", CLUB_ZIP, CLUB_CITY, CLUB_COUNTRY,
+            "", "", "", "", "", "", "",
+            formattedAmount, "CHF",
+            "S", debtorName || "Debitor",
+            streetName, houseNumber,
+            (recipient.plz || CLUB_ZIP).substring(0, 16),
+            (recipient.ort || CLUB_CITY).substring(0, 35),
+            normalizeCountryCode(recipient.land || recipient.country),
+            refType, refValue,
+            qrRefText,
+            "EPD"
+        ].join('\n');
+    };
+
+    /**
+     * Zentraler PDF-Generierungs-Call an die Supabase Edge Function 'generate-pdf'
+     * @param {Object} options
+     * @param {string} options.action - 'generate-invoice' | 'generate-contract'
+     * @param {string} options.invoiceId - ID der Rechnung
+     * @param {string} [options.bookingId] - ID der Vermietung
+     * @param {Object} options.recipient - { vorname, nachname, strasse, plz, ort, email, firma }
+     * @param {Object} [options.sender] - { vorname, nachname, funktion, verein, email }
+     * @param {Object} [options.layout] - { title, intro, outro, notice }
+     * @param {Array}  [options.positions] - [{ description, quantity, unit_price, amount }]
+     * @param {number} [options.totalAmount]
+     * @param {number|string} [options.year]
+     * @param {string} [options.type]
+     * @returns {Promise<{success: boolean, pdfUrl?: string, storagePath?: string, pdfBase64?: string, error?: string}>}
+     */
+    window.generatePdfViaEngine = async function (options) {
+        if (!options || (!options.invoiceId && !options.bookingId && !options.year && !options.action)) {
+            return { success: false, error: 'Rechnungs-ID, Buchungs-ID oder Aktions-Parameter erforderlich.' };
+        }
+
+        const supa = (typeof window.getSupabaseClient === 'function')
+            ? window.getSupabaseClient()
+            : (window.supabaseClient || null);
+
+        let authToken = null;
+        let apiKey = null;
+
+        if (supa) {
+            try {
+                const session = await supa.auth.getSession();
+                authToken = session?.data?.session?.access_token || null;
+                apiKey = supa.supabaseKey || null;
+            } catch (_) {}
+        }
+
+        const defaultAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
+        const keyToUse = apiKey || defaultAnonKey;
+
+        const headers = {
+            'Content-Type': 'application/json',
+            'apikey': keyToUse,
+            'Authorization': `Bearer ${authToken || keyToUse}`
+        };
+
+        const targetUrl = `${SUPABASE_URL}/functions/v1/${FUNCTION_NAME}`;
+        console.log(`📄 [PDF-Engine] Erzeuge PDF via Supabase Edge Function (${options.action || 'generate-invoice'}):`, options.invoiceId || options.bookingId || options.year || options.action);
+
+        try {
+            const resp = await fetch(targetUrl, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify(options)
+            });
+
+            const result = await resp.json();
+
+            if (resp.ok && result.success) {
+                if (result.pdfUrl && typeof window.resolvePrivateStorageUrl === 'function') {
+                    result.pdfUrl = await window.resolvePrivateStorageUrl(result.pdfUrl);
+                }
+                console.log(`✅ [PDF-Engine] PDF erfolgreich erstellt & in Storage abgelegt:`, result.pdfUrl);
+                return result;
+            } else {
+                console.warn(`⚠️ [PDF-Engine] Edge Function Fehler:`, result);
+                return {
+                    success: false,
+                    error: result.error || `HTTP ${resp.status}: PDF-Generierung fehlgeschlagen`
+                };
+            }
+        } catch (fetchErr) {
+            console.error(`❌ [PDF-Engine] Netzwerk-/Verbindungsfehler:`, fetchErr);
+            return {
+                success: false,
+                error: `Verbindung zur PDF-Engine fehlgeschlagen: ${fetchErr.message}`
+            };
+        }
+    };
+
+    /**
+     * Browser-Fallback bewusst deaktiviert:
+     * Gemäss Architektur-Richtlinie (Single Source of Truth auf Supabase & striktes Verbot
+     * stiller Fallbacks) werden PDFs ausschliesslich über die zentrale Supabase Edge Function
+     * 'generate-pdf' erzeugt.
+     */
+    window.generatePdfClientFallback = null;
+
+    // ==========================================================================
+    // MODUL-ÜBERSCHREIBUNGEN: ABLÖSUNG DER GOOGLE APPS SCRIPTS
+    // ==========================================================================
+
+    /**
+     * Zentrale Ablösung für Rechnungen-Cockpit (vorstand/js/rechnungen.js)
+     */
+    window.rnGeneratePDFOnly = async function (invoiceId, name) {
+        if (typeof showLoadingOverlay === 'function') {
+            showLoadingOverlay(`Generiere QR-Rechnung PDF für ${name || invoiceId}...`);
+        }
+
+        try {
+            let result = null;
+
+            // 1. Primär: Zentrale RechnungsCore-Engine nutzen (Single Source of Truth, immer forceRecreate)
+            if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
+                try {
+                    result = await window.RechnungsCore.renderPdf(invoiceId, { forceRecreate: true });
+                } catch (coreErr) {
+                    console.warn("⚠️ RechnungsCore.renderPdf Fehler:", coreErr);
+                    throw coreErr;
+                }
+            }
+
+            // 2. Direktaufruf an Engine falls RechnungsCore nicht im Scope
+            if (!result || !result.success) {
+                const inv = (window._invoices || []).find(i => String(i.id).trim() === String(invoiceId).trim()) || { id: invoiceId, name: name };
+                const m = (window._mglData || []).find(x => String(x.PersonNumber).trim() === String(inv.PersonNumber || '').trim()) || {};
+
+                const recipient = (typeof rnGetRecipientForInvoice === 'function')
+                    ? rnGetRecipientForInvoice(inv)
+                    : {
+                        vorname: m.FirstName || (inv.name ? inv.name.split(' ')[0] : ''),
+                        nachname: m.LastName || (inv.name ? inv.name.split(' ').slice(1).join(' ') : ''),
+                        name: inv.name || `${m.FirstName || ''} ${m.LastName || ''}`.trim(),
+                        strasse: m.Street || m.Strasse || '',
+                        plz: m.ZipCode || m.PLZ || m.PostCode || '5037',
+                        ort: m.City || m.Ort || 'Muhen',
+                        email: m.Email || m.PrimaryEmail || ''
+                    };
+
+                const sender = (inv.sender_address && Object.keys(inv.sender_address).length > 0)
+                    ? inv.sender_address
+                    : ((typeof rnGetLoggedInSender === 'function')
+                        ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag')
+                        : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag') : null));
+
+                let positions = inv.positions || (window._invoicePositionsCache && window._invoicePositionsCache[invoiceId]) || [];
+                const supa = (typeof window.getSupabaseClient === 'function')
+                    ? window.getSupabaseClient()
+                    : (window.supabaseClient || null);
+
+                if ((!positions || positions.length === 0) && supa) {
+                    try {
+                        const { data: posData } = await supa.from('invoice_positions').select('*').eq('invoice_id', invoiceId).order('position_nr', { ascending: true });
+                        if (posData && posData.length > 0) {
+                            positions = (typeof mapPositionFromSupabase === 'function') ? posData.map(mapPositionFromSupabase) : posData;
+                            if (!window._invoicePositionsCache) window._invoicePositionsCache = {};
+                            window._invoicePositionsCache[invoiceId] = positions;
+                            inv.positions = positions;
+                        }
+                    } catch (_) {}
+                }
+
+                const totalAmount = Number(inv.total_amount || (positions.reduce((s, p) => s + (Number(p.amount) || 0), 0)) || 0);
+
+                const payload = {
+                    action: 'generate-invoice',
+                    invoiceId: invoiceId,
+                    recipient: recipient,
+                    sender: sender,
+                    positions: positions,
+                    totalAmount: totalAmount,
+                    year: inv.year || new Date().getFullYear(),
+                    type: inv.type || 'Rechnung',
+                    forceRecreate: true
+                };
+
+                result = await window.generatePdfViaEngine(payload);
+            }
+
+            if (result && result.success) {
+                if (typeof showSuccess === 'function') {
+                    showSuccess("🎉 Schweizer QR-Rechnung erfolgreich generiert!");
+                }
+
+                // In-Memory-Array synchronisieren
+                const inv = (window._invoices || []).find(i => String(i.id).trim() === String(invoiceId).trim());
+                if (inv) {
+                    inv.pdf_url = result.pdfUrl || inv.pdf_url;
+                    inv.pdf_storage_path = result.storagePath || inv.pdf_storage_path;
+                }
+
+                // PDF im neuen Browser-Tab mit Cache-Busting öffnen
+                if (result.pdfUrl && result.pdfUrl.startsWith('http')) {
+                    const urlToOpen = result.pdfUrl.includes('?') ? `${result.pdfUrl}&t=${Date.now()}` : `${result.pdfUrl}?t=${Date.now()}`;
+                    window.open(urlToOpen, '_blank');
+                } else if (result.pdfBase64) {
+                    if (typeof openPdfBase64 === 'function') {
+                        openPdfBase64(result.pdfBase64);
+                    } else {
+                        const win = window.open();
+                        win?.document.write(`<iframe src="${result.pdfBase64}" frameborder="0" style="border:0; top:0; left:0; bottom:0; right:0; width:100%; height:100%;" allowfullscreen></iframe>`);
+                    }
+                }
+
+                if (typeof loadRechnungenData === 'function') {
+                    await loadRechnungenData(true);
+                }
+            } else {
+                throw new Error(result?.error || "Generierung fehlgeschlagen.");
+            }
+        } catch (err) {
+            console.error("PDF Fehler:", err);
+            if (window.UIConfirmKit) {
+                await window.UIConfirmKit.alert({
+                    title: 'PDF Fehler',
+                    message: 'Das Rechnungs-PDF konnte nicht erstellt werden: ' + (err.message || err),
+                    type: 'danger'
+                });
+            } else if (typeof showError === 'function') {
+                showError("PDF Fehler: " + (err.message || err));
+            }
+        } finally {
+            if (typeof hideLoadingOverlay === 'function') {
+                hideLoadingOverlay();
+            }
+        }
+    };
+
+    /**
+     * Zentrale Ablösung für Jahresbeitrag-Cockpit (vorstand/js/jahresbeitrag/jahresbeitrag-overview.js)
+     */
+    window.jbGenerateInvoicePdfRemote = async function (rId, pn) {
+        const btn = document.getElementById(`btn-pdf-${rId}`);
+        let oldHtml = '';
+        if (btn) {
+            oldHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm" style="width: 14px; height: 14px;"></span>';
+        }
+
+        try {
+            const allJb = window._jbData || [];
+            const r = allJb.find(x => String(x.id).trim() === String(rId).trim());
+            if (!r) throw new Error("Rechnungs-Eintrag nicht gefunden.");
+
+            const m = (window._jbMemberMap && window._jbMemberMap[String(pn)]) || {};
+            const name = m.FirstName ? `${m.FirstName} ${m.LastName}` : pn;
+
+            // Invoice-ID ermitteln
+            let invoiceId = r.id;
+            if (typeof ensureInvoiceCreatedRemote === 'function') {
+                invoiceId = await ensureInvoiceCreatedRemote(r, m, name);
+            }
+
+            const sender = (typeof rnGetLoggedInSender === 'function')
+                ? rnGetLoggedInSender('Jahresbeitrag')
+                : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType(r.type || 'Jahresbeitrag') : null);
+
+            const layout = (window._invoiceLayouts && window._invoiceLayouts['Jahresbeitrag']) || null;
+
+            const payload = {
+                action: 'generate-invoice',
+                invoiceId: invoiceId,
+                forceRecreate: true,
+                recipient: {
+                    person_number: String(pn || ''),
+                    vorname: m.FirstName || '',
+                    nachname: m.LastName || '',
+                    name: name,
+                    strasse: m.Street || m.Strasse || '',
+                    plz: m.PostCode || m.PLZ || '5037',
+                    ort: m.City || m.Ort || 'Muhen',
+                    email: m.PrimaryEmail || m.Email || ''
+                },
+                sender: sender,
+                layout: layout,
+                totalAmount: r.total_amount || r.betrag || 0,
+                year: r.year || new Date().getFullYear(),
+                type: 'Jahresbeitrag'
+            };
+
+            let res = null;
+            if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
+                try {
+                    res = await window.RechnungsCore.renderPdf(invoiceId, { forceRecreate: true });
+                } catch (rcErr) {
+                    console.warn("RechnungsCore.renderPdf Fallback:", rcErr);
+                }
+            }
+            if (!res || !res.success) {
+                res = await window.generatePdfViaEngine(payload);
+            }
+            if (!res || !res.success) throw new Error(res?.error || "PDF-Erstellung auf Supabase fehlgeschlagen.");
+
+            if (typeof showToast === 'function') {
+                showToast("🎉 QR-Rechnung erfolgreich generiert!");
+            }
+
+            if (res.pdfUrl && res.pdfUrl.startsWith('http')) {
+                if (typeof window.jbOpenInvoicePdfSafe === 'function') {
+                    window.jbOpenInvoicePdfSafe(res.pdfUrl);
+                } else {
+                    const sep = res.pdfUrl.includes('?') ? '&' : '?';
+                    window.open(`${res.pdfUrl}${sep}t=${Date.now()}`, '_blank');
+                }
+            } else if (res.pdfBase64 && typeof openPdfBase64 === 'function') {
+                openPdfBase64(res.pdfBase64);
+            }
+
+            if (typeof loadJahresbeitragData === 'function') {
+                await loadJahresbeitragData(true, false);
+            }
+        } catch (err) {
+            console.error("Jahresbeitrag PDF Fehler:", err);
+            alert("Fehler bei PDF-Erstellung: " + err.message);
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = oldHtml;
+            }
+        }
+    };
+
+    /**
+     * Zentrale PDF-Generierung für Vermietungs-Mietverträge (vorstand/js/vermietung/vermietung-manager.js)
+     */
+    window.vmGenerateRentalContractPdf = async function (bookingId, options = {}) {
+        const isSilent = Boolean(options.silent);
+        if (!isSilent && typeof showLoadingOverlay === 'function') {
+            showLoadingOverlay(`Generiere Mietvertrag PDF für ${bookingId}...`);
+        }
+
+        const supa = (typeof window.getSupabaseClient === 'function')
+            ? window.getSupabaseClient()
+            : (window.supabaseClient || null);
+
+        let booking = null;
+        if (supa) {
+            const { data } = await supa.from('rental_requests').select('*').or(`booking_number.eq.${bookingId},id.eq.${bookingId}`).single();
+            booking = data;
+        }
+
+        const sender = (typeof rnGetLoggedInSender === 'function')
+            ? rnGetLoggedInSender('Vermietung')
+            : { vorname: 'Vermietung', nachname: 'Sportschützen Muhen', funktion: 'Vermieter', bereich: 'Vermietung Schützenstube' };
+
+        const payload = {
+            action: 'generate-contract',
+            bookingId: booking?.booking_number || bookingId,
+            recipient: {
+                vorname: booking?.first_name || '',
+                nachname: booking?.last_name || '',
+                name: `${booking?.first_name || ''} ${booking?.last_name || ''}`.trim() || 'Mieter',
+                strasse: booking?.street || '',
+                plz: booking?.post_code || '5037',
+                ort: booking?.city || 'Muhen',
+                email: booking?.email || '',
+                telefon: booking?.phone || ''
+            },
+            sender: sender,
+            mietdatum: booking?.start_date ? new Date(booking.start_date).toLocaleDateString('de-CH') : new Date().toLocaleDateString('de-CH'),
+            festbeginn: booking?.festbeginn || '14:00 Uhr',
+            mietbetrag: booking?.total_amount_chf || 300,
+            type: 'Vermietung'
+        };
+
+        // Vorlage aus zentralem Vorlagen-Pool verknüpfen (Single Source of Truth)
+        const tpl = (window._docTemplatesData || []).find(t => t.category === 'vertrag' || t.code === 'mietvertrag');
+        const dueDaysFromSettings = window._rentalSettings?.payment_due_days ? parseInt(window._rentalSettings.payment_due_days, 10) : 14;
+        if (tpl) {
+            payload.templateId = tpl.id;
+            payload.layout = {
+                title: tpl.title,
+                intro: tpl.intro,
+                outro: tpl.outro,
+                notice: tpl.notice,
+                due_days: dueDaysFromSettings || tpl.due_days || 14,
+                rental_object: tpl.rental_object || tpl.description || window._rentalSettings?.rental_object || 'Schützenstube Muhen inkl. Mobiliar, Küche, Geschirr und WC-Anlagen'
+            };
+        }
+
+        try {
+            let res = await window.generatePdfViaEngine(payload);
+            if (!res.success) {
+                throw new Error(res.error || "Generierung fehlgeschlagen.");
+            }
+
+            if (res.success) {
+                if (res.pdfUrl && supa && booking?.id) {
+                    await supa.from('rental_requests').update({
+                        contract_file_url: res.pdfUrl,
+                        contract_storage_path: res.storagePath || null
+                    }).eq('id', booking.id);
+
+                    // Proforma-Rechnung für Rechnungsmodul & CAMT Bankabgleich sicherstellen
+                    try {
+                        await supa.rpc('ensure_rental_proforma_invoice', {
+                            p_booking_number: booking.booking_number
+                        });
+                    } catch (_) {}
+                }
+                if (!isSilent) {
+                    if (typeof showSuccess === 'function') {
+                        showSuccess("🎉 Mietvertrag PDF erfolgreich generiert!");
+                    }
+                    if (res.pdfUrl && res.pdfUrl.startsWith('http')) {
+                        window.open(res.pdfUrl, '_blank');
+                    } else if (res.pdfBase64 && typeof openPdfBase64 === 'function') {
+                        openPdfBase64(res.pdfBase64);
+                    }
+                }
+                return res;
+            } else {
+                throw new Error(res.error || "Generierung fehlgeschlagen.");
+            }
+        } catch (err) {
+            console.error("Mietvertrag PDF Fehler:", err);
+            if (!isSilent && window.UIConfirmKit) {
+                await UIConfirmKit.alert({
+                    title: "Fehler beim Generieren",
+                    message: "❌ Fehler beim Generieren des Mietvertrags: " + err.message,
+                    type: "danger"
+                });
+            }
+            throw err;
+        } finally {
+            if (!isSilent && typeof hideLoadingOverlay === 'function') {
+                hideLoadingOverlay();
+            }
+        }
+    };
+
+    /**
+     * Zentrale PDF-Generierung für GV-Einladungsbroschüre (vorstand/js/umfragen/umfragen-controlling.js)
+     * @param {number|string} year - Das Jahr der GV (z.B. 2026)
+     * @param {Object} [gvData] - Optional: { gvNummer, datum, zeit, ort, isElectionYear }
+     * @param {Object} [options] - Zusätzliche Optionen (z.B. forceRecreate, openInNewTab)
+     */
+    window.gvGenerateInvitationPdf = async function (year, gvData = {}, options = {}) {
+        const curYear = Number(year || new Date().getFullYear());
+        if (typeof showLoadingOverlay === 'function') {
+            showLoadingOverlay(`Generiere GV-Einladungsbroschüre & Jahresprogramm für ${curYear}...`);
+        }
+
+        const supa = (typeof window.getSupabaseClient === 'function')
+            ? window.getSupabaseClient()
+            : (window.supabaseClient || null);
+
+        const payload = {
+            action: 'generate-gv-invitation',
+            year: curYear,
+            gvData: gvData,
+            forceRecreate: options.forceRecreate !== false,
+            saveToStorage: true
+        };
+
+        try {
+            let res = await window.generatePdfViaEngine(payload);
+            if (!res.success) {
+                throw new Error(res.error || "Generierung der GV-Einladung fehlgeschlagen.");
+            }
+
+            // In public.gv_instances absichern
+            if (res.pdfUrl && supa) {
+                try {
+                    await supa.from('gv_instances').update({
+                        doc_einladung_url: res.pdfUrl,
+                        updated_at: new Date().toISOString()
+                    }).eq('year', curYear);
+                } catch (e) {
+                    console.warn("⚠️ [PDF-Engine] gv_instances doc_einladung_url Update Warnung:", e);
+                }
+            }
+
+            if (typeof showSuccess === 'function') {
+                showSuccess(`🎉 GV-Einladung ${curYear} erfolgreich generiert!`);
+            } else if (typeof showToast === 'function') {
+                showToast(`GV-Einladung ${curYear} erfolgreich generiert!`, 'success');
+            }
+
+            if (options.openInNewTab !== false) {
+                if (res.pdfUrl && res.pdfUrl.startsWith('http')) {
+                    window.open(res.pdfUrl, '_blank');
+                } else if (res.pdfBase64 && typeof openPdfBase64 === 'function') {
+                    openPdfBase64(res.pdfBase64);
+                }
+            }
+
+            return res;
+        } catch (err) {
+            console.error("GV-Einladung PDF Fehler:", err);
+            if (typeof showError === 'function') {
+                showError("Fehler beim Generieren der GV-Einladung: " + err.message);
+            } else {
+                alert("❌ Fehler beim Generieren der GV-Einladung: " + err.message);
+            }
+            return { success: false, error: err.message };
+        } finally {
+            if (typeof hideLoadingOverlay === 'function') {
+                hideLoadingOverlay();
+            }
+        }
+    };
+
+    /**
+     * Kompiliert das vollständige GV-Dossier (Einladung + Jahresprogramm + Beilagen-PDFs)
+     * mit automatischem Corporate Stempel und fortlaufenden Seitennummern.
+     * @param {string} campaignId - UUID der Kampagne in public.communication_campaigns
+     * @param {number|string} year - Das Jahr der GV (z.B. 2026)
+     * @param {Object} [gvData] - Optional: { gvNummer, datum, zeit, ort }
+     * @param {Object} [options] - Optionen: { openInNewTab, forceRecreate }
+     */
+    window.gvCompileDossierPdf = async function (campaignId, year, gvData = {}, options = {}) {
+        const curYear = Number(year || new Date().getFullYear());
+        if (typeof showLoadingOverlay === 'function') {
+            showLoadingOverlay(`Kompiliere vollständiges GV-Dossier ${curYear} (Assembler & Stempel)...`);
+        }
+
+        const supa = (typeof window.getSupabaseClient === 'function')
+            ? window.getSupabaseClient()
+            : (window.supabaseClient || null);
+
+        const payload = {
+            action: 'compile-gv-dossier',
+            campaignId: campaignId,
+            year: curYear,
+            gvData: gvData,
+            forceRecreate: options.forceRecreate !== false,
+            saveToStorage: true
+        };
+
+        try {
+            let res = await window.generatePdfViaEngine(payload);
+            if (!res.success) {
+                throw new Error(res.error || "Assemblierung des GV-Dossiers fehlgeschlagen.");
+            }
+
+            // In public.gv_instances doc_anhaenge_url absichern
+            if (res.pdfUrl && supa) {
+                try {
+                    await supa.from('gv_instances').update({
+                        doc_anhaenge_url: res.pdfUrl,
+                        updated_at: new Date().toISOString()
+                    }).eq('year', curYear);
+                } catch (e) {
+                    console.warn("⚠️ [PDF-Engine] gv_instances doc_anhaenge_url Update Warnung:", e);
+                }
+            }
+
+            if (typeof showSuccess === 'function') {
+                showSuccess(`🎉 GV-Dossier ${curYear} erfolgreich assembliert & gestempelt!`);
+            } else if (typeof showToast === 'function') {
+                showToast(`GV-Dossier ${curYear} erfolgreich assembliert!`, 'success');
+            }
+
+            if (options.openInNewTab !== false) {
+                if (res.pdfUrl && res.pdfUrl.startsWith('http')) {
+                    window.open(res.pdfUrl, '_blank');
+                } else if (res.pdfBase64 && typeof openPdfBase64 === 'function') {
+                    openPdfBase64(res.pdfBase64);
+                }
+            }
+
+            return res;
+        } catch (err) {
+            console.error("GV-Dossier PDF Fehler:", err);
+            if (typeof showError === 'function') {
+                showError("Fehler beim Kompilieren des GV-Dossiers: " + err.message);
+            } else {
+                alert("❌ Fehler beim Kompilieren des GV-Dossiers: " + err.message);
+            }
+            return { success: false, error: err.message };
+        } finally {
+            if (typeof hideLoadingOverlay === 'function') {
+                hideLoadingOverlay();
+            }
+        }
+    };
+
+    /**
+     * Generiert die druckfertige Präsenzliste für den GV-Abend (A4 mit Unterschriften & Auszählungsbox)
+     * @param {number|string} year - Das Jahr der GV
+     * @param {Object} [gvData] - { gvNummer, datum, zeit, ort }
+     * @param {Array}  [participants] - Liste der Teilnehmer / Stimmberechtigten
+     * @param {Object} [options] - Optionen: { openInNewTab, forceRecreate }
+     */
+    window.gvGeneratePraesenzlistePdf = async function (year, gvData = {}, participants = [], options = {}) {
+        const curYear = Number(year || new Date().getFullYear());
+        if (typeof showLoadingOverlay === 'function') {
+            showLoadingOverlay(`Generiere druckfertige Präsenzliste für GV ${curYear}...`);
+        }
+
+        const payload = {
+            action: 'generate-gv-praesenzliste',
+            year: curYear,
+            gvData: gvData,
+            participants: participants,
+            forceRecreate: options.forceRecreate !== false,
+            saveToStorage: true
+        };
+
+        try {
+            let res = await window.generatePdfViaEngine(payload);
+            if (!res.success) {
+                throw new Error(res.error || "Generierung der Präsenzliste fehlgeschlagen.");
+            }
+
+            if (options.openInNewTab !== false) {
+                if (res.pdfUrl && res.pdfUrl.startsWith('http')) {
+                    window.open(res.pdfUrl, '_blank');
+                } else if (res.pdfBase64 && typeof openPdfBase64 === 'function') {
+                    openPdfBase64(res.pdfBase64);
+                }
+            }
+
+            return res;
+        } catch (err) {
+            console.error("Präsenzliste PDF Fehler:", err);
+            if (typeof showError === 'function') {
+                showError("Fehler beim Generieren der Präsenzliste: " + err.message);
+            } else {
+                alert("❌ Fehler beim Generieren der Präsenzliste: " + err.message);
+            }
+            return { success: false, error: err.message };
+        } finally {
+            if (typeof hideLoadingOverlay === 'function') {
+                hideLoadingOverlay();
+            }
+        }
+    };
+
+    /**
+     * Zentrale PDF-Generierung für offizielle Vorstandsbriefe (Typ 2)
+     * @param {Object} options
+     * @param {string} [options.letterId]
+     * @param {Object} options.recipient - { vorname, nachname, name, firma, strasse, plz, ort, email }
+     * @param {Object} [options.sender] - { vorname, nachname, funktion, bereich, strasse, plz, ort, email, mobil }
+     * @param {string} [options.subject] - Betreffzeile des Briefes
+     * @param {string} [options.bodyText] - Fliesstext / Inhalt des Briefes
+     * @param {Object} [options.layout] - { title, intro, outro, notice }
+     * @param {Array}  [options.signers] - [{ name, role }]
+     * @param {string} [options.letterDate] - Optionales Datum (z. B. "30. September 2026")
+     * @param {boolean} [options.openInNewTab=true]
+     * @param {boolean} [options.forceRecreate=false]
+     * @returns {Promise<{success: boolean, pdfUrl?: string, storagePath?: string, pdfBase64?: string, error?: string}>}
+     */
+    window.generateLetterPdfRemote = async function (options = {}) {
+        if (typeof showLoadingOverlay === 'function') {
+            showLoadingOverlay(`Generiere Vorstandsbrief PDF (${options.subject || 'Mitteilung'})...`);
+        }
+
+        const payload = {
+            action: 'generate-letter',
+            letterId: options.letterId || `BRIEF-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
+            recipient: options.recipient || { name: 'Empfänger' },
+            sender: options.sender || (typeof rnGetLoggedInSender === 'function' ? rnGetLoggedInSender('Brief') : null),
+            layout: options.layout || {},
+            subject: options.subject || options.layout?.title || 'Offizielle Mitteilung',
+            bodyText: options.bodyText || '',
+            signers: options.signers || [],
+            letterDate: options.letterDate || '',
+            forceRecreate: options.forceRecreate !== false,
+            saveToStorage: true
+        };
+
+        try {
+            let res = await window.generatePdfViaEngine(payload);
+            if (!res.success) {
+                throw new Error(res.error || "Generierung des Vorstandsbriefs fehlgeschlagen.");
+            }
+
+            if (typeof showSuccess === 'function') {
+                showSuccess("🎉 Vorstandsbrief erfolgreich generiert!");
+            } else if (typeof showToast === 'function') {
+                showToast("Vorstandsbrief erfolgreich generiert!", 'success');
+            }
+
+            if (options.openInNewTab !== false) {
+                if (res.pdfUrl && res.pdfUrl.startsWith('http')) {
+                    window.open(res.pdfUrl, '_blank');
+                } else if (res.pdfBase64 && typeof openPdfBase64 === 'function') {
+                    openPdfBase64(res.pdfBase64);
+                }
+            }
+
+            return res;
+        } catch (err) {
+            console.error("Vorstandsbrief PDF Fehler:", err);
+            if (typeof showError === 'function') {
+                showError("Fehler beim Generieren des Vorstandsbriefs: " + err.message);
+            } else {
+                alert("❌ Fehler beim Generieren des Vorstandsbriefs: " + err.message);
+            }
+            return { success: false, error: err.message };
+        } finally {
+            if (typeof hideLoadingOverlay === 'function') {
+                hideLoadingOverlay();
+            }
+        }
+    };
+
+    /**
+     * Generiert ein Endschiessen-Festführer- & Einladungs-PDF (Typ 4) via Edge Function
+     * @param {number} [year] - Saisonjahr
+     * @param {object} [endschiessenData] - Spezifische Stich-, Datums- und Menükonfiguration
+     * @param {object} [options]
+     * @returns {Promise<{success: boolean, pdfUrl?: string, storagePath?: string, pdfBase64?: string, error?: string}>}
+     */
+    window.generateEndschiessenPdfRemote = async function (year, endschiessenData = {}, options = {}) {
+        const curYear = year || new Date().getFullYear();
+        if (typeof showLoadingOverlay === 'function') {
+            showLoadingOverlay(`Generiere Endschiessen Festführer ${curYear}...`);
+        }
+
+        const payload = {
+            action: 'generate-endschiessen',
+            year: curYear,
+            endschiessenData: endschiessenData || {},
+            forceRecreate: options.forceRecreate !== false,
+            saveToStorage: true
+        };
+
+        try {
+            let res = await window.generatePdfViaEngine(payload);
+            if (!res.success) {
+                throw new Error(res.error || "Generierung des Endschiessen-Festführers fehlgeschlagen.");
+            }
+
+            if (typeof showSuccess === 'function') {
+                showSuccess(`🎉 Endschiessen-Festführer ${curYear} erfolgreich generiert!`);
+            } else if (typeof showToast === 'function') {
+                showToast(`Endschiessen-Festführer ${curYear} erfolgreich generiert!`, 'success');
+            }
+
+            if (options.openInNewTab !== false) {
+                if (res.pdfUrl && res.pdfUrl.startsWith('http')) {
+                    window.open(res.pdfUrl, '_blank');
+                } else if (res.pdfBase64 && typeof openPdfBase64 === 'function') {
+                    openPdfBase64(res.pdfBase64);
+                }
+            }
+
+            return res;
+        } catch (err) {
+            console.error("Endschiessen PDF Fehler:", err);
+            if (typeof showError === 'function') {
+                showError("Fehler beim Generieren des Endschiessen-PDFs: " + err.message);
+            } else {
+                alert("❌ Fehler beim Generieren des Endschiessen-PDFs: " + err.message);
+            }
+            return { success: false, error: err.message };
+        } finally {
+            if (typeof hideLoadingOverlay === 'function') {
+                hideLoadingOverlay();
+            }
+        }
+    };
+
+    // ==========================================================================
+    // ZENTRALE SIGNED-URL AUFLÖSUNG FÜR PRIVATE STORAGE BUCKETS
+    // ==========================================================================
+    const PRIVATE_BUCKET_REGEX = /\/storage\/v1\/object\/(?:public|sign)\/(operatives-storage|campaign-assets|email-templates|club-documents|jm-ranglisten|vereins-dokumente)\/([^?#]+)/;
+
+    window.resolvePrivateStorageUrl = async function (rawUrl, expiresIn = 3600) {
+        if (!rawUrl || typeof rawUrl !== 'string') return rawUrl;
+        const match = rawUrl.match(PRIVATE_BUCKET_REGEX);
+        if (!match) return rawUrl;
+
+        const bucket = match[1];
+        const objectPath = decodeURIComponent(match[2]);
+        const supa = (typeof window.getSupabaseClient === 'function')
+            ? window.getSupabaseClient()
+            : (window.supabaseClient || null);
+
+        if (supa && supa.storage) {
+            try {
+                const { data, error } = await supa.storage.from(bucket).createSignedUrl(objectPath, expiresIn);
+                if (!error && data && data.signedUrl) {
+                    return data.signedUrl.replace(/^http:\/\/api-gw:8000/, SUPABASE_URL);
+                }
+            } catch (e) {
+                console.warn('[Storage] Signed-URL Auflösung fehlgeschlagen:', e);
+            }
+        }
+        return rawUrl;
+    };
+
+    // Globaler Click-Interceptor für <a href*="/storage/v1/object/public/...">
+    document.addEventListener('click', async function (ev) {
+        const anchor = ev.target && typeof ev.target.closest === 'function' ? ev.target.closest('a[href]') : null;
+        if (!anchor) return;
+        const href = anchor.getAttribute('href') || '';
+        if (!PRIVATE_BUCKET_REGEX.test(href) || !href.includes('/storage/v1/object/public/')) return;
+
+        ev.preventDefault();
+        ev.stopPropagation();
+        const signed = await window.resolvePrivateStorageUrl(href, 3600);
+        const sep = signed.includes('?') ? '&' : '?';
+        window.open(`${signed}${sep}t=${Date.now()}`, anchor.target || '_blank', 'noopener,noreferrer');
+    }, true);
+
+    // Automatische Nachsignierung für <img src> und <iframe src> mit privaten Storage-Pfaden
+    function upgradePrivateStorageElements(root) {
+        if (!root || typeof root.querySelectorAll !== 'function') return;
+        const els = root.querySelectorAll('img[src*="/storage/v1/object/public/"], iframe[src*="/storage/v1/object/public/"]');
+        els.forEach(async (el) => {
+            if (el.dataset.storageSigned === '1') return;
+            const rawSrc = el.getAttribute('src') || '';
+            if (!PRIVATE_BUCKET_REGEX.test(rawSrc)) return;
+            el.dataset.storageSigned = '1';
+            const signed = await window.resolvePrivateStorageUrl(rawSrc, 3600);
+            if (signed && signed !== rawSrc) {
+                el.setAttribute('src', signed);
+            }
+        });
+    }
+
+    if (typeof MutationObserver !== 'undefined' && document.body) {
+        upgradePrivateStorageElements(document.body);
+        const obs = new MutationObserver((mutations) => {
+            for (const m of mutations) {
+                for (const node of m.addedNodes) {
+                    if (node.nodeType === 1) {
+                        upgradePrivateStorageElements(node);
+                    }
+                }
+            }
+        });
+        obs.observe(document.body, { childList: true, subtree: true });
+    }
+
+    console.log("🚀 [PDF-Engine] Modul geladen: generatePdfViaEngine, resolvePrivateStorageUrl, rnGeneratePDFOnly, jbGenerateInvoicePdfRemote, vmGenerateRentalContractPdf, gvGenerateInvitationPdf, gvCompileDossierPdf, generateLetterPdfRemote & generateEndschiessenPdfRemote aktiv.");
+})();

@@ -1,0 +1,485 @@
+// =========================================================
+//  LOGINS - Actions / Server Requests (Supabase Migration)
+// =========================================================
+
+async function fetchLoginsData() {
+  const wrapper = document.getElementById('logins-table-wrapper');
+  if (wrapper) {
+    wrapper.innerHTML = `<div class="text-center text-muted py-5">
+      <div class="spinner-border spinner-border-sm me-2"></div> Lade Daten aus Supabase...
+    </div>`;
+  }
+  try {
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    if (!supa) throw new Error("Supabase Client ist nicht initialisiert.");
+
+    // 1. Admins aus public.admin_profiles
+    const { data: admins, error: aErr } = await supa
+      .from('admin_profiles')
+      .select('*')
+      .order('username');
+    if (aErr) throw aErr;
+
+    // Rollen für verknüpfte Auth-Benutzer abfragen
+    const authIds = (admins || []).map(a => a.auth_user_id).filter(Boolean);
+    const rolesMap = {};
+    if (authIds.length > 0) {
+      try {
+        const { data: rData } = await supa
+          .from('user_roles')
+          .select('user_id, role')
+          .in('user_id', authIds);
+        if (rData) {
+          rData.forEach(r => {
+            if (!rolesMap[r.user_id]) rolesMap[r.user_id] = [];
+            rolesMap[r.user_id].push(r.role);
+          });
+        }
+      } catch (err) {
+        console.warn("Konnte user_roles nicht laden:", err);
+      }
+    }
+
+    const authEmails = new Set((admins || []).filter(x => x.auth_user_id && x.email).map(x => x.email.toLowerCase()));
+
+    LoginsState.login_daten = (admins || []).map(a => {
+      let rStr = 'vorstand';
+      const effectiveAuthId = a.auth_user_id || (admins.find(x => x.auth_user_id && x.email && x.email.toLowerCase() === (a.email || '').toLowerCase())?.auth_user_id);
+      if (effectiveAuthId && rolesMap[effectiveAuthId] && rolesMap[effectiveAuthId].length > 0) {
+        rStr = rolesMap[effectiveAuthId].join(',');
+      }
+      return {
+        id: a.id,
+        auth_user_id: a.auth_user_id,
+        username: a.username,
+        anzeigename: a.display_name,
+        mailadresse: a.email,
+        mailanzeige: a.email,
+        personnumber: a.person_number,
+        rolle: rStr,
+        rolle_extern: a.role_external || '',
+        passwort_hash: Boolean(a.auth_user_id || (a.email && authEmails.has(a.email.toLowerCase())))
+      };
+    });
+
+    // 2. App-Mitglieder aus public.members
+    const { data: members, error: mErr } = await supa
+      .from('members')
+      .select('person_number, address_number, first_name, last_name, primary_email, is_active, auth_user_id')
+      .eq('is_active', true)
+      .order('last_name');
+    if (mErr) throw mErr;
+
+    LoginsState.app_login = (members || []).map(m => ({
+      personnumber: m.person_number,
+      addressnumber_pin: m.address_number ? String(m.address_number).padStart(6, '0') : '',
+      firstname: m.first_name,
+      lastname: m.last_name,
+      email: m.primary_email,
+      passwort_hash: Boolean(m.auth_user_id)
+    }));
+
+    // 3. Login-Sessions aus public.login_sessions
+    const { data: sessions, error: sErr } = await supa
+      .from('login_sessions')
+      .select('*')
+      .order('login_time', { ascending: false })
+      .limit(100);
+    if (sErr) throw sErr;
+
+    LoginsState.login_sessions = (sessions || []).map(s => {
+      const lt = s.login_time ? new Date(s.login_time).toLocaleString('de-CH') : '';
+      const ls = s.last_seen ? new Date(s.last_seen).toLocaleString('de-CH') : '';
+      return {
+        id: s.id,
+        username: s.username,
+        loginTime: lt,
+        lastActive: ls,
+        durationSec: s.duration_sec || 0,
+        ip: s.ip_address || '—',
+        userAgent: s.user_agent || 'Browser',
+        isOnline: s.is_online
+      };
+    });
+
+    // 4. Rollen-Berechtigungen aus public.role_permissions
+    try {
+      const { data: perms, error: pErr } = await supa
+        .from('role_permissions')
+        .select('*');
+      if (!pErr && perms) {
+        LoginsState.role_permissions = perms;
+      }
+    } catch (permErr) {
+      console.warn("Konnte role_permissions nicht laden:", permErr);
+    }
+
+    LoginsState.loaded = true;
+    loginsUpdateBadges();
+    loginsRenderTable();
+    if (typeof initTableKitForLogins === 'function') {
+      initTableKitForLogins(LoginsState.activeTab);
+    }
+  } catch (e) {
+    if (wrapper) {
+      wrapper.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Fehler beim Laden der Logins: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+}
+
+async function toggleRolePermission(role, permission, isChecked, description) {
+  const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+  if (!supa) {
+    if (typeof showError === 'function') showError("Supabase Client nicht verfügbar.");
+    return;
+  }
+
+  // Optimistisches Update im State
+  const idx = LoginsState.role_permissions.findIndex(p => p.role === role && p.permission === permission);
+  if (isChecked && idx === -1) {
+    LoginsState.role_permissions.push({ role, permission, description: description || '' });
+  } else if (!isChecked && idx !== -1) {
+    LoginsState.role_permissions.splice(idx, 1);
+  }
+  loginsUpdateBadges();
+
+  try {
+    // 1. Primär: RPC toggle_role_permission
+    const { data: res, error: rpcErr } = await supa.rpc('toggle_role_permission', {
+      p_role: role,
+      p_permission: permission,
+      p_enable: isChecked,
+      p_description: description || null
+    });
+
+    if (rpcErr) {
+      // 2. Fallback: direkter REST Aufruf
+      if (isChecked) {
+        const { error: insErr } = await supa.from('role_permissions').upsert({
+          role: role,
+          permission: permission,
+          description: description || null
+        }, { onConflict: 'role,permission' });
+        if (insErr) throw insErr;
+      } else {
+        const { error: delErr } = await supa.from('role_permissions').delete().eq('role', role).eq('permission', permission);
+        if (delErr) throw delErr;
+      }
+    }
+
+    if (typeof showSuccess === 'function') {
+      showSuccess(`Berechtigung «${permission}» für Rolle «${role}» ${isChecked ? 'erteilt' : 'entzogen'}.`);
+    }
+
+    if (window.Perms) {
+      window.Perms.refresh().then(() => window.Perms.applyToDom());
+    }
+  } catch (err) {
+    console.error("Fehler bei toggleRolePermission:", err);
+    // Rollback im State
+    if (isChecked) {
+      const rollbackIdx = LoginsState.role_permissions.findIndex(p => p.role === role && p.permission === permission);
+      if (rollbackIdx !== -1) LoginsState.role_permissions.splice(rollbackIdx, 1);
+    } else {
+      LoginsState.role_permissions.push({ role, permission, description: description || '' });
+    }
+    loginsUpdateBadges();
+    loginsRenderTable();
+    if (typeof showError === 'function') {
+      showError(`Fehler beim Ändern der Berechtigung: ${err.message}`);
+    }
+  }
+}
+
+function loginsTogglePw(inputId) {
+  const inp = document.getElementById(inputId);
+  if (!inp) return;
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+async function loginsSave() {
+  const tab    = LoginsState.activeTab;
+  const mode   = window._loginsEditMode;
+  const record = window._loginsEditRow;
+  const btn    = document.getElementById('logins-btn-save');
+
+  try {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Speichern...';
+
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    if (!supa) throw new Error("Supabase Client nicht verfügbar.");
+
+    if (tab === 'login_daten') {
+      const username = document.getElementById('lf-username')?.value?.trim() || '';
+      const anzeigename = document.getElementById('lf-anzeigename')?.value?.trim() || '';
+      const rawPn = parseInt(document.getElementById('lf-personnumber')?.value?.trim());
+      let personnumber = null;
+      if (!isNaN(rawPn) && rawPn > 0) {
+        personnumber = rawPn;
+      }
+
+      const email = document.getElementById('lf-mailadresse')?.value?.trim() || '';
+      const rolleRaw = document.getElementById('lf-rolle-val')?.value?.trim() 
+                    || document.getElementById('lf-rolle-custom')?.value?.trim() 
+                    || document.getElementById('lf-rolle')?.value 
+                    || 'vorstand';
+      const passwort = document.getElementById('lf-passwort')?.value?.trim() || '';
+
+      if (!username) throw new Error("Benutzername ist ein Pflichtfeld.");
+      if (!email) throw new Error("E-Mail-Adresse ist ein Pflichtfeld für Supabase Auth.");
+
+      const rolesArr = rolleRaw.split(',').map(r => r.trim().toLowerCase()).filter(Boolean);
+
+      // 1. Profil in public.admin_profiles & public.user_roles speichern (inklusive direktem Passwort-Provisioning)
+      if (passwort && passwort.length < 6) {
+        throw new Error("Das Passwort muss mindestens 6 Zeichen lang sein.");
+      }
+
+      const editAdminId = (mode === 'edit' && record?.id) ? record.id : null;
+
+      const { data, error } = await supa.rpc('save_admin_profile', {
+        p_username: username,
+        p_display_name: anzeigename || username,
+        p_email: email,
+        p_role_external: null,
+        p_person_number: personnumber,
+        p_roles: rolesArr,
+        p_password: passwort || null,
+        p_admin_id: editAdminId
+      });
+      if (error) throw error;
+
+      // 3. Modal sicher schliessen und Backdrops rückstandslos entfernen
+      const modalEl = document.getElementById('logins-modal');
+      if (modalEl) {
+        const modalInstance = bootstrap.Modal.getInstance(modalEl) || bootstrap.Modal.getOrCreateInstance(modalEl);
+        modalInstance.hide();
+      }
+      setTimeout(() => {
+        document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('overflow');
+        document.body.style.removeProperty('padding-right');
+      }, 300);
+
+      // Suchfilter leeren, damit der neu gespeicherte Admin sofort in der Tabelle sichtbar ist
+      const searchInp = document.getElementById('logins-search');
+      if (searchInp && searchInp.value) {
+        searchInp.value = '';
+      }
+
+      showSuccess('Admin-Profil erfolgreich in Supabase gespeichert!');
+      await fetchLoginsData();
+
+    } else {
+      const pn = parseInt(document.getElementById('af-personnumber')?.value?.trim());
+      const pin = document.getElementById('af-pin')?.value?.trim() || '';
+
+      if (!pn || isNaN(pn)) throw new Error("Bitte ein gültiges Vereinsmitglied aus den Stammdaten auswählen.");
+      if (!pin) throw new Error("PIN ist ein Pflichtfeld (6-stellig).");
+
+      const paddedPin = pin.padStart(6, '0');
+      const { error } = await supa.from('members').update({
+        address_number: paddedPin,
+        updated_at: new Date().toISOString()
+      }).eq('person_number', pn);
+
+      if (error) throw error;
+
+      // RAM Cache aktualisieren
+      if (Array.isArray(window._mglData)) {
+        const cachedMember = window._mglData.find(x => String(x.PersonNumber) === String(pn));
+        if (cachedMember) cachedMember.AddressNumber = paddedPin;
+      }
+
+      const modalEl = document.getElementById('logins-modal');
+      if (modalEl) {
+        const modalInstance = bootstrap.Modal.getInstance(modalEl) || bootstrap.Modal.getOrCreateInstance(modalEl);
+        modalInstance.hide();
+      }
+      setTimeout(() => {
+        document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('overflow');
+        document.body.style.removeProperty('padding-right');
+      }, 300);
+
+      showSuccess('App-Mitglied PIN erfolgreich in Supabase gespeichert!');
+      await fetchLoginsData();
+    }
+  } catch (e) {
+    showError("Fehler beim Speichern: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-save me-1.5"></i> Speichern';
+  }
+}
+
+async function loginsConfirmDelete() {
+  const tab    = LoginsState.activeTab;
+  const record = window._loginsEditRow;
+  if (!record) return;
+
+  const label = tab === 'login_daten'
+    ? `Admin "${record.username}"`
+    : `App-Mitglied "${record.firstname} ${record.lastname}"`;
+
+  if (!confirm(`⚠️ Wirklich löschen?\n\n${label}\n\nDieser Vorgang kann nicht rückgängig gemacht werden!`)) return;
+
+  const btn = document.getElementById('logins-btn-delete');
+  try {
+    btn.disabled = true;
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    if (!supa) throw new Error("Supabase Client nicht verfügbar.");
+
+    if (tab === 'login_daten') {
+      const { error } = await supa.rpc('delete_admin_profile', { p_username: record.username });
+      if (error) throw error;
+    } else {
+      const { error } = await supa.from('members').update({
+        address_number: null,
+        updated_at: new Date().toISOString()
+      }).eq('person_number', record.personnumber);
+      if (error) throw error;
+    }
+
+    bootstrap.Modal.getInstance(document.getElementById('logins-modal'))?.hide();
+    showSuccess('Eintrag gelöscht.');
+    await fetchLoginsData();
+  } catch (e) {
+    showError("Fehler beim Löschen: " + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function loginsSync() {
+  if (!confirm('🔄 Mitglieder-Stammdaten mit Logins synchronisieren?\n\nDies übernimmt fehlende E-Mails aus den Mitgliederdaten für den Vorstand und gleicht alle PINs ab.')) return;
+
+  const btn = document.getElementById('btn-logins-sync');
+  try {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Synchronisiere...';
+
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    if (!supa) throw new Error("Supabase Client nicht verfügbar.");
+
+    const { data, error } = await supa.rpc('sync_logins_from_members');
+    if (error) throw error;
+
+    showSuccess('✅ ' + (data.message || 'Sync erfolgreich abgeschlossen!'));
+    await fetchLoginsData();
+  } catch (e) {
+    showError('Sync-Fehler: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-sync-alt me-1"></i> App-Users Synchronisieren';
+  }
+}
+
+// =========================================================
+//  Event-Handler für Mitglieder-Zuordnung aus Members100
+// =========================================================
+
+window.loginsOnMemberSelect = function(personNumber) {
+  const pn = String(personNumber || '').trim();
+  const pnInput = document.getElementById('lf-personnumber');
+  const anzeigeInput = document.getElementById('lf-anzeigename');
+  const mailInput = document.getElementById('lf-mailadresse');
+  const userInput = document.getElementById('lf-username');
+  const pnDisplay = document.getElementById('lf-pn-display');
+  const pnDisplayWrap = document.getElementById('lf-pn-display-wrap');
+  const unlinkBtn = document.getElementById('btn-lf-unlink');
+  const badgeWrap = document.getElementById('lf-link-status-badge');
+  const nameDisplay = document.getElementById('lf-member-name-display');
+
+  if (!pn) {
+    if (typeof window.loginsUnlinkMember === 'function') {
+      window.loginsUnlinkMember();
+    }
+    return;
+  }
+
+  if (pnInput) pnInput.value = pn;
+  if (pnDisplay) pnDisplay.textContent = pn;
+  if (pnDisplayWrap) pnDisplayWrap.classList.remove('d-none');
+  if (unlinkBtn) unlinkBtn.classList.remove('d-none');
+  if (badgeWrap) {
+    badgeWrap.innerHTML = '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-1"><i class="fas fa-link me-1"></i>Mitglied verknüpft</span>';
+  }
+
+  const m = (window._mglData || []).find(x => String(x.PersonNumber || '').trim() === pn);
+  if (!m) return;
+
+  const fn = String(m.FirstName || '').trim();
+  const ln = String(m.LastName || '').trim();
+  const fullName = [fn, ln].filter(Boolean).join(' ');
+  if (nameDisplay) nameDisplay.textContent = fullName ? `(${fullName})` : '';
+
+  // Im Neuanlage-Modus oder wenn Felder noch leer sind: vorbefüllen
+  if (window._loginsEditMode === 'add' || !(anzeigeInput && anzeigeInput.value.trim())) {
+    if (anzeigeInput) anzeigeInput.value = fullName;
+  }
+
+  const email = String(m.PrimaryEmail || m.Email || '').trim();
+  if (email && (window._loginsEditMode === 'add' || !(mailInput && mailInput.value.trim()))) {
+    if (mailInput) mailInput.value = email;
+  }
+
+  // Falls Benutzername noch leer ist: Vorschlag generieren
+  if (userInput && !userInput.value.trim()) {
+    const cleanFn = fn.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cleanLn = ln.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (cleanFn && cleanLn) {
+      userInput.value = `${cleanFn[0]}.${cleanLn}`;
+    } else if (cleanLn) {
+      userInput.value = cleanLn;
+    }
+  }
+};
+
+window.loginsOnPersonNumberInput = function(val) {
+  const pn = String(val || '').trim();
+  const sel = document.getElementById('lf-member-select');
+  if (sel) {
+    sel.value = pn;
+  }
+};
+
+window.loginsSendInvite = async function(email, username) {
+  if (!email) {
+    showError("Keine E-Mail-Adresse hinterlegt.");
+    return;
+  }
+  if (!confirm(`Möchtest du eine Aktivierungs- / Passwort-Reset-Mail an ${email} (${username || 'Admin'}) senden?`)) {
+    return;
+  }
+  try {
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    if (!supa) throw new Error("Supabase Client nicht verfügbar.");
+
+    const redirectUrl = window.location.origin + window.location.pathname;
+    const { error } = await supa.auth.resetPasswordForEmail(email, {
+      redirectTo: redirectUrl
+    });
+    if (error) throw error;
+
+    // Protokollieren in public.mail_logs via SECURITY DEFINER RPC (Projekt-Richtlinie 2)
+    try {
+      await supa.rpc('log_auth_mail_event', {
+        p_event_type: 'invite',
+        p_recipient_email: email,
+        p_recipient_name: username || 'Admin',
+        p_record_id: 'invite_' + Date.now()
+      });
+    } catch (logErr) {
+      console.warn("Mail-Log Protokollierung fehlgeschlagen:", logErr);
+    }
+
+    showSuccess(`✅ Aktivierungs-Mail erfolgreich an ${email} gesendet!`);
+  } catch (err) {
+    showError(`Fehler beim Senden der Aktivierungs-Mail: ${err.message}`);
+  }
+};
+

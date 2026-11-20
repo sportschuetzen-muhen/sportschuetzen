@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live-Display | Endschiessen Sportschützen Muhen</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- Premium Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/supabase-client.js"></script>
+
+    <style>
+        :root {
+            --bg-dark: #071927;
+            --bg-card: rgba(15, 30, 48, 0.85);
+            --gold: #f59e0b;
+            --silver: #cbd5e1;
+            --bronze: #f97316;
+            --accent-cyan: #06b6d4;
+            --text-light: #f8fafc;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            background-image: radial-gradient(circle at 50% 0%, #0f3a5d 0%, #071927 80%);
+            color: var(--text-light);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            min-height: 100vh;
+            overflow-x: hidden;
+            user-select: none;
+        }
+
+        h1, h2, h3, .brand-font {
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .beamer-card {
+            background: var(--bg-card);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .gold-border {
+            border: 2px solid var(--gold) !important;
+            box-shadow: 0 0 25px rgba(245, 158, 11, 0.3) !important;
+        }
+
+        .live-pulse {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            background: #ef4444;
+            border-radius: 50%;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { transform: scale(1.15); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+
+        .table-beamer th {
+            background: rgba(255, 255, 255, 0.08) !important;
+            color: #94a3b8 !important;
+            font-size: 1.1rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+            padding: 16px 14px;
+        }
+
+        .table-beamer td {
+            font-size: 1.35rem;
+            padding: 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            color: #e2e8f0;
+        }
+
+        .rank-badge {
+            font-size: 1.25rem;
+            font-weight: 800;
+            width: 44px;
+            height: 44px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+        }
+
+        .rank-1 { background: linear-gradient(135deg, #f59e0b, #d97706); color: #000; box-shadow: 0 0 15px rgba(245, 158, 11, 0.6); }
+        .rank-2 { background: linear-gradient(135deg, #e2e8f0, #94a3b8); color: #000; }
+        .rank-3 { background: linear-gradient(135deg, #fb923c, #ea580c); color: #fff; }
+        .rank-other { background: rgba(255, 255, 255, 0.1); color: #94a3b8; }
+
+        .progress-bar-cycle {
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            width: 100%;
+        }
+        .progress-fill {
+            height: 100%;
+            background: var(--accent-cyan);
+            width: 0%;
+            transition: width 0.1s linear;
+        }
+    </style>
+</head>
+<body class="p-3 p-md-4 d-flex flex-column justify-content-between">
+
+    <!-- HEADER -->
+    <header class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom border-secondary border-opacity-25">
+        <div class="d-flex align-items-center gap-3">
+            <img src="icons/logo.png" alt="Logo" style="height: 60px; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5));">
+            <div>
+                <h2 class="mb-0 fw-bold tracking-tight text-white brand-font">SPORTSCHÜTZEN MUHEN</h2>
+                <div class="d-flex align-items-center gap-2 text-info">
+                    <span class="live-pulse"></span>
+                    <span class="fw-semibold text-uppercase" style="letter-spacing: 1.5px; font-size: 0.85rem;">Live Schützenstube • Endschiessen <span id="beamer-year">2026</span></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex align-items-center gap-3">
+            <!-- Aktive Disziplin Badge -->
+            <div id="beamer-stich-badge" class="badge bg-primary px-3 py-2 fs-5 fw-bold rounded-pill shadow-sm">
+                🏅 Endstich (20 Schuss)
+            </div>
+            
+            <button class="btn btn-outline-light btn-sm rounded-circle p-2" onclick="toggleFullScreen()" title="Vollbild umschalten">
+                <i class="fas fa-expand"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- AUTO-CYCLE PROGRESS BAR -->
+    <div class="progress-bar-cycle mb-3 rounded-pill overflow-hidden">
+        <div id="cycle-progress" class="progress-fill"></div>
+    </div>
+
+    <!-- MAIN DISPLAY BOARD -->
+    <main class="flex-grow-1 d-flex flex-column justify-content-center">
+        <div class="beamer-card p-4 flex-grow-1" id="beamer-board-container">
+            <div class="text-center py-5">
+                <div class="spinner-border text-info mb-3" style="width: 3rem; height: 3rem;"></div>
+                <h4 class="text-light">Lade aktuelle Resultate...</h4>
+            </div>
+        </div>
+    </main>
+
+    <!-- FOOTER / TICKER -->
+    <footer class="mt-3 pt-2 border-top border-secondary border-opacity-25 d-flex justify-content-between align-items-center text-muted small">
+        <div>
+            <i class="fas fa-clock me-1"></i> Stand: <span id="beamer-clock" class="text-white fw-bold">--:--:--</span>
+        </div>
+        <div>
+            Sportschützen Muhen • Kleinkaliber 50m • Saisonabschluss
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-success-subtle text-success">Live Sync aktiv</span>
+        </div>
+    </footer>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const CURRENT_YEAR = urlParams.get('jahr') || '2026';
+        document.getElementById('beamer-year').textContent = CURRENT_YEAR;
+
+        let liveData = {
+            stiche: [],
+            scoresByStich: {},
+            finalParticipants: []
+        };
+
+        let currentStichIndex = 0;
+        let cycleSeconds = 15;
+        let elapsedSeconds = 0;
+
+        async function fetchLiveEndschiessen() {
+            try {
+                const client = window.getSupabaseClient ? window.getSupabaseClient() : window.supabase;
+                if (!client) return;
+
+                // Stiche laden
+                const { data: stiche } = await client
+                    .from('endschiessen_stiche')
+                    .select('*')
+                    .eq('jahr', CURRENT_YEAR)
+                    .order('sort_order', { ascending: true });
+
+                liveData.stiche = stiche || [];
+
+                // Scores laden
+                const { data: scores } = await client
+                    .from('endschiessen_scores')
+                    .select('*, member:members(first_name, last_name)')
+                    .eq('jahr', CURRENT_YEAR);
+
+                liveData.scoresByStich = {};
+                for (const s of liveData.stiche) {
+                    const list = (scores || []).filter(x => x.stich_id === s.id);
+                    // Ränge sortieren
+                    list.sort((a, b) => (b.total_score || 0) - (a.total_score || 0));
+                    liveData.scoresByStich[s.id] = list;
+                }
+
+                // Final laden
+                const { data: finals } = await client
+                    .from('endschiessen_final_series')
+                    .select('*, member:members(first_name, last_name)')
+                    .eq('jahr', CURRENT_YEAR)
+                    .order('final_rang', { ascending: true });
+
+                liveData.finalParticipants = finals || [];
+
+                renderCurrentBeamerView();
+            } catch (e) {
+                console.warn("Live fetch error:", e);
+            }
+        }
+
+        function renderCurrentBeamerView() {
+            const container = document.getElementById('beamer-board-container');
+            const badge = document.getElementById('beamer-stich-badge');
+            if (!liveData.stiche.length) {
+                container.innerHTML = '<div class="text-center py-5 text-muted">Keine Stiche für dieses Jahr konfiguriert.</div>';
+                return;
+            }
+
+            const activeStich = liveData.stiche[currentStichIndex];
+            badge.textContent = activeStich.title;
+
+            // Final-Ansicht
+            if (activeStich.code === 'final' || activeStich.modus === 'final_elimination') {
+                renderBeamerFinalView(container);
+                return;
+            }
+
+            // Endstich oder Standard-Stich
+            const scores = liveData.scoresByStich[activeStich.id] || [];
+            const isEndstich = activeStich.code === 'endstich';
+
+            container.innerHTML = `
+                <div class="table-responsive">
+                    <table class="table table-beamer table-borderless align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th style="width: 80px;" class="text-center">Rang</th>
+                                <th>Schütze</th>
+                                ${isEndstich ? `
+                                    <th style="width: 160px;" class="text-center">Passe 1</th>
+                                    <th style="width: 160px;" class="text-center">Passe 2</th>
+                                    <th style="width: 160px;" class="text-center text-warning fw-bold">Total</th>
+                                    <th style="width: 160px;" class="text-center text-info">Zehntel</th>
+                                ` : `
+                                    <th style="width: 200px;" class="text-center text-warning fw-bold">Punkte</th>
+                                `}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${scores.slice(0, 10).map((s, idx) => {
+                                const rank = idx + 1;
+                                const rankClass = rank === 1 ? 'rank-1' : (rank === 2 ? 'rank-2' : (rank === 3 ? 'rank-3' : 'rank-other'));
+                                const name = s.member ? `${s.member.last_name} ${s.member.first_name}` : (s.guest_name || 'Schütze');
+                                
+                                return `
+                                    <tr class="${rank === 1 ? 'gold-border' : ''}">
+                                        <td class="text-center">
+                                            <span class="rank-badge ${rankClass}">${rank}</span>
+                                        </td>
+                                        <td class="fw-bold fs-4">${escapeHtml(name)}</td>
+                                        ${isEndstich ? `
+                                            <td class="text-center fs-4">${s.passe_1_score || 0} <small class="text-muted">(${s.passe_1_decimal || 0})</small></td>
+                                            <td class="text-center fs-4">${s.passe_2_score || 0} <small class="text-muted">(${s.passe_2_decimal || 0})</small></td>
+                                            <td class="text-center fw-bold fs-3 text-warning">${s.total_score || 0}</td>
+                                            <td class="text-center fw-semibold fs-3 text-info">${(s.total_decimal || 0).toFixed(1)}</td>
+                                        ` : `
+                                            <td class="text-center fw-bold fs-3 text-warning">${s.total_score || 0}</td>
+                                        `}
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function renderBeamerFinalView(container) {
+            const finalists = liveData.finalParticipants || [];
+            container.innerHTML = `
+                <div class="table-responsive">
+                    <table class="table table-beamer table-borderless align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th style="width: 80px;" class="text-center">Rang</th>
+                                <th>Finalist</th>
+                                <th class="text-center">S1</th>
+                                <th class="text-center">S2</th>
+                                <th class="text-center">S3</th>
+                                <th class="text-center">S4</th>
+                                <th class="text-center">S5</th>
+                                <th class="text-center">S6</th>
+                                <th class="text-center">S7</th>
+                                <th class="text-center text-warning fw-bold">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${finalists.map((f, idx) => {
+                                const rank = f.final_rang || (idx + 1);
+                                const rankClass = rank === 1 ? 'rank-1' : (rank === 2 ? 'rank-2' : (rank === 3 ? 'rank-3' : 'rank-other'));
+                                const name = f.member ? `${f.member.last_name} ${f.member.first_name}` : 'Finalist';
+                                return `
+                                    <tr class="${rank === 1 ? 'gold-border' : ''}">
+                                        <td class="text-center">
+                                            <span class="rank-badge ${rankClass}">${rank}</span>
+                                        </td>
+                                        <td class="fw-bold fs-4">${escapeHtml(name)}</td>
+                                        <td class="text-center">${f.serie_1 || '-'}</td>
+                                        <td class="text-center">${f.serie_2 || '-'}</td>
+                                        <td class="text-center">${f.serie_3 || '-'}</td>
+                                        <td class="text-center">${f.serie_4 || '-'}</td>
+                                        <td class="text-center">${f.serie_5 || '-'}</td>
+                                        <td class="text-center">${f.serie_6 || '-'}</td>
+                                        <td class="text-center">${f.serie_7 || '-'}</td>
+                                        <td class="text-center fw-bold fs-3 text-warning">${f.total_score || 0}</td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function escapeHtml(str) {
+            return String(str || '').replace(/[&<>'"]/g, tag => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+            }[tag] || tag));
+        }
+
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        // Ticker & Zyklus
+        setInterval(() => {
+            const now = new Date();
+            document.getElementById('beamer-clock').textContent = now.toLocaleTimeString('de-CH');
+
+            elapsedSeconds += 0.2;
+            const pct = Math.min(100, (elapsedSeconds / cycleSeconds) * 100);
+            document.getElementById('cycle-progress').style.width = pct + '%';
+
+            if (elapsedSeconds >= cycleSeconds) {
+                elapsedSeconds = 0;
+                if (liveData.stiche.length > 0) {
+                    currentStichIndex = (currentStichIndex + 1) % liveData.stiche.length;
+                    renderCurrentBeamerView();
+                }
+            }
+        }, 200);
+
+        // Daten alle 10 Sekunden frisch ziehen
+        setInterval(fetchLiveEndschiessen, 10000);
+        fetchLiveEndschiessen();
+    </script>
+</body>
+</html>

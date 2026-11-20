@@ -1,0 +1,173 @@
+# Fachdokumentation: Finanzbuchhaltung (FiBu) & Bankabgleich
+
+> **Status:** PRODUKTIV (Supabase Single Source of Truth)  
+> **Stand:** November 2026  
+> **Komponenten:** `public.accounting_accounts`, `accounting_journal`, `accounting_payment_orders`, `accounting_budgets`, `accounting_bank_rules`, `accounting_cost_allocations`, `invoice_payments`  
+> **Frontend:** [`vorstand/js/buchhaltung/`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/buchhaltung/) (`buchhaltung-core.js`, `buchhaltung-ui.js`, `buchhaltung-modals.js`, `buchhaltung-bank.js`)
+
+---
+
+## 1. Übersicht & Systemgrenzen
+
+Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung und den bankgestützten Zahlungsabgleich des Vereins nach Schweizer Rechnungslegungsrecht (OR 957ff).
+
+* **Führendes System:** Supabase PostgreSQL (`public.accounting_journal`).
+* **Schnittstelle Bank:** XML-Dateien nach ISO-20022 Standard (`CAMT.053` Kontoauszug, `CAMT.054` Sammlergutschrift).
+* **Entkopplung:** Das alte Google Sheet `Finanzbuchhaltung` und alle GAS-Funktionen wurden vollständig stillgelegt.
+
+---
+
+## 2. Kern-Architektur & Das «Warum» hinter den Designentscheidungen
+
+### 2.1 Warum Schweizer KMU-Kontenrahmen (4-stellig)?
+* **Gesetzliche Konformität (OR 957ff):** Der Schweizer Standard-Kontenrahmen für Vereine garantiert eine saubere Trennung von Aktiven, Passiven, Ertrag und Aufwand:
+  - `1000`: Kasse (Bargeld Munition, Kiosk)
+  - `1020`: Bank / Postfinance (Vereinskonto)
+  - `1090`: Noch abzuklärende Bankzahlungen (Transit / Klärungskonto)
+  - `1099`: Geldtransit / Transferkonto liquide Mittel (Kasse <-> Bank Überträge)
+  - `1100`: Debitoren / Offene Forderungen (Schnittstelle zu `public.invoices`)
+  - `2000`: Kreditoren (Offene Verbindlichkeiten)
+  - `3000`: Ertrag Jahresbeiträge (Schnittstelle zu `contributions_header`)
+  - `3200`: Ertrag Material- & Munitionsverkauf (Schnittstelle zu `inventory_items`)
+  - `3400`: Ertrag Vermietung Schützenhaus (Schnittstelle zu `rental_requests`)
+* **Revisionssicherheit:** Revisoren und GV erhalten einen standardisierten Jahresbericht mit Bilanz und Erfolgsrechnung ohne manuelle Umformatierung.
+
+### 2.2 Warum zwingender doppelter Buchungssatz bei jeder Zahlung?
+* **Das Kernproblem:** In einfachen Systemen wird bei einer Zahlung lediglich ein Haken gesetzt (`status = 'bezahlt'`). Dadurch weiss die Buchhaltung jedoch nicht, auf welches Gegenkonto das Geld geflossen ist.
+* **Die Invariante:** Jede Rechnungsbegleichung (ob über `RechnungsCore.recordPayment`, manuell im Cockpit oder über Bankimport) erzeugt automatisch einen Eintrag in `public.accounting_journal`:
+  - **Soll:** `1020 Bank` (oder `1000 Kasse` bei Barzahlung)
+  - **Haben:** `1100 Debitoren`
+  - **Betrag:** Exakter Zahlungsbetrag in CHF
+* Dadurch stimmen Bilanz, Debitorenspiegel und Bankkonto jederzeit auf den Rappen genau überein.
+
+### 2.3 Warum CAMT.054 Bankabgleich über die 27-stellige QR-Referenz?
+* **Automatisierter Abgleich:** Bei der Ausgabe von Rechnungen mit Schweizer QR-Zahlteil (SIX SPC 0200 1) wird eine eindeutige 27-stellige Referenznummer (QRR) hinterlegt.
+* **Ablauf beim Import:**
+  1. Der Kassier lädt die `CAMT.054` XML-Datei der Bank im Cockpit hoch.
+  2. Der Parser extrahiert die Gutschriften und sucht via QRR die zugehörige Rechnung in `public.invoices`.
+  3. Bei 100% Match wird die Zahlung sowohl bei Einzel- als auch bei Batch-Verbuchungen (`bhBankBookOne`, `bhBankBookAll`, `bhBankBookSelected`) zentral über `RechnungsCore.recordPayment(..., { syncBookkeeping: false })` in `public.invoice_payments` erfasst, das Rechnungs-PDF im Hintergrund neu erzeugt (`RechnungsCore.renderPdf(..., { forceRecreate: true })`) und der Buchungssatz im Journal erzeugt (bei Vermietungen inklusive `rental_status_logs`-Protokollierung).
+  4. Manuelle Tippfehler, fehlerhafte Teilzahlungs-Salden oder umgangene Zahlungshistorien sind dadurch ausgeschlossen.
+* **E-Banking Gutschrifts-Automation (Vermietung):** Ergänzend zum periodischen CAMT-Sammelimport werden eingehende Mietzahlungen über die Edge Function `process-bank-mails` via Gmail-Schnittstelle und Kaskaden-Matching (Vertrags-Nr. oder Mietdatum + Nachname + exakter Betrag CHF 300.00) atomar über den `RechnungsCore` erfasst und direkt als Zahlungseingang verbucht.
+
+### 2.4 Warum `accounting_journal.id` als `BIGSERIAL` (Integer) & Belegnummern-Chronologie?
+* **Revisionssichere Belegnummerierung:** Revisoren verlangen in der Buchführung fortlaufende, lückenlose Belegnummern (1, 2, 3...).
+* **Entscheidung:** Statt unübersichtlicher UUIDs nutzt `accounting_journal` eine PostgreSQL `BIGSERIAL` Sequenz. Das garantiert automatische Chronologie und performante Sortierung. Client-Payloads übergeben kein manuelles String-`id`-Feld, damit PostgreSQL die Sequenz lückenlos selbst hochzählt.
+* **Integrität bei Batch-Buchungen:** Jede Transaktion muss zwingend über gültige Soll- und Haben-Konten verfügen (Fremdschlüssel auf `accounting_accounts`). Unvollständige Bankbuchungen ohne Gegenkonto verbleiben als unklar in der Vormerkliste und werden nicht an die DB übermittelt, um Foreign-Key-Abbrüche zu verhindern. Obsolete Hilfsfelder wie `split_group_id` werden clientseitig nicht übergeben. Die PostgreSQL-Sequenz `accounting_journal_id_seq` wird strikt synchron auf `MAX(id)` gehalten (`98_fix_accounting_journal_sequence.sql`), um Primärschlüssel-Kollisionen (HTTP 409) auszuschliessen. DB-Fehlermeldungen werden transparent bis in die UI-Toasts durchgereicht und gesperrte Aktionsbuttons bei Fehlern via `bhBankRenderResults` automatisch zurückgesetzt.
+* **Klärungskonto 1090 für lückenlos synchrone Bank-Belegnummern:** Um sicherzustellen, dass alle Banktransaktionen aus CAMT-Auszügen streng chronologisch nach Valutadatum mit aufsteigenden Belegnummern (`B_Zahl_YYYY-xxx`, `B_Wirt_YYYY-xxx`) im Journal verankert werden, schlägt das System für noch unklare Posten standardmässig das Konto `1090 Noch abzuklärende Bankzahlungen (Transit)` vor. Dadurch kann der gesamte Bankauszug ohne Nummern-Lücken oder spätere Versatzbuchungen in einem Durchlauf verbucht werden. Im Journal signalisiert ein dedizierter Filter-Badge (`Klärung 1090`) offene Abklärungen, die jederzeit per Klick auf das Bearbeiten-Icon auf das endgültige Konto umkontiert werden können, wobei die ursprüngliche Belegnummer unverändert erhalten bleibt.
+* **Top-to-Bottom-Garantie (CAMT-Reihenfolge & Belegnummern-Synchronisation):** Gemäss den SIX Swiss Payment Standards entspricht die Anordnung der `<Ntry>`-Elemente in den CAMT.053-Dateien der Raiffeisenbank dem gedruckten Papierauszug. Der Parser hinterlegt für jede Transaktion den ursprünglichen XML-Index (`_camtOrderIndex`). Die Frontend-Tabelle wird standardmässig nach Datum absteigend (`desc`) und mit aktivem Filter `Offen` dargestellt, damit die neuesten ungebuchten Buchungen sofort im Blickfeld stehen. Die Belegnummern-Vorschau und die Verbuchung (`bhBankBookAll`, `bhBankBookSelected`) laufen im Hintergrund stets streng chronologisch (von alt nach neu), sodass Datums- und Nummernfolge im Journal zu 100% lückenlos und revisionssicher bleiben. Auch das Split-Modal übernimmt vorab primär die projizierte Belegnummer (`_projectedBelegNr`) aus der Auszugsfolge, und die Batch-Verbuchung (`bhBankBookAll` / `bhBankBookSelected`) verteilt Belegnummern atomar über einen dynamischen Running-Counter (`runningSeqs`) direkt vor dem Insert, wodurch Belegnummern-Kollisionen und Nummernsprünge durch vorgezogene Modaldialoge ausgeschlossen sind. Beim Versuch, spätere Zeilen vorab einzeln zu buchen, weist ein Dialog auf allfällige noch ungebuchte frühere Zeilen hin, um Nummern-Sprünge zu verhindern.
+* **Stabile Beleg-Verankerung & Entfall von Legacy-GAS-Reload-Timern:** Da Mutationen in Supabase (`accounting_journal`) synchron und atomar erfolgen und sofort den persistierten Datensatz zurückliefern, wurden veraltete 1.5-Sekunden-Reload-Timer (`loadBuchhaltungData`) restlos eliminiert. Sowohl beim Öffnen des Modals als auch nach dem Speichern werden die Beleg-ID und Split-Verbundzeilen explizit als Fokus (`_bhJournalFocusId`) und aktive Selektion verankert. Das Journal-Rendering (`renderTabJournal`) sichert bestehende Suchfilter (`#bh-journal-search`) und hält den bearbeiteten Beleg gezielt per `scrollIntoView` im sichtbaren Blickfeld, ohne dass das Journal unkontrolliert verspringt.
+
+### 2.5 Warum variable Zuteilungsquoten für das Controlling?
+* **Problemstellung:** Gemeinsame Kosten wie Schützenhaus-Reinigung (4010), Energie & Wasser (6400) oder Liegenschaftsunterhalt (6000) fallen für das gesamte Schützenhaus an, das sowohl dem Schiessbetrieb als auch externen Vermietungen dient. Eine pauschale 100%-Belastung verfälschte die Rentabilitätsrechnungen.
+* **Lösung:** In `public.accounting_cost_allocations` werden prozentuale Zuteilungsschlüssel (z.B. 70% Reinigung, 30% Energie, 10% Gebäude/Versicherung für Vermietung) persistent gespeichert und im Cockpit (`vorstand/js/buchhaltung-controlling.js`) interaktiv mit Sofortberechnung visualisiert und verwaltet.
+
+### 2.6 Zweistufige Auszahlungen, Zahlungsaufträge & ISO 20022 pain.001 Sammel-Export
+* **Problemstellung & Anwendungsfall:** Vorfinanzierte Auslagen von Mitgliedern (z.B. Gruppendoppel für Schiessanlässe, Munition oder Materialspesen) müssen mit detailliertem Nachweis vergütet werden.
+* **Differenzierung Zahlweg & standardisierte Belegnummernkreise:**
+  - **Kasse (`1000`):** Barauszahlungen und -einnahmen erhalten lückenlos das Präfix `Kasse_YYYY-xxx` und werden sofort im Hauptjournal verbucht.
+  - **Zahlungskonto Bank (`1020`):** Reguläre Bankbuchungen im Journal erhalten fortlaufend `B_Zahl_YYYY-xxx`.
+  - **Wirtschaftskonto Bank (`1021`):** Bankbuchungen des Wirtschaftskontos erhalten fortlaufend `B_Wirt_YYYY-xxx`.
+  - **Sparkonto Bank (`1022`):** Bankbuchungen des Sparkontos (Zinsen, Liquiditätstransfers) erhalten standardisiert `B_Spar_YYYY-xxx` (rückwärtskompatibel zu Altbeständen `B_Geno_`).
+  - **Bankauszahlungs-Aufträge (pain.001 via `1020`):** Wird explizit der Aktionstyp «Überweisung Bank» gewählt oder eine Bank-XML exportiert, vergibt das System die Vorgangsnummer `ZA-YYYY-xxx` in `public.accounting_payment_orders` mit Status `pendent`. Erst nach dem Bankvollzug und CAMT-Import wird die endgültige `B_Zahl_YYYY-xxx` chronologisch vergeben.
+* **ISO 20022 pain.001 Sammel- & Einzel-Export:**
+  - Über das Modal «Zahlungsaufträge» (`bhOpenPaymentOrdersModal`) können mehrere erfasste Auszahlungen an unterschiedliche Mitglieder ausgewählt und in **einer einzigen normierten Sammel-XML** (`pain.001.001.03.ch.02` via `bhDownloadPain001BatchXml`) gebündelt werden.
+  - Alternativ kann direkt beim Erfassen eine Einzel-XML heruntergeladen werden. Der Status wechselt auf `exportiert`.
+* **Chronologische Verbuchung beim CAMT-Bankabgleich:**
+  - Sobald der CAMT.053/054-Kontoauszug eingelesen wird, extrahiert `bhBankParseCAMT053` zusätzlich die `EndToEndId` (`<Refs>`) sowie die Gegenpartei-IBAN (`partyIban`) und gleicht Belastungen (`DBIT`) automatisch über Auftrags-Nr., IBAN oder Name und Betrag mit offenen Zahlungsaufträgen ab (Match-Typ `payment_order`).
+  - Beim Einzel- und Sammel-Buchen (`bhBankBookAll`) wird der Buchungssatz **erst jetzt mit dem echten Valutadatum** und der nächsten fortlaufenden, lückenlosen `B_Zahl_YYYY-xxx` ins Journal geschrieben und der Zahlungsauftrag atomar auf `status = 'ausgefuehrt'` mit Referenz auf `journal_id` gesetzt.
+* **Belegdruck & Quittung:** Sowohl im Status Zahlungsauftrag (`ZA-...`) als auch nach finaler Verbuchung (`B_Zahl_...`) kann jederzeit via `bhPrintJournalBeleg` ein A4-Auszahlungsbeleg mit Empfänger-Box und IBAN ausgegeben werden.
+
+### 2.7 Intelligente Modul-Erkennung & Status-Rücksetzung beim Löschen im Journal
+* **Problemstellung & Kopplung:** Wird ein Buchungssatz im Journal gelöscht, dessen Zahlung zuvor ein Fachmodul (Rechnungen `invoices`, Jahresbeitrag `contributions_header`, Vermietung `rental_requests` oder Inventar-Depots `inventory_deposits`) auf `bezahlt` gesetzt hatte, führte eine isolierte Journalzeilen-Löschung zu Diskrepanzen (z.B. CAMT-Bankimport markierte die Buchung weiterhin als «bereits gebucht»).
+* **Lösung & Kaskade:** Vor dem Löschen (Einzelbuchung, Split-Gruppe oder Sammellöschung) scannt `bhDetectLinkedModulesForJournal` automatisch per parametrisierter `.in()`-Abfrage `invoice_payments`, Belegnummern und Buchungstexte auf verknüpfte Vorgänge. Beim Zurücksetzen (`bhCascadeResetLinkedModules`) werden ausschliesslich die dem gelöschten Journalbeleg zugeordneten `invoice_payments`-Einträge (über `paymentIds`) gelöscht — der Trigger `trg_invoice_payments_sync` berechnet `open_amount` und `status` (offen/teilbezahlt) automatisch korrekt neu, verbleibende Teilzahlungen bleiben erhalten und die Rechnungs-PDFs werden neu generiert (`RechnungsCore.renderPdf(..., { forceRecreate: true })`). Anschliessend gibt `bhReleaseBankMatchResults` die betroffenen CAMT-Zeilen wieder zur Buchung frei.
+* **Deduplizierung beim CAMT.053-Import:** Der XML-Parser (`bhBankParseCAMT053`) prüft auf XML-Parserfehler (`parsererror`) und versieht identische Buchungen innerhalb derselben Datei mit einer Vorkommens-Sequenz (`_dupSeq`) pro Konto-IBAN und Richtung (`CRDT`/`DBIT`), damit taggleiche Mehrfachzahlungen über denselben Betrag erhalten bleiben.
+
+### 2.8 Netto-Zahlungsfluss & Ertragsminderungen bei Split-Verbunden (Sammelbuchungen)
+* **Problemstellung:** Enthält eine Sammelbuchung (z.B. Jahresbeitragsabrechnung mit Lizenz, Beitrag und Ehrenmitglieder-Rabatt) sowohl Erträge als auch Ertragsminderungen/Gutschriften, führte ein blindes Aufsummieren aller Zeilenbeträge zu einem verfälschten Brutto-Total (z.B. CHF 268.00 statt der effektiv eingegangenen CHF 68.00).
+* **Invariante & Anker-Konto:** Ein Split-Verbund repräsentiert einen einzigen Zahlungsfluss auf das massgebliche Liquiditäts- bzw. Anker-Konto (z.B. Bank `1020` bei `B_Zahl_`, Kasse `1000` bei `Kasse_`). Das Total des Verbunds wird immer als Netto-Saldo auf diesem Anker-Konto berechnet (`|Soll - Haben|`), sodass Gutschriften und Rabatte korrekt als Minderung abgezogen werden.
+* **Darstellung im Journal & Split-Editor:** Buchungszeilen mit Ertragsminderung (Ertragskonto im Soll, Bank im Haben) werden mit negativem Vorzeichen (`- `) und Badge `ERTRAG (ABZUG)` dargestellt. Auch bei Mehrfachauswahl im Journal und beim Belegdruck wird der exakte Netto-Zahlungsbetrag ausgewiesen.
+* **Suffix-Invariante & Live-Kontierung im Split-Verbund:** Sowohl beim Sammel- als auch beim Einzel-Verbuchen im CAMT-Abgleich (`_bhBankBookOneInternal`) und beim nachträglichen Aufteilen (`bhConvertEntryToSplit` / `bhSaveSplitGroupEdit`) erhalten zusammengehörige Teilpositionen durchgehend alphabetische Suffixe (`a, b, c...`) am Belegstamm (`baseBeleg`). Beim Hinzufügen oder Aufteilen einer Buchung bleibt das Liquiditäts-Ankerkonto (`1020`, `1000`, `1021`, `1022`) je nach Flussrichtung im Soll oder Haben vorbelegt, während Kontoänderungen im Split-Editor sofort den Netto-Saldo und die Abzug-Kennzeichnung live neu berechnen. Beim Bearbeiten bestehender CAMT-Buchungen bleibt der Aktionstyp `Bank` im Auswahlfeld `#bhe-typ` erhalten.
+* **Vorjahres-Erkennung & automatische Split-Übernahme bei Jahresbeiträgen im CAMT-Abgleich:** Bei eingehenden Jahresbeitragszahlungen ermittelt `bhBankFindBestBeitragForMember` anhand expliziter Jahresangaben im Verwendungszweck (z.B. `Jahresbeitrag 2025`) oder eines exakten Betragstreffers auf einen offenen Beitrags-Header (`contributions_header`) das korrekte Beitragsjahr. Über `bhBankApplyJbPositionsToTx` und `jbGetSplitBookings` werden die zugehörigen Beitragspositionen (`contributions_positions`) unmittelbar in `tx.splitRows` (`tx.isSplit = true`) überführt, sodass sowohl die Haupttabelle als auch das Detail-Modal «Split-Buchung aufteilen» (`bhBankOpenSplitModal`) alle Teilbuchungen inklusive Ehrenmitglieder-/Vorstands-Abzügen konsistent ausweisen.
+
+### 2.9 Strukturierte 20er-Block Transitkonten für Stiche & Weiterverrechnungen (13xx)
+* **Problemstellung:** Laufen sämtliche Meisterschaftsstiche, Verbandsschiessen und Sonderbeiträge über ein einziges Sammelkonto `1300`, ist die rechnerische Detailkontrolle bei Jahresend-Differenzen extrem zeitaufwendig.
+* **Architektur & Block-Standard:** Der 13xx-Bereich ist in feste 20er-Nummernblöcke gegliedert, deren Endziffern exakt mit den Gebühren-Codes korrespondieren:
+  - `1300–1309`: Meisterschafts-Sammel- & Klärungskonto (`1300`), Transit Schützengewinne Gruppen & Einzel (`1301`).
+  - `1310–1329`: 50m Kleinkaliber (`1310` Sammel; `1311` Grenzland KK001 bis `1318` Volksschiessen KK008; `1319–1329` Reserve).
+  - `1330–1349`: 10m Luftgewehr (`1330` Sammel; `1331` AG DEZ LG001 bis `1337` Kniend LG007; `1338–1349` Reserve/Nachwuchs).
+  - `1350–1369`: Zusatzpositionen & Feste (`1350` Sammel; `1351` Bekleidung Z001; `1352` Schützenfest Stiche Z002; `1353` Fest-Logis Z003; `1354–1369` Reserve).
+* **Vorteil:** Die Bilanz saldiert jeden einzelnen Anlass transparent gegen die Verbandsrechnungen des Ausrichters (Soll = Verbandsrechnung, Haben = Beitragsanteile Mitglieder -> Saldo CHF 0.00).
+* **Schützengewinne auswärtige Schiessen (Konto 1301 - Gruppen & Einzel):** Das Transitkonto `1301` («Transit Schützengewinne (Gruppen & Einzel)») führt sämtliche Auszahlungen an Vereinsmitglieder aus auswärtigen Schiessen. Es deckt drei Szenarien ab:
+  1. *Gruppengewinne (`gruppe`)*: Der Verein übernimmt das Gruppendoppel (standardmässig CHF 30.00 auf `4410`), der Netto-Überschuss wird aufgeteilt.
+  2. *Einzelgewinne (`einzel`)*: Reine persönliche Stich- und Festgewinne (Auszahler, Gabenstich, Kategoriensieg).
+  3. *Kombiniert (`kombiniert`)*: Sammelüberweisungen von Veranstaltern, die Gruppenpreis und Auszahler gemeinsam auf das Vereinskonto überweisen (Abstimmung Geldeingang Bank `1020` an `1301` auf den Rappen genau).
+  Die Abwicklung erfolgt wahlweise per automatischer Verrechnung im Jahresbeitrag (`contributions_positions` mit Haben `1301`) oder via Banküberweisung (`accounting_payment_orders` via pain.001 mit Soll `1301` an Haben `1020`). Nach Verrechnung bzw. Auszahlung saldiert Konto `1301` auf exakt CHF 0.00.
+
+### 2.10 Automatische Buchungstyp-Ermittlung & Trigger-Sicherung (accounting_journal.buchungstyp)
+* **Problemstellung:** Da CAMT-Importe den Spaltenwert `buchungstyp` historisch nicht explizit mitgaben, belegte die Datenbank alle importierten Datensätze mit dem Tabellen-Default `'TRANSIT'`. Dadurch wurden Ertrags- und Aufwandsbuchungen im Journal starr als «TRANSIT» ausgewiesen und in gefilterten Revisorenberichten verborgen, bis sie manuell geöffnet und gespeichert wurden.
+* **Lösung & Invariante (3-Schichten-Schutz):**
+  - **PostgreSQL Trigger (`trg_acc_journal_set_buchungstyp` via Migration `105`):** Ein `BEFORE INSERT OR UPDATE`-Trigger auf `accounting_journal` ermittelt anhand der Kontenklasse (`public.accounting_accounts`) und Standard-Präfixe vollautomatisch den Typ (`ERTRAG`, `AUFWAND`, `DEBITOR`, `KASSE`, `BANK`). Echte Klärungs- (`1090`), Geldtransit- (`1190`) und Stichkonten (`13xx`) bleiben strikt auf `TRANSIT`.
+  - **Client-Payloads:** CAMT- und Split-Buchungsmethoden (`bhBankBookOneInternal`, `bhBankBookAll`, `bhBankBookSelected`, `jbGetSplitBookings`) übergeben den Typ via `getBuchungstyp` direkt beim Insert.
+  - **Resiliente UI (`bhResolveItemBuchungstyp`):** Frontend und Controlling bewerten Datensätze dynamisch und lassen ein veraltetes `'TRANSIT'` nur bei echten Transitkonten gelten.
+
+### 2.11 KMU-Erfolgsrechnung: Kontenklassen-Integrität (81xx Ertrag vs. 85xx Aufwand) & Numerische Gruppierung
+* **Invariante & Klassifizierung:** Ausserordentliche Erlöse wie Kleiderverkauf (`8121`), Reinigungstücher (`8122`) und Entschädigungen (`8123`) sind in `public.accounting_accounts` strikt als `Ertrag` hinterlegt (nicht als Aufwand mit Negativsaldo). Kleidereinkauf (`8501`) und Sonderaufwände (`8500`) bilden den Gegenpol als `Ausserordentlicher Aufwand`.
+* **Gliederung & Sortierung:** Die Darstellung in den KMU-Finanzberichten (`renderErfolgsrechnungHTML`) und Controlling sortiert Untergruppen nicht alphabetisch, sondern strikt nach aufsteigender Kontonummer der enthaltenen Konten (34xx &rarr; 36xx &rarr; 38xx &rarr; 81xx und 40xx &rarr; 41xx &rarr; 42xx &rarr; 44xx &rarr; 60xx &rarr; 85xx &rarr; 89xx). Zinserträge (`8110`) und ausserordentliche Erträge (`812x`) werden in eigenständigen Subgruppen sauber getrennt.
+
+### 2.12 Ergonomie & Datenübernahme im Erfassungs-Modal (Einzelbuchung & Sammelbeleg)
+* **Ghost-Data-Schutz & State-Reset:** Um zu verhindern, dass Zeilen früherer Sammelbuchungen im Browser-Speicher verbleiben (`_bhKassaSammelRows`), werden Sammelbeleg-Zeilen beim Öffnen des Modals zur Neuerfassung, nach jedem erfolgreichen Speichern sowie beim Schliessen des Modals (`hidden.bs.modal`) garantiert geleert (`null`).
+* **Nahtlose Übernahme von Einzelbuchung auf Sammelbeleg (`bhSyncFromSingleEntry`):** Beginnt der Benutzer eine Buchung im Einzel-Tab (Datum, Empfänger/IBAN, Text, Soll/Haben-Konto, Betrag) und wechselt anschliessend auf den Reiter «Sammelbeleg & Auszahlungen», werden diese Eingaben automatisch in Position #1 übernommen, die Belegart (`bank`, `ausgabe`, `einnahme`, `frei`) intelligent abgeleitet und eine leere Folgezeile #2 für den Split bereitgestellt. Über die Schaltfläche «Aus Einzelbuchung übernehmen» kann der Transfer jederzeit auch manuell synchronisiert werden.
+* **Synchroner In-Memory Journal-Abgleich & Cache-Revalidierung:** Nach dem Speichern von Einzelbuchungen wird der von Supabase zurückgegebene Datensatz sofort atomar in `window._bhJournal` verankert (`unshift`), damit Kontoblätter (z.B. Kasse `1000`) und Saldenberechnungen unmittelbar ohne Seiten-Reload aktuell sind. Ergänzend stöbert ein asynchroner Hintergrund-Reload (`loadBuchhaltungData(true, true)`) alle Sequenzen ab, und beim Wiederbetreten des Moduls (`renderBuchhaltung`) sorgt ein Stale-While-Revalidate-Ablauf für unterbrechungsfreie Frische.
+
+### 2.13 Trennung der Belegnummernkreise & Geldtransit (1099) bei Kassen- & Banküberträgen
+* **Problemstellung & Invariante:** Werden Überträge zwischen flüssigen Mitteln (Kasse `1000` und Bank `1020` oder Bankkonto an Bankkonto, z.B. Wirtschaftskonto `1021` und Zahlungskonto `1020`) direkt gegeneinander gebucht, kollidieren die unabhängigen Belegnummernkreise: Eine Direktbuchung im ersten Auszug (z.B. `B_Wirt_`) führt beim Einlesen des zweiten Auszugs (z.B. `B_Zahl_`) entweder zu einer doppelten Bilanzbuchung oder zu einer unverbuchten Lücke im Kontoauszug. Zudem führen Valuta- und Zeitversatz zu unstimmigen Zwischensalden.
+* **Architektur & Buchungsstandard:** Sämtliche Transfers zwischen liquiden Eigenkonten laufen strikt über das neutrale Verrechnungskonto `1099 Geldtransit (Transferkonto liquide Mittel)`.
+  1. **Kasse &harr; Bank:**
+     - Physische Kassenentnahme: `1099 an 1000` mit Beleg `Kasse_YYYY-xxx` am Entnahmetag.
+     - Bankgutschrift via CAMT: `1020 an 1099` mit Beleg `B_Zahl_YYYY-xxx` am Bank-Valutatag.
+  2. **Bank &harr; Bank (z.B. Wirtschaftskonto 1021 &harr; Zahlungskonto 1020):**
+     - CAMT Wirtschaftskonto (Belastung): `1099 an 1021` mit Beleg `B_Wirt_YYYY-xxx` am Belastungstag.
+     - CAMT Zahlungskonto (Gutschrift): `1020 an 1099` mit Beleg `B_Zahl_YYYY-xxx` am Gutschriftstag.
+* **Ergebnis & Revisionssicherheit:** Alle Belegnummernkreise (`B_Wirt_`, `B_Zahl_`, `Kasse_`) bleiben 100% lückenlos, chronologisch getrennt und deckungsgleich mit den jeweiligen Bank-/Kontoauszügen. Am Stichtag saldiert das Konto `1099` exakt auf **CHF 0.00**.
+* **Intelligente Frontend- & Parser-Unterstützung:**
+  - Wählt der Benutzer im Bankabgleich ein anderes Eigenkonto (`1000`, `1020`, `1021`, `1022`) als Gegenkonto aus, leitet das System dieses automatisch auf `1099` um und informiert mit einem Toast-Hinweis.
+  - Erkennt der CAMT-Parser im Verwendungszweck typische Übertragsmuster oder stimmt die IBAN der Gegenpartei mit einem der Vereinskonten überein, schlägt das System automatisch `1099 Geldtransit` mit Match-Typ `rule` vor.
+
+### 2.14 Zentrale Buchungsregeln (`accounting_bank_rules`) & Härtung des Duplikatsabgleichs
+* **Keine hartcodierten Regeln im Quellcode (Single Source of Truth):** Sämtliche Erkennungsmuster für Mieterträge (`3650`), Spendeneingänge/TWINT via RaiseNow (`3651`) sowie interne Kontoüberträge (`1099`) wurden via Migration `109` aus dem Code in die Datenbanktabelle `public.accounting_bank_rules` überführt. Benutzer können diese Regeln im Modal «Automatische Buchungsregeln verwalten» transparent einsehen, anpassen, sortieren und löschen.
+* **Persistenz & UUID-Integrität:** Regeln nutzen als Primärschlüssel standardmässig die UUID `id` der Tabelle `accounting_bank_rules` für atomare Upserts und Löschvorgänge in Supabase.
+* **Härtung gegen False-Positive Duplikate & Split-Buchungs-Schutz (`bhBankMatchText` / `bhBankMatchAll`):**
+  - Frühere CAMT-Einträge glichen generische Schlagwörter wie `Vermietung` und `Schützenhaus` ab, wodurch gleichhohe Mietzahlungen (z.B. CHF 300.00) fälschlicherweise als bereits im Journal gebucht markiert wurden. Solche generischen Begriffe bleiben im Schlagwortabgleich strikt ausgeschlossen.
+  - **Fallback für Split- / Sammelbuchungen:** Split-Gruppen im Journal (z.B. Bareinzahlungen aufgeteilt auf Einnahmen/Miete/Reinigung oder Schiessanlass-Doppel) verfügen über einen dedizierten Betrags- und Datums-Fallback ($\le 4$ Tage bei identischem Netto-Bankfluss), sodass sie beim CAMT-Wiedereinlesen zuverlässig als `alreadyBooked` erkannt werden, selbst wenn die einzelnen Journalzeilen abweichende fachliche Anlassbeschreibungen statt Bankparteien tragen.
+  - **Mojibake- & Sonderzeichen-Resilienz:** Zeichenketten aus historischem UTF-8-Encoding (`├╝`, `├ñ`, etc.) werden in `normalizeString` vorab in saubere Umlaute überführt, um Fehlschläge bei Vereins- und Personennamen (z.B. Luginbühl, Villmergen) auszuschliessen.
+  - Fallback-Matches bei identischem Betrag innerhalb von 4 Tagen prüfen strikt, dass im Journal-Buchungstext kein abweichender Parteiname hinterlegt ist (ausser bei Verwendungszweck-Treffern oder Anlass-Buchungen).
+  - **Deduplizierung, Zahlenfilter, Vertragscode-Ausschluss & Datums-Priorisierung:** In `bhBankMatchText` werden Verwendungszweck-Tokens (`rWords`) dedupliziert und reine Zahlen bzw. Jahreszahlen (`2026`, `ll2026`) gefiltert, sodass doppelt vorkommende Jahreszahlen kein `>= 2`-Treffer-False-Positive erzeugen; zudem verhindern sich widersprechende Vertrags-/Buchungscodes (`V-YYYY-XXXX` vs. `LLYYYY-XXX`) ein Über-Kreuz-Matching. In `bhBankMatchAll` (Schritte A/B) werden passende Gruppen und Einzelbuchungen im 35-Tage-Fenster nach Partei-/Referenz-Stärke sowie kleinster Datumsdifferenz (`days`) sortiert statt blind den ersten `id DESC`-Treffer zu verbrauchen.
+
+### 2.15 Durchgängiger Direktabsprung in Kontoblatt & Kontoauszug (Drill-Down)
+* **Ergonomie & Prüfbarkeit:** Sämtliche im Portal angezeigten Kontonummern (in den KMU-Berichten, im Kontenrahmen, im Kassabuch-Journal sowie in der Soll/Ist-Controlling-Tabelle und den Revisorenberichten) fungieren als interaktive Badges (`.bh-konto-badge.clickable`).
+* **Sofort-Drilldown (`bhOpenKontoauszugModal`):** Ein Klick auf das Konten-Badge oder die Zeile öffnet unmittelbar das vollständige Kontoblatt des entsprechenden Kontos für das aktive Jahr mit allen Buchungen, Gegenkonten, Saldenverlauf, Belegnummern, Vollbildmodus, Excel-CSV- und PDF-Export. Innerhalb des Kontoblatts ermöglicht ein Klick auf das Gegenkonto einen direkten Quersprung in dessen Kontenverlauf.
+
+### 2.16 Verknüpfung mit Inventar-Kontierung (`bhJumpToInventarKonten`)
+* **Nahtlose Abstimmung zwischen FiBu und Inventar:** Im Tab «KMU-Kontenrahmen & Budget» visualisiert eine Kontierungs-Infozeile die aktuell konfigurierten Gegenkonten für den Materialverkauf (Ertrag, z.B. `8121`) und Pfanddepots (Passiven `2030`).
+* **Direktabsprung:** Der Button `[Inventar-Konten]` bzw. der Link in der Infobox öffnet direkt das Inventarmodul im Tab «Finanzen» und fokussiert die Konfigurationskarte für berechtigte Kassiere.
+
+---
+
+## 3. Datenmodell (Kern-Tabellen)
+
+| Tabelle | Primärschlüssel | Zweck & Invarianten |
+| :--- | :--- | :--- |
+| `public.accounting_accounts` | `konto` (VARCHAR) | KMU-Kontenrahmen mit Klassifizierung und Salden. |
+| `public.accounting_journal` | `id` (BIGSERIAL) | Das lückenlose Hauptbuch (Datum, Beleg-Nr, Soll, Haben, Betrag, Buchungstext). |
+| `public.accounting_payment_orders` | `id` (UUID) | Vorgemerkte Zahlungsaufträge (`ZA-YYYY-xxx`) für Banküberweisungen vor CAMT-Verbuchung. |
+| `public.accounting_budgets` | `id` (UUID) | Jahresbudgets je Konto für den Soll/Ist-Vergleich im Controlling. |
+| `public.accounting_bank_rules` | `id` (UUID) | Automatische Kontierungsregeln für wiederkehrende Banktexte (z.B. Zinsen, Spesen). |
+| `public.accounting_cost_allocations` | `id` (UUID) | Konfigurierbare Zuteilungsquoten (%) für Vermietung, Wirtschaft und Sportbetrieb. |
+
+---
+
+## 4. Berechtigungen & RLS
+
+* **Einsehen (`buchhaltung.view`):** Read-Only Einsicht (fail-closed über `window.bhCanWrite()`, alle Schreibaktionen und Schreib-Dialoge deaktiviert/ausgeblendet).
+* **Buchen & Mutieren (`buchhaltung.manage`):** Vollzugriff auf Kontenrahmen, Budgets, Journalbuchungen/-löschungen, Zahlungsaufträge und CAMT-Bankabgleich (inklusive `admin` Superuser).
+* **RLS-Policies:** Alle Kerntabellen (`accounting_accounts`, `accounting_journal`, `accounting_budgets`, `accounting_bank_rules`, `accounting_cost_allocations`, sowie `accounting_payment_orders` via Migration `132_harden_accounting_payment_orders_rls.sql`) erzwingen über `public.rbac_allows(...)` strikt `buchhaltung.view` / `buchhaltung.manage` auf `SELECT` und `buchhaltung.manage` auf Schreiboperationen.

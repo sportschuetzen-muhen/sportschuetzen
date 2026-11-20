@@ -1,0 +1,1231 @@
+// === SUB-MODUL: UMFRAGEN & ANMELDUNGEN - EVENTS ===
+
+let umfragenFilterCtrl = null;
+let umfragenTableController = null;
+
+function renderUmfragenEventsList() {
+    const tbody = document.getElementById('umfragen-events-body');
+    const cardsContainer = document.getElementById('umfragen-events-cards');
+    
+    // Eindeutige Prüfung der Schreibrechte
+    let canWrite = false;
+    if (typeof hasWriteAccess === 'function') {
+        canWrite = hasWriteAccess('umfragen');
+    } else {
+        canWrite = (window.currentRoles || []).includes('admin');
+    }
+    
+    // Speichern- und Hinzufügen-Buttons steuern
+    const successBtns = document.querySelectorAll('#umfragen-container .btn-success');
+    successBtns.forEach(btn => {
+        if (canWrite) {
+            btn.classList.remove('d-none');
+            btn.removeAttribute('disabled');
+        } else {
+            btn.classList.add('d-none');
+        }
+    });
+
+    if (!umfragenState || umfragenState.length === 0) {
+        if (tbody) tbody.innerHTML = '<tr><td colspan="13" class="text-center p-4 text-muted">Keine Events gefunden.</td></tr>';
+        if (cardsContainer) cardsContainer.innerHTML = '<div class="text-center p-4 text-muted border rounded bg-white">Keine Events gefunden.</div>';
+        return;
+    }
+
+    // 1. Desktop Table Rows
+    if (tbody) {
+        tbody.innerHTML = umfragenState.map((e, idx) => renderDesktopEventRow(e, idx, canWrite)).join('');
+    }
+
+    // 2. Mobile Cards
+    if (cardsContainer) {
+        cardsContainer.innerHTML = umfragenState.map((e, idx) => renderMobileEventCard(e, idx, canWrite)).join('');
+    }
+
+    // Datalist für Gruppen pflegen
+    const datalist = document.getElementById('umfragen-gruppe-list');
+    if(datalist) {
+        const uniqueGroups = Array.from(new Set(umfragenState.map(e => String(e.gruppe || '').trim()).filter(Boolean)));
+        uniqueGroups.sort();
+        datalist.innerHTML = uniqueGroups.map(g => `<option value="${escapeHtml(g)}">`).join('');
+    }
+
+    // TableKit-Synchronisation (Spaltenbreiten, Sortierung, Sichtbarkeit)
+    if (window.TableKit && typeof window.TableKit.syncTable === 'function') {
+        window.TableKit.syncTable('#umfragen-events-table');
+    }
+    if (umfragenFilterCtrl && typeof umfragenFilterCtrl.apply === 'function') {
+        umfragenFilterCtrl.apply();
+    }
+}
+
+function renderDesktopEventRow(e, idx, canWrite) {
+    const isSchiess = isTrue(e.schiessanlass);
+    const parsedOpts = (typeof parsePollOptions === 'function') ? parsePollOptions(e.options) : (Array.isArray(e.options) ? e.options : []);
+    const optCount = parsedOpts.length;
+    const qCount = Array.isArray(e.questions_schema) ? e.questions_schema.length : 0;
+    const isGv = (e.title || '').toLowerCase().includes('generalversammlung');
+    const statusCategory = isSchiess ? 'schiessen' : (isGv ? 'gv' : (isTrue(e.aktiv) ? 'aktiv' : 'inaktiv'));
+
+    return `
+    <tr data-id="${escapeHtml(e.id || idx)}" data-idx="${idx}" data-status="${statusCategory}">
+        <td data-col-id="id" class="text-muted small align-middle">${escapeHtml(e.id || '-')}</td>
+        <td data-col-id="title">
+            <div class="d-flex flex-column gap-1">
+                <input type="text" class="form-control form-control-sm" value="${escapeHtml(e.title || '')}" onchange="onUmfrageTitleChange(${idx}, this.value)" ${!canWrite?'readonly disabled':''}>
+                ${isGv ? '<span class="badge bg-primary-subtle text-primary border border-primary-subtle text-start py-0.5 px-1.5" style="font-size:0.68rem; width: fit-content;"><i class="fas fa-landmark me-1"></i>Generalversammlung</span>' : ''}
+            </div>
+        </td>
+        <td data-col-id="datum"><input type="date" class="form-control form-control-sm" value="${formatISODate(e.datum)}" onchange="umfragenState[${idx}].datum=this.value; syncEventField(${idx}, 'datum', this.value); window.markUnsaved()" ${!canWrite?'readonly disabled':''}></td>
+        <td data-col-id="gruppe">
+            <select class="form-select form-select-sm" onchange="umfragenState[${idx}].gruppe=this.value; syncEventField(${idx}, 'gruppe', this.value); window.markUnsaved()" ${!canWrite?'disabled':''}>
+                <option value="aktiv" ${(e.gruppe === 'aktiv' || !e.gruppe) ? 'selected' : ''}>Aktiv</option>
+                <option value="passiv" ${e.gruppe === 'passiv' ? 'selected' : ''}>Passiv</option>
+                <option value="alle" ${e.gruppe === 'alle' ? 'selected' : ''}>Alle</option>
+            </select>
+        </td>
+        <td data-col-id="schiessanlass" class="text-center align-middle">
+            <div style="display:flex; flex-direction:column; align-items:center; gap:3px;">
+                <input type="checkbox" id="cb-schiess-${idx}" class="form-check-input" ${isSchiess ? 'checked' : ''}
+                    onchange="onSchiessanlassChange(${idx}, this.checked)" ${!canWrite?'disabled':''}>
+                <button id="poll-btn-${idx}" class="btn btn-xs btn-outline-primary px-1 py-0"
+                    style="font-size:0.65rem; display:${isSchiess ? 'inline-block' : 'none'};"
+                    onclick="togglePollOptionsEditor(${idx})" ${!canWrite?'disabled':''}>
+                    📅 ${optCount > 0 ? optCount + ' Opt.' : 'Optionen'}
+                </button>
+            </div>
+        </td>
+        <td data-col-id="aktiv" class="text-center align-middle">
+            <input type="checkbox" id="cb-aktiv-${idx}" class="form-check-input" ${isTrue(e.aktiv) ? 'checked' : ''} onchange="umfragenState[${idx}].aktiv=this.checked; syncEventField(${idx}, 'aktiv', this.checked); window.markUnsaved()" ${!canWrite?'disabled':''}>
+        </td>
+        <td data-col-id="showparticipants" class="text-center align-middle" style="opacity:${isSchiess ? '0.3' : '1'}" title="${isSchiess ? 'Bei externen Gruppenschiessen automatisch sichtbar (für Teambildung)' : ''}">
+            <input type="checkbox" id="cb-part-${idx}" class="form-check-input" ${(isSchiess || isTrue(e.showparticipants)) ? 'checked' : ''}
+                onchange="umfragenState[${idx}].showparticipants=this.checked; syncEventField(${idx}, 'showparticipants', this.checked); window.markUnsaved()"
+                ${!canWrite || isSchiess ? 'disabled' : ''}>
+        </td>
+        <td data-col-id="frage_begleitung" class="text-center align-middle" style="opacity:${isSchiess ? '0.3' : '1'}" title="${isSchiess ? 'Nicht anwendbar bei externen Gruppenschiessen' : ''}">
+            <input type="checkbox" id="cb-begl-${idx}" class="form-check-input" ${isTrue(e.frage_begleitung) && !isSchiess ? 'checked' : ''}
+                onchange="umfragenState[${idx}].frage_begleitung=this.checked; syncEventField(${idx}, 'frage_begleitung', this.checked); window.markUnsaved()"
+                ${!canWrite || isSchiess ? 'disabled' : ''}>
+        </td>
+        <td data-col-id="frage_essen" class="text-center align-middle" style="opacity:${isSchiess ? '0.3' : '1'}" title="${isSchiess ? 'Nicht anwendbar bei externen Gruppenschiessen' : ''}">
+            <input type="checkbox" id="cb-essen-${idx}" class="form-check-input" ${isTrue(e.frage_essen) && !isSchiess ? 'checked' : ''}
+                onchange="umfragenState[${idx}].frage_essen=this.checked; syncEventField(${idx}, 'frage_essen', this.checked); window.markUnsaved()"
+                ${!canWrite || isSchiess ? 'disabled' : ''}>
+        </td>
+        <td data-col-id="frage_grund" class="text-center align-middle" style="opacity:${isSchiess ? '0.3' : '1'}" title="${isSchiess ? 'Nicht anwendbar bei externen Gruppenschiessen' : ''}">
+            <input type="checkbox" id="cb-grund-${idx}" class="form-check-input" ${isTrue(e.frage_grund) && !isSchiess ? 'checked' : ''}
+                onchange="umfragenState[${idx}].frage_grund=this.checked; syncEventField(${idx}, 'frage_grund', this.checked); window.markUnsaved()"
+                ${!canWrite || isSchiess ? 'disabled' : ''}>
+        </td>
+        <td data-col-id="questions" class="text-center align-middle">
+            <button class="btn btn-xs ${qCount > 0 ? 'btn-primary' : 'btn-outline-secondary'} px-2 py-1"
+                id="btn-questions-${idx}"
+                style="font-size:0.75rem;"
+                title="Zusatzfragen für diesen Anlass verwalten"
+                onclick="toggleQuestionsSchemaEditor(${idx})" ${!canWrite?'disabled':''}>
+                📝 ${qCount > 0 ? qCount + (qCount === 1 ? ' Frage' : ' Fragen') : '+ Fragen'}
+            </button>
+        </td>
+        <td data-col-id="dokument" class="align-middle">
+            <div class="input-group input-group-sm" style="min-width: 185px;">
+                <input type="text" id="event-doc-input-${idx}" class="form-control form-control-sm"
+                    placeholder="URL(s), Drive-ID(s)..."
+                    title="Mehrere Dokumente einfach durch Komma trennen (z.B. url1, url2)"
+                    value="${escapeHtml(e.dokument_url || '')}"
+                    onchange="umfragenState[${idx}].dokument_url=this.value.trim(); renderUmfragenEventDocAction(${idx}); window.markUnsaved()"
+                    ${!canWrite ? 'readonly disabled' : ''}>
+                
+                <button class="btn btn-outline-primary px-2" type="button" title="Datei(en) hochladen (auch mehrere auswählbar)"
+                    onclick="document.getElementById('event-file-upload-${idx}').click()"
+                    ${!canWrite ? 'disabled' : ''}>
+                    <i class="fas fa-cloud-upload-alt" id="event-upload-icon-${idx}"></i>
+                </button>
+                
+                <span id="event-doc-links-container-${idx}" class="d-inline-flex align-items-center">
+                    ${renderDocActionLinksHtml(e.dokument_url)}
+                </span>
+            </div>
+            <input type="file" id="event-file-upload-${idx}" class="d-none"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" multiple
+                onchange="if(this.files.length) uploadEventDocumentFiles(this.files, ${idx})">
+            <div id="event-doc-status-${idx}" class="small" style="font-size:0.75rem;"></div>
+        </td>
+        <td data-col-id="aktionen" class="text-center align-middle">
+            <button class="btn btn-link text-danger p-0" onclick="removeUmfrageEvent(${idx})" ${!canWrite ? 'disabled':''} title="Event löschen">🗑️</button>
+        </td>
+    </tr>
+    `;
+}
+
+function renderMobileEventCard(e, idx, canWrite) {
+    const isSchiess = isTrue(e.schiessanlass);
+    const parsedOpts = (typeof parsePollOptions === 'function') ? parsePollOptions(e.options) : (Array.isArray(e.options) ? e.options : []);
+    const optCount = parsedOpts.length;
+    const isAktiv = isTrue(e.aktiv);
+    const isGv = (e.title || '').toLowerCase().includes('generalversammlung');
+    const statusCategory = isSchiess ? 'schiessen' : (isGv ? 'gv' : (isAktiv ? 'aktiv' : 'inaktiv'));
+
+    return `
+    <div class="event-mobile-card tk-draggable-item" id="event-mobile-card-${idx}" data-id="${escapeHtml(e.id || idx)}" data-idx="${idx}" data-status="${statusCategory}">
+        <!-- Card Top Bar: Status Badge + Aktiv Toggle + Delete -->
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="d-flex align-items-center gap-2">
+                <span id="mob-badge-aktiv-${idx}" class="badge ${isAktiv ? 'bg-success' : 'bg-secondary'}" style="font-size:0.75rem;">
+                    ${isAktiv ? 'Aktiv' : 'Inaktiv'}
+                </span>
+                <span class="text-muted small">#${escapeHtml(e.id || '-')}</span>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <div class="form-check form-switch m-0" title="Event aktiv schalten">
+                    <input type="checkbox" class="form-check-input" role="switch"
+                        id="mob-cb-aktiv-${idx}"
+                        ${isAktiv ? 'checked' : ''}
+                        onchange="umfragenState[${idx}].aktiv=this.checked; syncEventField(${idx}, 'aktiv', this.checked); window.markUnsaved()"
+                        ${!canWrite ? 'disabled' : ''}>
+                </div>
+                <button class="btn btn-sm btn-outline-danger p-1 px-2"
+                    onclick="removeUmfrageEvent(${idx})" ${!canWrite ? 'disabled' : ''} title="Event löschen">
+                    🗑️
+                </button>
+            </div>
+        </div>
+
+        <!-- Titel Input (Vollbreite, sofort lesbar & editierbar) -->
+        <div class="mb-2">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <label class="form-label text-muted small mb-0 fw-bold">Titel des Anlasses</label>
+                ${(e.title || '').toLowerCase().includes('generalversammlung') ? '<span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size:0.68rem;"><i class="fas fa-landmark me-1"></i>Generalversammlung</span>' : ''}
+            </div>
+            <input type="text" id="mob-input-title-${idx}" class="form-control"
+                value="${escapeHtml(e.title || '')}"
+                placeholder="z.B. 100. Generalversammlung 2026"
+                onchange="onUmfrageTitleChange(${idx}, this.value)"
+                ${!canWrite ? 'readonly disabled' : ''}>
+            <div class="form-text text-muted" style="font-size:0.72rem;">
+                <i class="fas fa-info-circle text-primary me-1"></i>
+                <strong>Tipp für die GV:</strong> Der Titel muss das Wort <strong>«Generalversammlung»</strong> enthalten (Gross-/Kleinschreibung egal), damit Anmeldungen &amp; Menüwünsche automatisch mit der GV-Schaltzentrale und der Mitglieder-App verknüpft werden.
+            </div>
+        </div>
+
+        <!-- Datum & Personenkreis nebeneinander -->
+        <div class="row g-2 mb-2">
+            <div class="col-6">
+                <label class="form-label text-muted small mb-1 fw-bold">Datum</label>
+                <input type="date" id="mob-input-datum-${idx}" class="form-control form-control-sm"
+                    value="${formatISODate(e.datum)}"
+                    onchange="umfragenState[${idx}].datum=this.value; syncEventField(${idx}, 'datum', this.value); window.markUnsaved()"
+                    ${!canWrite ? 'readonly disabled' : ''}>
+            </div>
+            <div class="col-6">
+                <label class="form-label text-muted small mb-1 fw-bold">Personenkreis</label>
+                <select id="mob-select-gruppe-${idx}" class="form-select form-select-sm"
+                    onchange="umfragenState[${idx}].gruppe=this.value; syncEventField(${idx}, 'gruppe', this.value); window.markUnsaved()"
+                    ${!canWrite ? 'disabled' : ''}>
+                    <option value="aktiv" ${(e.gruppe === 'aktiv' || !e.gruppe) ? 'selected' : ''}>Aktiv</option>
+                    <option value="passiv" ${e.gruppe === 'passiv' ? 'selected' : ''}>Passiv</option>
+                    <option value="alle" ${e.gruppe === 'alle' ? 'selected' : ''}>Alle</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Optionen Box -->
+        <div class="p-2 mb-2 rounded border bg-light">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="form-check m-0">
+                    <input type="checkbox" class="form-check-input" id="mob-cb-schiess-${idx}"
+                        ${isSchiess ? 'checked' : ''}
+                        onchange="onSchiessanlassChange(${idx}, this.checked)"
+                        ${!canWrite ? 'disabled' : ''}>
+                    <label class="form-check-label fw-bold small text-dark" for="mob-cb-schiess-${idx}">
+                        🎯 Ext. Gruppenschiessen
+                    </label>
+                </div>
+                <button id="mob-poll-btn-${idx}" class="btn btn-xs btn-outline-primary px-2 py-1"
+                    style="font-size:0.75rem; display:${isSchiess ? 'inline-block' : 'none'};"
+                    onclick="togglePollOptionsEditor(${idx})" ${!canWrite ? 'disabled' : ''}>
+                    📅 ${optCount > 0 ? optCount + ' Optionen' : '+ Optionen'}
+                </button>
+            </div>
+
+            <!-- Zusätzliche Fragen / Optionen -->
+            <div class="d-flex flex-wrap gap-2 pt-2 border-top" style="font-size:0.8rem;">
+                <div class="form-check form-check-inline m-0" style="opacity:${isSchiess ? '0.3' : '1'}">
+                    <input type="checkbox" class="form-check-input" id="mob-cb-part-${idx}"
+                        ${(isSchiess || isTrue(e.showparticipants)) ? 'checked' : ''}
+                        onchange="umfragenState[${idx}].showparticipants=this.checked; syncEventField(${idx}, 'showparticipants', this.checked); window.markUnsaved()"
+                        ${!canWrite || isSchiess ? 'disabled' : ''}>
+                    <label class="form-check-label small" for="mob-cb-part-${idx}">👁️ Teilnehmer</label>
+                </div>
+                <div class="form-check form-check-inline m-0" style="opacity:${isSchiess ? '0.3' : '1'}">
+                    <input type="checkbox" class="form-check-input" id="mob-cb-begl-${idx}"
+                        ${isTrue(e.frage_begleitung) && !isSchiess ? 'checked' : ''}
+                        onchange="umfragenState[${idx}].frage_begleitung=this.checked; syncEventField(${idx}, 'frage_begleitung', this.checked); window.markUnsaved()"
+                        ${!canWrite || isSchiess ? 'disabled' : ''}>
+                    <label class="form-check-label small" for="mob-cb-begl-${idx}">👥 Begleitung</label>
+                </div>
+                <div class="form-check form-check-inline m-0" style="opacity:${isSchiess ? '0.3' : '1'}">
+                    <input type="checkbox" class="form-check-input" id="mob-cb-essen-${idx}"
+                        ${isTrue(e.frage_essen) && !isSchiess ? 'checked' : ''}
+                        onchange="umfragenState[${idx}].frage_essen=this.checked; syncEventField(${idx}, 'frage_essen', this.checked); window.markUnsaved()"
+                        ${!canWrite || isSchiess ? 'disabled' : ''}>
+                    <label class="form-check-label small" for="mob-cb-essen-${idx}">🍽️ Essen</label>
+                </div>
+                <div class="form-check form-check-inline m-0" style="opacity:${isSchiess ? '0.3' : '1'}">
+                    <input type="checkbox" class="form-check-input" id="mob-cb-grund-${idx}"
+                        ${isTrue(e.frage_grund) && !isSchiess ? 'checked' : ''}
+                        onchange="umfragenState[${idx}].frage_grund=this.checked; syncEventField(${idx}, 'frage_grund', this.checked); window.markUnsaved()"
+                        ${!canWrite || isSchiess ? 'disabled' : ''}>
+                    <label class="form-check-label small" for="mob-cb-grund-${idx}">💬 Grund</label>
+                </div>
+            </div>
+
+            <!-- Zusatzfragen Button (Mobile) -->
+            <div class="mt-2 d-flex justify-content-between align-items-center">
+                <button class="btn btn-xs ${Array.isArray(e.questions_schema) && e.questions_schema.length > 0 ? 'btn-primary' : 'btn-outline-secondary'} py-1 px-2"
+                    id="mob-btn-questions-${idx}"
+                    style="font-size:0.75rem;"
+                    onclick="toggleQuestionsSchemaEditor(${idx})">
+                    📝 ${Array.isArray(e.questions_schema) && e.questions_schema.length > 0 ? e.questions_schema.length + (e.questions_schema.length === 1 ? ' Zusatzfrage' : ' Zusatzfragen') : '+ Zusatzfragen'}
+                </button>
+            </div>
+            <!-- Mobiler Zusatzfragen Editor Container -->
+            <div id="mob-questions-editor-${idx}" class="mt-2" style="display:none;"></div>
+
+            <!-- Mobiler Poll-Optionen Editor Container -->
+            <div id="mob-poll-editor-${idx}" class="mt-2 p-2 rounded border bg-white" style="display:none;">
+                <div style="font-weight:700; color:#0f3a5d; font-size:0.8rem; margin-bottom:6px;">
+                    📅 Poll-Optionen fuer &laquo;${escapeHtml(e.title || 'Anlass')}&raquo;
+                </div>
+                <div id="mob-poll-options-list-${idx}" style="display:flex; flex-direction:column; gap:6px; margin-bottom:8px;">
+                    ${(e.options || []).map((opt, oi) => renderPollOptionRow(idx, oi, opt)).join('')}
+                </div>
+                <button class="btn btn-xs btn-outline-primary py-1 px-2" style="font-size:0.75rem;" onclick="addPollOption(${idx})">
+                    + Zeitoption hinzufügen
+                </button>
+            </div>
+        </div>
+
+        <!-- Dokument / Link / Upload -->
+        <div>
+            <label class="form-label text-muted small mb-1 fw-bold">📄 Dokument / Beilage (PDF, Word, Drive-ID)</label>
+            <div class="input-group input-group-sm">
+                <input type="text" id="event-doc-input-mob-${idx}" class="form-control"
+                    placeholder="URL(s), Drive-ID(s)..."
+                    value="${escapeHtml(e.dokument_url || '')}"
+                    onchange="umfragenState[${idx}].dokument_url=this.value.trim(); renderUmfragenEventDocAction(${idx}); window.markUnsaved()"
+                    ${!canWrite ? 'readonly disabled' : ''}>
+                
+                <button class="btn btn-outline-primary px-2" type="button" title="Datei(en) hochladen"
+                    onclick="document.getElementById('event-file-upload-mob-${idx}').click()"
+                    ${!canWrite ? 'disabled' : ''}>
+                    <i class="fas fa-cloud-upload-alt" id="event-upload-icon-mob-${idx}"></i>
+                </button>
+                
+                <span id="event-doc-links-container-mob-${idx}" class="d-inline-flex align-items-center">
+                    ${renderDocActionLinksHtml(e.dokument_url)}
+                </span>
+            </div>
+            <input type="file" id="event-file-upload-mob-${idx}" class="d-none"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" multiple
+                onchange="if(this.files.length) uploadEventDocumentFiles(this.files, ${idx}, true)">
+            <div id="event-doc-status-mob-${idx}" class="small" style="font-size:0.75rem;"></div>
+        </div>
+    </div>
+    `;
+}
+
+// Synchronisiert Eingaben zwischen Desktop-Tabelle und Mobile-Card
+function syncEventField(idx, field, value) {
+    if (field === 'title') {
+        const mob = document.getElementById(`mob-input-title-${idx}`);
+        if (mob && mob.value !== value) mob.value = value;
+    } else if (field === 'datum') {
+        const mob = document.getElementById(`mob-input-datum-${idx}`);
+        if (mob && mob.value !== value) mob.value = value;
+    } else if (field === 'gruppe') {
+        const mob = document.getElementById(`mob-select-gruppe-${idx}`);
+        if (mob && mob.value !== value) mob.value = value;
+    } else if (field === 'aktiv') {
+        const cb = document.getElementById(`cb-aktiv-${idx}`);
+        if (cb && cb.checked !== value) cb.checked = value;
+        const mobCb = document.getElementById(`mob-cb-aktiv-${idx}`);
+        if (mobCb && mobCb.checked !== value) mobCb.checked = value;
+        const badge = document.getElementById(`mob-badge-aktiv-${idx}`);
+        if (badge) {
+            badge.className = `badge ${value ? 'bg-success' : 'bg-secondary'}`;
+            badge.innerText = value ? 'Aktiv' : 'Inaktiv';
+        }
+    } else if (field === 'showparticipants') {
+        const mob = document.getElementById(`mob-cb-part-${idx}`);
+        if (mob && mob.checked !== value) mob.checked = value;
+        const dt = document.getElementById(`cb-part-${idx}`);
+        if (dt && dt.checked !== value) dt.checked = value;
+    } else if (field === 'frage_begleitung') {
+        const mob = document.getElementById(`mob-cb-begl-${idx}`);
+        if (mob && mob.checked !== value) mob.checked = value;
+        const dt = document.getElementById(`cb-begl-${idx}`);
+        if (dt && dt.checked !== value) dt.checked = value;
+    } else if (field === 'frage_essen') {
+        const mob = document.getElementById(`mob-cb-essen-${idx}`);
+        if (mob && mob.checked !== value) mob.checked = value;
+        const dt = document.getElementById(`cb-essen-${idx}`);
+        if (dt && dt.checked !== value) dt.checked = value;
+    } else if (field === 'frage_grund') {
+        const mob = document.getElementById(`mob-cb-grund-${idx}`);
+        if (mob && mob.checked !== value) mob.checked = value;
+        const dt = document.getElementById(`cb-grund-${idx}`);
+        if (dt && dt.checked !== value) dt.checked = value;
+    }
+    if (typeof updateUmfragenSaveButtonState === 'function') updateUmfragenSaveButtonState();
+}
+
+function addUmfrageEvent() {
+    window.markUnsaved();
+    umfragenState.push({
+        id: 'e_' + Date.now().toString(36),
+        title: "Neuer Anlass",
+        datum: new Date().toISOString().split('T')[0],
+        gruppe: "aktiv",
+        schiessanlass: false,
+        aktiv: true,
+        showparticipants: false,
+        frage_begleitung: false,
+        frage_essen: false,
+        frage_grund: true,
+        dokument_url: "",
+        options: [],
+        questions_schema: [],
+        event_type: 'standard'
+    });
+    renderUmfragenEventsList();
+    if (typeof updateUmfragenSaveButtonState === 'function') updateUmfragenSaveButtonState();
+}
+
+async function removeUmfrageEvent(idx) {
+    const e = umfragenState && umfragenState[idx];
+    if (!e) return;
+
+    const eventTitle = e.title || 'Unbenannter Anlass';
+    const isPersisted = window._umfragenOriginalState && window._umfragenOriginalState.some(o => String(o.id) === String(e.id));
+
+    const confirmed = await (window.UIConfirmKit ? UIConfirmKit.confirm({
+        title: 'Event endgültig löschen?',
+        message: `Möchtest du den Anlass <b>«${escapeHtml(eventTitle)}»</b> wirklich löschen?<br><br><span class="text-danger small"><i class="fas fa-exclamation-triangle me-1"></i>Hinweis: Alle zugehörigen Rückmeldungen und Abstimmungen in Supabase werden ebenfalls unwiderruflich gelöscht.</span>`,
+        type: 'danger',
+        confirmText: 'Endgültig löschen',
+        cancelText: 'Abbrechen'
+    }) : Promise.resolve(confirm(`Event «${eventTitle}» wirklich löschen?`)));
+
+    if (!confirmed) return;
+
+    const supa = (typeof getPollSupabaseClient === 'function') ? getPollSupabaseClient() : (window.supabaseClient || null);
+
+    // Wenn der Event bereits in Supabase existiert, sofort transaktionssicher aus DB löschen
+    if (supa && isPersisted && e.id) {
+        try {
+            const { error: delErr } = await supa.from('poll_events').delete().eq('id', String(e.id));
+            if (delErr) {
+                console.error("Fehler beim Löschen des Events aus Supabase:", delErr);
+                if (window.UIConfirmKit) {
+                    await UIConfirmKit.alert({
+                        title: 'Fehler beim Löschen',
+                        message: 'Der Event konnte in Supabase nicht gelöscht werden: ' + delErr.message,
+                        type: 'danger'
+                    });
+                } else {
+                    alert('Fehler beim Löschen: ' + delErr.message);
+                }
+                return;
+            }
+            console.log(`🗑️ Event «${eventTitle}» (${e.id}) erfolgreich aus Supabase gelöscht.`);
+        } catch (err) {
+            console.error("Netzwerk-/DB-Fehler beim Löschen:", err);
+            if (window.UIConfirmKit) {
+                await UIConfirmKit.alert({
+                    title: 'Verbindungsfehler',
+                    message: 'Der Löschvorgang ist fehlgeschlagen: ' + err.message,
+                    type: 'danger'
+                });
+            } else {
+                alert('Fehler: ' + err.message);
+            }
+            return;
+        }
+    }
+
+    // Aus lokalem State und Original-State entfernen
+    umfragenState.splice(idx, 1);
+    if (window._umfragenOriginalState) {
+        window._umfragenOriginalState = window._umfragenOriginalState.filter(item => String(item.id) !== String(e.id));
+    }
+
+    renderUmfragenEventsList();
+    if (typeof updateUmfragenSaveButtonState === 'function') updateUmfragenSaveButtonState();
+
+    // Unsaved-Flag zurücksetzen falls keine anderen offenen Änderungen vorhanden sind
+    const remainingChanges = typeof getUmfragenChangeCount === 'function' ? getUmfragenChangeCount() : 0;
+    if (remainingChanges === 0 && window.clearUnsaved) {
+        window.clearUnsaved();
+    }
+}
+window.removeUmfrageEvent = removeUmfrageEvent;
+
+async function saveUmfragenData() {
+    const changeCount = typeof getUmfragenChangeCount === 'function' ? getUmfragenChangeCount() : 0;
+    if (changeCount === 0) return;
+
+    const confirmed = await (window.UIConfirmKit ? UIConfirmKit.confirm({
+        title: 'Änderungen speichern?',
+        message: `Möchtest du die <b>${changeCount} Änderung(en)</b> an den Events in Supabase speichern?`,
+        type: 'primary',
+        confirmText: 'Speichern',
+        cancelText: 'Abbrechen'
+    }) : Promise.resolve(confirm("Alle Events in der Umfrage-App speichern?")));
+
+    if (!confirmed) return;
+
+    const saveAction = async () => {
+        if (typeof updateUmfragenSaveButtonState === 'function') updateUmfragenSaveButtonState(true);
+        const cleanEvents = (umfragenState || []).map(e => {
+            const opts = (typeof parsePollOptions === 'function') ? parsePollOptions(e.options) : (Array.isArray(e.options) ? e.options : []);
+            return {
+                ...e,
+                options: opts
+            };
+        });
+
+        // 1. SUPABASE MASTER: Direkt und schnell speichern
+        const supa = (typeof getPollSupabaseClient === 'function') ? getPollSupabaseClient() : (window.supabaseClient || null);
+        if (supa) {
+            // A) Gelöschte Events in Supabase löschen (Differenz zwischen Original-State und aktuellem State)
+            if (window._umfragenOriginalState && Array.isArray(window._umfragenOriginalState)) {
+                const currentIds = new Set(cleanEvents.map(e => String(e.id)));
+                const deletedIds = window._umfragenOriginalState
+                    .map(e => String(e.id))
+                    .filter(id => id && !currentIds.has(id));
+
+                if (deletedIds.length > 0) {
+                    console.log('🗑️ Lösche entfernte Events aus Supabase:', deletedIds);
+                    const { error: delErr } = await supa.from('poll_events').delete().in('id', deletedIds);
+                    if (delErr) {
+                        console.error("Fehler beim Löschen aus Supabase:", delErr);
+                        throw new Error("Fehler beim Löschen entfernter Events: " + delErr.message);
+                    }
+                }
+            }
+
+            // B) Aktuelle Events upserten
+            if (cleanEvents.length > 0) {
+                const pollRows = cleanEvents.map(e => ({
+                    id: String(e.id || ('pe_' + Date.now())),
+                    title: String(e.title || 'Unbenannter Anlass'),
+                    datum: e.datum ? formatISODate(e.datum) : null,
+                    gruppe: String(e.gruppe || 'aktiv').trim(),
+                    schiessanlass: isTrue(e.schiessanlass),
+                    aktiv: isTrue(e.aktiv),
+                    showparticipants: isTrue(e.showparticipants),
+                    frage_begleitung: isTrue(e.frage_begleitung),
+                    frage_essen: isTrue(e.frage_essen),
+                    frage_grund: isTrue(e.frage_grund),
+                    dokument_url: String(e.dokument_url || ''),
+                    details: String(e.details || ''),
+                    options: e.options || [],
+                    questions_schema: e.questions_schema || [],
+                    event_type: e.event_type || (isTrue(e.schiessanlass) ? 'schiessen' : 'standard')
+                }));
+
+                const { error: supaErr } = await supa.from('poll_events').upsert(pollRows);
+                if (supaErr) {
+                    console.error("Fehler beim Speichern in Supabase:", supaErr);
+                    throw new Error("Supabase Fehler: " + supaErr.message);
+                }
+                console.log(`✅ ${pollRows.length} Events erfolgreich in Supabase gespeichert.`);
+            }
+        }
+
+        window.clearUnsaved();
+        window._umfragenOriginalState = JSON.parse(JSON.stringify(umfragenState));
+        if (typeof updateUmfragenSaveButtonState === 'function') updateUmfragenSaveButtonState(false);
+        if (window.UIConfirmKit) {
+            await UIConfirmKit.alert({
+                title: 'Erfolgreich gespeichert',
+                message: 'Alle Änderungen an den Events wurden erfolgreich in Supabase gespeichert.',
+                type: 'info'
+            });
+        } else {
+            alert("✅ Umfragen erfolgreich in Supabase gespeichert!");
+        }
+        loadUmfragenData();
+    };
+
+    try {
+        if (window.UIButtonKit && typeof window.UIButtonKit.withLoading === 'function') {
+            await window.UIButtonKit.withLoading('#btn-save-umfragen', saveAction);
+        } else {
+            await saveAction();
+        }
+    } catch(e) {
+        if (typeof updateUmfragenSaveButtonState === 'function') updateUmfragenSaveButtonState(false);
+        if (window.UIConfirmKit) {
+            await UIConfirmKit.alert({
+                title: 'Fehler beim Speichern',
+                message: 'Fehler beim Speichern der Umfragen: ' + e.message,
+                type: 'danger'
+            });
+        } else {
+            alert("Fehler beim Speichern der Umfragen: " + e.message);
+        }
+    }
+}
+window.saveUmfragenData = saveUmfragenData;
+
+// =====================================================================
+// TABLEKIT INTEGRATION FÜR UMFRAGEN-EVENTS
+// =====================================================================
+
+function initTableKitForUmfragen() {
+    if (typeof window.TableKit === 'undefined') return;
+
+    // 1. All-in-One Table Controller (Resize, Reorder, Column Toggle)
+    const tableEl = document.getElementById('umfragen-events-table');
+    if (tableEl) {
+        umfragenTableController = window.TableKit.initTable('#umfragen-events-table', {
+            id: 'umfragen_events',
+            storageKeyWidths: 'tk_cols_umfragen_widths',
+            storageKeyOrder: 'tk_cols_umfragen_order',
+            storageKeyCols: 'tk_cols_umfragen_cols',
+            resizable: {
+                minWidth: 45,
+                columns: {
+                    'aktionen': { resizable: false, defaultWidth: 50 }
+                }
+            },
+            reorderable: {
+                lockedColumns: ['aktionen']
+            },
+            columnToggle: document.getElementById('umfragenColToggleContainer') ? {
+                container: '#umfragenColToggleContainer',
+                columns: [
+                    { id: 'id', name: 'ID', defaultVisible: true },
+                    { id: 'title', name: 'Titel', defaultVisible: true },
+                    { id: 'datum', name: 'Datum', defaultVisible: true },
+                    { id: 'gruppe', name: 'Personenkreis', defaultVisible: true },
+                    { id: 'schiessanlass', name: 'Ext. Gruppenschiessen', defaultVisible: true },
+                    { id: 'aktiv', name: 'Aktiv', defaultVisible: true },
+                    { id: 'showparticipants', name: 'Teilnehmer sichtbar', defaultVisible: true },
+                    { id: 'frage_begleitung', name: 'Frage: Begleitung', defaultVisible: true },
+                    { id: 'frage_essen', name: 'Frage: Essen', defaultVisible: true },
+                    { id: 'frage_grund', name: 'Frage: Abmeldegrund', defaultVisible: true },
+                    { id: 'questions', name: 'Zusatzfragen', defaultVisible: true },
+                    { id: 'dokument', name: 'Dokument / Link', defaultVisible: true },
+                    { id: 'aktionen', name: 'Aktionen', defaultVisible: true }
+                ]
+            } : null
+        });
+
+        // 2. Sortierung
+        window.TableKit.makeSortable(tableEl, {
+            onSort: (colId, dir) => {
+                if (!umfragenState) return;
+                const field = colId === 'questions' ? 'questions_schema' : colId;
+                umfragenState.sort((a, b) => {
+                    let valA = a[field] || '';
+                    let valB = b[field] || '';
+                    if (field === 'datum') {
+                        valA = valA ? new Date(valA).getTime() : 0;
+                        valB = valB ? new Date(valB).getTime() : 0;
+                    } else if (typeof valA === 'boolean' || typeof valB === 'boolean') {
+                        valA = valA ? 1 : 0;
+                        valB = valB ? 1 : 0;
+                    } else if (Array.isArray(valA) || Array.isArray(valB)) {
+                        valA = Array.isArray(valA) ? valA.length : 0;
+                        valB = Array.isArray(valB) ? valB.length : 0;
+                    } else {
+                        valA = String(valA).toLowerCase();
+                        valB = String(valB).toLowerCase();
+                    }
+                    if (valA < valB) return -1 * dir;
+                    if (valA > valB) return 1 * dir;
+                    return 0;
+                });
+                renderUmfragenEventsList();
+                if (umfragenFilterCtrl && typeof umfragenFilterCtrl.apply === 'function') {
+                    umfragenFilterCtrl.apply();
+                }
+            }
+        });
+    }
+
+    // 3. Filter & Live-Suche (Desktop & Mobile)
+    const container = document.getElementById('tab-umfragen-events');
+    if (container) {
+        umfragenFilterCtrl = window.TableKit.setupFilter({
+            container: container,
+            searchInput: '#umfragen-search-input',
+            pillsContainer: '#umfragen-status-pills',
+            rowSelector: '#umfragen-events-body tr[data-id], #umfragen-events-cards .tk-draggable-item',
+            getStatus: (row) => row.dataset.status || 'all',
+            matchStatus: (row, filter, status) => {
+                if (filter === 'all') return true;
+                if (filter === 'aktiv') return status === 'aktiv' || status === 'schiessen' || status === 'gv';
+                if (filter === 'schiessen') return status === 'schiessen';
+                if (filter === 'gv') return status === 'gv';
+                return true;
+            }
+        });
+    }
+}
+window.initTableKitForUmfragen = initTableKitForUmfragen;
+
+function sortUmfragenEvents(field) {
+    if (umfragenSortField === field) {
+        umfragenSortDir *= -1;
+    } else {
+        umfragenSortField = field;
+        umfragenSortDir = 1;
+    }
+    
+    umfragenState.sort((a, b) => {
+        let valA = a[field] || '';
+        let valB = b[field] || '';
+        if (field === 'datum') {
+            valA = new Date(valA).getTime() || 0;
+            valB = new Date(valB).getTime() || 0;
+        } else if (typeof valA === 'boolean' || typeof valB === 'boolean') {
+            valA = valA ? 1 : 0;
+            valB = valB ? 1 : 0;
+        } else {
+            valA = String(valA).toLowerCase();
+            valB = String(valB).toLowerCase();
+        }
+        
+        if (valA < valB) return -1 * umfragenSortDir;
+        if (valA > valB) return 1 * umfragenSortDir;
+        return 0;
+    });
+    
+    renderUmfragenEventsList();
+}
+
+// =====================================================================
+// POLL-OPTIONEN EDITOR (fuer Auswaertsschiessen)
+// =====================================================================
+
+function togglePollOptionsEditor(idx) {
+    // 1. Mobile Editor umschalten, falls vorhanden
+    const mobEditor = document.getElementById(`mob-poll-editor-${idx}`);
+    if (mobEditor) {
+        mobEditor.style.display = (mobEditor.style.display === 'none') ? 'block' : 'none';
+    }
+
+    // 2. Desktop Editor umschalten
+    const editorId = `poll-editor-${idx}`;
+    const existing = document.getElementById(editorId);
+    if (existing) {
+        existing.remove();
+        return;
+    }
+    renderPollOptionsEditor(idx);
+}
+
+function renderPollOptionsEditor(idx) {
+    const e = umfragenState[idx];
+    if (!e) return;
+    e.options = (typeof parsePollOptions === 'function') ? parsePollOptions(e.options) : (Array.isArray(e.options) ? e.options : []);
+    const tbody = document.getElementById('umfragen-events-body');
+    if (!tbody) return;
+    const rows = tbody.querySelectorAll('tr');
+    const targetRow = rows[idx];
+    if (!targetRow) return;
+
+    const editorRow = document.createElement('tr');
+    editorRow.id = `poll-editor-${idx}`;
+    editorRow.style.background = '#eef6ff';
+    const td = document.createElement('td');
+    td.colSpan = 12;
+    td.style.padding = '12px 16px';
+    td.innerHTML = `
+        <div style="font-weight:700; color:#0f3a5d; margin-bottom:10px;">📅 Poll-Optionen (Datum + Uhrzeit) fuer &laquo;${escapeHtml(e.title || 'Anlass')}&raquo;</div>
+        <div id="poll-options-list-${idx}" style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;">
+            ${(e.options || []).map((opt, oi) => renderPollOptionRow(idx, oi, opt)).join('')}
+        </div>
+        <button class="btn btn-sm btn-outline-primary" onclick="addPollOption(${idx})">
+            + Zeitoption hinzufuegen
+        </button>
+        <small class="text-muted ms-2">Der User sieht alle Optionen als Checkboxen und kann mehrere auswaehlen.</small>
+    `;
+    editorRow.appendChild(td);
+    targetRow.insertAdjacentElement('afterend', editorRow);
+}
+
+function renderPollOptionRow(idx, oi, opt) {
+    return `
+        <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px;" id="poll-opt-row-${idx}-${oi}">
+            <input type="date" class="form-control form-control-sm" style="flex:1; min-width:130px;"
+                value="${opt.datum || ''}"
+                onchange="updatePollOption(${idx}, ${oi}, 'datum', this.value)">
+            <input type="time" class="form-control form-control-sm" style="width:90px;"
+                value="${opt.start || ''}" placeholder="09:00"
+                onchange="updatePollOption(${idx}, ${oi}, 'start', this.value)">
+            <span class="text-muted">&ndash;</span>
+            <input type="time" class="form-control form-control-sm" style="width:90px;"
+                value="${opt.ende || ''}" placeholder="12:00"
+                onchange="updatePollOption(${idx}, ${oi}, 'ende', this.value)">
+            <button class="btn btn-sm btn-outline-danger" onclick="removePollOption(${idx}, ${oi})">x</button>
+        </div>
+    `;
+}
+
+function addPollOption(idx) {
+    const e = umfragenState[idx];
+    if (!Array.isArray(e.options)) e.options = [];
+    e.options.push({ id: 'o' + Date.now().toString(36), datum: '', start: '', ende: '' });
+    window.markUnsaved();
+    const list = document.getElementById(`poll-options-list-${idx}`);
+    if (list) list.innerHTML = e.options.map((opt, oi) => renderPollOptionRow(idx, oi, opt)).join('');
+    const mobList = document.getElementById(`mob-poll-options-list-${idx}`);
+    if (mobList) mobList.innerHTML = e.options.map((opt, oi) => renderPollOptionRow(idx, oi, opt)).join('');
+    updatePollButtonsText(idx);
+}
+
+function removePollOption(idx, oi) {
+    const e = umfragenState[idx];
+    if (!Array.isArray(e.options)) return;
+    e.options.splice(oi, 1);
+    window.markUnsaved();
+    const list = document.getElementById(`poll-options-list-${idx}`);
+    if (list) list.innerHTML = e.options.map((opt, oi2) => renderPollOptionRow(idx, oi2, opt)).join('');
+    const mobList = document.getElementById(`mob-poll-options-list-${idx}`);
+    if (mobList) mobList.innerHTML = e.options.map((opt, oi2) => renderPollOptionRow(idx, oi2, opt)).join('');
+    updatePollButtonsText(idx);
+}
+
+function updatePollOption(idx, oi, field, value) {
+    const e = umfragenState[idx];
+    if (!Array.isArray(e.options) || !e.options[oi]) return;
+    e.options[oi][field] = value;
+    window.markUnsaved();
+}
+
+function updatePollButtonsText(idx) {
+    const e = umfragenState[idx];
+    const count = (e && Array.isArray(e.options)) ? e.options.length : 0;
+    const txt = count > 0 ? `${count} Opt.` : 'Optionen';
+    const mobTxt = count > 0 ? `${count} Optionen` : '+ Optionen';
+    const b1 = document.getElementById(`poll-btn-${idx}`);
+    if (b1) b1.innerText = '📅 ' + txt;
+    const b2 = document.getElementById(`mob-poll-btn-${idx}`);
+    if (b2) b2.innerText = '📅 ' + mobTxt;
+}
+
+function onSchiessanlassChange(idx, checked) {
+    umfragenState[idx].schiessanlass = checked;
+    if (checked) {
+        umfragenState[idx].showparticipants = true;
+        umfragenState[idx].frage_begleitung = false;
+        umfragenState[idx].frage_essen = false;
+        umfragenState[idx].frage_grund = false;
+    } else {
+        umfragenState[idx].showparticipants = false;
+    }
+    window.markUnsaved();
+
+    // 1. Desktop Elemente aktualisieren
+    const cbSchiess = document.getElementById(`cb-schiess-${idx}`);
+    if (cbSchiess && cbSchiess.checked !== checked) cbSchiess.checked = checked;
+    const cbPart = document.getElementById(`cb-part-${idx}`);
+    const cbBegl = document.getElementById(`cb-begl-${idx}`);
+    const cbEssen = document.getElementById(`cb-essen-${idx}`);
+    const cbGrund = document.getElementById(`cb-grund-${idx}`);
+    if (cbPart) { cbPart.checked = checked; cbPart.disabled = checked; cbPart.closest('td').style.opacity = checked ? '0.3' : '1'; }
+    if (cbBegl) { cbBegl.checked = false; cbBegl.disabled = checked; cbBegl.closest('td').style.opacity = checked ? '0.3' : '1'; }
+    if (cbEssen) { cbEssen.checked = false; cbEssen.disabled = checked; cbEssen.closest('td').style.opacity = checked ? '0.3' : '1'; }
+    if (cbGrund) { cbGrund.checked = false; cbGrund.disabled = checked; cbGrund.closest('td').style.opacity = checked ? '0.3' : '1'; }
+    const pollBtn = document.getElementById(`poll-btn-${idx}`);
+    if (pollBtn) pollBtn.style.display = checked ? 'inline-block' : 'none';
+    if (!checked) { const editor = document.getElementById(`poll-editor-${idx}`); if (editor) editor.remove(); }
+
+    // 2. Mobile Elemente aktualisieren
+    const mobCbSchiess = document.getElementById(`mob-cb-schiess-${idx}`);
+    if (mobCbSchiess && mobCbSchiess.checked !== checked) mobCbSchiess.checked = checked;
+    const mobCbPart = document.getElementById(`mob-cb-part-${idx}`);
+    const mobCbBegl = document.getElementById(`mob-cb-begl-${idx}`);
+    const mobCbEssen = document.getElementById(`mob-cb-essen-${idx}`);
+    const mobCbGrund = document.getElementById(`mob-cb-grund-${idx}`);
+    if (mobCbPart) { mobCbPart.checked = checked; mobCbPart.disabled = checked; mobCbPart.closest('.form-check').style.opacity = checked ? '0.3' : '1'; }
+    if (mobCbBegl) { mobCbBegl.checked = false; mobCbBegl.disabled = checked; mobCbBegl.closest('.form-check').style.opacity = checked ? '0.3' : '1'; }
+    if (mobCbEssen) { mobCbEssen.checked = false; mobCbEssen.disabled = checked; mobCbEssen.closest('.form-check').style.opacity = checked ? '0.3' : '1'; }
+    if (mobCbGrund) { mobCbGrund.checked = false; mobCbGrund.disabled = checked; mobCbGrund.closest('.form-check').style.opacity = checked ? '0.3' : '1'; }
+    const mobPollBtn = document.getElementById(`mob-poll-btn-${idx}`);
+    if (mobPollBtn) mobPollBtn.style.display = checked ? 'inline-block' : 'none';
+    const mobEditor = document.getElementById(`mob-poll-editor-${idx}`);
+    if (mobEditor && !checked) mobEditor.style.display = 'none';
+}
+
+// =====================================================================
+// DOKUMENT-URL & DRIVE-UPLOAD FÜR EVENTS
+// =====================================================================
+
+function formatDocLink(urlOrId) {
+    if (!urlOrId) return '#';
+    const trimmed = String(urlOrId).trim();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        return trimmed;
+    }
+    // Falls reine Drive-ID
+    return 'https://drive.google.com/file/d/' + encodeURIComponent(trimmed) + '/view?usp=sharing';
+}
+
+function renderDocActionLinksHtml(dokumentUrl) {
+    if (!dokumentUrl) return '';
+    const urls = String(dokumentUrl).split(',').map(u => u.trim()).filter(Boolean);
+    if (urls.length === 0) return '';
+    if (urls.length === 1) {
+        return `<a href="${formatDocLink(urls[0])}" target="_blank"
+            class="btn btn-outline-secondary px-2"
+            title="Dokument / Link in neuem Tab öffnen">
+            <i class="fas fa-external-link-alt"></i>
+        </a>`;
+    }
+    // Mehrere Dokumente: Buttons mit 1, 2, ...
+    return urls.map((u, i) => `
+        <a href="${formatDocLink(u)}" target="_blank"
+            class="btn btn-outline-secondary px-2 d-inline-flex align-items-center justify-content-center"
+            style="font-size:0.72rem; font-weight:700; min-width:28px;"
+            title="Dokument ${i + 1} in neuem Tab öffnen">
+            ${i + 1} ↗
+        </a>
+    `).join('');
+}
+
+function renderUmfragenEventDocAction(idx) {
+    const val = (umfragenState[idx]?.dokument_url || '').trim();
+    
+    // Desktop
+    const container = document.getElementById(`event-doc-links-container-${idx}`);
+    if (container) container.innerHTML = renderDocActionLinksHtml(val);
+    const inputEl = document.getElementById(`event-doc-input-${idx}`);
+    if (inputEl && inputEl.value !== val) inputEl.value = val;
+
+    // Mobile
+    const mobContainer = document.getElementById(`event-doc-links-container-mob-${idx}`);
+    if (mobContainer) mobContainer.innerHTML = renderDocActionLinksHtml(val);
+    const mobInputEl = document.getElementById(`event-doc-input-mob-${idx}`);
+    if (mobInputEl && mobInputEl.value !== val) mobInputEl.value = val;
+}
+
+async function uploadEventDocumentFiles(fileList, idx, isMobile = false) {
+    if (!fileList || fileList.length === 0) return;
+    const files = Array.from(fileList);
+
+    const statusEl = document.getElementById(isMobile ? `event-doc-status-mob-${idx}` : `event-doc-status-${idx}`);
+    const iconEl = document.getElementById(isMobile ? `event-upload-icon-mob-${idx}` : `event-upload-icon-${idx}`);
+    const fileInputEl = document.getElementById(isMobile ? `event-file-upload-mob-${idx}` : `event-file-upload-${idx}`);
+
+    if (iconEl) iconEl.className = 'fas fa-spinner fa-spin';
+    if (statusEl) {
+        statusEl.innerHTML = `<span class="text-primary"><i class="fas fa-spinner fa-spin me-1"></i> Lade ${files.length} Datei(en) hoch...</span>`;
+    }
+
+    const uploadedUrls = [];
+    const errors = [];
+
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        try {
+            const supa = (typeof getPollSupabaseClient === 'function') ? getPollSupabaseClient() : (window.supabaseClient || null);
+            if (!supa) throw new Error("Supabase-Client nicht verfügbar");
+
+            const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+            const storagePath = `event-documents/${Date.now()}_${cleanName}`;
+
+            const { error: upErr } = await supa.storage.from('operatives-storage').upload(storagePath, file, {
+                upsert: true,
+                contentType: file.type || 'application/octet-stream'
+            });
+
+            if (upErr) throw new Error(upErr.message);
+
+            const { data: urlData } = supa.storage.from('operatives-storage').getPublicUrl(storagePath);
+            const publicUrl = urlData?.publicUrl;
+            if (publicUrl) {
+                uploadedUrls.push(publicUrl);
+            } else {
+                errors.push(`${file.name}: Keine öffentliche URL generiert`);
+            }
+        } catch (err) {
+            errors.push(`${file.name}: ${err.message || 'Fehler'}`);
+        }
+    }
+
+    // Bestehende Dokumente behalten und neue anhängen
+    if (uploadedUrls.length > 0) {
+        const existing = String(umfragenState[idx].dokument_url || '')
+            .split(',')
+            .map(u => u.trim())
+            .filter(Boolean);
+        
+        uploadedUrls.forEach(u => {
+            if (!existing.includes(u)) existing.push(u);
+        });
+
+        const finalVal = existing.join(', ');
+        umfragenState[idx].dokument_url = finalVal;
+        renderUmfragenEventDocAction(idx);
+        window.markUnsaved();
+
+        if (statusEl) {
+            const msg = `${uploadedUrls.length} Datei(en) erfolgreich hochgeladen!`;
+            statusEl.innerHTML = `<span class="text-success"><i class="fas fa-check-circle me-1"></i> ${msg} (Speichern nicht vergessen)</span>`;
+            setTimeout(() => { if (statusEl) statusEl.innerHTML = ''; }, 6000);
+        }
+    } else if (errors.length > 0 && statusEl) {
+        statusEl.innerHTML = `<span class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i> ${escapeHtml(errors.join(', '))}</span>`;
+    }
+
+    if (iconEl) iconEl.className = 'fas fa-cloud-upload-alt';
+    if (fileInputEl) fileInputEl.value = '';
+}
+
+// =====================================================================
+// DYNAMISCHER FORMULARBAUKASTEN (ZUSATZFRAGEN EDITOR)
+// =====================================================================
+
+function toggleQuestionsSchemaEditor(idx) {
+    const e = umfragenState[idx];
+    if (!e) return;
+    if (!Array.isArray(e.questions_schema)) {
+        e.questions_schema = (typeof parseQuestionsSchema === 'function') ? parseQuestionsSchema(e.questions_schema) : [];
+    }
+
+    // 1. Mobile Editor umschalten, falls kleiner Bildschirm
+    const mobEditor = document.getElementById(`mob-questions-editor-${idx}`);
+    if (mobEditor && window.innerWidth < 768) {
+        const isShown = mobEditor.style.display !== 'none';
+        mobEditor.style.display = isShown ? 'none' : 'block';
+        if (!isShown) renderQuestionsSchemaContent(idx, mobEditor, true);
+        return;
+    }
+
+    // 2. Desktop Editor (unter der Tabellenzeile)
+    const editorId = `questions-editor-${idx}`;
+    const existing = document.getElementById(editorId);
+    if (existing) {
+        existing.remove();
+        return;
+    }
+
+    const tbody = document.getElementById('umfragen-events-body');
+    if (!tbody) return;
+    const rows = tbody.querySelectorAll('tr');
+    const targetRow = rows[idx];
+    if (!targetRow) return;
+
+    const editorRow = document.createElement('tr');
+    editorRow.id = editorId;
+    editorRow.style.background = '#f8fafc';
+    const td = document.createElement('td');
+    td.colSpan = 13;
+    td.style.padding = '14px 20px';
+    renderQuestionsSchemaContent(idx, td, false);
+    editorRow.appendChild(td);
+    targetRow.insertAdjacentElement('afterend', editorRow);
+}
+window.toggleQuestionsSchemaEditor = toggleQuestionsSchemaEditor;
+
+function renderQuestionsSchemaContent(idx, container, isMobile) {
+    const e = umfragenState[idx];
+    if (!e) return;
+    const questions = Array.isArray(e.questions_schema) ? e.questions_schema : [];
+
+    let html = `
+        <div class="border rounded p-3 bg-white shadow-sm" style="border-left: 4px solid #0d6efd !important;">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h6 class="mb-0 fw-bold text-primary"><i class="fas fa-list-check me-2"></i>Zusatzfragen für &laquo;${escapeHtml(e.title || 'Anlass')}&raquo;</h6>
+                    <small class="text-muted">Definiere beliebige Zusatzfragen für diesen Anlass. Antworten erscheinen automatisch bei der Auswertung.</small>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleQuestionsSchemaEditor(${idx})">
+                    <i class="fas fa-times me-1"></i>Schliessen
+                </button>
+            </div>
+
+            <div id="questions-list-${idx}" class="d-flex flex-column gap-2 mb-3">
+    `;
+
+    if (questions.length === 0) {
+        html += `<div class="text-muted small p-2 bg-light rounded text-center" id="empty-questions-${idx}">Noch keine Zusatzfragen definiert. Klicke unten auf «+ Neue Frage hinzufügen».</div>`;
+    } else {
+        questions.forEach((q, qi) => {
+            html += renderQuestionRowHtml(idx, qi, q);
+        });
+    }
+
+    html += `
+            </div>
+
+            <div class="d-flex gap-2 align-items-center flex-wrap">
+                <button type="button" class="btn btn-sm btn-success" onclick="addQuestionToEvent(${idx})">
+                    <i class="fas fa-plus me-1"></i>+ Neue Frage hinzufügen
+                </button>
+                <small class="text-muted ms-2">Typen: Text, Mehrzeilig, Dropdown, Mehrfachauswahl, Zahl, Ja/Nein</small>
+            </div>
+        </div>
+    `;
+
+    container.innerHTML = html;
+}
+
+function renderQuestionRowHtml(idx, qi, q) {
+    const isChoice = q.type === 'select' || q.type === 'multiselect';
+    const optVal = Array.isArray(q.options) ? q.options.join(', ') : (q.options || '');
+
+    return `
+        <div class="card p-2 bg-light border" id="q-row-${idx}-${qi}">
+            <div class="row g-2 align-items-center">
+                <div class="col-md-4 col-12">
+                    <label class="form-label small fw-bold mb-1">Fragetext / Bezeichnung:</label>
+                    <input type="text" class="form-control form-control-sm" placeholder="z.B. T-Shirt Grösse, Kuchenspende..."
+                        value="${escapeHtml(q.title || '')}"
+                        onchange="updateQuestionField(${idx}, ${qi}, 'title', this.value)">
+                </div>
+                <div class="col-md-2 col-6">
+                    <label class="form-label small fw-bold mb-1">Antworttyp:</label>
+                    <select class="form-select form-select-sm" onchange="updateQuestionField(${idx}, ${qi}, 'type', this.value); reRenderQuestionsList(${idx});">
+                        <option value="text" ${q.type === 'text' ? 'selected' : ''}>Text (einzeilig)</option>
+                        <option value="textarea" ${q.type === 'textarea' ? 'selected' : ''}>Kommentar (mehrzeilig)</option>
+                        <option value="select" ${q.type === 'select' ? 'selected' : ''}>Auswahl (Dropdown)</option>
+                        <option value="multiselect" ${q.type === 'multiselect' ? 'selected' : ''}>Mehrfachauswahl (Checkboxen)</option>
+                        <option value="number" ${q.type === 'number' ? 'selected' : ''}>Zahl / Menge</option>
+                        <option value="boolean" ${q.type === 'boolean' ? 'selected' : ''}>Ja / Nein</option>
+                    </select>
+                </div>
+                <div class="col-md-3 col-6" style="${isChoice ? '' : 'opacity:0.35;'}">
+                    <label class="form-label small fw-bold mb-1">Optionen (Kommagetrennt):</label>
+                    <input type="text" class="form-control form-control-sm" placeholder="z.B. S, M, L, XL"
+                        value="${escapeHtml(optVal)}"
+                        ${!isChoice ? 'disabled' : ''}
+                        onchange="updateQuestionOptions(${idx}, ${qi}, this.value)">
+                </div>
+                <div class="col-md-2 col-6 text-center">
+                    <label class="form-label small fw-bold mb-1 d-block">Pflichtfeld:</label>
+                    <div class="form-check form-switch d-inline-block">
+                        <input class="form-check-input" type="checkbox" ${q.required ? 'checked' : ''}
+                            onchange="updateQuestionField(${idx}, ${qi}, 'required', this.checked)">
+                    </div>
+                </div>
+                <div class="col-md-1 col-6 text-end">
+                    <label class="form-label small d-none d-md-block mb-1">&nbsp;</label>
+                    <button type="button" class="btn btn-sm btn-outline-danger" title="Frage löschen" onclick="removeQuestionFromEvent(${idx}, ${qi})">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function addQuestionToEvent(idx) {
+    const e = umfragenState[idx];
+    if (!e) return;
+    if (!Array.isArray(e.questions_schema)) e.questions_schema = [];
+    e.questions_schema.push({
+        id: 'q_' + Math.random().toString(36).substring(2, 9),
+        title: '',
+        type: 'text',
+        required: false,
+        options: []
+    });
+    window.markUnsaved();
+    reRenderQuestionsList(idx);
+    updateQuestionsBadge(idx);
+}
+window.addQuestionToEvent = addQuestionToEvent;
+
+function removeQuestionFromEvent(idx, qi) {
+    const e = umfragenState[idx];
+    if (!e || !Array.isArray(e.questions_schema)) return;
+    e.questions_schema.splice(qi, 1);
+    window.markUnsaved();
+    reRenderQuestionsList(idx);
+    updateQuestionsBadge(idx);
+}
+window.removeQuestionFromEvent = removeQuestionFromEvent;
+
+function updateQuestionField(idx, qi, field, value) {
+    const e = umfragenState[idx];
+    if (!e || !Array.isArray(e.questions_schema) || !e.questions_schema[qi]) return;
+    e.questions_schema[qi][field] = value;
+    window.markUnsaved();
+}
+window.updateQuestionField = updateQuestionField;
+
+function updateQuestionOptions(idx, qi, rawStr) {
+    const e = umfragenState[idx];
+    if (!e || !Array.isArray(e.questions_schema) || !e.questions_schema[qi]) return;
+    const parts = String(rawStr || '').split(',').map(s => s.trim()).filter(Boolean);
+    e.questions_schema[qi].options = parts;
+    window.markUnsaved();
+}
+window.updateQuestionOptions = updateQuestionOptions;
+
+function reRenderQuestionsList(idx) {
+    const list = document.getElementById(`questions-list-${idx}`);
+    const e = umfragenState[idx];
+    if (!list || !e) return;
+    const questions = Array.isArray(e.questions_schema) ? e.questions_schema : [];
+    if (questions.length === 0) {
+        list.innerHTML = `<div class="text-muted small p-2 bg-light rounded text-center">Noch keine Zusatzfragen definiert. Klicke unten auf «+ Neue Frage hinzufügen».</div>`;
+    } else {
+        list.innerHTML = questions.map((q, qi) => renderQuestionRowHtml(idx, qi, q)).join('');
+    }
+}
+window.reRenderQuestionsList = reRenderQuestionsList;
+
+function updateQuestionsBadge(idx) {
+    const e = umfragenState[idx];
+    if (!e) return;
+    const count = Array.isArray(e.questions_schema) ? e.questions_schema.length : 0;
+    
+    // Desktop Button
+    const dtBtn = document.getElementById(`btn-questions-${idx}`);
+    if (dtBtn) {
+        dtBtn.className = `btn btn-xs ${count > 0 ? 'btn-primary' : 'btn-outline-secondary'} px-2 py-1`;
+        dtBtn.innerHTML = `📝 ${count > 0 ? count + (count === 1 ? ' Frage' : ' Fragen') : '+ Fragen'}`;
+    }
+
+    // Mobile Button
+    const mobBtn = document.getElementById(`mob-btn-questions-${idx}`);
+    if (mobBtn) {
+        mobBtn.className = `btn btn-xs ${count > 0 ? 'btn-primary' : 'btn-outline-secondary'} py-1 px-2`;
+        mobBtn.innerHTML = `📝 ${count > 0 ? count + (count === 1 ? ' Zusatzfrage' : ' Zusatzfragen') : '+ Zusatzfragen'}`;
+    }
+}
+window.updateQuestionsBadge = updateQuestionsBadge;
+
+// Intelligente Titel-Änderung mit automatischer GV-Erkennung
+function onUmfrageTitleChange(idx, val) {
+    if (!umfragenState || !umfragenState[idx]) return;
+    const cleanVal = String(val || '').trim();
+    umfragenState[idx].title = cleanVal;
+    syncEventField(idx, 'title', cleanVal);
+
+    if (cleanVal.toLowerCase().includes('generalversammlung')) {
+        umfragenState[idx].event_type = 'gv';
+        if (!umfragenState[idx].frage_essen) {
+            umfragenState[idx].frage_essen = true;
+            syncEventField(idx, 'frage_essen', true);
+        }
+        if (!umfragenState[idx].frage_grund) {
+            umfragenState[idx].frage_grund = true;
+            syncEventField(idx, 'frage_grund', true);
+        }
+        console.log(`🏛️ [Umfragen] Generalversammlung erkannt in Event #${idx} -> frage_essen & frage_grund aktiviert.`);
+        renderUmfragenEventsList();
+    }
+    window.markUnsaved();
+}
+window.onUmfrageTitleChange = onUmfrageTitleChange;
+
+

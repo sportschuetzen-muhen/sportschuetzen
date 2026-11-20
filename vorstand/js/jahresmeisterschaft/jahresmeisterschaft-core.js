@@ -1,0 +1,476 @@
+// === SUB-MODUL: JAHRESMEISTERSCHAFT - CORE ===
+// Native Supabase PostgreSQL Architecture (Single Source of Truth)
+
+let jmRawGrid = [];
+window.jmRawGrid = jmRawGrid;
+window.getJMRawGrid = function() {
+    return jmRawGrid;
+};
+let jmCurrentJahr = "current";
+let jmPendingUpdates = [];
+let jmPendingMoves = [];
+let jmJuniorExclusions = {};
+let jmExclusionsChanged = false;
+window._jmIsSupabase = false;
+
+// Supabase Client Access
+function getJMSupabaseClient() {
+    if (typeof window.getSupabaseClient === 'function') {
+        return window.getSupabaseClient();
+    }
+    return window.supabaseClient || null;
+}
+window.getJMSupabaseClient = getJMSupabaseClient;
+
+// Live Badge Aktualisierung
+function updateJMSupabaseBadge(isSupabase) {
+    window._jmIsSupabase = Boolean(isSupabase);
+    const badge = document.getElementById('jm-supabase-badge');
+    if (badge) badge.remove();
+}
+window.updateJMSupabaseBadge = updateJMSupabaseBadge;
+
+/**
+ * Formatiert den Wettkampftitel für Auswärtsschiessen im Format:
+ * «Anlass (Ortschaft) Jahr» (Variante A)
+ * Vermeidet Dopplungen, falls der Ort bereits im Anlassnamen vorkommt.
+ * 
+ * @param {string} anlass - Name des Schützenfestes / Anlasses
+ * @param {string} [ort=''] - Ortschaft des Anlasses
+ * @param {string|number} [jahr] - Kalenderjahr (Standard: aktuelles JM-Jahr)
+ * @returns {string} - Formatierter Titel
+ */
+function jmFormatCompetitionTitle(anlass, ort = '', jahr = null) {
+    let cleanAnlass = String(anlass || '').trim();
+    if (!cleanAnlass) cleanAnlass = 'Auswärtiges Schiessen';
+
+    let resolvedYear = jahr;
+    if (!resolvedYear || resolvedYear === 'current') {
+        resolvedYear = (typeof jmCurrentJahr !== 'undefined' && jmCurrentJahr && jmCurrentJahr !== 'current')
+            ? jmCurrentJahr
+            : new Date().getFullYear();
+    }
+    const yearStr = String(resolvedYear).trim();
+
+    // Falls das Jahr bereits am Ende des Anlassnamens steht, entfernen wir es vorübergehend zur Vereinheitlichung
+    const yearPattern = new RegExp(`\\s+${yearStr}$`, 'i');
+    if (yearPattern.test(cleanAnlass)) {
+        cleanAnlass = cleanAnlass.replace(yearPattern, '').trim();
+    }
+
+    const cleanOrt = String(ort || '').trim();
+    let includeOrt = false;
+    if (cleanOrt) {
+        const normAnlass = cleanAnlass.toLowerCase().replace(/[^a-z0-9äöü]/gi, '');
+        const normOrt = cleanOrt.toLowerCase().replace(/[^a-z0-9äöü]/gi, '');
+        const primaryOrtWord = normOrt.split(/[^a-z0-9äöü]/)[0] || normOrt;
+        const shortOrt = primaryOrtWord.length >= 4 ? primaryOrtWord.substring(0, 5) : primaryOrtWord;
+
+        const alreadyContainsOrt = normAnlass.includes(normOrt) || (shortOrt.length >= 4 && normAnlass.includes(shortOrt));
+        const hasParenthesesOrt = new RegExp(`\\(${cleanOrt}\\)`, 'i').test(cleanAnlass);
+
+        if (!alreadyContainsOrt && !hasParenthesesOrt) {
+            includeOrt = true;
+        }
+    }
+
+    if (includeOrt) {
+        return `${cleanAnlass} (${cleanOrt}) ${yearStr}`;
+    }
+    return `${cleanAnlass} ${yearStr}`;
+}
+window.jmFormatCompetitionTitle = jmFormatCompetitionTitle;
+
+// Zentrale Laderoutine
+async function loadJahresmeisterschaftData(force = false, silent = false) {
+    const historySelect = document.getElementById('jm-history-select');
+    if (historySelect && historySelect.value) {
+        jmCurrentJahr = historySelect.value;
+    }
+
+    if (!force && jmRawGrid.length > 0 && historySelect && historySelect.dataset.loadedYear === jmCurrentJahr) {
+        console.log("⚡ loadJahresmeisterschaftData: Lade aus lokalem Cache...");
+        return;
+    }
+
+    // Dropdown sperren während des Ladens
+    if (historySelect) {
+        historySelect.disabled = true;
+    }
+
+    if (!silent) {
+        showLoadingOverlay('Lade Jahresmeisterschaft...');
+    }
+
+    try {
+        // --- 1. SUPABASE-FIRST LADEN ---
+        const sb = getJMSupabaseClient();
+        if (sb) {
+            try {
+            const { data: seasonsList, error: errList } = await sb
+                .from('jm_seasons')
+                .select('jahr, title, is_archived')
+                .order('is_archived', { ascending: true })
+                .order('jahr', { ascending: false });
+
+            if (!errList && seasonsList && seasonsList.length > 0) {
+                const { data: seasonData, error: errSeason } = await sb
+                    .from('jm_seasons')
+                    .select('raw_grid, junior_exclusions')
+                    .eq('jahr', jmCurrentJahr)
+                    .maybeSingle();
+
+                if (!errSeason && seasonData && Array.isArray(seasonData.raw_grid) && seasonData.raw_grid.length > 5) {
+                    jmRawGrid = seasonData.raw_grid;
+                    window.jmRawGrid = jmRawGrid;
+                    jmPendingUpdates = [];
+                    jmPendingMoves = [];
+                    jmJuniorExclusions = {};
+                    if (Array.isArray(seasonData.junior_exclusions)) {
+                        seasonData.junior_exclusions.forEach(k => {
+                            jmJuniorExclusions[k] = true;
+                        });
+                    } else if (typeof seasonData.junior_exclusions === 'object' && seasonData.junior_exclusions !== null) {
+                        jmJuniorExclusions = seasonData.junior_exclusions;
+                    }
+                    jmExclusionsChanged = false;
+                    AppState.clearUnsaved();
+
+                    const sheetNames = seasonsList.map(s => s.jahr === 'current' ? 'Jahresmeisterschaft' : ('JM_' + s.jahr));
+                    renderHistoryDropdown(sheetNames);
+                    renderJahresmeisterschaft(jmRawGrid);
+                    updateJMSupabaseBadge(true);
+
+                    if (typeof loadPendingStandblaetter === 'function') {
+                        loadPendingStandblaetter(true);
+                    }
+
+                    if (historySelect) {
+                        historySelect.dataset.loadedYear = jmCurrentJahr;
+                        historySelect.disabled = false;
+                    }
+                    if (!silent) {
+                        hideLoadingOverlay();
+                    }
+                    console.log(`⚡ Jahresmeisterschaft (${jmCurrentJahr}) erfolgreich aus Supabase geladen.`);
+                    return;
+                } else {
+                    console.log(`ℹ️ [Supabase] Keine Grid-Daten für ${jmCurrentJahr} gefunden.`);
+                    const container = document.getElementById('jahresmeisterschaft-container');
+                    if (container) {
+                        container.innerHTML = `
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle me-2"></i>Keine Jahresmeisterschafts-Daten für das Jahr "${escapeHtml(jmCurrentJahr)}" in Supabase gefunden.
+                            </div>`;
+                    }
+                    updateJMSupabaseBadge(true);
+                    return;
+                }
+            }
+        } catch (sbErr) {
+            console.error("❌ Supabase Fehler in Jahresmeisterschaft:", sbErr);
+            const container = document.getElementById('jahresmeisterschaft-container');
+            if (container) {
+                container.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle me-2"></i>Fehler beim Laden aus Supabase: ${escapeHtml(sbErr.message)}
+                    </div>`;
+            }
+            return;
+        }
+    }
+    } finally {
+        if (historySelect) {
+            historySelect.disabled = false;
+        }
+        if (!silent) {
+            hideLoadingOverlay();
+        }
+    }
+}
+
+function renderHistoryDropdown(sheets) {
+    if (!sheets || !sheets.length) return;
+    const select = document.getElementById('jm-history-select');
+    if (!select) return;
+
+    const currentVal = select.value || jmCurrentJahr;
+    
+    // Blätter filtern
+    const filteredSheets = sheets.filter(s => s === "Jahresmeisterschaft" || s.startsWith("JM_"));
+    
+    // Sortieren: Jahresmeisterschaft oben, danach Archiv-Jahre absteigend (z.B. JM_2026, JM_2025)
+    filteredSheets.sort((a, b) => {
+        if (a === "Jahresmeisterschaft") return -1;
+        if (b === "Jahresmeisterschaft") return 1;
+        const yearA = parseInt(a.replace("JM_", "")) || 0;
+        const yearB = parseInt(b.replace("JM_", "")) || 0;
+        return yearB - yearA;
+    });
+
+    const existingOptions = Array.from(select.options).map(o => o.value);
+    const newOptions = ["current", ...filteredSheets.filter(s => s !== "Jahresmeisterschaft").map(s => s.replace("JM_", ""))];
+    
+    if (JSON.stringify(existingOptions) === JSON.stringify(newOptions)) {
+        select.value = currentVal;
+        return;
+    }
+
+    select.innerHTML = '';
+    
+    const currentOpt = document.createElement('option');
+    currentOpt.value = "current";
+    currentOpt.textContent = "Jahresmeisterschaft (aktuell)";
+    if (currentVal === "current") currentOpt.selected = true;
+    select.appendChild(currentOpt);
+
+    filteredSheets.forEach(s => {
+        if (s === "Jahresmeisterschaft") return;
+        const val = s.replace("JM_", "");
+        const opt = document.createElement('option');
+        opt.value = val;
+        opt.textContent = s;
+        if (val === currentVal || s === currentVal) opt.selected = true;
+        select.appendChild(opt);
+    });
+}
+
+function isColumnActive(grid, c) {
+    if (!grid || !grid[2]) return false;
+    const colTitle = String(grid[2][c] || '').trim().toLowerCase();
+    if (colTitle.includes('total') || colTitle === 'tot' || colTitle === 't') {
+        return true;
+    }
+    // Statusspalte (Auf-/Abstieg) ermitteln
+    let hasStatusCol = false;
+    if (grid[4]) {
+        hasStatusCol = grid[4].some(val => String(val || '').trim().toLowerCase() === 'status');
+    }
+
+    const startRawMannschaft = hasStatusCol ? 34 : 33;
+    const endRawMannschaft = hasStatusCol ? 40 : 39;
+    if (c >= startRawMannschaft && c <= endRawMannschaft) {
+        const checkCol = hasStatusCol ? 10 : 9;
+        const val = grid[0][checkCol] || '';
+        return ['ja','j','x','1','true','yes','✓','✔','☑'].includes(val.toString().trim().toLowerCase());
+    }
+
+    if (colTitle.includes('mannschaft')) {
+        const val = grid[0][c] || '';
+        return ['ja','j','x','1','true','yes','✓','✔','☑'].includes(val.toString().trim().toLowerCase());
+    }
+    
+    const limitIndex = hasStatusCol ? 42 : 41;
+    
+    if (c >= limitIndex) {
+        return hasValidTitle(grid, c);
+    }
+    
+    const val = grid[0][c] || '';
+    const isChecked = ['ja','j','x','1','true','yes','✓','✔','☑'].includes(val.toString().trim().toLowerCase());
+    if (isChecked) return true;
+    
+    if (colTitle.includes('%')) {
+        const targetTitle = colTitle.replace(/%/g, '').trim().toLowerCase();
+        const pointsColIdx = grid[2].findIndex((t, idx) => {
+            const cleanT = String(t || '').trim().toLowerCase();
+            return cleanT === targetTitle && idx !== c;
+        });
+        
+        if (pointsColIdx !== -1) {
+            const parentVal = grid[0][pointsColIdx] || '';
+            return ['ja','j','x','1','true','yes','✓','✔','☑'].includes(parentVal.toString().trim().toLowerCase());
+        }
+        
+        if (c > 0) {
+            const prevVal = grid[0][c - 1] || '';
+            return ['ja','j','x','1','true','yes','✓','✔','☑'].includes(prevVal.toString().trim().toLowerCase());
+        }
+    }
+    
+    return false;
+}
+
+function hasValidTitle(grid, c) {
+    if (!grid || !grid[2]) return false;
+    const title = String(grid[2][c] || '').trim();
+    return title !== '' && !title.toLowerCase().startsWith('spalte');
+}
+
+
+// Hilfsfunktion: Synchronisiert strukturierte Schützenlisten nach public.jm_shooters
+async function syncJMShootersToSupabase(sb, jahr, grid) {
+    if (!sb || !grid || grid.length < 6) return;
+
+    try {
+        const maxPercent = (typeof recalculateJMRawGrid === 'function')
+            ? recalculateJMRawGrid(grid)
+            : 900;
+
+        const compRow = grid[2] || [];
+        const headerRow = grid[4] || [];
+
+        // Personen-Spalten ermitteln
+        const colRang = headerRow.findIndex(t => String(t || '').trim().toLowerCase() === 'rang');
+        const colNachname = headerRow.findIndex(t => String(t || '').trim().toLowerCase() === 'nachname');
+        const colVorname = headerRow.findIndex(t => String(t || '').trim().toLowerCase() === 'vorname');
+        const colLizenz = headerRow.findIndex(t => String(t || '').trim().toLowerCase().includes('lizenz'));
+        const colJahrgang = headerRow.findIndex(t => String(t || '').trim().toLowerCase().includes('jahrgang'));
+        const colStatus = headerRow.findIndex(t => String(t || '').trim().toLowerCase() === 'status');
+
+        // Total- und Streich-Spalten (inkl. toleranter Übereinstimmung)
+        const colTotal = compRow.findIndex(t => String(t || '').toLowerCase().includes('total'));
+        const colStreich = compRow.findIndex(t => String(t || '').toLowerCase().includes('streich'));
+
+        // Meisterschafts-Wettkämpfe ermitteln (nur aktive Spalten mit gesetzter Checkbox in Zeile 0)
+        const firstCompCol = (colStatus !== -1 ? colStatus : headerRow.findIndex(t => String(t || '').trim().toLowerCase().includes('kombination'))) + 1;
+        const competitions = [];
+        for (let c = firstCompCol; c < colTotal; c++) {
+            const name = String(compRow[c] || '').trim();
+            if (name && name.toLowerCase() !== 'leer') {
+                const checkVal = grid[0] ? grid[0][c] : null;
+                const isChecked = ['ja', 'j', 'x', '1', 'true', true, 'yes', '✓', '✔', '☑'].includes(
+                    typeof checkVal === 'string' ? checkVal.trim().toLowerCase() : checkVal
+                );
+                if (isChecked) {
+                    const pctCol = compRow.findIndex((t, idx) => idx > colTotal && String(t || '').trim().toLowerCase() === (name.toLowerCase() + ' %'));
+                    competitions.push({ col: c, name, pctCol });
+                }
+            }
+        }
+
+        // Mannschaftsrunden ermitteln
+        const mannschaftCols = [];
+        for (let c = colStreich + 1; c < compRow.length; c++) {
+            const name = String(compRow[c] || '').trim();
+            if (name.toLowerCase().startsWith('mannschaft #')) {
+                mannschaftCols.push({ col: c, name });
+            }
+        }
+
+        // Auswärtsschiessen ermitteln
+        const lastMannschaftCol = mannschaftCols.length > 0 ? mannschaftCols[mannschaftCols.length - 1].col : colStreich;
+        const auswaertsCols = [];
+        for (let c = lastMannschaftCol + 1; c < compRow.length; c++) {
+            const name = String(compRow[c] || '').trim();
+            if (name && name.toLowerCase() !== 'leer') {
+                auswaertsCols.push({ col: c, name });
+            }
+        }
+
+        const liga1 = [];
+
+        // Liga 1: Zeilen 5 bis 12
+        for (let r = 5; r <= 12; r++) {
+            if (!grid[r]) continue;
+            const nachname = String(grid[r][colNachname] || '').trim();
+            const vorname = String(grid[r][colVorname] || '').trim();
+            if (!nachname) continue;
+            
+            const fullName = `${nachname} ${vorname}`.trim();
+            const lizenz = String(grid[r][colLizenz] || '').trim();
+            const total = colTotal !== -1 ? (parseFloat(grid[r][colTotal]) || 0) : 0;
+            const streich = colStreich !== -1 ? (parseFloat(grid[r][colStreich]) || 0) : 0;
+            const jg = parseInt(grid[r][colJahrgang]) || null;
+            const isJunior = jg ? (new Date().getFullYear() - jg <= 20) : false;
+
+            const schiessen = competitions.map(comp => {
+                const pkt = parseFloat(grid[r][comp.col]) || 0;
+                const pct = comp.pctCol !== -1 ? (parseFloat(grid[r][comp.pctCol]) || 0) : 0;
+                return { name: comp.name, punkte: pkt, prozent: pct };
+            });
+
+            const mannschaft = mannschaftCols.map(m => {
+                const pkt = parseFloat(grid[r][m.col]) || 0;
+                return { name: m.name, punkte: pkt };
+            });
+
+            const auswaerts = auswaertsCols.map(a => {
+                const pkt = parseFloat(grid[r][a.col]) || 0;
+                return { name: a.name, punkte: pkt };
+            }).filter(a => a.punkte > 0);
+
+            liga1.push({
+                id: `${jahr}_L1_${r}_${lizenz || fullName.replace(/\s+/g, '_')}`,
+                jahr: jahr,
+                person_number: lizenz,
+                name: fullName,
+                jahrgang: jg,
+                liga: 1,
+                total: total,
+                streichresultat_prz: streich,
+                is_junior: isJunior,
+                details: { schiessen, mannschaft, auswaerts, max_total_prz: maxPercent },
+                updated_at: new Date().toISOString()
+            });
+        }
+        // Dynamische Rangierung Liga 1 nach Total absteigend (analog GAS Standard)
+        liga1.sort((a, b) => b.total - a.total);
+        liga1.forEach((s, idx) => {
+            s.rang = idx + 1;
+            s.status = (s.rang >= 7) ? 'abstieg' : 'neutral';
+        });
+
+        const liga2 = [];
+
+        // Liga 2: Zeilen 15 bis Ende
+        for (let r = 15; r < grid.length; r++) {
+            if (!grid[r]) continue;
+            const nachname = String(grid[r][colNachname] || '').trim();
+            const vorname = String(grid[r][colVorname] || '').trim();
+            if (!nachname) continue;
+
+            const fullName = `${nachname} ${vorname}`.trim();
+            const lizenz = String(grid[r][colLizenz] || '').trim();
+            const total = colTotal !== -1 ? (parseFloat(grid[r][colTotal]) || 0) : 0;
+            const streich = colStreich !== -1 ? (parseFloat(grid[r][colStreich]) || 0) : 0;
+            const jg = parseInt(grid[r][colJahrgang]) || null;
+            const isJunior = jg ? (new Date().getFullYear() - jg <= 20) : false;
+
+            const schiessen = competitions.map(comp => {
+                const pkt = parseFloat(grid[r][comp.col]) || 0;
+                const pct = comp.pctCol !== -1 ? (parseFloat(grid[r][comp.pctCol]) || 0) : 0;
+                return { name: comp.name, punkte: pkt, prozent: pct };
+            });
+
+            const mannschaft = mannschaftCols.map(m => {
+                const pkt = parseFloat(grid[r][m.col]) || 0;
+                return { name: m.name, punkte: pkt };
+            });
+
+            const auswaerts = auswaertsCols.map(a => {
+                const pkt = parseFloat(grid[r][a.col]) || 0;
+                return { name: a.name, punkte: pkt };
+            }).filter(a => a.punkte > 0);
+
+            liga2.push({
+                id: `${jahr}_L2_${r}_${lizenz || fullName.replace(/\s+/g, '_')}`,
+                jahr: jahr,
+                person_number: lizenz,
+                name: fullName,
+                jahrgang: jg,
+                liga: 2,
+                total: total,
+                streichresultat_prz: streich,
+                is_junior: isJunior,
+                details: { schiessen, mannschaft, auswaerts, max_total_prz: maxPercent },
+                updated_at: new Date().toISOString()
+            });
+        }
+        // Dynamische Rangierung Liga 2 nach Total absteigend (analog GAS Standard)
+        liga2.sort((a, b) => b.total - a.total);
+        liga2.forEach((s, idx) => {
+            s.rang = idx + 1;
+            s.status = (s.rang <= 2) ? 'aufstieg' : 'neutral';
+        });
+
+        const shooters = [...liga1, ...liga2];
+
+        if (shooters.length > 0) {
+            await sb.from('jm_shooters').delete().eq('jahr', jahr);
+            await sb.from('jm_shooters').insert(shooters);
+        }
+    } catch (e) {
+        console.warn("Konnte jm_shooters nicht synchronisieren:", e);
+    }
+}

@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<script>
+// Vorstandsportal-Weiterleitung (Recovery, Signup, Invite oder expliziter Portal-Parameter):
+if (window.location.search.includes('portal=vorstand') || 
+    (window.location.hash && (window.location.hash.includes('type=recovery') || window.location.hash.includes('type=signup') || window.location.hash.includes('type=invite')))) {
+    const basePath = window.location.pathname.endsWith('/') ? window.location.pathname : window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+    window.location.replace(window.location.origin + basePath + 'vorstand/index.html' + window.location.search + window.location.hash);
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://supabase-muhen.danfamily.uk">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+<title>Sportschützen Muhen App</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0f3a5d">
+
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sportschützen Muhen">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
+
+<!-- OneSignal SDK (nur EINMAL!) -->
+<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+
+<script>
+/************************************************
+ * OneSignal Init + PID Handling (stabil)
+ ************************************************/
+window.OneSignalDeferred = window.OneSignalDeferred || [];
+OneSignalDeferred.push(async function (OneSignal) {
+
+        // Auf localhost deaktivieren um Fehler zu vermeiden
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            console.log("OneSignal: Deaktiviert auf localhost (Domain-Mismatch)");
+            return;
+        }
+
+        try {
+            const isGitHubPages = window.location.pathname.startsWith('/sportschuetzen/');
+            const baseScope = isGitHubPages ? "/sportschuetzen/" : "/";
+            const iconPath = isGitHubPages ? "/sportschuetzen/icons/icon-192.png" : "icons/icon-192.png";
+            const swPath = isGitHubPages ? "/sportschuetzen/OneSignalSDKWorker.js" : "OneSignalSDKWorker.js";
+            await OneSignal.init({
+            appId: "1a084ef4-4d8e-4be1-9df5-115f6168cdb4",
+            serviceWorkerParam: { scope: baseScope },
+            serviceWorkerPath: swPath,
+            autoRegister: false,
+            notifyButton: { enable: false },
+            // Icon für Benachrichtigungen (gegen 404)
+            notificationDisplay: {
+                display: true,
+                icon: iconPath
+            }
+        });
+
+        console.log("OneSignal Init fertig");
+
+        // ---- PID Handling ----
+        const params = new URLSearchParams(window.location.search);
+        let pid = params.get("pid") || localStorage.getItem("sportschuetzen_pid");
+
+        if (!pid) {
+            console.log("Keine PID vorhanden");
+            return;
+        }
+
+        localStorage.setItem("sportschuetzen_pid", pid);
+
+        if (OneSignal.User && typeof OneSignal.login === 'function' && OneSignal.User.externalId !== pid) {
+            const paddedPid = String(pid).padStart(6, '0');
+            await OneSignal.login(paddedPid);
+            console.log("Login mit PID:", paddedPid);
+        }
+
+        const permission = OneSignal.Notifications ? OneSignal.Notifications.permission : null;
+
+        if (permission === "default" && typeof OneSignal.Notifications?.requestPermission === 'function') {
+            await OneSignal.Notifications.requestPermission();
+        }
+
+    } catch (err) {
+        console.warn("OneSignal Hinweis (Domain-Sync aktiv):", err.message || err);
+    }
+});
+
+/************************************************
+ * ZENTRALE APP-RESUME LOGIK
+ ************************************************/
+(function () {
+
+    let lastResume = 0;
+    const MIN_INTERVAL = 1500;
+
+    function fireResume(source) {
+        const now = Date.now();
+        if (now - lastResume < MIN_INTERVAL) return;
+        lastResume = now;
+
+        console.log("📲 App Resume:", source);
+
+        // Event für Hauptseite
+        document.dispatchEvent(new CustomEvent("app:resume"));
+
+        // Resume an alle iFrames senden
+        document.querySelectorAll("iframe").forEach(iframe => {
+            iframe.contentWindow?.postMessage(
+                { type: "app:resume", source, ts: now },
+                "*"
+            );
+        });
+    }
+
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+            fireResume("visibility");
+        }
+    });
+
+    window.addEventListener("pageshow", e => {
+        if (e.persisted) {
+            fireResume("pageshow");
+        }
+    });
+
+    window.addEventListener("focus", () => {
+        fireResume("focus");
+    });
+
+})();
+</script>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=18">
+</head>
+
+<body>
+
+<div id="login-overlay" style="display:none;">
+    <div class="login-card">
+        <div class="login-logo-badge">
+            <picture>
+                <source type="image/avif" srcset="icons/logo-100.avif 1x, icons/logo-200.avif 2x">
+                <source type="image/webp" srcset="icons/logo-100.webp 1x, icons/logo-200.webp 2x">
+                <img src="icons/logo.png" alt="Sportschützen Muhen Logo" width="64" height="64" fetchpriority="high" decoding="sync">
+            </picture>
+        </div>
+        <div class="login-sub-header">Sportschützen Muhen</div>
+        <h1 class="login-title">Anmeldung</h1>
+        <p class="login-desc" id="login-subtitle">Melde dich mit deinen Zugangsdaten an</p>
+        
+        <!-- SCHRITT 1: Direkt-Anmeldung (Name + PIN oder Passwort) -->
+        <div id="login-step-main">
+            <form id="login-main-form" autocomplete="on" novalidate>
+                <div class="login-form-group">
+                    <label for="login-direct-identifier">Name, E-Mail oder Lizenz-Nr.</label>
+                    <div id="login-id-hint" class="login-input-hint">
+                        💡 Vor- &amp; Nachname (Gross-/Klein &amp; Reihenfolge egal)
+                    </div>
+                    <div class="login-input-wrapper">
+                        <span class="login-input-icon" aria-hidden="true">👤</span>
+                        <input type="text" id="login-direct-identifier" name="identifier" placeholder="z.B. Max Muster oder max@muster.ch" autocomplete="username" autocorrect="off" autocapitalize="none" spellcheck="false" enterkeyhint="next" aria-describedby="login-id-hint" aria-invalid="false" data-error="login-id-error" required>
+                    </div>
+                    <span id="login-id-error" class="field-error-msg">Bitte gib deinen Namen, deine E-Mail-Adresse oder deine Lizenz-Nr. ein.</span>
+                </div>
+
+                <div class="login-form-group">
+                    <label for="login-password">PIN oder Passwort</label>
+                    <div class="login-input-wrapper">
+                        <span class="login-input-icon" aria-hidden="true">🔒</span>
+                        <input type="password" id="login-password" name="password" placeholder="6-stelliger PIN oder Passwort" autocomplete="current-password" enterkeyhint="go" aria-invalid="false" data-error="login-pw-error" required>
+                        <button type="button" id="login-pw-toggle-btn" class="login-pw-toggle" aria-pressed="false" aria-label="PIN oder Passwort anzeigen" title="PIN anzeigen/ausblenden">
+                            <span id="login-pw-icon" aria-hidden="true">👁️</span>
+                        </button>
+                    </div>
+                    <span id="login-pw-error" class="field-error-msg">Bitte gib deinen PIN oder dein Passwort ein.</span>
+                </div>
+
+                <div id="login-error" class="login-alert-danger" role="alert" style="display:none;"></div>
+                <div id="login-info" class="login-alert-info" role="status" aria-live="polite" style="display:none;"></div>
+
+                <button id="login-btn" type="submit" class="btn-main login-btn-submit">
+                    🔐 Anmelden
+                </button>
+            </form>
+
+            <div class="login-footer-links">
+                <button type="button" id="btn-to-mail-otp" class="btn-help-link">
+                    ✉️ PIN vergessen? Code per Mail
+                </button>
+                <button type="button" id="btn-open-login-help" class="btn-help-link">
+                    ❓ Hilfe zur Anmeldung
+                </button>
+            </div>
+        </div>
+
+        <!-- SCHRITT 2 (FALLBACK): E-Mail Code anfordern -->
+        <div id="sso-step-input" style="display:none;">
+            <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:12px; padding:12px; margin-bottom:14px; font-size:0.84rem; color:#1e40af; text-align:left; line-height:1.4;">
+                <div style="font-weight:700; margin-bottom:4px;">📬 Anmeldung via Einmalcode</div>
+                <div id="sso-mail-desc">Gib deinen Namen oder deine E-Mail ein. Wir senden dir einen Bestätigungscode an deine hinterlegte E-Mail-Adresse.</div>
+            </div>
+
+            <form id="sso-mail-form" novalidate>
+                <div class="login-form-group">
+                    <label for="sso-mail-identifier">Name oder E-Mail</label>
+                    <div class="login-input-wrapper">
+                        <span class="login-input-icon" aria-hidden="true">👤</span>
+                        <input type="text" id="sso-mail-identifier" name="ssoIdentifier" placeholder="z.B. Max Muster oder E-Mail" autocomplete="name" autocorrect="off" autocapitalize="none" spellcheck="false" enterkeyhint="send" aria-invalid="false" data-error="sso-id-error" required>
+                    </div>
+                    <span id="sso-id-error" class="field-error-msg">Bitte gib deinen Namen oder deine E-Mail-Adresse ein.</span>
+                    <div id="sso-resolved-preview" role="status" aria-live="polite" style="display:none; margin-top:8px;" class="login-alert-info"></div>
+                </div>
+
+                <div id="sso-mail-error" class="login-alert-danger" role="alert" style="display:none;"></div>
+
+                <button id="sso-send-btn" type="submit" class="btn-main login-btn-submit">
+                    ✉️ Anmeldecode senden
+                </button>
+                <button id="sso-send-back-btn" type="button" class="btn-back-link">
+                    ← Zurück zur PIN-Anmeldung
+                </button>
+            </form>
+        </div>
+
+        <!-- SCHRITT 3: 6-Stelliger Bestätigungscode eingeben -->
+        <div id="sso-step-verify" style="display:none;">
+            <div class="login-verify-banner">
+                <div class="login-verify-title">📬 E-Mail wurde gesendet!</div>
+                <div>Wir haben einen <b>Anmelde-Link</b> und einen <b>6-stelligen Code</b> an <span id="sso-sent-email" style="font-weight:700;"></span> gesendet.</div>
+                <div class="login-verify-hint">💡 Klicke auf den Link im E-Mail oder gib den Code unten ein.</div>
+            </div>
+
+            <form id="sso-verify-form" novalidate>
+                <div class="login-form-group">
+                    <label for="sso-otp-code">6-stelliger Bestätigungscode</label>
+                    <input type="text" id="sso-otp-code" name="otpCode" placeholder="123456" inputmode="numeric" pattern="[0-9]{6,8}" maxlength="8" autocomplete="one-time-code" enterkeyhint="done" class="login-otp-input" aria-invalid="false" data-error="sso-otp-error" required>
+                    <span id="sso-otp-error" class="field-error-msg">Bitte gib den 6-stelligen Zifferncode ein.</span>
+                </div>
+
+                <div id="sso-verify-error" class="login-alert-danger" role="alert" style="display:none;"></div>
+
+                <button id="sso-verify-btn" type="submit" class="btn-main login-btn-submit">
+                    ✅ Jetzt anmelden
+                </button>
+                <button id="sso-back-btn" class="btn-back-link" type="button">
+                    ← Zurück zur Anmeldung
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- HILFE MODAL (LOGIN) -->
+<dialog id="login-help-modal" class="app-dialog" aria-labelledby="login-help-title" closedby="any">
+    <div class="modal-card" style="max-width:500px; text-align:left;">
+        <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e5e7eb; padding-bottom:12px; margin-bottom:16px;">
+            <h2 id="login-help-title" style="margin:0; font-size:1.15rem; font-weight:700; color:var(--primary); display:flex; align-items:center; gap:8px;">
+                <span aria-hidden="true">🔑</span> Hilfe zur Anmeldung
+            </h2>
+            <button id="close-login-help" class="modal-close-btn" type="button" aria-label="Hilfe schliessen">&times;</button>
+        </div>
+        <div class="modal-body" style="font-size:0.88rem; line-height:1.55; color:#374151;">
+            <div style="margin-bottom:14px;">
+                <div style="font-weight:700; color:#111827; margin-bottom:3px;">1. Wo finde ich meinen 6-stelligen PIN?</div>
+                <div>Dein PIN entspricht deiner persönlichen SSV-Adressnummer. Du findest ihn auf deinen Einladungen zur Generalversammlung, im Schützen-Ausweis oder Lizenzbüchlein.</div>
+            </div>
+
+            <div style="margin-bottom:14px;">
+                <div style="font-weight:700; color:#111827; margin-bottom:3px;">2. PIN vergessen oder nicht zur Hand?</div>
+                <div>Klicke einfach auf <b>«PIN vergessen? Code per Mail»</b>. Du kannst deinen Namen eingeben und dir einen sicheren Einmalcode an deine hinterlegte E-Mail-Adresse senden lassen.</div>
+            </div>
+
+            <div style="margin-bottom:14px;">
+                <div style="font-weight:700; color:#111827; margin-bottom:3px;">3. E-Mail-Adresse auch nicht bekannt?</div>
+                <div>Gib im Feld einfach deinen <b>Vornamen und Nachnamen</b> ein (z.B. <i>Max Muster</i>). Das System ermittelt deine hinterlegte E-Mail-Adresse automatisch und sendet den Code dorthin.</div>
+            </div>
+
+            <div style="background-color:#eff6ff; border-left:4px solid #3b82f6; padding:12px; border-radius:8px; font-size:0.84rem; color:#1e40af; margin-top:14px;">
+                💡 <b>Noch keine E-Mail im Verein hinterlegt?</b><br>
+                Falls für deinen Namen noch keine Adresse registriert ist, wende dich kurz an den Vorstand (z.B. Daniel Hunziker oder Kassier). Wir hinterlegen deine Daten gerne für dich.
+            </div>
+        </div>
+        <div class="modal-footer" style="margin-top:20px; text-align:right;">
+            <button id="confirm-login-help" class="btn-main" type="button" style="width:auto; padding:8px 24px; border-radius:8px;">Verstanden</button>
+        </div>
+    </div>
+</dialog>
+
+<div id="app-wrapper" style="display:none;">
+<div id="pull-spinner"><div class="spinner-icon"></div></div>
+<header>
+    <a id="vorstand-badge-link" href="vorstand/index.html" title="Zum Vorstandsportal" style="display:none; position:absolute; left:12px; top:calc(14px + env(safe-area-inset-top)); font-size:0.75rem; font-weight:600; background:rgba(255,255,255,0.22); color:#ffffff; text-decoration:none; padding:4px 10px; border-radius:12px; z-index:1100; backdrop-filter:blur(4px);">
+        <span>👑 Vorstand</span>
+        <span id="vorstand-pendenzen-badge" style="display:none; position:absolute; top:-6px; right:-6px; background:#ef4444; color:#ffffff; font-size:0.65rem; font-weight:700; padding:1px 5px; border-radius:999px; border:1.5px solid #ffffff; min-width:18px; text-align:center; box-shadow:0 2px 4px rgba(0,0,0,0.25); line-height:1.2;">0</span>
+    </a>
+    <h1 id="main-title">Termine</h1>
+    <button type="button" id="user-badge" aria-expanded="false" aria-controls="app-user-dropdown" style="display:none; position:absolute; right:12px; top:calc(14px + env(safe-area-inset-top)); font-size:0.78rem; font-weight:600; background:rgba(255,255,255,0.18); border:none; color:#ffffff; padding:3px 8px; border-radius:12px; align-items: center; gap: 4px; z-index: 1100; cursor: pointer; user-select: none;">
+        <span style="white-space:nowrap;"><span aria-hidden="true">👤</span> <span id="display-firstname"></span></span>
+        <span id="member-pendenzen-badge" style="display:none; background:#ef4444; color:#ffffff; font-size:0.65rem; font-weight:700; padding:1px 5px; border-radius:999px; border:1px solid #ffffff; min-width:16px; text-align:center; line-height:1.2;">0</span>
+        <span style="font-size:0.65rem; opacity:0.75;" aria-hidden="true">▾</span>
+    </button>
+
+    <!-- APP-SWITCHER & PROFIL DROPDOWN -->
+    <div id="app-user-dropdown" style="display:none; position:fixed; right:12px; top:calc(50px + env(safe-area-inset-top)); background:#ffffff; color:#0f3a5d; border-radius:14px; box-shadow:0 12px 30px rgba(0,0,0,0.25); border:1px solid rgba(15,60,92,0.12); min-width:220px; z-index:2200; overflow:hidden; text-align:left;">
+        <div style="padding:10px 14px; border-bottom:1px solid #f1f5f9; font-size:0.75rem; color:#64748b;">
+            Angemeldet als <b id="dropdown-user-fullname" style="display:block; color:#0f3a5d; font-size:0.85rem;">Mitglied</b>
+        </div>
+        <a id="dropdown-link-website" href="#" style="display:flex; align-items:center; gap:10px; padding:10px 14px; color:#1e293b; text-decoration:none; font-size:0.85rem; font-weight:600;">
+            <span aria-hidden="true">🌐</span> <span>Vereins-Website</span>
+        </a>
+        <a id="dropdown-link-intern" href="#" style="display:flex; align-items:center; gap:10px; padding:10px 14px; color:#1e293b; text-decoration:none; font-size:0.85rem; font-weight:600;">
+            <span aria-hidden="true">📂</span> <span>Dokumente &amp; Archiv</span>
+        </a>
+        <a id="dropdown-link-vorstand" href="#" style="display:none; align-items:center; gap:10px; padding:10px 14px; color:#b91c1c; text-decoration:none; font-size:0.85rem; font-weight:700; background:rgba(220,38,38,0.05);">
+            <span aria-hidden="true">👑</span> <span>Vorstandsportal</span>
+            <span id="dropdown-vorstand-badge" style="display:none; margin-left:auto; background:#ef4444; color:#ffffff; font-size:0.65rem; font-weight:700; padding:2px 7px; border-radius:999px;">0</span>
+        </a>
+        <button type="button" id="dropdown-push-btn" style="display:none; width:100%; border:none; background:#eff6ff; border-top:1px solid #dbeafe; align-items:center; gap:10px; padding:10px 14px; color:#1d4ed8; font-size:0.83rem; font-weight:600; cursor:pointer; text-align:left; font-family:inherit;">
+            <span aria-hidden="true">🔔</span> <span>Badges aktivieren</span>
+        </button>
+        <div style="height:1px; background:#f1f5f9; margin:2px 0;"></div>
+        <button type="button" id="dropdown-logout-btn" style="width:100%; border:none; background:none; display:flex; align-items:center; gap:10px; padding:10px 14px; color:#dc2626; font-size:0.85rem; font-weight:600; cursor:pointer; text-align:left; font-family:inherit;">
+            <span aria-hidden="true">🚪</span> <span>Abmelden</span>
+        </button>
+    </div>
+</header>
+
+<main>
+<section id="page-home" class="page active-page">
+    <div class="card" style="text-align:center;">
+        <picture>
+            <source type="image/avif" srcset="icons/logo-100.avif 1x, icons/logo-200.avif 2x">
+            <source type="image/webp" srcset="icons/logo-100.webp 1x, icons/logo-200.webp 2x">
+            <img src="icons/logo.png" width="100" height="100" style="width:100px; height:100px; object-fit:contain; margin-bottom:10px;" alt="Sportschützen Muhen Logo" fetchpriority="high" decoding="sync">
+        </picture>
+        <h2>Sportschützen Muhen</h2>
+        <p>Willkommen</p>
+    </div>
+
+    <!-- QUICK-LINKS ZU WEBSITE & ARCHIV -->
+    <div class="home-quick-nav" style="display:flex; justify-content:center; gap:10px; margin:-5px auto 16px auto; max-width:420px; padding:0 8px;">
+        <a id="home-link-website" href="#" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px; background:#ffffff; border:1px solid #e2e8f0; padding:8px 12px; border-radius:12px; font-size:0.82rem; font-weight:600; color:#0f3a5d; text-decoration:none; box-shadow:0 2px 6px rgba(0,0,0,0.04);">
+            <span aria-hidden="true">🌐</span> <span>Vereins-Website</span>
+        </a>
+        <a id="home-link-intern" href="#" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px; background:#ffffff; border:1px solid #e2e8f0; padding:8px 12px; border-radius:12px; font-size:0.82rem; font-weight:600; color:#0f3a5d; text-decoration:none; box-shadow:0 2px 6px rgba(0,0,0,0.04);">
+            <span aria-hidden="true">📂</span> <span>Dokumente &amp; Archiv</span>
+        </a>
+    </div>
+
+    <!-- BANNER: BADGES & MITTEILUNGEN AKTIVIEREN (NUR WENN NOCH NICHT ERLAUBT) -->
+    <div id="badge-permission-banner" style="display:none; margin: 0 auto 16px auto; max-width:420px; padding:12px 14px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:12px; text-align:left; font-size:0.84rem; color:#1e40af; box-shadow:0 2px 6px rgba(0,0,0,0.04);">
+        <div style="font-weight:700; margin-bottom:4px; display:flex; align-items:center; gap:6px;">
+            <span aria-hidden="true">🔔</span> <span>App-Badges am Homescreen aktivieren</span>
+        </div>
+        <div style="line-height:1.4; margin-bottom:10px; color:#1e3a8a; font-size:0.82rem;">
+            Damit dein iPhone oder iPad die rote Badge-Zahl mit deinen offenen Pendenzen direkt am App-Symbol anzeigt, aktiviere bitte kurz die Mitteilungs-Berechtigung auf diesem Gerät.
+        </div>
+        <button type="button" id="badge-permission-btn" class="btn-main" style="width:100%; padding:9px 12px; font-size:0.85rem; border-radius:8px; font-weight:600; cursor:pointer;">
+            ✅ Jetzt auf diesem Gerät aktivieren
+        </button>
+    </div>
+
+    <div id="hero-open-invoices"></div>
+    <div id="hero-rsvps"></div>
+
+    <div class="filter-bar">
+        <h2>Termine</h2>
+
+        <div class="filter-container">
+            <button type="button" class="filter-btn active" data-filter="all">Alle</button>
+            <button type="button" class="filter-btn" data-filter="verein">🎯 Verein</button>
+            <button type="button" class="filter-btn" data-filter="extern">🏠 Haus</button>
+        </div>
+
+        <div id="termine" class="termine-list" aria-live="polite">Lade Termine...</div>
+    </div>
+</section>
+
+<section id="page-jm" class="page"><iframe title="Jahresmeisterschaft Ranglisten" loading="lazy" data-src="app/app_jm.html"></iframe></section>
+<section id="page-gruppe" class="page"><iframe title="Gruppe und Grenzland Resultate" loading="lazy" data-src="app/app_gruppe.html"></iframe></section>
+<section id="page-mannschaft" class="page"><iframe title="Mannschaftsmeisterschaft Resultate" loading="lazy" data-src="app/app_mannschaft.html"></iframe></section>
+
+<section id="page-upload" class="page">
+    <iframe title="Standblatt Upload" loading="lazy" data-src="app/upload.html?v=8"></iframe>
+</section>
+</main>
+
+<nav class="bottom-nav" aria-label="Hauptnavigation">
+<button type="button" class="nav-item" data-page="page-jm" data-title="Jahresmeisterschaft"><span aria-hidden="true">🏆</span>JM</button>
+<button type="button" class="nav-item" data-page="page-gruppe" data-title="Gruppe &amp; Grenzland"><span aria-hidden="true">👥</span>G&amp;G</button>
+<button type="button" class="nav-item nav-home active" data-page="page-home" data-title="Termine" aria-label="Termine (Startseite)" aria-current="page"><span aria-hidden="true">🏠</span></button>
+<button type="button" class="nav-item" data-page="page-mannschaft" data-title="Mannschaft"><span aria-hidden="true">🎯</span>Mannschaft</button>
+<button type="button" class="nav-item" data-page="page-upload" data-title="Upload"><span aria-hidden="true">📤</span>Upload</button>
+</nav>
+
+</div>
+
+<script src="app.js?v=27" defer></script>
+
+<!-- Participant Modal -->
+<dialog id="participant-modal" class="app-dialog" aria-labelledby="modal-event-title" closedby="any">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="modal-event-title">Teilnehmer</h2>
+            <button type="button" id="close-participant-modal" class="modal-close" aria-label="Teilnehmerliste schliessen">&times;</button>
+        </div>
+        <ul id="participant-list" class="participant-list">
+            <li>Lade Teilnehmer...</li>
+        </ul>
+    </div>
+</dialog>
+
+<!-- App Confirm / Alert Dialog -->
+<dialog id="app-message-dialog" class="app-dialog" aria-labelledby="app-msg-title" closedby="any">
+    <div class="modal-card" style="max-width:420px; text-align:left;">
+        <div class="modal-header">
+            <h2 id="app-msg-title">Hinweis</h2>
+            <button type="button" id="app-msg-close-x" class="modal-close-btn" aria-label="Dialog schliessen">&times;</button>
+        </div>
+        <div id="app-msg-body" class="modal-body" style="font-size:0.94rem; line-height:1.5; color:#1f2937;"></div>
+        <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:10px;">
+            <button type="button" id="app-msg-cancel" class="btn-main" style="display:none; width:auto; padding:8px 18px; border-radius:8px; background:#e2e8f0; color:#1e293b;">Abbrechen</button>
+            <button type="button" id="app-msg-ok" class="btn-main" style="width:auto; padding:8px 22px; border-radius:8px;">OK</button>
+        </div>
+    </div>
+</dialog>
+
+</body>
+</html>

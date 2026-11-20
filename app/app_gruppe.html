@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gruppe &amp; Grenzland</title>
+    <link rel="preconnect" href="https://supabase-muhen.danfamily.uk">
+    <style>
+        :root { 
+            --primary: #0f3c5c; 
+            --bg: #f4f6f8; 
+            --text: #333; 
+            --line: #e0e0e0; 
+            --hover: #e6eef5; 
+        }
+        
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; 
+            background: var(--bg); 
+            margin: 0; 
+            padding: 15px;
+            padding-bottom: calc(100px + env(safe-area-inset-bottom));
+            color: var(--text); 
+            /* Verhindert Gummiband-Effekt des Browsers, damit unser Spinner Priorität hat */
+            overscroll-behavior-y: contain; 
+        }
+
+        .visually-hidden:where(:not(:focus-within, :active)) {
+            clip-path: inset(50%);
+            height: 1px;
+            overflow: hidden;
+            position: absolute;
+            white-space: nowrap;
+            width: 1px;
+        }
+
+        :where(button, [tabindex]):focus-visible {
+            outline: 2.5px solid #0b57d0;
+            outline-offset: 2px;
+        }
+
+        .subtitle { color: #666; margin-bottom: 10px; font-size: 14px; font-weight: bold; }
+        .table-wrapper { overflow-x: auto; margin-bottom: 30px; }
+        
+        .separator { display: flex; align-items: center; text-align: center; margin: 40px 0 20px; color: var(--primary); font-weight: bold; font-size: 18px; }
+        .separator::before, .separator::after { content: ''; flex: 1; border-bottom: 2px solid var(--line); }
+        .separator:not(:empty)::before { margin-right: .5em; }
+        .separator:not(:empty)::after { margin-left: .5em; }
+
+        table { width: 100%; table-layout: fixed; border-collapse: collapse; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.08); border-radius: 6px; overflow: hidden; }
+        th { background: var(--primary); color: #fff; font-size: 14px; height: 50px; padding: 0 10px; position: sticky; top: 0; z-index: 10; }
+        
+        .col-team { width: 55%; text-align: left; padding-left: 15px; }
+        .col-round { width: 15%; text-align: center; }
+
+        td { padding: 12px 10px; border-bottom: 1px solid var(--line); font-size: 14px; font-variant-numeric: tabular-nums; }
+        td.team { font-weight: bold; text-align: left; color: var(--primary); padding-left: 15px; }
+        .cell { text-align: center; cursor: pointer; transition: background-color 0.2s; font-weight: bold; }
+        
+        /* HEATMAP */
+        .hm-mid { background-color: #e6f6ec !important; color: #1f7a3a !important; }
+        .hm-high { background-color: #c3e6cb !important; color: #155724 !important; }
+        .hm-top { background-color: #ffeeba !important; color: #856404 !important; }
+
+        .detail { display: none; background: #f9f9f9; padding: 15px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); border-bottom: 2px solid var(--line); }
+        h3 { font-size: 16px; margin: 0 0 10px 0; color: var(--primary); text-align: center; }
+
+        .player-gm, .total-row-gm { display: grid; grid-template-columns: 1fr 40px 40px 70px; gap: 10px; padding: 8px 0; align-items: center; }
+        .player-gc, .total-row-gc { display: flex; justify-content: space-between; padding: 8px 0; align-items: center; }
+
+        .player-gm, .player-gc { border-bottom: 1px solid #eee; font-size: 14px; }
+        .total-row-gm, .total-row-gc { margin-top: 10px; border-top: 2px solid var(--primary); color: var(--primary); font-weight: bold; font-size: 16px; }
+
+        .trend { font-size: 12px; margin-left: 5px; font-weight: normal; }
+        .up { color: #28a745; }
+        .down { color: #dc3545; }
+        .steady { color: #6c757d; }
+
+        .name-container { display: flex; align-items: center; gap: 8px; text-align: left; overflow: hidden; }
+        .stellung { font-size: 9px; font-weight: 800; padding: 2px 6px; border-radius: 10px; text-transform: uppercase; white-space: nowrap; }
+        .liegend { background: #e3f0ff; color: #1e5dbf; border: 1px solid #bcd9ff; }
+        .kniend { background: #e6f6ec; color: #1f7a3a; border: 1px solid #c3e6cb; }
+
+        /* PULL SPINNER STYLE */
+        #pull-spinner { 
+            position: fixed; top: -50px; left: 50%; transform: translateX(-50%); 
+            width: 40px; height: 40px; background: var(--primary); border-radius: 50%; 
+            display: flex; align-items: center; justify-content: center; 
+            box-shadow: 0 3px 10px rgba(0,0,0,0.2); z-index: 2001; transition: top 0.1s ease-out;
+        }
+        .spinner-icon { 
+            width: 20px; height: 20px; border: 3px solid rgba(255,255,255,0.3); 
+            border-top-color: #fff; border-radius: 50%; animation: spin 0.8s infinite linear; 
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="pull-spinner"><div class="spinner-icon"></div></div>
+
+    <main id="gruppe-main">
+    <h1 class="visually-hidden">Gruppe &amp; Grenzland</h1>
+    <div class="subtitle">Auf Punkte klicken für Details</div>
+    
+    <h2 class="separator">Gruppe</h2>
+    <div id="overview-gm">Lade Daten...</div>
+    
+    <h2 class="separator">Grenzlandcup</h2>
+    <div id="overview-gc">Lade Daten...</div>
+    </main>
+
+<script>
+    const SUPABASE_REST_URL = "https://supabase-muhen.danfamily.uk/rest/v1";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M";
+    const currentYear = new Date().getFullYear();
+    let rawGM = []; 
+    let rawGC = [];
+    const escapeAttr = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    // --- DATEN LADEN (Supabase First) ---
+    async function loadAllData() {
+        const headers = { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` };
+        const CONTEST_COLS = 'id,contest_type,year,name,stellung,r1_team,r1_p1,r1_p2,r2_team,r2_p1,r2_p2,r3_team,r3_p1,r3_p2';
+        try {
+            const [resGM, resGC] = await Promise.all([
+                fetch(`${SUPABASE_REST_URL}/contest_results?select=${CONTEST_COLS}&contest_type=eq.gruppe&year=eq.${currentYear}&order=name.asc`, { headers }).then(r => r.json()),
+                fetch(`${SUPABASE_REST_URL}/contest_results?select=${CONTEST_COLS}&contest_type=eq.grenzland&year=eq.${currentYear}&order=name.asc`, { headers }).then(r => r.json())
+            ]);
+            rawGM = (Array.isArray(resGM) ? resGM : []).map(r => ({
+                name: r.name,
+                stellung: r.stellung || 'liegend',
+                r1Team: r.r1_team || '',
+                r1P1: r.r1_p1 || 0,
+                r1P2: r.r1_p2 || 0,
+                r2Team: r.r2_team || '',
+                r2P1: r.r2_p1 || 0,
+                r2P2: r.r2_p2 || 0,
+                r3Team: r.r3_team || '',
+                r3P1: r.r3_p1 || 0,
+                r3P2: r.r3_p2 || 0
+            }));
+            rawGC = (Array.isArray(resGC) ? resGC : []).map(r => ({
+                name: r.name,
+                stellung: r.stellung || 'liegend',
+                r1Team: r.r1_team || '',
+                r1Pkt: r.r1_p1 || 0,
+                r2Team: r.r2_team || '',
+                r2Pkt: r.r2_p1 || 0,
+                r3Team: r.r3_team || '',
+                r3Pkt: r.r3_p1 || 0
+            }));
+            buildTable("gm", rawGM, "overview-gm");
+            buildTable("gc", rawGC, "overview-gc");
+        } catch (e) { 
+            console.error("Fehler:", e); 
+            document.getElementById("overview-gm").innerHTML = "Fehler beim Laden.";
+        }
+    }
+
+    // --- TABELLEN BAUEN ---
+    function buildTable(type, data, targetId) {
+        if(!data || data.length === 0) return;
+        const teams = [...new Set(data.flatMap(r => [r.r1Team, r.r2Team, r.r3Team]).filter(Boolean))].sort();
+        let html = `<div class="table-wrapper"><table><thead><tr><th scope="col" class="col-team">Team</th><th scope="col" class="col-round">R1</th><th scope="col" class="col-round">R2</th><th scope="col" class="col-round">R3</th></tr></thead><tbody>`;
+        
+        teams.forEach((team, index) => {
+            html += `<tr><td class="team">${team}</td>`;
+            for(let r=1; r<=3; r++){
+                const teamRows = data.filter(p => p[`r${r}Team`] === team);
+                const sum = teamRows.reduce((a, b) => a + (type === "gm" ? (b[`r${r}P1`] + b[`r${r}P2`]) : b[`r${r}Pkt`]), 0);
+                const avg = teamRows.length > 0 ? sum / teamRows.length : 0;
+                const detailId = `detail-${type}-${index}-${r}`;
+                html += `<td class="cell ${getHMClass(avg, type)}" tabindex="0" role="button" aria-expanded="false" aria-controls="${detailId}" data-type="${type}" data-team="${escapeAttr(team)}" data-round="${r}" data-index="${index}">${sum || "–"}</td>`;
+            }
+            html += `</tr><tr><td colspan="4" style="padding:0; border:0;">`;
+            for(let r=1; r<=3; r++) html += `<div id="detail-${type}-${index}-${r}" class="detail"></div>`;
+            html += `</td></tr>`;
+        });
+        document.getElementById(targetId).innerHTML = html + `</tbody></table></div>`;
+    }
+
+    // --- DETAILS ANZEIGEN ---
+    function toggleDetail(type, team, round, index) {
+        const div = document.getElementById(`detail-${type}-${index}-${round}`);
+        if (!div) return;
+        const trigger = document.querySelector(`.cell[data-type="${type}"][data-index="${index}"][data-round="${round}"]`);
+        const isOpen = div.style.display === "block";
+
+        document.querySelectorAll('.detail').forEach(d => d.style.display = 'none');
+        document.querySelectorAll('.cell[aria-expanded]').forEach(c => c.setAttribute('aria-expanded', 'false'));
+        if (isOpen) return;
+
+        const list = (type === "gm" ? rawGM : rawGC).filter(p => p[`r${round}Team`] === team && (type === "gm" ? (p[`r${round}P1`]+p[`r${round}P2`]>0) : p[`r${round}Pkt`]>0));
+        let total = 0, html = `<h3>${team} – Runde ${round}</h3>`;
+
+        list.forEach(p => {
+            let val = type === "gm" ? (p[`r${round}P1`] + p[`r${round}P2`]) : p[`r${round}Pkt`];
+            let prevVal = 0;
+            if (round > 1) {
+                prevVal = type === "gm" ? (p[`r${round-1}P1`] + p[`r${round-1}P2`]) : p[`r${round-1}Pkt`];
+            }
+            total += val;
+            const trend = getTrend(val, prevVal);
+            const hm = getHMClass(val, type, p.stellung || "");
+
+            if(type === "gm") {
+                const cls = p.stellung.toLowerCase().includes("liegend") ? "liegend" : "kniend";
+                html += `<div class="player-gm"><div class="name-container"><span>${p.name}</span><span class="stellung ${cls}">${p.stellung}</span></div><div>${p[`r${round}P1`]}</div><div>${p[`r${round}P2`]}</div><div style="text-align:right;" class="${hm}"><strong>${val}</strong>${trend}</div></div>`;
+            } else {
+                html += `<div class="player-gc"><span>${p.name}</span><span style="text-align:right;" class="${hm}"><strong>${val}</strong>${trend}</span></div>`;
+            }
+        });
+        const trCls = type === "gm" ? "total-row-gm" : "total-row-gc";
+        html += `<div class="${trCls}"><span>Gesamt:</span>${type === "gm" ? '<div></div><div></div>' : ''}<span style="text-align:right;">${total}</span></div>`;
+        div.innerHTML = html; div.style.display = "block";
+        if (trigger) trigger.setAttribute('aria-expanded', 'true');
+    }
+
+    function bindCellInteractions() {
+        const mainEl = document.getElementById('gruppe-main');
+        if (!mainEl || mainEl.dataset.bound === '1') return;
+        mainEl.dataset.bound = '1';
+        mainEl.addEventListener('click', (e) => {
+            const cell = e.target.closest('.cell[data-type]');
+            if (cell) {
+                toggleDetail(cell.dataset.type, cell.dataset.team, Number(cell.dataset.round), Number(cell.dataset.index));
+            }
+        });
+        mainEl.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            const cell = e.target.closest('.cell[data-type]');
+            if (cell) {
+                e.preventDefault();
+                toggleDetail(cell.dataset.type, cell.dataset.team, Number(cell.dataset.round), Number(cell.dataset.index));
+            }
+        });
+    }
+
+    // --- HILFSFUNKTIONEN ---
+    function getHMClass(val, type, stellung = "") {
+        if (!val || val === 0) return "";
+        let bonus = stellung.toLowerCase().includes("kniend") ? 3 : 0;
+        if (type === "gm") {
+            if (val + bonus >= 196) return "hm-top";
+            if (val + bonus >= 191) return "hm-high";
+            if (val + bonus >= 186) return "hm-mid";
+        } else {
+            if (val >= 98) return "hm-top";
+            if (val >= 96) return "hm-high";
+            if (val >= 94) return "hm-mid";
+        }
+        return "";
+    }
+
+    function getTrend(curr, prev) {
+        if (!prev || prev === 0 || !curr || curr === 0) return "";
+        if (curr > prev) return '<span class="trend up">▲</span>';
+        if (curr < prev) return '<span class="trend down">▼</span>';
+        return '<span class="trend steady">▶</span>';
+    }
+
+    // --- PULL TO REFRESH LOGIK ---
+    let touchStart = 0;
+    const spinner = document.getElementById('pull-spinner');
+
+    document.addEventListener('touchstart', e => { 
+        touchStart = e.touches[0].pageY; 
+    }, {passive: true});
+
+    document.addEventListener('touchmove', e => {
+        const distance = e.touches[0].pageY - touchStart;
+        if (window.scrollY <= 0 && distance > 0) {
+            spinner.style.top = `${Math.min(distance / 2, 100) - 40}px`;
+            spinner.style.transform = `translateX(-50%) scale(${distance > 90 ? 1.2 : 1})`;
+        }
+    }, {passive: true});
+
+    document.addEventListener('touchend', e => {
+        if (window.scrollY <= 0 && (e.changedTouches[0].pageY - touchStart) > 90) {
+            location.reload();
+        } else {
+            spinner.style.top = '-50px';
+        }
+    }, {passive: true});
+
+    // iOS App-Wakeup Logik & Tab-Wechsel
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") loadAllData();
+    });
+
+    window.addEventListener("message", e => {
+        if (e.data && e.data.type === "app:resume") loadAllData();
+    });
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", () => {
+            bindCellInteractions();
+            loadAllData();
+        });
+    } else {
+        bindCellInteractions();
+        loadAllData();
+    }
+</script>
+</body>
+</html>

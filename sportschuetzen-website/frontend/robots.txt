@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /intern.html
+Disallow: /storno_feedback.html
+
+# Sitemap
+Sitemap: https://sportschuetzen-muhen.ch/sitemap.xml

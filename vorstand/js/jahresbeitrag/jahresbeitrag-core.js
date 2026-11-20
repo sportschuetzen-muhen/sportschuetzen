@@ -1,0 +1,998 @@
+// vorstand/js/jahresbeitrag/jahresbeitrag-core.js
+// ============================================================
+// STATE & CONFIG
+// ============================================================
+window._jbYear = window._jbYear || new Date().getFullYear();
+window._jbData = window._jbData || []; // Rechnungs-Header
+window._jbMembers = window._jbMembers || []; // Stammdaten aller aktiven Mitglieder
+window._jbMemberMap = window._jbMemberMap || {};
+window._jbActiveTab = window._jbActiveTab || 'overview'; // 'overview', 'matrix', 'entry', 'import', 'config'
+window._jbSelectedMemberPN = window._jbSelectedMemberPN || null; // Aktive Person in der Schnellerfassung
+window._jbEntrySearch = window._jbEntrySearch || ''; // Filter für die Mitgliederliste in der Schnellerfassung
+window._jbParticipationsState = window._jbParticipationsState || {}; // Lokale Teilnahmen-Änderungen vor dem Speichern
+window._jbImportData = window._jbImportData || null; // Gelesene Excel-Import-Daten
+window._jbLocalBulkChanges = window._jbLocalBulkChanges || {}; // Lokale, ungespeicherte Änderungen für die Schnellerfassung
+window._jbParticipationsCache = window._jbParticipationsCache || {}; // Lokaler Cache für Turnierteilnahmen: { [pn]: [ ... ] }
+window._jbPositionsCache = window._jbPositionsCache || {}; // Lokaler Cache für Rechnungspositionen: { [headerId]: [ ... ] }
+window._jbSortCol = window._jbSortCol || 'name'; // Aktuell sortierte Tabellenspalte
+window._jbSortAsc = window._jbSortAsc === undefined ? true : window._jbSortAsc; // Sortierrichtung: true (aufsteigend), false (absteigend)
+window._jbSidebarSort = window._jbSidebarSort || 'name'; // Sortierung der Seitenleiste
+
+function jbEscHtml(val) {
+  if (val === null || val === undefined) return '';
+  return String(val)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+window.jbEscHtml = jbEscHtml;
+
+// Komplette globale Caches über alle Jahre hinweg
+window._jbAllBeitraege = window._jbAllBeitraege || null;
+window._jbAllParticipations = window._jbAllParticipations || null;
+window._jbAllPositions = window._jbAllPositions || null;
+window._jbGebuehren = window._jbGebuehren || null;
+window._jbCacheDirty = Boolean(window._jbCacheDirty);
+window._jbInvoicesDirty = Boolean(window._jbInvoicesDirty);
+
+/**
+ * Markiert den In-Memory-Cache des Jahresbeitrags nach externen Schreibvorgängen (z. B. Konto 1301) als veraltet.
+ */
+window.jbInvalidateCache = function(opts = {}) {
+  window._jbCacheDirty = true;
+  if (opts.refreshInvoices) {
+    window._jbInvoicesDirty = true;
+  }
+  if (opts.invoiceId && window._invoicePositionsCache) {
+    delete window._invoicePositionsCache[String(opts.invoiceId).trim()];
+  }
+  if (opts.reloadIfActive) {
+    const jbView = document.getElementById('view-jahresbeitrag');
+    if (jbView && !jbView.classList.contains('d-none') && typeof loadJahresbeitragData === 'function') {
+      return loadJahresbeitragData(true, true);
+    }
+  }
+  return Promise.resolve();
+};
+
+// Event-Keys Zuordnung für Wettschiessen
+const EVENT_KEYS = {
+  // Kleinkaliber (50m)
+  kk_volksschiessen: 'KK008', // KK008 = Volksschiessen
+  kk_verband: 'KK006',
+  kk_verein: 'KK007',         // KK007 = Vereinsschiessen
+  kk_grenzland: 'KK001',
+  ssv_dez_liegend: 'KK002',
+  ssv_dez_2stellung: 'KK003',
+  ssv_dez_3stellung: 'KK004',
+  ssv_dez_sv: 'KK005',
+  // Luftgewehr (10m)
+  lg_ag_dez: 'LG001',
+  lg_ag_dez_auflage: 'LG002',
+  lg_ch_dez: 'LG003',
+  lg_ch_dez_auflage: 'LG004',
+  lg_verband: 'LG005',
+  lg_verein: 'LG006',
+  lg_ch_kniend: 'LG007'
+};
+
+// ============================================================
+// GEMEINSAME FILTER-KONFIGURATIONEN (KATEGORIEN & STATUS)
+// ============================================================
+window.JB_FILTER_CATEGORIES = window.JB_FILTER_CATEGORIES || [
+  { value: 'Aktiv A', label: 'Aktiv A' },
+  { value: 'Aktiv B', label: 'Aktiv B' },
+  { value: 'G50m (A)', label: 'G50m (A)' },
+  { value: 'G50m Aufl. (A)', label: 'G50m Aufl. (A)' },
+  { value: 'G50m (B)', label: 'G50m (B)' },
+  { value: 'G50m Aufl. (B)', label: 'G50m Aufl. (B)' },
+  { value: 'G10m (A)', label: 'G10m (A)' },
+  { value: 'G10m Aufl. (A)', label: 'G10m Aufl. (A)' },
+  { value: 'G10m (B)', label: 'G10m (B)' },
+  { value: 'G10m Aufl. (B)', label: 'G10m Aufl. (B)' },
+  { value: 'Ehrenmitglied', label: 'Ehrenmitglied' },
+  { value: 'Junior', label: 'Junior (U21)' },
+  { value: 'Veteran', label: 'Veteran (60+)' },
+  { value: 'Vorstand', label: 'Vorstand' },
+  { value: 'Passiv', label: 'Passiv' }
+];
+
+window.JB_FILTER_STATUSES = window.JB_FILTER_STATUSES || [
+  { value: 'offen', label: 'Ausstehend (Offen)' },
+  { value: 'berechnet', label: 'Berechnet (Noch keine RE)' },
+  { value: 'entwurf', label: 'Entwurf (RE im RechnungsCore)' },
+  { value: 'versendet', label: 'Versendet (Offen)' },
+  { value: 'teilbezahlt', label: 'Teilbezahlt' },
+  { value: 'bezahlt', label: 'Bezahlt' },
+  { value: 'befreit', label: 'Befreit (0 CHF)' }
+];
+
+// ============================================================
+// HILFSFUNKTIONEN: MULTI-KATEGORIE EINES MITGLIEDS (FÜR FILTER & BADGES)
+// ============================================================
+function jbGetMemberCategories(m, r) {
+  const cats = [];
+  const addCat = (c) => {
+    if (c && !cats.includes(c)) cats.push(c);
+  };
+
+  const positions = (r && r.id && window._jbPositionsCache && window._jbPositionsCache[r.id]) || [];
+  const posKeys = new Set(positions.map(p => String(p.source_field || p.sourcefield || p.key || '').trim().toUpperCase()));
+
+  // 1. Ehrenmitglied (JB004 = Ehrenmitglied, RA003 = Rabatt Ehrenmitgliedschaft)
+  if (m?.is_honorary || m?.IsHonoraryMember == 1 || m?._istEhren || posKeys.has('JB004') || posKeys.has('RA003')) {
+    addCat('Ehrenmitglied');
+  }
+
+  // 2. Vorstand (RA001 = Vorstandsrabatt)
+  if (m?._istVorstand || (m?._aktiveFunktionenCount > 0) || posKeys.has('RA001')) {
+    addCat('Vorstand');
+  }
+
+  // 3. Junior (U21 bezogen auf das aktive Beitragsjahr _jbYear)
+  const refYear = Number((typeof _jbYear !== 'undefined' && _jbYear) ? _jbYear : new Date().getFullYear());
+  const age = m?.BirthDate ? (refYear - new Date(m.BirthDate).getFullYear()) : 0;
+  if ((age > 0 && age <= 20) || posKeys.has('JB006') || posKeys.has('JB007') || posKeys.has('KOSTENUEBERNAHME_JUGEND')) {
+    addCat('Junior');
+  }
+
+  // 4. Veteran (60+)
+  if (age >= 60) {
+    addCat('Veteran');
+  }
+
+  // 5. Passiv
+  if (m?.is_passive || m?.IsPassive == 1 || m?._istPassiv || posKeys.has('JB005')) {
+    addCat('Passiv');
+  }
+
+  // 6. Lizenzen (Disziplinen & A/B)
+  const lics = [
+    ...(m?._aktiveLizenzen || []),
+    ...(m?._lizenzen || [])
+  ];
+  const seenLics = new Set();
+
+  lics.forEach(lic => {
+    const rawCat = String(lic?.MembershipCategory || lic?.membership_category || '').trim();
+    if (!rawCat || seenLics.has(rawCat)) return;
+    seenLics.add(rawCat);
+
+    const is50m = /50m/i.test(rawCat) || /g50/i.test(rawCat);
+    const is10m = /10m/i.test(rawCat) || /g10/i.test(rawCat);
+    const isAuflage = /aufl/i.test(rawCat);
+    const licCat = String(lic?.LicenseCategory || lic?.license_category || '').trim().toUpperCase();
+    const isB = licCat === 'B' || /aktiv[\s-]*b|status[\s-]*b/i.test(rawCat);
+
+    if (is50m && isAuflage) {
+      addCat(`G50m Aufl. (${isB ? 'B' : 'A'})`);
+    } else if (is50m) {
+      addCat(`G50m (${isB ? 'B' : 'A'})`);
+    } else if (is10m && isAuflage) {
+      addCat(`G10m Aufl. (${isB ? 'B' : 'A'})`);
+    } else if (is10m) {
+      addCat(`G10m (${isB ? 'B' : 'A'})`);
+    } else {
+      addCat(rawCat.replace('Aktiv-', 'Aktiv '));
+    }
+  });
+
+  // Falls in _kategorien noch Strings vorliegen
+  if (Array.isArray(m?._kategorien)) {
+    m._kategorien.forEach(k => {
+      const s = String(k || '').trim();
+      if (!s || seenLics.has(s)) return;
+      seenLics.add(s);
+      const isB = /aktiv[\s-]*b|status[\s-]*b|\(b\)/i.test(s);
+      const isAufl = /aufl/i.test(s);
+      if (/50m|g50/i.test(s)) addCat(isAufl ? `G50m Aufl. (${isB ? 'B' : 'A'})` : `G50m (${isB ? 'B' : 'A'})`);
+      else if (/10m|g10/i.test(s)) addCat(isAufl ? `G10m Aufl. (${isB ? 'B' : 'A'})` : `G10m (${isB ? 'B' : 'A'})`);
+      else addCat(s.replace('Aktiv-', 'Aktiv '));
+    });
+  }
+
+  // Position-basierte Ergänzungen (falls keine Lizenzen im Mitglied gepflegt sind)
+  if (posKeys.has('JB001') && !cats.some(c => c.includes('G50m') || c.includes('Aktiv A'))) {
+    addCat('Aktiv A');
+  }
+  if (posKeys.has('JB002') && !cats.some(c => c.includes('G50m') || c.includes('Aktiv B'))) {
+    addCat('Aktiv B');
+  }
+  if (posKeys.has('LI001') && !cats.some(c => c.includes('G50m'))) {
+    addCat('G50m (A)');
+  }
+  if (posKeys.has('LI002') && !cats.some(c => c.includes('G10m'))) {
+    addCat('G10m (A)');
+  }
+
+  // Fallback
+  if (cats.length === 0) {
+    const fb = (r?._kategorie || m?._kategorie || 'Aktiv').replace('Aktiv-', 'Aktiv ');
+    addCat(fb);
+  }
+
+  return cats;
+}
+
+function jbGetMemberCategoryLabel(m, r) {
+  const cats = jbGetMemberCategories(m, r);
+  return cats.join(', ');
+}
+
+function jbMemberMatchesCategory(m, r, filterVal) {
+  if (!filterVal) return true;
+  const cats = jbGetMemberCategories(m, r);
+  const target = filterVal.toLowerCase().trim();
+
+  return cats.some(c => {
+    const cLow = c.toLowerCase().trim();
+    if (cLow === target) return true;
+    if (target === 'aktiv a') {
+      return cLow.includes('(a)') || cLow.includes('aktiv a') || cLow.includes('aktiv-a');
+    }
+    if (target === 'aktiv b') {
+      return cLow.includes('(b)') || cLow.includes('aktiv b') || cLow.includes('aktiv-b');
+    }
+    if (target === 'g50m (a)') {
+      return cLow.includes('g50m') && cLow.includes('(a)') && !cLow.includes('aufl');
+    }
+    if (target === 'g50m (b)') {
+      return cLow.includes('g50m') && cLow.includes('(b)');
+    }
+    if (target === 'g10m (a)') {
+      return cLow.includes('g10m') && cLow.includes('(a)') && !cLow.includes('aufl');
+    }
+    if (target === 'g10m (b)') {
+      return cLow.includes('g10m') && cLow.includes('(b)');
+    }
+    if (target.includes('aufl')) {
+      return cLow.includes('aufl');
+    }
+    if (target === 'ehrenmitglied') {
+      return cLow.includes('ehren');
+    }
+    if (target === 'junior') {
+      return cLow.includes('junior') || cLow.includes('schüler');
+    }
+    if (target === 'veteran') {
+      return cLow.includes('veteran');
+    }
+    if (target === 'passiv') {
+      return cLow.includes('passiv');
+    }
+    if (target === 'vorstand') {
+      return cLow.includes('vorstand');
+    }
+    return cLow.includes(target);
+  });
+}
+
+window.jbGetMemberCategories = jbGetMemberCategories;
+window.jbGetMemberCategoryLabel = jbGetMemberCategoryLabel;
+window.jbMemberMatchesCategory = jbMemberMatchesCategory;
+
+/**
+ * Prüft für einen Beitrags-Header oder eine Personennummer, ob aufgrund des
+ * Rechnungs-Lebenszyklus eine Bearbeitungssperre (versendet / (teil-)bezahlt) vorliegt.
+ */
+function jbGetContributionLockState(headerOrPn) {
+  let header = null;
+  if (headerOrPn && typeof headerOrPn === 'object') {
+    header = headerOrPn;
+  } else if (headerOrPn !== undefined && headerOrPn !== null) {
+    const pnStr = String(headerOrPn).trim();
+    header = (_jbData || []).find(x => String(x.PersonNumber || '').trim() === pnStr) || null;
+  }
+
+  const invoicesList = window._invoices || window._jbAllInvoices || [];
+  let inv = null;
+  if (header && (header.invoiceId || header.invoice_id)) {
+    const iid = String(header.invoiceId || header.invoice_id).trim();
+    inv = invoicesList.find(i => String(i.id).trim() === iid && String(i.status || '').toLowerCase() !== 'storniert') || null;
+  }
+  if (!inv && header && header.PersonNumber) {
+    inv = invoicesList.find(i =>
+      String(i.PersonNumber || i.person_number || '').trim() === String(header.PersonNumber).trim() &&
+      Number(i.year) === Number(header.year || _jbYear) &&
+      String(i.type || '').toLowerCase() === 'jahresbeitrag' &&
+      String(i.status || '').toLowerCase() !== 'storniert'
+    ) || null;
+  }
+
+  const hStatus = String(header?.status || '').toLowerCase();
+  const invStatus = String(inv?.status || '').toLowerCase();
+  const invMail = String(inv?.mail_status || header?.mail_status || '').toLowerCase();
+  const openAmt = (inv && inv.open_amount !== undefined && inv.open_amount !== null) ? Number(inv.open_amount) : null;
+  const totalAmt = (inv && inv.total_amount !== undefined && inv.total_amount !== null) ? Number(inv.total_amount) : null;
+  const paidFromAmounts = (totalAmt !== null && openAmt !== null) ? Math.max(0, totalAmt - openAmt) : 0;
+  const effectivePaid = Math.max(Number(inv?.total_paid || 0), paidFromAmounts);
+  const hasPartialViaAmounts = (totalAmt !== null && totalAmt > 0 && openAmt !== null && openAmt < (totalAmt - 0.01));
+
+  if (hStatus === 'bezahlt' || invStatus === 'bezahlt') {
+    return { isLocked: true, reason: 'bezahlt', label: 'Bezahlt (revisionsgesperrt)', header, invoice: inv };
+  }
+  if (hStatus === 'teilbezahlt' || invStatus === 'teilbezahlt' || effectivePaid > 0.01 || hasPartialViaAmounts) {
+    return { isLocked: true, reason: 'teilbezahlt', label: 'Teilbezahlt (revisionsgesperrt)', header, invoice: inv };
+  }
+  if (hStatus === 'versendet' || hStatus === 'gesendet' || invMail === 'versendet' || invMail === 'gesendet' || Boolean(inv?.send_date)) {
+    return { isLocked: true, reason: 'versendet', label: 'Bereits versendet (revisionsgesperrt)', header, invoice: inv };
+  }
+  return { isLocked: false, reason: '', label: '', header, invoice: inv };
+}
+window.jbGetContributionLockState = jbGetContributionLockState;
+
+/**
+ * Synchronisiert Positionen & Gesamtbetrag eines noch offenen Rechnungsentwurfs
+ * (mail_status === 'entwurf', nicht storniert, nicht (teil-)bezahlt) nach Supabase
+ * und stösst die Hintergrund-Neugenerierung des PDFs mit forceRecreate: true an.
+ */
+async function jbSyncOpenDraftInvoice(supa, invoiceObjOrId, { totalAmount, positions, headerId = null, backgroundPdf = true } = {}) {
+  const invoicesList = window._invoices || window._jbAllInvoices || [];
+  let inv = null;
+  let invId = '';
+  if (invoiceObjOrId && typeof invoiceObjOrId === 'object') {
+    inv = invoiceObjOrId;
+    invId = String(inv.id || '').trim();
+  } else {
+    invId = String(invoiceObjOrId || '').trim();
+    inv = invoicesList.find(i => String(i.id).trim() === invId) || null;
+  }
+  if (!invId) return { synced: false, reason: 'missing_id' };
+
+  const mailSt = String(inv?.mail_status || 'entwurf').toLowerCase();
+  const invSt = String(inv?.status || 'offen').toLowerCase();
+  const invOpen = (inv && inv.open_amount !== undefined && inv.open_amount !== null) ? Number(inv.open_amount) : null;
+  const invTotal = (inv && inv.total_amount !== undefined && inv.total_amount !== null) ? Number(inv.total_amount) : null;
+  const invPaidFromAmounts = (invTotal !== null && invOpen !== null) ? Math.max(0, invTotal - invOpen) : 0;
+  const paid = Math.max(Number(inv?.total_paid || 0), invPaidFromAmounts);
+  if (mailSt !== 'entwurf' || invSt === 'storniert' || invSt === 'bezahlt' || invSt === 'teilbezahlt' || paid > 0.01 || Boolean(inv?.send_date)) {
+    return { synced: false, reason: 'locked_or_cancelled' };
+  }
+
+  if (supa) {
+    const [{ data: dbInv, error: dbInvErr }, { data: dbPays, error: dbPayErr }] = await Promise.all([
+      supa.from('invoices').select('id, status, mail_status, send_date, total_amount, open_amount').eq('id', invId).maybeSingle(),
+      supa.from('invoice_payments').select('id').eq('invoice_id', invId).limit(1)
+    ]);
+    if (dbInvErr) throw new Error(`Fehler bei der Lebenszyklus-Prüfung für Rechnung ${invId}: ${dbInvErr.message}`);
+    if (dbPayErr) throw new Error(`Fehler bei der Zahlungsprüfung für Rechnung ${invId}: ${dbPayErr.message}`);
+    if (!dbInv) return { synced: false, reason: 'not_found' };
+
+    const dbMail = String(dbInv.mail_status || 'entwurf').toLowerCase();
+    const dbSt = String(dbInv.status || 'offen').toLowerCase();
+    const dbPaidAmt = (dbInv.total_amount != null && dbInv.open_amount != null)
+      ? Math.max(0, Number(dbInv.total_amount) - Number(dbInv.open_amount))
+      : 0;
+    if (dbMail !== 'entwurf' || dbSt === 'storniert' || dbSt === 'bezahlt' || dbSt === 'teilbezahlt' ||
+        Boolean(dbInv.send_date) || (dbPays && dbPays.length > 0) || dbPaidAmt > 0.01) {
+      return { synced: false, reason: 'locked_or_cancelled' };
+    }
+  }
+
+  const headTotal = Number(Number(totalAmount || 0).toFixed(2));
+  const normalizedPositions = (positions || []).map((p, idx) => {
+    const kontoVal = String(p.konto || '').trim();
+    if (!kontoVal) {
+      throw new Error(`Fehlendes Ertrags-/Buchungskonto bei Position "${p.description || p.beschreibung || p.name || idx + 1}". Bitte in den Gebühren ergänzen.`);
+    }
+    return {
+      invoice_id: invId,
+      position_nr: p.position_nr || (idx + 1),
+      description: p.description || p.beschreibung || p.name || 'Position',
+      quantity: Number(p.quantity || 1),
+      unit_price: Number(p.unit_price ?? p.betrag ?? 0),
+      amount: Number(p.amount ?? p.betrag ?? 0),
+      konto: kontoVal,
+      type: p.type || p.typ || 'Debit',
+      source_field: p.source_field || p.sourcefield || p.key || null
+    };
+  });
+
+  if (supa) {
+    const { error: invErr } = await supa.from('invoices').update({
+      total_amount: headTotal,
+      open_amount: headTotal,
+      pdf_url: null,
+      pdf_storage_path: null,
+      updated_at: new Date().toISOString()
+    }).eq('id', invId);
+    if (invErr) throw new Error(`Fehler beim Aktualisieren des Rechnungsentwurfs ${invId}: ${invErr.message}`);
+
+    const { error: delPosErr } = await supa.from('invoice_positions').delete().eq('invoice_id', invId);
+    if (delPosErr) throw new Error(`Fehler beim Ersetzen der Rechnungspositionen (${invId}): ${delPosErr.message}`);
+
+    if (normalizedPositions.length > 0) {
+      const { error: insPosErr } = await supa.from('invoice_positions').insert(normalizedPositions);
+      if (insPosErr) throw new Error(`Fehler beim Speichern der Rechnungspositionen (${invId}): ${insPosErr.message}`);
+    }
+
+    if (headerId) {
+      const { error: hdrLinkErr } = await supa.from('contributions_header').update({ invoice_id: invId }).eq('id', headerId);
+      if (hdrLinkErr) throw new Error(`Fehler beim Verknüpfen der Rechnung (${invId}): ${hdrLinkErr.message}`);
+    }
+  }
+
+  if (inv) {
+    inv.total_amount = headTotal;
+    inv.open_amount = headTotal;
+    inv.pdf_url = null;
+    inv.positions = normalizedPositions;
+  }
+  if (window._invoicePositionsCache) {
+    delete window._invoicePositionsCache[invId];
+  }
+
+  if (backgroundPdf && window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
+    window.RechnungsCore.renderPdf(invId, { forceRecreate: true }).then(res => {
+      if (res && res.pdfUrl && inv) {
+        inv.pdf_url = res.pdfUrl;
+      }
+      const hdr = (_jbData || []).find(h => String(h.invoiceId || h.invoice_id || '').trim() === invId);
+      if (hdr && res && res.pdfUrl) hdr.pdf_url = res.pdfUrl;
+    }).catch(err => {
+      console.warn(`⚠️ [Jahresbeitrag] Hintergrund-PDF-Neugenerierung (${invId}):`, err);
+    });
+  }
+
+  return { synced: true, invoiceId: invId };
+}
+window.jbSyncOpenDraftInvoice = jbSyncOpenDraftInvoice;
+
+// Supabase Client Access & State
+function getJahresbeitragSupabaseClient() {
+  if (typeof window.getSupabaseClient === 'function') {
+    return window.getSupabaseClient();
+  }
+  return window.supabaseClient || null;
+}
+window.getJahresbeitragSupabaseClient = getJahresbeitragSupabaseClient;
+window._jahresbeitragIsSupabase = false;
+
+// Mapping Helpers für Supabase PostgreSQL
+function mapContributionHeaderFromSupabase(r) {
+  return {
+    id: String(r.id),
+    PersonNumber: String(r.person_number),
+    year: Number(r.year),
+    status: r.status || 'offen',
+    Gesamt: Number(r.gesamt || 0),
+    payment_date: r.payment_date,
+    payment_method: r.payment_method,
+    document_ref: r.document_ref,
+    invoiceId: r.invoice_id,
+    createdat: r.created_at,
+    updatedat: r.updated_at
+  };
+}
+
+function mapContributionPositionFromSupabase(r) {
+  return {
+    id: String(r.id),
+    headerid: String(r.header_id),
+    PersonNumber: String(r.person_number),
+    year: Number(r.year),
+    position_nr: Number(r.position_nr || 1),
+    beschreibung: r.beschreibung || '',
+    name: r.beschreibung || '',
+    betrag: Number(r.betrag || 0),
+    typ: r.typ || 'Debit',
+    source_field: r.source_field || '',
+    sourcefield: r.source_field || '',
+    key: r.source_field || '',
+    konto: r.konto || '',
+    last_upd: r.last_upd
+  };
+}
+
+function mapParticipationFromSupabase(r) {
+  return {
+    id: String(r.id),
+    PersonNumber: String(r.person_number),
+    year: Number(r.year),
+    eventkey: r.event_key,
+    teilgenommen: Number(r.teilgenommen || 0),
+    quelle: r.quelle || 'schnellerfassung',
+    erfasstam: r.erfasst_am,
+    erfasstvon: r.erfasst_von
+  };
+}
+
+function mapGebuehrFromSupabase(r) {
+  return {
+    key: r.key,
+    bezeichnung: r.bezeichnung,
+    bezeichnung_frontend: r.bezeichnung_frontend || r.bezeichnung,
+    bezeichnungfrontend: r.bezeichnung_frontend || r.bezeichnung,
+    betrag: Number(r.betrag || 0),
+    'Haben-Konto-Jahresbeitrag-Buchhaltung': r.konto_haben,
+    konto_haben: r.konto_haben,
+    konto: r.konto_haben,
+    kategorie: r.kategorie || 'Jahresbeitrag',
+    sort_order: r.sort_order || 10,
+    ui_gruppe: r.ui_gruppe || '',
+    ui_feld: r.ui_feld || r.bezeichnung_frontend || r.bezeichnung,
+    ui_typ: (r.ui_typ || 'checkbox').toLowerCase(),
+    ui_sort: Number(r.sort_order || 10),
+    zielgruppe: r.zielgruppe || 'Alle',
+    aktiv: r.aktiv !== false,
+    bemerkung: r.bemerkung || ''
+  };
+}
+
+// Kontenrahmen-Cache & Helper für Jahresbeitrag
+window.jbEnsureKontenrahmen = async function() {
+  if (Array.isArray(window._bhKontenrahmen) && window._bhKontenrahmen.length > 0) {
+    return window._bhKontenrahmen;
+  }
+  try {
+    const cached = localStorage.getItem('bh_kontenrahmen');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        window._bhKontenrahmen = parsed;
+        return parsed;
+      }
+    }
+  } catch (_) {}
+
+  const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+  if (supa) {
+    try {
+      const { data, error } = await supa
+        .from('accounting_accounts')
+        .select('*')
+        .order('sort_order', { ascending: true });
+      if (!error && Array.isArray(data) && data.length > 0) {
+        window._bhKontenrahmen = data.map((a, idx) => ({
+          _rowIndex: idx + 2,
+          konto: a.konto,
+          bezeichnung: a.bezeichnung,
+          klasse: a.klasse,
+          hauptgruppe: a.hauptgruppe,
+          gruppe: a.gruppe,
+          untergruppe: a.untergruppe,
+          soll_haben: a.soll_haben,
+          eroeffnungssaldo: Number(a.eroeffnungssaldo || 0),
+          sort_order: a.sort_order
+        }));
+        try {
+          localStorage.setItem('bh_kontenrahmen', JSON.stringify(window._bhKontenrahmen));
+        } catch (_) {}
+        return window._bhKontenrahmen;
+      }
+    } catch (err) {
+      console.warn("⚠️ Fehler beim Laden des Kontenrahmens für Jahresbeitrag:", err);
+    }
+  }
+  return window._bhKontenrahmen || [];
+};
+
+window.jbGetKontenDatalistHtml = function(datalistId = 'jb-konten-datalist') {
+  let list = window._bhKontenrahmen;
+  if (!list || list.length === 0) {
+    try {
+      const cached = localStorage.getItem('bh_kontenrahmen');
+      if (cached) list = JSON.parse(cached);
+    } catch (e) {}
+  }
+  const options = (list || []).map(k => `<option value="${(k.konto || '').replace(/"/g, '&quot;')} | ${(k.bezeichnung || '').replace(/"/g, '&quot;')}">`).join('');
+  return `<datalist id="${datalistId}">${options}</datalist>`;
+};
+
+// ============================================================
+// EINSTIEGSPUNKT
+// ============================================================
+async function loadJahresbeitragData(forceReload = false, showSpinner = true) {
+  const container = document.getElementById('jahresbeitrag-container');
+  const effectiveForceReload = Boolean(forceReload || window._jbCacheDirty);
+  const shouldRefreshInvoices = Boolean(window._jbInvoicesDirty);
+  
+  // Wenn kein forceReload und Preload läuft, darauf warten
+  if (!effectiveForceReload && !window._jbAllBeitraege && window._jbPreloadPromise) {
+    console.log("⏳ loadJahresbeitragData: Warte auf laufenden Preload im Hintergrund...");
+    if (container && showSpinner) {
+      container.innerHTML = `
+        <div class="text-center py-5">
+          <div class="spinner-border text-primary" role="status"></div>
+          <p class="mt-2 text-muted">Lade Beitrags- und Mitgliederdaten (Preload im Hintergrund)…</p>
+        </div>`;
+    }
+    try {
+      await window._jbPreloadPromise;
+    } catch (e) {
+      console.error("❌ Fehler beim Warten auf Preload:", e);
+    }
+  }
+
+  // Wenn Caches bereits geladen sind und kein forceReload / Dirty-Flag vorliegt,
+  // laden wir direkt und instant aus dem lokalen Speicher!
+  if (!effectiveForceReload && !window._jbCacheDirty && window._jbAllBeitraege !== null) {
+    console.log("⚡ loadJahresbeitragData: Lade aus lokalem Cache...");
+    
+    _jbData = _jbAllBeitraege.filter(h => Number(h.year) === Number(_jbYear));
+    
+    _jbParticipationsCache = {};
+    _jbAllParticipations.forEach(p => {
+      if (Number(p.year) === Number(_jbYear)) {
+        const pn = String(p.PersonNumber).trim();
+        if (!_jbParticipationsCache[pn]) _jbParticipationsCache[pn] = [];
+        _jbParticipationsCache[pn].push(p);
+      }
+    });
+
+    _jbPositionsCache = {};
+    _jbAllPositions.forEach(p => {
+      if (Number(p.year) === Number(_jbYear)) {
+        const hid = String(p.headerid).trim();
+        if (!_jbPositionsCache[hid]) _jbPositionsCache[hid] = [];
+        _jbPositionsCache[hid].push(p);
+      }
+    });
+
+    // Invoices mergen
+    jbMergeInvoicesIntoData(window._jbAllInvoices || []);
+
+    jbApplyTableSorting();
+    jbApplySidebarSorting();
+    if (showSpinner && document.getElementById('jahresbeitrag-container')) {
+      renderJahresbeitragView();
+    }
+    return;
+  }
+
+  if (container && showSpinner) {
+    container.innerHTML = `
+      <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p class="mt-2 text-muted">Lade Beitrags- und Mitgliederdaten aus Supabase…</p>
+      </div>`;
+  }
+
+  // 1. SUPABASE-FIRST LADEN
+  const supa = getJahresbeitragSupabaseClient();
+  if (supa) {
+    try {
+      window._jbCacheDirty = false;
+      window._jbInvoicesDirty = false;
+      const [headRes, posRes, partRes, gebRes] = await Promise.all([
+        supa.from('contributions_header').select('*').order('created_at', { ascending: true }),
+        supa.from('contributions_positions').select('*').order('position_nr', { ascending: true }),
+        supa.from('member_participations').select('*'),
+        supa.from('gebuehren_config').select('*').order('sort_order', { ascending: true }),
+        window.jbEnsureKontenrahmen()
+      ]);
+
+      if (headRes.error) throw headRes.error;
+      if (posRes.error) throw posRes.error;
+      if (partRes.error) throw partRes.error;
+      if (gebRes.error) throw gebRes.error;
+
+      if (Array.isArray(headRes.data)) {
+        console.log(`✅ ${headRes.data.length} Beitragsrechnungen & ${posRes.data?.length || 0} Positionen aus Supabase geladen (< 50 ms).`);
+        window._jahresbeitragIsSupabase = true;
+
+        // Sicherstellen, dass Mitglieder da sind
+        if (!_jbMembers || _jbMembers.length === 0) {
+          if (window._mglData && window._mglData.length > 0) {
+            _jbMembers = window._mglData.filter(m => 
+              m.Deceased != 1 && 
+              (m.IsActive == 1 || m.IsPassive == 1 || m._istPassiv || m.IsHonoraryMember == 1 || m._istEhren)
+            );
+            _jbMemberMap = {};
+            window._mglData.forEach(m => { _jbMemberMap[String(m.PersonNumber)] = m; });
+          } else if (typeof loadMitgliederData === 'function') {
+            await loadMitgliederData();
+            _jbMembers = (window._mglData || []).filter(m => 
+              m.Deceased != 1 && 
+              (m.IsActive == 1 || m.IsPassive == 1 || m._istPassiv || m.IsHonoraryMember == 1 || m._istEhren)
+            );
+            _jbMemberMap = {};
+            (window._mglData || []).forEach(m => { _jbMemberMap[String(m.PersonNumber)] = m; });
+          }
+        }
+
+        // Sicherstellen, dass Rechnungen da sind (oder nach externer Mutation frisch laden)
+        if (shouldRefreshInvoices || !window._invoices || window._invoices.length === 0) {
+          if (typeof loadRechnungenData === 'function') {
+            await loadRechnungenData(true, shouldRefreshInvoices);
+          }
+        }
+
+        window._jbAllBeitraege = headRes.data.map(mapContributionHeaderFromSupabase);
+        window._jbAllPositions = (posRes.data || []).map(mapContributionPositionFromSupabase);
+        window._jbAllParticipations = (partRes.data || []).map(mapParticipationFromSupabase);
+        window._jbGebuehren = (gebRes.data || []).map(mapGebuehrFromSupabase);
+
+        _jbAllBeitraege = window._jbAllBeitraege;
+        _jbAllPositions = window._jbAllPositions;
+        _jbAllParticipations = window._jbAllParticipations;
+
+        // Für das aktive Jahr filtern
+        _jbData = _jbAllBeitraege.filter(h => Number(h.year) === Number(_jbYear));
+
+        _jbParticipationsCache = {};
+        _jbAllParticipations.forEach(p => {
+          if (Number(p.year) === Number(_jbYear)) {
+            const pn = String(p.PersonNumber).trim();
+            if (!_jbParticipationsCache[pn]) _jbParticipationsCache[pn] = [];
+            _jbParticipationsCache[pn].push(p);
+          }
+        });
+
+        _jbPositionsCache = {};
+        _jbAllPositions.forEach(p => {
+          if (Number(p.year) === Number(_jbYear)) {
+            const hid = String(p.headerid).trim();
+            if (!_jbPositionsCache[hid]) _jbPositionsCache[hid] = [];
+            _jbPositionsCache[hid].push(p);
+          }
+        });
+
+        window._jbAllInvoices = window._invoices || [];
+        jbMergeInvoicesIntoData(window._jbAllInvoices);
+
+        jbApplyTableSorting();
+        jbApplySidebarSorting();
+        if (showSpinner && document.getElementById('jahresbeitrag-container')) {
+          renderJahresbeitragView();
+        }
+        return;
+      }
+      if (headRes.error) throw headRes.error;
+    } catch (supaErr) {
+      console.error("❌ Supabase Jahresbeitrag Abfrage fehlgeschlagen:", supaErr);
+      if (container) {
+        container.innerHTML = `<div class="alert alert-danger shadow-sm">
+          <i class="fas fa-exclamation-triangle me-2"></i>
+          <strong>Fehler:</strong> Jahresbeiträge konnten nicht aus Supabase geladen werden: ${jbEscHtml(supaErr.message || String(supaErr))}
+        </div>`;
+      }
+    }
+  } else {
+    if (container) {
+      container.innerHTML = `<div class="alert alert-danger shadow-sm">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        <strong>Konfigurationsfehler:</strong> Supabase Client ist nicht initialisiert.
+      </div>`;
+    }
+  }
+}
+
+// ============================================================
+
+
+// Invoices aus Rechnungen mit den Beitrags-Header-Einträgen mergen
+function jbMergeInvoicesIntoData(invoices) {
+  if (!invoices || !Array.isArray(invoices)) return;
+  _jbData.forEach(r => {
+    const existingInvId = r.invoiceId || r.invoice_id || '';
+    
+    // 1. Zuerst exakter Match über Rechnungs-ID (sofern nicht storniert)
+    let match = null;
+    if (existingInvId) {
+      match = invoices.find(inv =>
+        String(inv.id).trim() === String(existingInvId).trim() &&
+        String(inv.status || '').toLowerCase() !== 'storniert'
+      );
+    }
+    
+    // 2. Falls keine ID oder storniert/nicht gefunden, Match über PersonNumber, Jahr und Typ (nicht storniert)
+    if (!match) {
+      match = invoices.find(inv =>
+        String(inv.PersonNumber || inv.recipient_id || '').trim() === String(r.PersonNumber).trim() &&
+        Number(inv.year) === Number(r.year) &&
+        String(inv.type || '').toLowerCase() === 'jahresbeitrag' &&
+        String(inv.status || '').toLowerCase() !== 'storniert'
+      );
+    }
+    
+    if (match) {
+      r.pdf_url = match.pdf_url || '';
+      r.mail_status = match.mail_status || 'entwurf';
+      r.send_date = match.send_date || null;
+      r.total_amount = match.total_amount;
+      r.open_amount = match.open_amount;
+      r.invoiceId = match.id || '';
+      r.invoice_id = match.id || '';
+      
+      // Falls in Rechnungen (teil-)bezahlt, synchronisieren wir den Status im Frontend
+      const mStatus = String(match.status || '').toLowerCase();
+      if (mStatus === 'bezahlt' && r.status !== 'bezahlt') {
+        r.status = 'bezahlt';
+        r.payment_date = match.payment_date;
+        r.payment_method = match.payment_method;
+        r.document_ref = match.document_ref;
+      } else if (mStatus === 'teilbezahlt' && r.status !== 'bezahlt') {
+        r.status = 'teilbezahlt';
+      }
+    } else {
+      // Wenn Rechnungen im Speicher geladen sind, aber kein aktiver Match existiert -> sauber entkoppeln!
+      if (invoices.length > 0 && existingInvId) {
+        r.invoiceId = null;
+        r.invoice_id = null;
+        r.mail_status = null;
+        r.send_date = null;
+        r.pdf_url = null;
+        r.total_amount = undefined;
+        r.open_amount = undefined;
+      } else {
+        r.invoiceId = existingInvId || null;
+        r.invoice_id = existingInvId || null;
+      }
+    }
+  });
+}
+window.jbMergeInvoicesIntoData = jbMergeInvoicesIntoData;
+
+// ============================================================
+// SWITCH TABS
+// ============================================================
+function jbSwitchTab(tabName) {
+  _jbActiveTab = tabName === 'bank' ? 'overview' : tabName;
+  renderJahresbeitragView();
+}
+
+// ============================================================
+// RENDER GENERAL VIEW
+// ============================================================
+function renderJahresbeitragView() {
+  const years = [];
+  const currentYear = new Date().getFullYear();
+  for (let y = currentYear; y >= currentYear - 4; y--) years.push(y);
+
+  const canEdit = typeof hasWriteAccess === 'function' ? hasWriteAccess('jahresbeitrag') : (typeof userHasRole === 'function' ? userHasRole('admin') : false);
+
+  // Tab Navigation Controls
+  const tabControlHTML = `
+    <div class="d-flex bg-white p-1 rounded shadow-sm mb-4 border" style="max-width: 860px;">
+      <button class="btn flex-fill py-2 text-center rounded border-0 transition fw-semibold ${_jbActiveTab === 'overview' ? 'btn-primary text-white' : 'text-muted bg-transparent'}" onclick="jbSwitchTab('overview')">
+        <i class="fas fa-list-ul me-2"></i> Beitrags-Übersicht
+      </button>
+      <button class="btn flex-fill py-2 text-center rounded border-0 transition fw-semibold ${_jbActiveTab === 'matrix' ? 'btn-primary text-white' : 'text-muted bg-transparent'}" onclick="jbSwitchTab('matrix')">
+        <i class="fas fa-table-cells me-2"></i> Beitragsmatrix
+      </button>
+      <button class="btn flex-fill py-2 text-center rounded border-0 transition fw-semibold ${_jbActiveTab === 'entry' ? 'btn-primary text-white' : 'text-muted bg-transparent'}" onclick="jbSwitchTab('entry')">
+        <i class="fas fa-bolt me-2"></i> Schnellerfassung
+      </button>
+      <button class="btn flex-fill py-2 text-center rounded border-0 transition fw-semibold ${_jbActiveTab === 'import' ? 'btn-primary text-white' : 'text-muted bg-transparent'}" onclick="jbSwitchTab('import')">
+        <i class="fas fa-file-excel me-2"></i> Excel-Import
+      </button>
+      ${canEdit ? `
+      <button class="btn flex-fill py-2 text-center rounded border-0 transition fw-semibold ${_jbActiveTab === 'config' ? 'btn-primary text-white' : 'text-muted bg-transparent'}" onclick="jbSwitchTab('config')">
+        <i class="fas fa-cog me-2"></i> Gebühren
+      </button>` : ''}
+    </div>
+  `;
+
+  let contentHTML = '';
+  
+  if (_jbActiveTab === 'overview') {
+    contentHTML = renderOverviewTab(canEdit, years);
+  } else if (_jbActiveTab === 'matrix') {
+    contentHTML = typeof renderMatrixTab === 'function' ? renderMatrixTab(canEdit, years) : '<div class="alert alert-info">Lade Beitragsmatrix…</div>';
+  } else if (_jbActiveTab === 'entry') {
+    contentHTML = renderSchnellerfassungTab();
+  } else if (_jbActiveTab === 'import') {
+    contentHTML = renderExcelImportTab();
+  } else if (_jbActiveTab === 'config') {
+    contentHTML = typeof renderGebuehrenConfigTab === 'function' ? renderGebuehrenConfigTab() : '<div class="alert alert-info">Lade Gebührenmodul…</div>';
+  }
+
+  document.getElementById('jahresbeitrag-container').innerHTML = tabControlHTML + contentHTML;
+
+  if (_jbActiveTab === 'overview') {
+    if (typeof jbOverviewUpdateCategoryDropdownUI === 'function') jbOverviewUpdateCategoryDropdownUI();
+    if (typeof jbOverviewUpdateStatusDropdownUI === 'function') jbOverviewUpdateStatusDropdownUI();
+    if (typeof jbFilter === 'function') {
+      jbFilter();
+    } else {
+      jbRenderRows(_jbData);
+    }
+  } else if (_jbActiveTab === 'matrix') {
+    if (typeof jbInitMatrixTab === 'function') jbInitMatrixTab();
+  } else if (_jbActiveTab === 'entry') {
+    jbRenderEntryList();
+    jbAddScrollSupport();
+    if (_jbSelectedMemberPN && typeof jbEntrySelectMember === 'function') {
+      jbEntrySelectMember(_jbSelectedMemberPN);
+      setTimeout(() => {
+        if (typeof jbScrollToActiveMember === 'function') {
+          jbScrollToActiveMember();
+        }
+      }, 150);
+    }
+  } else if (_jbActiveTab === 'config') {
+    if (typeof jbInitGebuehrenConfig === 'function') jbInitGebuehrenConfig();
+  }
+}
+
+function jbChangeYear(year) {
+  _jbYear = Number(year);
+  
+  if (_jbAllBeitraege) {
+    _jbData = _jbAllBeitraege.filter(h => Number(h.year) === Number(_jbYear));
+  }
+  
+  if (_jbAllParticipations) {
+    _jbParticipationsCache = {};
+    _jbAllParticipations.forEach(p => {
+      if (Number(p.year) === Number(_jbYear)) {
+        const pn = String(p.PersonNumber).trim();
+        if (!_jbParticipationsCache[pn]) _jbParticipationsCache[pn] = [];
+        _jbParticipationsCache[pn].push(p);
+      }
+    });
+  }
+
+  if (_jbAllPositions) {
+    _jbPositionsCache = {};
+    _jbAllPositions.forEach(p => {
+      if (Number(p.year) === Number(_jbYear)) {
+        const hid = String(p.headerid).trim();
+        if (!_jbPositionsCache[hid]) _jbPositionsCache[hid] = [];
+        _jbPositionsCache[hid].push(p);
+      }
+    });
+  }
+
+  // Sortierungen anwenden
+  jbApplyTableSorting();
+  jbApplySidebarSorting();
+  
+  renderJahresbeitragView();
+}
+
+// Synchronisiert lokale Änderungen sofort in die Caches aller Tabs
+window.jbSyncMemberToCache = function(pn, settings) {
+  pn = String(pn).trim();
+  const m = (_jbMemberMap && _jbMemberMap[pn]) || (_jbMembers || []).find(x => String(x.PersonNumber).trim() === pn);
+  if (!m) return;
+
+  if (typeof jbCalculateLiveTotal !== 'function') return;
+  const calc = jbCalculateLiveTotal(m, settings);
+
+  // 1. Header in _jbData & _jbAllBeitraege updaten
+  let header = (_jbData || []).find(x => String(x.PersonNumber).trim() === pn);
+  if (header) {
+    header.Gesamt = calc.total;
+  }
+  if (_jbAllBeitraege) {
+    const allHeader = _jbAllBeitraege.find(x => String(x.PersonNumber).trim() === pn && Number(x.year) === Number(_jbYear));
+    if (allHeader) allHeader.Gesamt = calc.total;
+  }
+
+  // 2. Positions-Cache & _jbAllPositions updaten
+  const hid = (header && header.id) ? String(header.id).trim() : `CH-${_jbYear}-${pn}`;
+  const mappedPos = calc.positions.map((p, idx) => ({
+    id: `${hid}-${idx + 1}`,
+    headerid: hid,
+    header_id: hid,
+    PersonNumber: pn,
+    person_number: pn,
+    year: Number(_jbYear),
+    position_nr: idx + 1,
+    beschreibung: p.name,
+    name: p.name,
+    betrag: p.betrag,
+    typ: p.typ,
+    source_field: p.key || '',
+    sourcefield: p.key || '',
+    key: p.key || '',
+    konto: p.konto || (typeof window.jbResolveAccountForPosition === 'function' ? window.jbResolveAccountForPosition(p.key, p.name) : '')
+  }));
+  if (_jbPositionsCache) {
+    _jbPositionsCache[hid] = mappedPos;
+    _jbPositionsCache[`${_jbYear}-${pn}`] = mappedPos;
+    _jbPositionsCache[pn] = mappedPos;
+  }
+  if (Array.isArray(window._jbAllPositions)) {
+    window._jbAllPositions = window._jbAllPositions.filter(p =>
+      !(String(p.headerid || p.header_id || '').trim() === hid ||
+        (String(p.PersonNumber || p.person_number || '').trim() === pn && Number(p.year) === Number(_jbYear)))
+    );
+    window._jbAllPositions.push(...mappedPos);
+    _jbAllPositions = window._jbAllPositions;
+  }
+};

@@ -1,0 +1,440 @@
+// === SUB-MODUL: MITGLIEDER - SSV IMPORT FRONTEND ===
+
+let _mglImportId = null;
+let _mglImportRows = [];
+
+function mglRenderImport() {
+  const container = document.getElementById('mglTabContent');
+  if (!container) return;
+
+  if (typeof hasWriteAccess === 'function' && !hasWriteAccess('members')) {
+    container.innerHTML = `
+      <div class="alert alert-warning border-0 shadow-sm">
+        <i class="fas fa-lock me-2"></i>
+        <strong>Keine Berechtigung:</strong> Für den SSV-Mitgliederimport benötigst du Schreibrechte im Modul Mitglieder (<code>members.manage</code>).
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <style>
+      .import-dropzone {
+        border: 2px dashed var(--border);
+        border-radius: var(--radius-lg);
+        background: white;
+        padding: 3rem 2rem;
+        text-align: center;
+        transition: var(--transition);
+        cursor: pointer;
+      }
+      .import-dropzone:hover, .import-dropzone.dragover {
+        border-color: var(--primary);
+        background: var(--primary-light);
+      }
+      .import-dropzone i {
+        color: var(--primary);
+        font-size: 3rem;
+        margin-bottom: 1.2rem;
+        transition: var(--transition);
+      }
+      .import-dropzone:hover i {
+        transform: translateY(-4px);
+      }
+      .diff-row-green { background-color: #d9ead3 !important; }
+      .diff-row-yellow { background-color: #fff2cc !important; }
+      .diff-row-red { background-color: #f4cccc !important; }
+      .diff-row-blue { background-color: #e1f5fe !important; }
+      .diff-row-orange { background-color: #ffe0b2 !important; }
+      
+      .diff-badge {
+        font-size: 0.72rem;
+        font-weight: 700;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        text-transform: uppercase;
+        display: inline-block;
+        white-space: nowrap;
+      }
+      .diff-badge.green { background: #2e7d32; color: white; }
+      .diff-badge.yellow { background: #f57f17; color: white; }
+      .diff-badge.red { background: #c2185b; color: white; }
+      .diff-badge.blue { background: #0288d1; color: white; }
+      .diff-badge.orange { background: #e65100; color: white; }
+      
+      .table-import-preview td {
+        vertical-align: middle;
+      }
+    </style>
+
+    <div class="card border-0 shadow-sm p-4">
+      <h4 class="text-primary mb-3" style="font-weight: 700;">
+        <i class="fas fa-file-excel me-2"></i> SSV Mitglieder-Import
+      </h4>
+      <p class="text-muted mb-4" style="font-size: 0.9rem; max-width: 750px;">
+        Lade die im VVA-Portal des SSV exportierte Excel-Datei herunter (entweder das <strong>Mitgliederverzeichnis</strong> oder die <strong>Etat-Mitgliederdaten</strong>). Unser System liest die Rohdaten im Hintergrund aus und zeigt dir alle Mutationen zur Freigabe an.
+      </p>
+
+      <div id="mglImportStep1">
+        <div class="import-dropzone" id="mglDropzone" onclick="document.getElementById('mglImportFileInput').click()">
+          <i class="fas fa-cloud-upload-alt"></i>
+          <h5 class="fw-bold mb-1">SSV-Excel-Datei hierhin ziehen oder klicken</h5>
+          <p class="text-muted small mb-0">Unterstützt .xlsx-Dateien mit einem "DataSource"-Blatt</p>
+          <input type="file" id="mglImportFileInput" class="d-none" accept=".xlsx" onchange="mglHandleImportFileSelect(event)">
+        </div>
+      </div>
+
+      <div id="mglImportStep2" class="d-none">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <h5 class="fw-bold mb-1 text-secondary">Vorschau der Mutationen</h5>
+            <div class="small text-muted" id="mglImportStats">Lade Differenzen...</div>
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary btn-sm" onclick="mglCancelImport()">
+              <i class="fas fa-times me-1"></i> Abbrechen
+            </button>
+            <button class="btn btn-success btn-sm" onclick="mglApplyImport()" id="mglBtnApplyImport">
+              <i class="fas fa-check me-1"></i> Änderungen anwenden
+            </button>
+          </div>
+        </div>
+
+        <!-- Info-Banner zur Erklärung der Checkboxen -->
+        <div class="alert alert-info py-2 px-3 mb-3 d-flex align-items-center" style="font-size: 0.85rem;">
+          <i class="fas fa-info-circle me-2 text-info" style="font-size: 1.1rem;"></i>
+          <div>
+            <strong>Hinweis:</strong> Nur Mutationen mit einem <strong>aktivierten Häkchen</strong> werden beim Klick auf <em>"Änderungen anwenden"</em> atomar in die Supabase-Datenbank übernommen. Nicht ausgewählte Mutationen werden verworfen.
+          </div>
+        </div>
+
+        <div class="table-responsive rounded-3 border" style="max-height: 540px; overflow-y: auto;">
+          <table class="table table-hover table-sm mb-0 align-middle" id="mglImportDiffTable">
+            <thead class="table-light sticky-top small text-muted text-uppercase" style="font-size: 11px; z-index: 10;">
+              <tr>
+                <th width="44" class="text-center py-2" data-col-id="select">
+                  <input type="checkbox" id="mglSelectAllDiffs" checked onchange="mglToggleSelectAllDiffs(this)">
+                </th>
+                <th data-col-id="member" data-col-name="Mitglied" class="py-2">Mitglied</th>
+                <th data-col-id="section" data-col-name="Bereich" class="py-2">Bereich</th>
+                <th data-col-id="field" data-col-name="Feld" class="py-2">Feld / Disziplin</th>
+                <th data-col-id="old" data-col-name="Alter Wert" class="py-2">Alter Wert</th>
+                <th data-col-id="new" data-col-name="Neuer Wert" class="py-2">Neuer Wert</th>
+                <th data-col-id="type" data-col-name="Mutationstyp" class="py-2">Mutationstyp</th>
+                <th data-col-id="expl" data-col-name="Erläuterung" class="py-2">Erläuterung</th>
+              </tr>
+            </thead>
+            <tbody id="mglImportDiffBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="mglImportLoading" class="d-none text-center py-5">
+        <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status"></div>
+        <h5 class="fw-bold mt-3 text-primary" id="mglImportLoadingText">Verarbeite Datei...</h5>
+      </div>
+    </div>
+  `;
+
+  // Drag and drop listeners
+  const dropzone = document.getElementById('mglDropzone');
+  if (dropzone) {
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+    dropzone.addEventListener('dragleave', () => {
+      dropzone.classList.remove('dragover');
+    });
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        mglProcessImportFile(files[0]);
+      }
+    });
+  }
+}
+
+let _mglImportByPerson = {};
+
+function mglCancelImport() {
+  _mglImportId = null;
+  _mglImportRows = [];
+  _mglImportByPerson = {};
+  mglRenderImport();
+}
+
+function mglHandleImportFileSelect(e) {
+  const file = e.target.files[0];
+  if (file) {
+    mglProcessImportFile(file);
+  }
+}
+
+function mglProcessImportFile(file) {
+  const loading = document.getElementById('mglImportLoading');
+  const step1 = document.getElementById('mglImportStep1');
+  const loadingText = document.getElementById('mglImportLoadingText');
+
+  step1.classList.add('d-none');
+  loading.classList.remove('d-none');
+  loadingText.textContent = "Lese Excel-Datei im Browser...";
+
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+
+      // Finde DataSource Sheet
+      const dsSheetName = workbook.SheetNames.find(name => name.toLowerCase().trim() === 'datasource');
+      if (!dsSheetName) {
+        throw new Error('Es konnte kein Blatt namens "DataSource" in der Excel-Datei gefunden werden. Bitte lade die originale Export-Datei aus dem VVA-Portal herunter.');
+      }
+
+      loadingText.textContent = "Lade aktuellen Mitgliederbestand zum Abgleich...";
+      await window.ensureMitgliederLoaded(true);
+
+      loadingText.textContent = "Berechne Differenzen blitzschnell im Browser...";
+      const worksheet = workbook.Sheets[dsSheetName];
+      const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+      const currentLicenses = Object.values(window._mglLizenzenCache || {}).flat();
+      const currentFunctions = Object.values(window._mglFunktionenCache || {}).flat();
+      const currentTraining = Object.values(window._mglTrainingCache || {}).flat();
+
+      const resData = window.SSVImportEngine.runClientSSVDiffCalculation(
+        rawRows,
+        window._mglData || [],
+        currentLicenses,
+        currentFunctions,
+        currentTraining
+      );
+
+      _mglImportId = resData.importId;
+      _mglImportRows = resData.diffRows;
+      _mglImportByPerson = resData.byPerson;
+
+      mglDisplayDiffs();
+    } catch(err) {
+      if (window.UIConfirmKit?.alert) {
+        await window.UIConfirmKit.alert({
+          title: 'Fehler beim Importieren',
+          message: err.message || 'Die Datei konnte nicht verarbeitet werden.',
+          type: 'danger'
+        });
+      }
+      mglCancelImport();
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function mglDisplayDiffs() {
+  const loading = document.getElementById('mglImportLoading');
+  const step2 = document.getElementById('mglImportStep2');
+  const diffBody = document.getElementById('mglImportDiffBody');
+  const statsEl = document.getElementById('mglImportStats');
+
+  loading.classList.add('d-none');
+  step2.classList.remove('d-none');
+
+  if (!_mglImportRows || _mglImportRows.length === 0) {
+    diffBody.innerHTML = `
+      <tr>
+        <td colspan="8" class="text-center py-4 text-success fw-bold">
+          <i class="fas fa-check-circle me-1"></i> Keine Mutationen gefunden! Deine Datenbank ist bereits 100% synchron mit dem SSV.
+        </td>
+      </tr>
+    `;
+    statsEl.textContent = '0 Mutationen gefunden.';
+    document.getElementById('mglBtnApplyImport').disabled = true;
+    return;
+  }
+
+  document.getElementById('mglBtnApplyImport').disabled = false;
+  statsEl.textContent = `${_mglImportRows.length} Mutationen identifiziert.`;
+
+  diffBody.innerHTML = _mglImportRows.map((row, idx) => {
+    // Row layout: [importId, pn, name, sheet, feld, alt, neu, differenztyp, entscheid, erlaeuterung]
+    const pn = row[1];
+    const name = row[2];
+    const sheet = row[3];
+    const feld = row[4];
+    const alt = row[5];
+    const neu = row[6];
+    const type = row[7];
+    const defaultChecked = row[8] === 'Update' ? 'checked' : '';
+    const erlaeuterung = row[9] || '';
+
+    // Translation maps
+    const sheetTrans = {
+      'members': 'Mitglied',
+      'memberlicenses': 'Lizenz',
+      'memberfunctions': 'Funktion',
+      'membertraining': 'Training'
+    };
+
+    const typeLabels = {
+      'NEU': { label: 'Neues Mitglied', class: 'green' },
+      'AENDERUNG': { label: 'Änderung', class: 'yellow' },
+      'ABGANG': { label: 'Austritt', class: 'red' },
+
+      // Lizenzen nach Variante A
+      'LIZENZ-UEBERNAHME': { label: 'Lizenz-Übernahme', class: 'yellow' },
+      'B-LIZENZ-NEU': { label: 'B-Lizenz (Zweitverein)', class: 'blue' },
+      'A-LIZENZ-NEU': { label: 'A-Lizenz Neu (Muhen)', class: 'green' },
+      'LIZENZ-ABGABE': { label: 'Lizenz-Abgabe', class: 'orange' },
+      'LIZENZWEG': { label: 'Lizenz Beendet', class: 'red' },
+      'LIZENZDATUMSKORREKTUR': { label: 'Datumskorrektur', class: 'yellow' },
+      'LIZENZAENDERUNG': { label: 'Lizenz Update', class: 'yellow' },
+
+      'FUNKTIONNEU': { label: 'Funktion Neu', class: 'green' },
+      'FUNKTIONWEG': { label: 'Funktion Ende', class: 'red' },
+      'FUNKTIONAENDERUNG': { label: 'Funktion Update', class: 'yellow' },
+
+      'TRAININGNEU': { label: 'Training Neu', class: 'green' }
+    };
+
+    const displayType = typeLabels[type] || { label: type, class: 'yellow' };
+
+    let rowClass = 'diff-row-yellow';
+    if (displayType.class === 'green') rowClass = 'diff-row-green';
+    if (displayType.class === 'red') rowClass = 'diff-row-red';
+    if (displayType.class === 'blue') rowClass = 'diff-row-blue';
+    if (displayType.class === 'orange') rowClass = 'diff-row-orange';
+
+    // Format display values nicely
+    let altDisplay = alt;
+    let neuDisplay = neu;
+
+    const esc = (v) => (typeof escapeHtml === 'function'
+      ? escapeHtml(String(v ?? ''))
+      : String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
+
+    const altEsc = esc(altDisplay || '—');
+    const neuEsc = esc(neuDisplay || '—');
+    const sheetLabel = esc(sheetTrans[sheet] || sheet);
+
+    return `
+      <tr class="${rowClass}">
+        <td class="text-center">
+          <input type="checkbox" class="mgl-diff-checkbox" data-idx="${idx}" ${defaultChecked} onchange="mglUpdateDiffDecision(${idx}, this.checked)">
+        </td>
+        <td>
+          <div class="fw-bold">${esc(name)}</div>
+          <div class="small text-muted">PN: ${esc(pn)}</div>
+        </td>
+        <td class="fw-medium">${sheetLabel}</td>
+        <td class="small text-muted font-monospace">${esc(feld)}</td>
+        <td class="text-muted" style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${altEsc}">${altEsc}</td>
+        <td class="fw-bold" style="max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${neuEsc}">${neuEsc}</td>
+        <td>
+          <span class="diff-badge ${displayType.class}">${esc(displayType.label)}</span>
+        </td>
+        <td class="small text-secondary" style="max-width: 320px;">
+          ${esc(erlaeuterung || '—')}
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
+    window.TableKit.makeResizable('#mglImportDiffTable', {
+      storageKey: 'portal_mgl_import_diff_widths',
+      minWidth: 40
+    });
+  }
+}
+
+function mglUpdateDiffDecision(idx, checked) {
+  if (_mglImportRows[idx]) {
+    _mglImportRows[idx][8] = checked ? 'Update' : 'Verworfen';
+  }
+}
+
+function mglToggleSelectAllDiffs(el) {
+  const checkboxes = document.querySelectorAll('.mgl-diff-checkbox');
+  checkboxes.forEach(cb => {
+    cb.checked = el.checked;
+    const idx = parseInt(cb.getAttribute('data-idx'));
+    mglUpdateDiffDecision(idx, el.checked);
+  });
+}
+
+async function mglApplyImport() {
+  if (!_mglImportId || !_mglImportRows || _mglImportRows.length === 0) return;
+
+  if (typeof hasWriteAccess === 'function' && !hasWriteAccess('members')) {
+    if (window.UIConfirmKit?.alert) {
+      await window.UIConfirmKit.alert({
+        title: 'Keine Berechtigung',
+        message: 'Du benötigst Schreibrechte im Modul Mitglieder (members.manage), um den Import zu speichern.',
+        type: 'warning'
+      });
+    }
+    return;
+  }
+
+  const step2 = document.getElementById('mglImportStep2');
+  const loading = document.getElementById('mglImportLoading');
+  const loadingText = document.getElementById('mglImportLoadingText');
+
+  const runApply = async () => {
+    if (step2) step2.classList.add('d-none');
+    if (loading) loading.classList.remove('d-none');
+    if (loadingText) loadingText.textContent = "Wende freigegebene Mutationen in Supabase an...";
+
+    try {
+      const stats = await window.SSVImportEngine.applySSVDiffClient(
+        _mglImportId,
+        _mglImportRows,
+        _mglImportByPerson,
+        (msg) => { if (loadingText) loadingText.textContent = msg; }
+      );
+
+      const summaryMsg =
+        `• In Supabase gespeichert (Atomare Transaktion)\n` +
+        `• Mitglieder aktualisiert: ${stats.updated}\n` +
+        `• Mitglieder neu angelegt: ${stats.created}\n` +
+        `• Lizenzen synchronisiert: ${stats.licenses || 0} (deaktiviert: ${stats.licensesDeactivated || 0})\n` +
+        `• Funktionen synchronisiert: ${stats.functions || 0} (beendet: ${stats.functionsClosed || 0})\n` +
+        `• Trainings synchronisiert: ${stats.training || 0}\n` +
+        `• Audit-Historie protokolliert: ${stats.history || 0}`;
+
+      if (window.UIConfirmKit?.alert) {
+        await window.UIConfirmKit.alert({
+          title: 'SSV-Import erfolgreich abgeschlossen',
+          message: summaryMsg,
+          type: 'info'
+        });
+      }
+
+      // Zurücksetzen und Mitgliederliste neu laden
+      _mglImportId = null;
+      _mglImportRows = [];
+      _mglImportByPerson = {};
+      _mglActiveTab = 'liste';
+
+      await loadMitgliederData(true);
+    } catch (err) {
+      if (loading) loading.classList.add('d-none');
+      if (step2) step2.classList.remove('d-none');
+      if (window.UIConfirmKit?.alert) {
+        await window.UIConfirmKit.alert({
+          title: 'Fehler beim Abschliessen des Imports',
+          message: err.message || 'Unbekannter Fehler beim Speichern in Supabase.',
+          type: 'danger'
+        });
+      }
+    }
+  };
+
+  if (window.UIButtonKit?.withLoading && document.getElementById('mglBtnApplyImport')) {
+    await window.UIButtonKit.withLoading('#mglBtnApplyImport', runApply);
+  } else {
+    await runApply();
+  }
+}
+

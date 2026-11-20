@@ -1,0 +1,728 @@
+// vorstand/js/jahresbeitrag/jahresbeitrag-import.js
+// ============================================================
+// TAB 3: EXCEL IMPORT TAB RENDER
+// ============================================================
+function renderExcelImportTab() {
+  return `
+    <div class="card border-0 shadow-sm p-4 bg-white">
+      <h4 class="mb-3 text-primary"><i class="fas fa-file-excel me-2"></i>Excel Turnier-Import</h4>
+      <p class="text-muted small">
+        Hier kannst du die rohen Resultatsblätter aus dem <strong>Vereinswettschiessen</strong>, 
+        <strong>Verbandsschiessen</strong> oder <strong>Dez-Import</strong> direkt hochladen. 
+        Das System liest die Lizenzen aus und trägt die Teilnahmen vollautomatisch ein.
+      </p>
+
+      <div class="row g-4 mt-2">
+        <div class="col-md-4">
+          <div class="card p-3 border-dashed text-center h-100 bg-light" style="border: 2px dashed #ccc; cursor: pointer;" 
+               onclick="document.getElementById('importFileVerein').click()">
+            <input type="file" id="importFileVerein" class="d-none" accept=".xlsx,.xlsm,.xls,.csv" 
+                   onchange="jbHandleExcelUpload(this.files[0], 'verein'); this.value='';">
+            <i class="fas fa-trophy fa-2x mb-2 text-success"></i>
+            <h6>1. Vereinswettschiessen</h6>
+            <span class="text-muted small" style="font-size: 11px;">(Vereinswettschiessen.xlsx / .csv)</span>
+            <div class="btn btn-sm btn-outline-success mt-3">Datei wählen</div>
+          </div>
+        </div>
+
+        <div class="col-md-4">
+          <div class="card p-3 border-dashed text-center h-100 bg-light" style="border: 2px dashed #ccc; cursor: pointer;" 
+               onclick="document.getElementById('importFileVerband').click()">
+            <input type="file" id="importFileVerband" class="d-none" accept=".xlsx,.xlsm,.xls,.csv" 
+                   onchange="jbHandleExcelUpload(this.files[0], 'verband'); this.value='';">
+            <i class="fas fa-medal fa-2x mb-2 text-primary"></i>
+            <h6>2. Verbandsschiessen</h6>
+            <span class="text-muted small" style="font-size: 11px;">(Verband.xlsx / .csv)</span>
+            <div class="btn btn-sm btn-outline-primary mt-3">Datei wählen</div>
+          </div>
+        </div>
+
+        <div class="col-md-4">
+          <div class="card p-3 border-dashed text-center h-100 bg-light" style="border: 2px dashed #ccc;" 
+               onclick="document.getElementById('importFileDez').click()" id="jbDezCard">
+            <input type="file" id="importFileDez" class="d-none" accept=".xlsx,.xlsm,.xls,.csv"
+                   multiple
+                   onchange="jbHandleExcelUploadMulti(this.files, 'dez'); this.value='';">
+            <i class="fas fa-chart-line fa-2x mb-2 text-warning"></i>
+            <h6>3. Dez-Import (Dezember)</h6>
+            <span class="text-muted small" style="font-size: 11px;">
+              Mehrere Dateien möglich (Ctrl+Klick)<br>
+              (Resultatblatt_1.xlsx, _2.xlsx / .csv)
+            </span>
+            <div id="jbDezFileCount" class="mt-2 d-none">
+              <span class="badge bg-warning text-dark" id="jbDezFileBadge"></span>
+            </div>
+            <div class="btn btn-sm btn-outline-warning mt-2" style="cursor:pointer;">Datei(en) wählen</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Preview-Bereich für gelesene Excel-Daten -->
+      <div id="jbImportPreviewContainer" class="mt-4 d-none">
+        <hr>
+        <h5 class="mb-3 d-flex justify-content-between align-items-center">
+          <span>👀 Vorschau für importierte Daten:</span>
+          <button class="btn btn-sm btn-success" onclick="jbSubmitExcelImport()">
+            <i class="fas fa-cloud-upload-alt me-1"></i> Import nach Supabase starten
+          </button>
+        </h5>
+        <div class="table-responsive border rounded bg-light" style="max-height: 400px; overflow-y: auto;">
+          <table class="table table-hover table-sm mb-0">
+            <thead class="table-dark sticky-top">
+              <tr>
+                <th>Lizenznummer</th>
+                <th>Name (erkannt)</th>
+                <th>Turnier / Event</th>
+                <th>Status / Wert</th>
+              </tr>
+            </thead>
+            <tbody id="jbImportPreviewBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  `;
+}
+
+// ============================================================
+// CLIENT-SEITIGER DATEI-IMPORTPARSER (Excel & CSV)
+// ============================================================
+function jbHandleExcelUpload(file, type) {
+  if (!file) return;
+
+  const isCsv = file.name.toLowerCase().endsWith('.csv');
+  const reader = new FileReader();
+
+  if (isCsv) {
+    reader.onload = async function(e) {
+      try {
+        const text = e.target.result;
+        const parsedRows = jbParseCSV(text);
+        await jbProcessExcelRows(parsedRows, type);
+      } catch(err) {
+        await UIConfirmKit.alert({
+          title: 'CSV-Fehler',
+          message: 'Fehler beim Lesen der CSV-Datei: ' + (err.message || err),
+          type: 'danger'
+        });
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+  } else {
+    reader.onload = async function(e) {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+
+        console.log('📂 Sheets in der Datei:', workbook.SheetNames);
+
+        let bestSheet = workbook.SheetNames[0];
+        let bestScore = -1;
+
+        const foundResultatblatt = workbook.SheetNames.find(s => s.toLowerCase().trim() === 'resultatblatt');
+        if (foundResultatblatt) {
+          bestSheet = foundResultatblatt;
+          console.log('🎯 Prio 1: Sheet "Resultatblatt" direkt gewählt:', bestSheet);
+        } else {
+          const SCORE_KEYWORDS = [
+            'lizenz', 'ausweis', 'liz', 'total', 'resultat', 'ergebnis',
+            'punkte', 'passe', 'stich', 'name', 'vorname', 'jahrgang'
+          ];
+
+          workbook.SheetNames.forEach(sheetName => {
+            const ws = workbook.Sheets[sheetName];
+            const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+            let score = 0;
+            for (let r = 0; r < Math.min(rows.length, 40); r++) {
+              const row = rows[r] || [];
+              for (let c = 0; c < row.length; c++) {
+                const val = String(row[c] || '').toLowerCase().trim();
+                if (SCORE_KEYWORDS.some(k => val.includes(k))) score++;
+              }
+            }
+            console.log('  Sheet "' + sheetName + '": Score ' + score);
+            if (score > bestScore) {
+              bestScore = score;
+              bestSheet = sheetName;
+            }
+          });
+        }
+
+        console.log('✅ Verwende Sheet:', bestSheet, '(Score ' + bestScore + ')');
+
+        const worksheet = workbook.Sheets[bestSheet];
+        const jsonRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+        await jbProcessExcelRows(jsonRows, type);
+      } catch(err) {
+        await UIConfirmKit.alert({
+          title: 'Excel-Fehler',
+          message: 'Fehler beim Lesen der Excel-Datei: ' + (err.message || err),
+          type: 'danger'
+        });
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+}
+
+async function jbHandleExcelUploadMulti(files, type) {
+  if (!files || files.length === 0) return;
+
+  _jbImportData = [];
+  const previewBody = document.getElementById('jbImportPreviewBody');
+  const previewContainer = document.getElementById('jbImportPreviewContainer');
+  previewBody.innerHTML = '';
+  previewContainer.classList.add('d-none');
+
+  const badge = document.getElementById('jbDezFileBadge');
+  const badgeContainer = document.getElementById('jbDezFileCount');
+  if (badge && badgeContainer) {
+    badge.textContent = files.length + ' Datei' + (files.length > 1 ? 'en ausgewählt' : ' ausgewählt');
+    badgeContainer.classList.remove('d-none');
+  }
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const isAppend = i > 0;
+    await new Promise((resolve) => {
+      const isCsv = file.name.toLowerCase().endsWith('.csv');
+      const reader = new FileReader();
+      if (isCsv) {
+        reader.onload = async function(e) {
+          try {
+            const parsedRows = jbParseCSV(e.target.result);
+            await jbProcessExcelRows(parsedRows, type, isAppend);
+          } catch(err) {
+            await UIConfirmKit.alert({
+              title: 'Dateifehler',
+              message: `Fehler in Datei ${file.name}: ${err.message || err}`,
+              type: 'danger'
+            });
+          }
+          resolve();
+        };
+        reader.readAsText(file, 'UTF-8');
+      } else {
+        reader.onload = async function(e) {
+          try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            let bestSheet = workbook.SheetNames[0];
+            let bestScore = -1;
+
+            const foundResultatblatt = workbook.SheetNames.find(s => s.toLowerCase().trim() === 'resultatblatt');
+            if (foundResultatblatt) {
+              bestSheet = foundResultatblatt;
+              console.log('🎯 Prio 1 (Multi): Sheet "Resultatblatt" direkt gewählt:', bestSheet);
+            } else {
+              const SCORE_KW = ['lizenz','name','vorname','jahrgang','kat','ssv','agsv'];
+              workbook.SheetNames.forEach(sheetName => {
+                const ws = workbook.Sheets[sheetName];
+                const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                let score = 0;
+                for (let r = 0; r < Math.min(rows.length, 15); r++) {
+                  (rows[r] || []).forEach(cell => {
+                    const v = String(cell || '').toLowerCase();
+                    if (SCORE_KW.some(k => v.includes(k))) score++;
+                  });
+                }
+                if (score > bestScore) { bestScore = score; bestSheet = sheetName; }
+              });
+            }
+            const ws = workbook.Sheets[bestSheet];
+            const jsonRows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+            await jbProcessExcelRows(jsonRows, type, isAppend);
+          } catch(err) {
+            await UIConfirmKit.alert({
+              title: 'Dateifehler',
+              message: `Fehler in Datei ${file.name}: ${err.message || err}`,
+              type: 'danger'
+            });
+          }
+          resolve();
+        };
+        reader.readAsArrayBuffer(file);
+      }
+    });
+  }
+}
+
+function jbParseCSV(text) {
+  const lines = text.split(/\r?\n/);
+  return lines.map(line => {
+    let parts = line.split(';');
+    if (parts.length <= 1) {
+      parts = line.split(',');
+    }
+    if (parts.length <= 1) {
+      parts = line.split('\t');
+    }
+    return parts.map(p => {
+      p = p.trim();
+      if (p.startsWith('"') && p.endsWith('"')) p = p.slice(1, -1);
+      return p;
+    });
+  });
+}
+
+async function jbProcessExcelRows(rows, type, appendMode) {
+  if (!rows || rows.length < 5) {
+    await UIConfirmKit.alert({
+      title: 'Leere Datei',
+      message: 'Die Import-Datei enthält keine brauchbaren Zeilen oder ist leer.',
+      type: 'warning'
+    });
+    return;
+  }
+
+  if (!appendMode) {
+    _jbImportData = [];
+    const previewBody = document.getElementById('jbImportPreviewBody');
+    const previewContainer = document.getElementById('jbImportPreviewContainer');
+    previewBody.innerHTML = '';
+    previewContainer.classList.add('d-none');
+  }
+
+  const previewBody = document.getElementById('jbImportPreviewBody');
+  const previewContainer = document.getElementById('jbImportPreviewContainer');
+  const previewRows = [];
+  const esc = window.jbEscHtml || (s => String(s ?? ''));
+
+  let detectedCount = 0;
+
+  console.group('🔍 DEBUG Excel-Import – Typ: ' + type);
+  console.log('Anzahl Zeilen gesamt:', rows.length);
+  console.log('Erste 30 Rohdaten-Zeilen:');
+  rows.slice(0, 30).forEach((row, i) => {
+    console.log(`  Zeile ${i}:`, row);
+  });
+  console.groupEnd();
+
+  const existingDebug = document.getElementById('jbDebugPanel');
+  if (existingDebug) existingDebug.remove();
+
+  // DYNAMISCHE SPALTENERKENNUNG (Erweiterte Keywords)
+  let colLizenzIdx = 1;
+  let colPruefIdx = 8;
+  let startRowIdx = 18;
+
+  const LIZENZ_KEYWORDS  = ['lizenznr', 'lizenz-nr', 'lizenz nr', 'ausweisnr', 'ausweis-nr',
+                             'lizenznummer', 'ausweisnummer', 'liz.nr', 'lznr', 'liz nr',
+                             'adressnr', 'adress-nr', 'adressnummer',
+                             'mitglied-nr', 'mitgliedernr', 'mitgliedsnr',
+                             'person-nr', 'personennr', 'person nr'];
+  const LIZENZ_FUZZY     = ['lizenz', 'ausweis', 'adress'];
+  const PRUEF_KEYWORDS   = ['total', 'resultat', 'ergebnis', 'punkte', 'score',
+                             'prüfwert', 'pruefwert', '1. passe', 'passe', 'stich',
+                             'wert', 'ring'];
+
+  let bestHeaderRow = -1;
+  let bestHeaderScore = 0;
+
+  for (let r = 0; r < Math.min(rows.length, 40); r++) {
+    const row = rows[r];
+    if (!row) continue;
+    let score = 0;
+    for (let c = 0; c < row.length; c++) {
+      const val = String(row[c] || '').toLowerCase().trim();
+      if (LIZENZ_KEYWORDS.some(k => val === k || val.startsWith(k)))  score += 3;
+      if (PRUEF_KEYWORDS.some(k  => val === k || val.startsWith(k)))  score += 2;
+      if (LIZENZ_FUZZY.some(k => val.includes(k)))                    score += 1;
+      if (/^[a-zäöüA-ZÄÖÜ\s\-.]{2,20}$/.test(val) && val.length < 20) score += 0.5;
+    }
+    if (score > bestHeaderScore) {
+      bestHeaderScore = score;
+      bestHeaderRow = r;
+    }
+  }
+
+  if (bestHeaderRow >= 0) {
+    startRowIdx = bestHeaderRow + 1;
+    const headerRow = rows[bestHeaderRow];
+
+    let lizenzFound = false;
+    let pruefFound  = false;
+    for (let c = 0; c < headerRow.length; c++) {
+      const val = String(headerRow[c] || '').toLowerCase().trim();
+      if (!lizenzFound) {
+        if (LIZENZ_KEYWORDS.some(k => val === k || val.startsWith(k)) ||
+            LIZENZ_FUZZY.some(k => val.includes(k))) {
+          colLizenzIdx = c;
+          lizenzFound = true;
+        }
+      }
+      if (!pruefFound) {
+        if (PRUEF_KEYWORDS.some(k => val === k || val.startsWith(k))) {
+          colPruefIdx = c;
+          pruefFound = true;
+        }
+      }
+    }
+
+    if (!pruefFound && startRowIdx < rows.length) {
+      for (let c = 0; c < (rows[startRowIdx] || []).length; c++) {
+        if (c === colLizenzIdx) continue;
+        const sampleVals = [];
+        for (let sr = startRowIdx; sr < Math.min(startRowIdx + 5, rows.length); sr++) {
+          const v = Number(String((rows[sr] || [])[c] || '').replace(',', '.'));
+          if (!isNaN(v) && v > 0) sampleVals.push(v);
+        }
+        if (sampleVals.length >= 2) { colPruefIdx = c; pruefFound = true; break; }
+      }
+    }
+
+    console.log('📋 Beste Kopfzeile (Zeile ' + bestHeaderRow + ', Score ' + bestHeaderScore.toFixed(1) + '):', headerRow);
+  } else {
+    console.warn('⚠️ Keine Kopfzeile erkannt – verwende Standardwerte');
+  }
+
+  console.log('🔎 Erkannte Spalten:', { colLizenzIdx, colPruefIdx, startRowIdx, type });
+  const detectedInfo = document.getElementById('jbDebugPanel');
+  if (detectedInfo) {
+    detectedInfo.insertAdjacentHTML('beforeend', `
+      <div style="margin-top:8px; padding:6px 8px; background:#313244; border-radius:6px; color:#f9e2af; font-size:11px;">
+        <strong>🎯 Erkannte Parameter:</strong>
+        &nbsp; Lizenz-Spalte: <span style="color:#a6e3a1"><strong>[${colLizenzIdx}]</strong></span>
+        &nbsp; Prüf-Spalte: <span style="color:#fab387"><strong>[${colPruefIdx}]</strong></span>
+        &nbsp; Daten ab Zeile: <span style="color:#89dceb"><strong>${startRowIdx}</strong></span>
+        &nbsp; Typ: <span style="color:#cba6f7"><strong>${type}</strong></span>
+      </div>
+    `);
+  }
+
+  if (type === 'verein' || type === 'verband') {
+    const eventKey = type === 'verein' ? EVENT_KEYS.kk_verein : EVENT_KEYS.kk_verband;
+    const eventName = type === 'verein' ? '50m Vereinsschiessen' : '50m Verbandsschiessen';
+
+    for (let i = startRowIdx; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || row.length <= colLizenzIdx) continue;
+
+      const rawLizenz = String(row[colLizenzIdx] || '').trim();
+      const cleanedLizenz = rawLizenz.replace(/\D/g, '');
+      const normLizenz = cleanedLizenz.padStart(6, '0');
+
+      let rawPruef = 0;
+      if (row[colPruefIdx] !== undefined) {
+        rawPruef = Number(String(row[colPruefIdx] || '0').replace(',', '.'));
+      } else {
+        for (let c = 0; c < row.length; c++) {
+          if (c === colLizenzIdx) continue;
+          const val = Number(String(row[c] || '0').replace(',', '.'));
+          if (!isNaN(val) && val > 0) {
+            rawPruef = val;
+            break;
+          }
+        }
+      }
+
+      if (cleanedLizenz.length >= 4 && !isNaN(rawPruef) && rawPruef > 0) {
+        const m = _jbMembers.find(x => String(x.AddressNumber || '').replace(/\D/g, '').padStart(6, '0') === normLizenz);
+        
+        let memberName = '';
+        if (m) {
+          memberName = `${m.FirstName} ${m.LastName}`;
+        } else {
+          const excelLastName = String(row[colLizenzIdx + 1] || '').trim();
+          const excelFirstName = String(row[colLizenzIdx + 2] || '').trim();
+          const excelFullName = (excelFirstName + ' ' + excelLastName).trim();
+          memberName = `⚠️ Unbekanntes Mitglied${excelFullName ? ` (${excelFullName})` : ''}`;
+        }
+        const memberPN = m ? m.PersonNumber : '';
+
+        _jbImportData.push({
+          pn: m ? m.PersonNumber : null,
+          year: _jbYear,
+          eventkey: eventKey,
+          teilgenommen: 1,
+          quelle: 'excel-import'
+        });
+
+        previewRows.push(`
+          <tr>
+            <td>${esc(cleanedLizenz)}</td>
+            <td class="${m ? '' : 'text-danger fw-bold'}">${esc(memberName)}${memberPN ? `<br><small class="text-muted">${esc(memberPN)}</small>` : ''}</td>
+            <td>${esc(eventName)}</td>
+            <td><span class="badge bg-${m ? 'success' : 'danger'}">${m ? 'Erkannt' : 'Kein Match'}</span></td>
+          </tr>
+        `);
+        detectedCount++;
+      }
+    }
+  } else if (type === 'dez') {
+    let dezStartRow = 4;
+    for (let r = 0; r < Math.min(rows.length, 10); r++) {
+      const val = String((rows[r] || [])[0] || '').toLowerCase().trim();
+      if (val === 'lizenz') {
+        dezStartRow = r + 2;
+        break;
+      }
+    }
+
+    for (let i = dezStartRow; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || row.length < 2) continue;
+
+      const rawLizenz = String(row[0] || '').trim();
+      const cleanedLizenz = rawLizenz.replace(/\D/g, '');
+      if (cleanedLizenz.length < 4) continue;
+
+      const normLizenz = cleanedLizenz.padStart(6, '0');
+
+      const m = _jbMembers.find(x =>
+        String(x.AddressNumber || '').replace(/\D/g, '').padStart(6, '0') === normLizenz
+      );
+
+      const ageClass = String(row[8] || '').trim().toUpperCase();
+      const isJunior = ageClass === 'U17' || ageClass === 'U21';
+
+      const valueL = Number(String(row[11] || '0').replace(',', '.')) || 0;
+      const valueN = Number(String(row[13] || '0').replace(',', '.')) || 0;
+      const valueO = Number(String(row[14] || '0').replace(',', '.')) || 0;
+      const valueQ = Number(String(row[16] || '0').replace(',', '.')) || 0;
+      const valueR = Number(String(row[17] || '0').replace(',', '.')) || 0;
+
+      const colJ = String(row[9]  || '').trim();
+      const colK = String(row[10] || '').trim();
+
+      let matchedEvents = [];
+      const addDezEvent = (key, name) => {
+        if (!matchedEvents.some(e => e.key === key)) {
+          matchedEvents.push({ key, name });
+        }
+      };
+
+      if (isJunior) {
+        if (colJ !== '' && colJ !== '-') {
+          addDezEvent(EVENT_KEYS.ssv_dez_liegend, '50m CH DEZ (Junior)');
+        } else if (colK !== '' && colK !== '-') {
+          addDezEvent(EVENT_KEYS.ssv_dez_liegend, '50m AG DEZ 1D (Junior)');
+        } else {
+          addDezEvent(EVENT_KEYS.ssv_dez_sv, '50m AG DEZ SV (Junior)');
+        }
+      } else {
+        if (colJ !== '' && colJ !== '-') {
+          if (valueL > 200 || valueQ > 200 || valueR > 200) {
+            addDezEvent(EVENT_KEYS.ssv_dez_liegend, '50m CH DEZ');
+          }
+        }
+
+        if (colK !== '' && colK !== '-') {
+          if (valueL > 200) addDezEvent(EVENT_KEYS.ssv_dez_liegend,   '50m AG DEZ 1D');
+          if (valueQ > 200) addDezEvent(EVENT_KEYS.ssv_dez_2stellung, '50m AG DEZ 2D');
+          if (valueR > 200) addDezEvent(EVENT_KEYS.ssv_dez_3stellung, '50m AG DEZ 3D');
+        }
+
+        if ((colJ === '' || colJ === '-') && (valueN > 200 || valueO > 200)) {
+          addDezEvent(EVENT_KEYS.ssv_dez_sv, '50m AG DEZ SV');
+        }
+      }
+
+      matchedEvents.forEach(evt => {
+        _jbImportData.push({
+          pn: m ? m.PersonNumber : null,
+          year: _jbYear,
+          eventkey: evt.key,
+          teilgenommen: 1,
+          quelle: 'excel-import-dez'
+        });
+
+        let memberName = '';
+        if (m) {
+          memberName = `${m.FirstName} ${m.LastName}`;
+        } else {
+          const excelLastName = String(row[1] || '').trim();
+          const excelFirstName = String(row[2] || '').trim();
+          const excelFullName = (excelFirstName + ' ' + excelLastName).trim();
+          memberName = `⚠️ Unbekanntes Mitglied${excelFullName ? ` (${excelFullName})` : ''}`;
+        }
+        const memberPN = m ? m.PersonNumber : '';
+
+        previewRows.push(`
+          <tr>
+            <td>${esc(cleanedLizenz)}</td>
+            <td class="${m ? '' : 'text-danger fw-bold'}">${esc(memberName)}${memberPN ? `<br><small class="text-muted">${esc(memberPN)}</small>` : ''}</td>
+            <td>${esc(evt.name)} <span class="badge bg-secondary ms-1" style="font-size:9px">${esc(ageClass || 'E')}</span></td>
+            <td><span class="badge bg-${m ? 'success' : 'danger'}">${m ? 'Erkannt' : 'Kein Match'}</span></td>
+          </tr>
+        `);
+        detectedCount++;
+      });
+    }
+  }
+
+  if (previewRows.length > 0 && previewBody) {
+    previewBody.insertAdjacentHTML('beforeend', previewRows.join(''));
+  }
+
+  if (detectedCount > 0) {
+    previewContainer.classList.remove('d-none');
+    showToast(`✅ ${detectedCount} Turnierteilnahmen erfolgreich analysiert!`);
+  } else {
+    const debugMsg = `Es wurden keine gültigen Einträge gefunden.<br><br>` +
+      `<strong>Erkannte Parameter:</strong><br>` +
+      `• Lizenz-Spalte: <code>[${colLizenzIdx}]</code><br>` +
+      `• Prüfwert-Spalte: <code>[${colPruefIdx}]</code><br>` +
+      `• Daten ab Zeile: <code>${startRowIdx}</code><br>` +
+      `• Gesamtzeilen: <code>${rows.length}</code><br><br>` +
+      `Prüfe in der Browser-Konsole, ob die Lizenznummer in Spalte <code>[${colLizenzIdx}]</code> steht und Spalte <code>[${colPruefIdx}]</code> Zahlenwerte &gt; 0 enthält.`;
+    await UIConfirmKit.alert({
+      title: 'Keine gültigen Einträge gefunden',
+      message: debugMsg,
+      type: 'warning'
+    });
+  }
+}
+
+async function jbSubmitExcelImport() {
+  if (!_jbImportData || !_jbImportData.length) return;
+
+  const validList = _jbImportData.filter(x => x.pn !== null && x.pn !== '');
+  const skippedCount = _jbImportData.length - validList.length;
+  if (skippedCount > 0) {
+    console.warn(`⚠️ ${skippedCount} Einträge ohne Mitglieder-Match (AddressNumber nicht gefunden) werden übersprungen.`);
+  }
+  if (!validList.length) {
+    await UIConfirmKit.alert({
+      title: 'Keine Treffer',
+      message: 'Keine gültigen Einträge zum Importieren (kein Mitglied via AddressNumber gefunden).',
+      type: 'warning'
+    });
+    return;
+  }
+
+  const runImport = async () => {
+    // DEDUPLIZIERUNG: PostgreSQL ON CONFLICT DO UPDATE verbietet doppelte Zielzeilen im selben Batch!
+    const dedupMap = new Map();
+    validList.forEach(item => {
+      const dedupKey = `${String(item.pn).trim()}_${Number(item.year)}_${String(item.eventkey).trim()}`;
+      if (!dedupMap.has(dedupKey)) {
+        dedupMap.set(dedupKey, { ...item });
+      } else {
+        const existing = dedupMap.get(dedupKey);
+        existing.teilgenommen = Math.max(Number(existing.teilgenommen || 1), Number(item.teilgenommen || 1));
+      }
+    });
+    const deduplicatedList = Array.from(dedupMap.values());
+
+    showLoadingOverlay(`Importiere Excel-Daten für ${deduplicatedList.length} Teilnahmen in Supabase und berechne Beiträge neu…`);
+
+    const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+    if (!supa) throw new Error('Supabase Client nicht verfügbar');
+
+    const dbParts = deduplicatedList.map(item => ({
+      id: `${item.pn}-${item.year}-${item.eventkey}`,
+      person_number: String(item.pn).trim(),
+      year: Number(item.year),
+      event_key: item.eventkey,
+      teilgenommen: Number(item.teilgenommen || 1),
+      quelle: item.quelle || 'excel-import',
+      erfasst_am: new Date().toISOString(),
+      erfasst_von: window.currentUser || 'frontend'
+    }));
+
+    // In Chunks upserten
+    for (let i = 0; i < dbParts.length; i += 50) {
+      const chunk = dbParts.slice(i, i + 50);
+      const { error: partErr } = await supa.from('member_participations').upsert(chunk, { onConflict: 'person_number,year,event_key' });
+      if (partErr) {
+        console.error('Supabase member_participations import error:', partErr);
+        throw new Error('Fehler beim Speichern der Teilnahmen in Supabase: ' + (partErr.message || JSON.stringify(partErr)));
+      }
+    }
+
+    const uniquePns = [...new Set(deduplicatedList.map(x => String(x.pn).trim()))];
+    let skippedLockedCount = 0;
+
+    // Für alle betroffenen Schützen den Beitrag serverseitig neu berechnen (gesperrte Rechnungen werden von der RPC geschützt)
+    if (uniquePns.length > 0) {
+      console.log(`🤖 Berechne ${uniquePns.length} Schützen nach Excel-Import via Supabase RPC neu...`);
+      const { data: rpcRes, error: rpcErr } = await supa.rpc('calculate_member_contributions', {
+        p_year: Number(_jbYear),
+        p_target_pns: uniquePns
+      });
+      if (rpcErr) {
+        console.error('⚠️ Fehler bei RPC Neuberechnung nach Import:', rpcErr);
+        throw new Error('Fehler bei Neuberechnung der Beiträge: ' + (rpcErr.message || JSON.stringify(rpcErr)));
+      }
+      skippedLockedCount = Number(rpcRes?.skipped_locked_count || 0);
+      console.log(`✅ [Supabase RPC] ${rpcRes?.message || 'Neuberechnung abgeschlossen'}`);
+    }
+
+    let toastMsg = `🎉 ${deduplicatedList.length} Teilnahmen für ${uniquePns.length} Schützen erfolgreich in Supabase importiert!`;
+    if (skippedLockedCount > 0) {
+      toastMsg += ` (${skippedLockedCount} bereits versendete/bezahlte Rechnung(en) unverändert geschützt)`;
+    }
+    showToast(toastMsg);
+    document.getElementById('jbImportPreviewContainer').classList.add('d-none');
+    _jbImportData = null;
+
+    // Reload Jahresbeitrag & Rechnungen details from Supabase
+    await loadJahresbeitragData(true, true);
+
+    // Nur offene Entwurfsrechnungen synchronisieren
+    const syncFailures = [];
+    for (const pn of uniquePns) {
+      const cleanPn = pn.trim();
+      const updatedHeader = _jbData.find(x => String(x.PersonNumber).trim() === cleanPn);
+      if (updatedHeader && updatedHeader.invoiceId) {
+        const lockState = typeof window.jbGetContributionLockState === 'function'
+          ? window.jbGetContributionLockState(updatedHeader)
+          : { isLocked: false };
+        if (lockState.isLocked) continue;
+
+        const updatedM = _jbMemberMap[cleanPn] || {};
+        const updatedName = updatedM.FirstName ? `${updatedM.FirstName} ${updatedM.LastName}` : cleanPn;
+        try {
+          console.log(`🤖 Synchronisiere Rechnungsentwurf für ${cleanPn} nach Excel-Import...`);
+          if (typeof ensureInvoiceCreatedRemote === 'function') {
+            await ensureInvoiceCreatedRemote(updatedHeader, updatedM, updatedName);
+          }
+        } catch (err) {
+          console.error(`⚠️ Fehler bei automatischer Rechnungs-Aktualisierung für ${cleanPn}:`, err);
+          syncFailures.push(`${updatedName}: ${err.message || err}`);
+        }
+      }
+    }
+
+    // Sync invoices cache and merge
+    if (typeof loadRechnungenData === 'function') {
+      await loadRechnungenData(true, true);
+    }
+
+    if (typeof jbMergeInvoicesIntoData === 'function') {
+      jbMergeInvoicesIntoData(window._jbAllInvoices || []);
+    }
+
+    if (typeof renderJahresbeitragView === 'function') {
+      renderJahresbeitragView();
+    }
+
+    if (syncFailures.length > 0 && window.UIConfirmKit) {
+      const esc = window.jbEscHtml || (s => String(s ?? ''));
+      await UIConfirmKit.alert({
+        title: 'Rechnungsentwürfe teilweise nicht aktualisiert',
+        message: `Die Teilnahmen wurden importiert, jedoch konnten <strong>${syncFailures.length}</strong> Rechnungsentwürfe nicht synchronisiert werden:<br><ul class="mb-0 mt-2 small">${syncFailures.slice(0, 5).map(msg => `<li>${esc(msg)}</li>`).join('')}</ul>`,
+        type: 'warning'
+      });
+    }
+  };
+
+  try {
+    if (window.UIButtonKit && typeof window.UIButtonKit.withLoading === 'function') {
+      await window.UIButtonKit.withLoading('button[onclick="jbSubmitExcelImport()"]', runImport);
+    } else {
+      await runImport();
+    }
+  } catch (e) {
+    await UIConfirmKit.alert({
+      title: 'Fehler beim Import',
+      message: 'Fehler beim Hochladen der Daten: ' + (e.message || e),
+      type: 'danger'
+    });
+  } finally {
+    hideLoadingOverlay();
+  }
+}

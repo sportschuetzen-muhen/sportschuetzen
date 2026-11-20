@@ -1,0 +1,486 @@
+# 📋 Spezifikation: Supabase Document & Mail Engine (inkl. GV-Dossier-Compiler)
+
+**Stand:** September 2026  
+**Status:** ARCHITEKTUR-BRIEFING & SPEZIFIKATION  
+**Führendes Gesamtsystem:** Supabase PostgreSQL & Auth (Sportschützen Muhen)  
+**Komponenten:** Supabase Edge Functions (`pdf-lib`, Resend/Postmark/SMTP), Storage, Vorstands-Cockpit (Frontend)
+
+---
+
+## 1. Systemübersicht & Architektur
+
+### 1.1 Zielsetzung
+Aufbau einer zentralen, robusten Dokumenten- und Kommunikations-Engine für den Verein Sportschützen Muhen. Das System generiert:
+1. **Druckfertige PDFs:**
+   - Rechnungen mit offiziellem Schweizer QR-Zahlteil (QR-Bill)
+   - Offizielle Vorstandsbriefe
+   - Generalversammlungs-Einladungen mit Traktanden & Jahresprogramm-Beilage
+   - Komplettes „GV-Dossier / GV-Heftli“ (Multi-Dokumenten-Assembler)
+   - Endschiessen-Programme / Einladungen
+2. **Synchronisierte E-Mails:**
+   - 100 % identische Platzhalter-Syntax (`{{...}}`) zwischen Mail-Body und PDF.
+3. **Massenversand mit Tracking & Freigabeprozess:**
+   - Vorstands-Freigabe, Test-Mail-Funktion („Test-Mail an mich“), idempotenter Versand und lückenloses Logging (`campaign_recipients`, `mail_logs`).
+
+### 1.2 Tech-Stack & Infrastruktur
+- **Backend:** Supabase PostgreSQL (Single Source of Truth), GoTrue Auth, Storage Buckets.
+- **Storage-Buckets:**
+  - `operatives-storage`: Zentraler Produktiv-Bucket für Rechnungen (`invoices/{year}/...`), Mietverträge (`contracts/{year}/...`), GV-Einladungen (`gv/{year}/...`), Assets (`assets/logo.png`) und WORM-Langzeitarchiv (`archive/{year}/...`).
+  - `campaign-assets`: Uploads für Beilagen (z. B. Jahresberichte, Protokolle).
+  - `generated-docs` / `operatives-storage`: Unveränderliche, revisionssichere PDF-Archive.
+- **Edge Functions (Deno):**
+  - Rendering-Engine: `supabase/functions/generate-pdf/index.ts` (nativ Deno, `pdf-lib` 1.17.1, SIX SPC 0200 1 QR-Bill Vektorgenerierung, In-Memory-Logo-Cache, Paperless-NGX REST-Sync).
+  - E-Mail-Dispatcher: `supabase/functions/send-email/index.ts` (SMTP via Gmail/Infomaniak, HTML/Text, Anhänge via Base64/Storage, Audit-Log in `public.mail_logs`).
+- **Frontend-Module:**
+  - Vorstands-Portal (`vorstand/js/pdf-engine.js` & `vorstand/js/mail-engine.js` als universelle Shared Services).
+  - Vorlagen- & Klauselpool (`vorstand/js/vorlagen/templates-ui.js`).
+  - Generalversammlung & Präsenzkontrolle (`vorstand/js/gv.js` & `vorstand/js/umfragen/umfragen-controlling.js`).
+  - Zentraler RechnungsCore (`vorstand/js/rechnungen/`).
+
+### 1.3 Bestandsaufnahme: Was bereits existiert (Ist-Zustand)
+1. **Bestehende PDF-Engine (`supabase/functions/generate-pdf/index.ts`):**
+   - Beherrscht vollvektoriell `generate-invoice` (QR-Bill nach SIX-Norm, Perforation, Schweizerkreuz-Vektor), `generate-contract` (Mietvertrag Rüteli mit dynamischem Einleitungstitel, variabler Zahlungsfrist `{zahlungsfrist_tage}` und prominenter Bestätigungsbox auf der QR-Schlussseite), `generate-gv-invitation` (Einladung + Jahresprogramm-Tabelle aus Terminen), `compile-gv-dossier` (Assembler mit Corporate Stempel) sowie `generate-letter` (Freier Vorstandsbrief DIN 5008 Fenster rechts mit 2-spaltigem Unterschriftenblock).
+   - Besitzt WORM-Archivierung und Paperless-NGX-Synchronisation.
+2. **Bestehende Client-Wrapper (`vorstand/js/pdf-engine.js`):**
+   - Stellt `window.generatePdfViaEngine(options)`, `window.createSwissQrBillPayload(invoice, recipient)`, `window.rnGeneratePDFOnly()`, `window.jbGenerateInvoicePdfRemote()`, `window.vmGenerateRentalContractPdf()`, `window.gvGenerateInvitationPdf()`, `window.gvCompileDossierPdf()` und `window.generateLetterPdfRemote()` bereit.
+3. **Bestehende Vorlagen-Verwaltung (`supabase/migrations/27_document_templates_and_clauses.sql`):**
+   - Tabellen `public.document_templates` und `public.document_template_clauses` sind bereits migriert und über `vorstand/js/vorlagen/templates-ui.js` im Vorstands-Cockpit editierbar. Bei Mietverträgen werden überflüssige Textfelder (Schlusstext/Rechtsbelehrung) ausgeblendet. Der Vertragswortlaut und das Mietobjekt (`description` / `rental_object`) werden sauber im Modul *Dokumente* gepflegt, während quantitative Variablen wie die Zahlungsfrist (`payment_due_days`) im *Vermietung Cockpit* zentral gesteuert und über Platzhalter `{zahlungsfrist_tage}` in Vertrag & QR-Rechnung eingesetzt werden.
+4. **Bestehende GV-Stammdaten (`supabase/migrations/18_generalversammlung_module.sql`):**
+   - `public.gv_instances` verwaltet bereits Traktanden, Wahljahr-Flags sowie URLs für `doc_einladung_url`, `doc_protokoll_url`, `doc_jahresbericht_url`, `doc_anhaenge_url`.
+
+### 1.4 Delta-Analyse: Was neu dazukommt (Ziel-Erweiterung)
+1. **Der modulare GV-Dossier-Compiler (`pdf-lib` Multi-Dokumenten-Assembler):**
+   - Dynamisch generierte Einladung & Jahresprogramm mit extern hochgeladenen PDF-Berichten (Präsident, Jungschützen, Protokoll, Revisoren) zu einem Master-Heft zusammenfügen (`copyPages`).
+   - Einheitlicher Corporate Stempel (Vereinskopf oben, fortlaufende Seitennummerierung `Seite X von Y` unten).
+2. **Kampagnen- & Empfänger-Tracking (Massenversand):**
+   - DDL-Erweiterung um `communication_campaigns`, `campaign_attachments`, `campaign_recipients` (oder Verknüpfung mit bestehendem `mail_logs` & `gv_praesenz`).
+   - Idempotenter Versand mit Fortschrittsbalken und Bounce-Schutz (schlanker Anhang < 1 MB + geschützter Download-Link auf Gesamt-Dossier).
+3. **Endschiessen-Layout:**
+   - Vorlage & Rendering für Schiesstage, Stichprogramme und Absenden-Menüs.
+4. **GV-Schaltzentrale im Frontend:**
+   - 2-Spalten-Workspace: Links Checkliste für Berichte-Uploads & Traktanden, rechts Live-Vorschau (E-Mail / PDF).
+
+---
+
+## 2. Typografie & Corporate Design (Schweizer Vereinsstandard)
+
+### 2.1 Grundregeln
+- **Keine Unterstreichungen:** Unterstrichener Text ist ausschliesslich Hyperlinks vorbehalten. Hervorhebungen erfolgen über **Fett (Bold)** oder *Kursiv (Italic)*.
+- **Textfarbe:** Schiefer-Anthrazit (`#1e293b`), kein Rein-Schwarz (`#000000`).
+- **Akzentfarbe:** Vereins-Hauptfarben (z. B. Tannengrün `#14532d` oder Schützen-Dunkelblau `#1e3a8a`) für Haupttitel (H1) und Trennelemente.
+- **Rahmen & Linien:** Dezentes Grau (`#e2e8f0`).
+
+### 2.2 Schriftarten (Font Stack)
+- **PDF (Druck / A4):** Standard-Schriftarten wie **Helvetica** oder **Arial / Liberation Sans**.
+  - *Begründung:* 100 % konform mit den offiziellen Schweizer SIX-Vorgaben für den QR-Zahlteil; standardmässig ohne externe Ladezeiten oder Font-Parsing-Fehler in PDF-Engines verfügbar.
+- **E-Mail (Screen):** Robuster System-Font-Stack:
+  `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`
+
+### 2.3 Grössen- und Stilhierarchie
+
+| Element | PDF (Druck A4) | E-Mail (HTML) | Schriftschnitt | Einsatz / Styling |
+| :--- | :--- | :--- | :--- | :--- |
+| **H1 (Haupttitel)** | 18 – 20 pt | 22 – 24 px | Bold (700) | Dokumententitel, Einladungskopf |
+| **H2 (Zwischentitel)** | 12 – 13 pt | 17 – 18 px | Semi-Bold (600) | Sektionen, Traktanden |
+| **Body (Fliesstext)** | 9.5 – 10.5 pt | 15 – 16 px | Regular (400) | Zeilenabstand PDF: 1.35 / Mail: 1.55 |
+| **Tabelleninhalte** | 8.5 – 9.5 pt | 14 – 15 px | Regular (400) | Zwingend Tabellenziffern (`tabular-nums`) |
+| **Fusszeile / Meta** | 7.5 – 8.5 pt | 12 – 13 px | Regular (400) | Vereinsangaben, IBAN, Seitenzahlen |
+
+---
+
+## 3. Die 4 Dokument- & E-Mail-Typen
+
+### Typ 1: Rechnung / Jahresbeitrag / Schulsport (Formal mit QR-Bill)
+*Referenz-Layout gemäss offiziellem Belegmuster:*
+- **PDF-Aufbau:**
+  - **Logo:** Offizielles Wappen `logo.png` freistehend oben links (ca. 35 × 35 mm, keine Textzeilen daneben).
+  - **Absenderblock (links, unterhalb des Logos):**
+    - Zeile 1: **`Sportschützen Muhen [Rolle/Bereich]`** (fett, z. B. *Sportschützen Muhen Schulsport*)
+    - Zeile 2: `[Vorname Nachname]` des tatsächlichen Erstellers (z. B. *Andrea Rossi*)
+    - Zeile 3: `[Strasse Hausnummer]` (z. B. *Eppenbergstrasse 164*)
+    - Zeile 4: `[PLZ Ort]` (z. B. *5012 Eppenberg-Wöschnau*)
+    - Zeile 5: `Mobil [Nummer]` (z. B. *Mobil 079 138 84 72*)
+    - Zeile 6: `[E-Mail]` in Vereinsblau (z. B. *andrea.rossi@sportschuetzen-muhen.ch*)
+    - Zeilen 7–8 (mit Abstand):  
+      `Datum:       DD.MM.YYYY`  
+      `Zahlbar bis: DD.MM.YYYY`
+  - **Empfängerblock (rechts, DIN 5008 Fenster rechts):**
+    - Platziert auf gleicher Höhe wie der Absenderblock rechts (`X ≈ 125 mm`):
+      `[Firma / Funktion / Zusatz]`  
+      `[Vorname Nachname]`  
+      `[Strasse Hausnummer]`  
+      `[PLZ Ort]`
+  - **Titel (H1):**
+    - Linksbündig, 13.5 pt Bold (z. B. **Schulsport Semester** oder **Jahresbeitrag 2026**). Überlange Dokumententitel werden automatisch mehrzeilig auf `170 mm` Satzspiegelbreite umgebrochen, wobei der nachfolgende Einleitungstext dynamisch nach unten rückt.
+    - **Server-Side Single Source of Truth:** Die Edge Function `generate-pdf` bezieht `title`, `intro`, `outro` und `notice` bei echten Rechnungen vorrangig direkt aus `public.document_templates` (nur bei `TEST-PREVIEW-*` hat das Live-Formular-Payload Vorrang). Beim Speichern einer Rechnungsvorlage in `templates-ui.js` sowie beim Klick auf «PDF neu generieren» (`rnGeneratePDFOnly`) werden Entwurfs-PDFs mit `{ forceRecreate: true }` neu gerendert.
+  - **Anrede & Intro:**
+    - Persönliche Anrede (*Guten Tag Mike*) gefolgt vom Anschreibetext.
+  - **Positionstabelle:**
+    - Schlichte Linientabelle: Spalten `Pos`, `Beschreibung`, `Menge`, `Einzelpreis`, `Preis (CHF)`.
+    - Totalzeile fett mit Schweizer Hochkomma-Tausendertrennzeichen (z. B. **2'280.00**).
+  - **Outro & Grussformel:**
+    - Outro-Text (z. B. *„Bei allfälligen Fragen bitte bei mir melden. Vielen Dank für das Vertrauen.“*)
+    - Grusszeile:  
+      *Mit besten Grüssen*  
+      **Sportschützen Muhen**  
+      *(Leerzeile)*  
+      *Andrea Rossi*  
+      *Schulsportleiter*
+  - **Vereins-Footer (juristische Anschrift):**
+    - Dezent ganz unten (knapp über dem QR-Zahlteil) über einer dünnen grauen Linie:  
+      `Sportschützen Muhen (gegründet 1919) · Schiessanlage Rüteli, 5037 Muhen · www.sportschuetzen-muhen.ch · info@sportschuetzen-muhen.ch`
+  - **Swiss QR-Bill Integration:**
+    - Auf den unteren 105 mm der A4-Seite (SIX SPC 0200 1 konform) oder als separate QR-Beilage per `pdf-lib` Merge.
+    - *Spezifikations-Garantie:* Zwingende UTF-8 Enkodierung (`qrcode.stringToBytes = qrcode.stringToBytesFuncs["UTF-8"]`) für deutsche Umlaute im Vereinskopf sowie automatische ISO 3166-1 alpha-2 Ländercode-Normalisierung (`CH`) für Creditor- und Debitor-Adressfelder.
+- **E-Mail (Shell & Corporate Footer via `renderClubEmailHtml`):**
+  - Höfliche Information mit Fälligkeitsdatum, Betrag in CHF, Verweis auf das angehängte Original-PDF.
+  - Der Textkörper (`contentHtml`) enthält die vollständige Grussformel und Absendersignatur. Keine nachgelagerten doppelten Infoboxen oder redundanten `senderInfo`-Blöcke.
+  - **Globaler E-Mail-Footer:** Dezent zentriert am E-Mail-Ende:  
+    `Sportschützen Muhen (gegründet 1919) • Schiessanlage Rüteli • 5037 Muhen`  
+    `Web: www.sportschuetzen-muhen.ch • E-Mail: info@sportschuetzen-muhen.ch`  
+    `Instagram: https://www.instagram.com/sportschuetzen.muhen/ • Facebook: https://www.facebook.com/SportschuetzenMuhen/?locale=de_DE`
+
+### Typ 2: Freier Vorstandsbrief (Formal)
+*Differenziertes Layout für offizielle Mitteilungen ohne Rechnungscharakter:*
+- **PDF-Aufbau:**
+  - Briefkopf mit Absender und Adressfenster (C5/C4).
+  - Freier, strukturierter Fliesstext (Absätze, nummerierte Listen, Bulletpoints).
+  - **Zweispaltiger Unterschriftenblock** am Briefende (z. B. links *Präsident*, rechts *Aktuar* oder *Kassier*).
+  - Juristischer Vereins-Footer am Seitenende.
+- **E-Mail:** Vollständiger Brieftext als HTML-E-Mail oder kurzes Anschreiben mit PDF im Anhang.
+
+### Typ 3: Generalversammlung (Einladung, Traktanden & Jahresprogramm / GV-Dossier)
+*Mehrseitiges Dokument für die GV-Aussendung:*
+- **PDF-Aufbau:**
+  - **Seite 1 (Die Einladung):** Kopfdaten (Datum, Zeit, Lokalität, Antragsfrist), nummerierte Traktandenliste (Titel, Berichterstatter kursiv, Beschlussanträge), Unterschriftenzeile Vorstand.
+  - **Seite 2 (Beilage Jahresprogramm):** Aus Vereinskalender `club_calendar` generierte Termin-Tabelle (Datum, Wochentag, Zeit, Anlass, Ort, Wertung).
+  - **GV-Dossier (Compiler):** Zusammenfügen mit Protokoll Vorjahr und Jahresberichten (Präsident, Jungschützen, Kassa) inkl. Corporate Stempel (`Seite X von Y`).
+- **E-Mail:** Zusammenfassung der Rahmendaten, Traktanden-Überblick, Anmeldefrist und geschützter Download-Link auf das Gesamtdossier.
+
+### Typ 4: Endschiessen-Einladung (Event / Programm)
+*Aufgelockertes Event-Layout:*
+- **PDF-Aufbau:**
+  - Modulares 2-Spalten- oder Karten-Layout.
+  - Infoboxen für Schiesstage, Schiesszeiten, Standblattausgabe.
+  - Stichtabellen (Vereinsstich, Gabenstich, Nachdoppel, Munitionstarife).
+  - Details zum Absenden (Gemeinsames Nachtessen, Rangverkündigung).
+- **E-Mail:** Kameradschaftliche Ansprache, Vorbestellungsfristen für das Nachtessen, Call-to-Action.
+
+---
+
+## 4. Das modulare GV-Dossier („GV-Heftli-Compiler“)
+
+### 4.1 Konzept: Assembler statt manuelles Word-Zusammenkopieren
+Statt Dokumente manuell zusammenzufügen, wird das GV-Heft aus zwei Quellen kompiliert:
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│                          DAS MASTER-GV-DOSSIER                         │
+├───────────────────────────────────┬────────────────────────────────────┤
+│ A) DYNAMISCH GENERIERT (Supabase) │ B) BEILAGEN / UPLOADS (Vorstand)   │
+│ ───────────────────────────────── │ ────────────────────────────────── │
+│ 1. Einladung & Traktanden         │ 3. Protokoll letzte GV (Aktuar)    │
+│    (Aus Vorlage + DB)             │ 4. Jahresbericht Präsident         │
+│ 2. Jahresprogramm Beilage         │ 5. Jahresbericht Jungschützen      │
+│    (Aus Vereinstabelle)           │ 6. Evtl. Kassa-/Revisorenbericht   │
+└───────────────────────────────────┴────────────────────────────────────┘
+                                    │
+                                    ▼
+       [ Supabase Edge Function: pdf-lib fügt alles zusammen ]
+                                    │
+                                    ▼
+       [ "Corporate Stempel": Einheitlicher Vereinskopf & Seitenzahlen ]
+                                    │
+                                    ▼
+                    Fertiges, druckfertiges PDF-Dossier
+```
+
+### 4.2 Handling von Vorstandsberichten (Option A: PDF-Uploads)
+- **Best Practice:** Die Vorstandsmitglieder verfassen Berichte wie gewohnt (z. B. Word mit Fotos/Tabellen), exportieren diese als PDF und laden sie im Cockpit hoch.
+- **Vorteil:** Keine Layout-Zerschlagungen, maximale Bildqualität, keine fehleranfälligen Server-Konvertierungen.
+
+### 4.3 Der „Corporate Stempel“ (`pdf-lib`)
+Damit das Dossier wie aus einem Guss wirkt, stempelt die Edge Function über alle zusammengefügten Seiten:
+1. **Kopfzeile:** Dezent oben: `Sportschützen Muhen – Generalversammlung {Jahr}` (8 pt, `#64748b`).
+2. **Seitennummerierung:** Zentriert unten: `Seite X von Y`.
+3. **Optionales Inhaltsverzeichnis:** Automatisch auf Seite 2 mit Sprungzielen / Seitenzahlen der Berichte.
+
+### 4.4 Versand-Strategie bei Grossdokumenten (Bounce-Schutz)
+- Grosse GV-Dossiers mit vielen Bildern (10–25 MB) führen bei Mailprovidern (z. B. Bluewin, Firmen-Server) oft zu Bounces.
+- **Lösung:**
+  - **E-Mail-Anhang:** Schlankes Einladungs-PDF (Einladung + Jahresprogramm, < 1 MB).
+  - **Download-Link:** Sicherer Direktlink zum vollständigen GV-Dossier im Supabase Storage Bucket (`campaign-assets` / `generated-docs`).
+
+---
+
+## 5. Swiss QR-Bill Merging & RechnungsCore-Stabilität
+
+1. **RechnungsCore-Garantie:**
+   - Gemäss Projekt-Richtlinie bleibt der bestehende `RechnungsCore` (`vorstand/js/rechnungen/`) die zentrale Instanz.
+   - Seine Schnittstelle (`InvoiceOrder`-Payload) wird nicht verändert.
+2. **Merging-Logik via `pdf-lib`:**
+   - Die Edge Function erzeugt den Rechnungskopf und die Positionstabelle.
+   - Der vom `RechnungsCore` gelieferte QR-Teil wird pixelgenau auf den unteren 105 mm der A4-Seite eingebettet (*Page-Embed / Stamp*) oder als Folgeseite nahtlos angehängt.
+
+---
+
+## 6. Variablen-System (`{{...}}`) & Pre-Flight-Validierung
+
+### 6.1 Namensraum-Konvention (Handlebars-Standard)
+```handlebars
+-- Mitglied / Empfänger --
+{{mitglied.anrede}}          -- Lieber Max / Sehr geehrter Herr Muster
+{{mitglied.vorname}}
+{{mitglied.nachname}}
+{{mitglied.strasse}}
+{{mitglied.plz}}
+{{mitglied.ort}}
+{{mitglied.status}}          -- Aktiv, Veteran, Ehrenmitglied
+
+-- Verein / Absender --
+{{verein.name}}
+{{verein.postadresse}}
+{{verein.praesident_name}}
+{{verein.aktuar_name}}
+{{verein.iban}}
+
+-- Rechnungsmodul Payload --
+{{rechnung.nummer}}
+{{rechnung.datum}}
+{{rechnung.faelligkeit}}
+{{rechnung.total_chf}}       -- z.B. 120.00
+{{rechnung.positionen}}      -- Array von { bezeichnung: string, betrag: number }
+
+-- Event-Spezifisch (GV / Endschiessen) --
+{{event.titel}}
+{{event.datum_formatiert}}   -- z.B. Samstag, 24. Oktober 2026
+{{event.zeit}}
+{{event.lokalitaet}}
+{{event.antragsfrist}}
+```
+
+### 6.2 Dynamische Absender-Ermittlung (Backend & Frontend)
+> **Architektur-Standard für Frontend & RechnungsCore (`RechnungsCore.resolveSender` & `findBoardMemberByFunction`):**  
+> Die Funktion `RechnungsCore.resolveSender()` ermittelt für Fachmodule (Jahresbeitrag, Vermietung, Materialverkauf etc.) primär das zuständige Vorstandsmitglied nach dem **Amts-Prinzip** (z. B. `Kassier` für Jahresbeitrag und Vermietung, `Materialwart` für Inventar) live aus den SSV-Stammdaten (`public.member_functions` und `public.members`). Für freie/manuelle Rechnungen dient `rnGetLoggedInSender()` als Fallback.  
+> **Revisionssicherer DB-Snapshot:** Bei der Erstellung einer Rechnung (`RechnungsCore.createInvoice`) wird der Absender als unveränderlicher JSONB-Snapshot in `public.invoices.sender_address` festgeschrieben.  
+> **Versand-Synchronität & Einzelversand-Mutation:**  
+> - *Massenversand:* Nutzt strikt `inv.sender_address`, sodass E-Mail-Signatur, Anzeigename und PDF-Briefkopf zu 100 % übereinstimmen.  
+> - *Einzelversand:* Wählt der Benutzer im E-Mail-Modal manuell einen anderen Absender, wird `sender_address` in der Datenbank aktualisiert und das Rechnungs-PDF automatisch mit dem neuen Absender neu gerendert (`RechnungsCore.renderPdf(..., { forceRecreate: true })`).  
+> *Status: Vollständig harmonisiert in `rechnungen-core.js` und `rechnungen-actions.js`.*
+
+### 6.3 Pre-Flight-Validierung (Missing Variables Check)
+- Vor dem Start des Batch-Renderings prüft das System alle Tags im Template gegen den Datensatz der Empfänger.
+- Fehlen Pflichtfelder (z. B. PLZ/Ort bei postalischem Versand), wird ein Warn-Dialog mit Fehlerliste angezeigt.
+- Bereitstellung robuster Fallbacks (z. B. `{{mitglied.anrede_formell}}` bei unklaren Stammdaten).
+
+---
+
+## 7. Vorschau- & Rendering-Strategie
+
+- **E-Mail-Vorschau (Client-seitig):**
+  - 100 % im Browser ohne Server-Roundtrip (Echtzeit-Rendering beim Tippen via Regex/Mustache gegen Test-Datensätze).
+- **PDF-Vorschau (Serverseitig on-demand):**
+  - Klick auf „Vorschau aktualisieren“ ruft die Edge Function mit Parametern auf (`preview: true`).
+  - Rückgabe als `Blob`/`application/pdf` zur direkten Anzeige im Frontend in einem Sandboxed `<iframe src="blob:...">`.
+
+---
+
+## 8. Frontend UI/UX Konzept
+
+### 8.1 2-Spalten-Arbeitsbereich
+- **Linke Spalte (Konfiguration & Redaktion):**
+  - Empfängerauswahl (z. B. *„Aktivmitglieder (64)“*, *„Vorstand (7)“*).
+  - Tabs: `[ E-Mail-Text ]` | `[ PDF-Konfiguration ]`.
+  - Traktanden-Manager (für GV): Sortierbare Liste mit Drag & Drop, Hinzufügen, Deaktivieren.
+  - Jahresprogramm-Schalter: Checkbox *„Jahresprogramm 2026 als Seite 2 einbinden“*.
+  - Variable-Chips: Klickbare Buttons (`+ Name`, `+ Datum`, `+ Betrag`), die Platzhalter direkt an die Cursor-Position setzen.
+- **Rechte Spalte (Live-Monitor):**
+  - Umschaltbar zwischen `[ ✉️ E-Mail-Vorschau ]` und `[ 📄 PDF-Vorschau ]`.
+  - Dropdown zur Auswahl realer Testmitglieder (*„Vorschau für: Hans Muster ▼“*).
+
+### 8.2 Sicherheits- & Kontroll-Features
+- **„Test-Mail an mich senden“:** Generiert ein echtes Test-PDF und sendet die Mail direkt an das eingeloggte Vorstandsmitglied.
+- **Idempotenter Versand & Retry:** PDFs werden im Storage unter festen Pfaden gespeichert. Wiederholte Versuche überschreiben/ergänzen den Status ohne Doppelversand.
+- **Live-Statusbar:** Fortschrittsanzeige mit Fehlerprotokollierung (`pending`, `sent`, `failed`).
+
+---
+
+## 9. Datenmodell (Supabase PostgreSQL DDL)
+
+*Implementiert in Migration [28_communication_campaigns_and_attachments.sql](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/migrations/28_communication_campaigns_and_attachments.sql) sowie den Vorlagen-Tabellen aus Migration 27:*
+
+```sql
+-- 1. Vereinskalender (für GV-Beilage & Event-Import)
+CREATE TABLE IF NOT EXISTS club_calendar (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  season_year INT NOT NULL,
+  event_date DATE NOT NULL,
+  time_start TIME,
+  time_end TIME,
+  title TEXT NOT NULL,
+  location TEXT,
+  category TEXT,
+  is_championship BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 2. Vorlagen (Mail & PDF Struktur)
+CREATE TABLE IF NOT EXISTS document_templates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code TEXT UNIQUE NOT NULL, -- 'invoice', 'letter', 'agm', 'endschiessen'
+  name TEXT NOT NULL,
+  layout_type TEXT NOT NULL, -- 'formal' oder 'event'
+  default_email_subject TEXT NOT NULL,
+  default_email_body TEXT NOT NULL,
+  default_pdf_blocks JSONB NOT NULL, -- Standard-Traktanden, Spaltenkonfigurationen
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 3. Kommunikations-Kampagnen / Aussendungen
+CREATE TABLE IF NOT EXISTS communication_campaigns (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  template_code TEXT REFERENCES document_templates(code),
+  title TEXT NOT NULL,
+  season_year INT NOT NULL,
+  status TEXT DEFAULT 'draft', -- 'draft', 'processing', 'completed', 'cancelled'
+  created_by UUID REFERENCES auth.users(id),
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 4. Beilagen für Kampagnen (GV-Dossier-Compiler)
+CREATE TABLE IF NOT EXISTS campaign_attachments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_id UUID REFERENCES communication_campaigns(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,              -- z.B. "Jahresbericht Präsident"
+  sort_order INT NOT NULL DEFAULT 1, -- Reihenfolge im Heft
+  storage_path TEXT NOT NULL,       -- Pfad im Bucket 'campaign-assets'
+  page_count INT DEFAULT 1,
+  uploaded_by UUID REFERENCES auth.users(id),
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 5. Empfänger-Log & Dokumenten-Verknüpfung
+CREATE TABLE IF NOT EXISTS campaign_recipients (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_id UUID REFERENCES communication_campaigns(id) ON DELETE CASCADE,
+  member_id UUID NOT NULL, -- Referenz auf mitglieder-Tabelle
+  pdf_storage_path TEXT,
+  status TEXT DEFAULT 'pending', -- 'pending', 'sent', 'failed'
+  error_message TEXT,
+  sent_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- RLS aktivieren
+ALTER TABLE club_calendar ENABLE ROW LEVEL SECURITY;
+ALTER TABLE document_templates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE communication_campaigns ENABLE ROW LEVEL SECURITY;
+ALTER TABLE campaign_attachments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE campaign_recipients ENABLE ROW LEVEL SECURITY;
+```
+
+---
+
+## 10. Revisionssichere Archivierung & Page-Spilling-Regeln
+
+1. **Revisionssicherheit & Archivierung:**
+   - Gemäss Schweizer Vereins- und Rechnungslegungsrecht (Art. 957ff. OR) müssen Rechnungen und offizielle Beschlüsse/GV-Einladungen unveränderlich aufbewahrt werden.
+   - Nach erfolgreichem Versand verbleiben die generierten PDFs als statische Dokumente im Supabase Storage Bucket `generated-docs` und werden mit dem Rechnungs- bzw. Kampagnen-Log verknüpft.
+2. **Page Spilling & Seitenbudgets:**
+   - Für formale Briefe und Rechnungen gilt ein festes Höhenbudget.
+   - Überschreitet der Fliesstext die Höhe von Seite 1, sodass ein „Waisen-Absatz“ mit wenigen Zeilen auf Seite 2 entsteht, warnt das Vorstands-UI aktiv:  
+     *⚠️ „Achtung: Der Brieftext erzeugt eine 2. Seite mit nur wenigen Zeilen. Text bitte kürzen oder Schriftgrösse anpassen.“*
+
+### 8.3 Harmonisierte 3-Reiter-Vorlagenzentrale & Globaler Vereins-WYSIWYG (Oktober 2026)
+- **3 Haupt-Reiter des Vorlagen-Pools (`templates-ui.js`):**
+  1. `[ 🧾 Rechnungen & Mahnwesen ]`: Vorlagen für Jahresbeitrag, Schulsport, Material, Sponsoring und Mahnungen 1–3 mit QR-Bill Vorschau.
+  2. `[ 🏠 Vermietung Schützenstube ]`: Mietvertrag & Benützungsordnung PDF (Klausel-Editor 1–8) sowie alle 8 Transaktions-Mails mit Live-HTML-Vorschau.
+  3. `[ ✉️ Vorstandsbriefe & Rundschreiben ]`: Freier Vorstandsbrief (DIN 5008) und Vereins-Rundmails.
+- **Eigenständiges Modul Generalversammlung:**
+  - Die Generalversammlung wurde als vollkommen eigenständiges Fachmodul (`gv-dossier`) mit eigener Sidebar-Navigation, Dashboard-Kachel und Berechtigungen (`gv.view` / `gv.manage`) entkoppelt.
+  - Vollständige Spezifikation siehe [GENERALVERSAMMLUNG.md](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/docs/GENERALVERSAMMLUNG.md).
+- **Globaler Vereins-WYSIWYG (`vorstand/js/club-wysiwyg.js`):**
+  - Universelle Rich-Text-Komponente für News KI, E-Mail-Vorlagen, GV-Aussendungen und Rundmails.
+  - Toolbar-Aktionen: Undo (`fa-undo`), Redo (`fa-redo`), Formatierung aufheben (`fa-eraser`), dynamisches H3-Toggle (Absatz <-> Titel) sowie visuelle Aktiv-Zustände.
+  - Vordefinierte responsive Callout-Banner (Info, Frist, Hinweis, Dringend) mit Übernahme markierten Textes ohne starre Dummy-Texte.
+  - Geschützte Call-to-Action (CTA) Aktions-Buttons (`club-cta-container`) mit integriertem Folgeabsatz gegen Cursor-Fallen.
+  - Sichere Einfügung von dynamischen Platzhaltern (`{{...}}` und `{...}`) an der aktuellen Cursor-Position ohne persistente Badge-Artefakte.
+  - DOM-basierte Bereinigung störender Formatierungen (`cleanHtmlContent`): Säubert Word/Outlook-Tags, Browser-Erweiterungen (Noir, Dark Reader) sowie Inline-CSS-Verschmutzungen unter Erhalt geschützter Banner und Buttons.
+  - Auslieferung & Rechnungsmodul-Harmonisierung: Modulübergreifend (Dokumente-Vorlagen, Vermietung, Rechnungs-Einzelversand, Mahnwesen und Massenversand) wird pre-gerendertes HTML direkt an die Mail-Engine übergeben, um doppelte Maskierungen (`escapeHtml`) in E-Mail-Clients zu verhindern. Die Eingabefelder im Rechnungs-Cockpit nutzen nativ `ClubWysiwyg`, sodass keine Roh-Tags (`<p>`) sichtbar sind und für reine Text-Mailclients ein strukturierter Plaintext-Fallback generiert wird.
+
+---
+
+## 11. Implementierungs- und Integrationsstatus (Stand: Oktober 2026)
+
+| Dokumenttyp / Komponente | Backend (`generate-pdf`) | Frontend UI / Workspace | Status |
+| :--- | :--- | :--- | :--- |
+| **Typ 1: Rechnung & QR-Rechnung** | ✅ `generate-invoice` (`operatives-storage/invoices/`) | ✅ Rechnungs-Dashboard (`rechnungen/`) | **Produktiv** |
+| **Typ 2: Freier Vorstandsbrief** | ✅ `generate-letter` (DIN 5008, WORM-Archiv, Paperless) | ✅ Vorlagen-Pool & Live-PDF-Test (`templates-ui.js`) | **Vollständig implementiert** |
+| **Typ 3: GV-Dossier & Kampagne** | ✅ `compile-gv-dossier` & hierarchische Traktanden (`parent_id`) | ✅ Eigenständiges GV-Cockpit (`gv-dossier.js`, Traktanden, Stammdaten, Dossier) | **Produktiv & Entkoppelt** (Details: [GENERALVERSAMMLUNG.md](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/docs/GENERALVERSAMMLUNG.md)) |
+| **Typ 4: Endschiessen / Festführer** | ✅ `generate-endschiessen` (Schiesstage, Ablösung, Gaben) | ✅ Vorlagen-Pool & Remote-Generator (`pdf-engine.js`) | **Vollständig implementiert** |
+| **Globaler Vereins-WYSIWYG** | N/A (Frontend Standard) | ✅ News KI, Vorlagen-Pool, GV-Schaltzentrale (`club-wysiwyg.js`) | **Vollständig implementiert** |
+
+### 11.1 Generalversammlung: Traktanden-Hierarchie & Entflechtung (Oktober 2026)
+- **Hierarchische Traktanden (`public.gv_traktanden`):**
+  - Haupttraktanden (`parent_id IS NULL`) und Untertraktanden (`parent_id REFERENCES gv_traktanden(id)`).
+  - Traktanden-Manager im GV-Cockpit unterstützt Neuanlage, Unterpunkt-Zuordnung, Sortierung nach oben/unten (▲/▼), Bearbeiten und Löschen.
+  - Die PDF-Engine (`generateGVInvitationPdf`) rendert Untertraktanden sauber eingerückt unter dem Haupttraktandum.
+- **Entkopplung vom Vorlagen-Pool:**
+  - Traktanden werden nicht mehr im statischen Vorlagen-Pool verwaltet, sondern exklusiv jahresspezifisch in `public.gv_traktanden`.
+  - Das Modul Generalversammlung ist nun ein eigenständiges Modul mit direktem Einstieg in der Sidebar und im Dashboard.
+- **Bereinigung der Anhänge & Entflechtung aus „Anlässe & Umfragen“:**
+  - Tab 4 („Tools & GV-Steuerung“) und die 4 historischen Einzelfelder (`doc_*_url`) in „Anlässe & Umfragen“ wurden entkoppelt.
+  - Alle Berichte und Dokumente werden als Single Source of Truth über `public.campaign_attachments` im Modul Generalversammlung geführt und vom Master-Assembler gestempelt.
+
+### 11.2 Konsolidierung: Anmeldungen, Präsenzkontrolle & Gastronomie-Bestellung (Oktober 2026)
+- **Zentraler Reiter 5 `[ 👥 Anmeldungen & Präsenz ]`:**
+  - Live-Verknüpfung mit `public.poll_events` (über `linked_event_id` in `gv_instances`).
+  - Teilnehmer-Cockpit mit Echtzeit-Status: Zusagen, Absagen, Offen (Nicht-Reagiert), Essen (Fleisch / Vegi).
+  - Vor-Ort-Präsenzkontrolle: 1-Klick-Toggle (`gvDossierToggleAnwesend`) zur Erfassung der tatsächlichen Anwesenheit am GV-Abend in `public.gv_praesenz` mit automatischer Berechnung des absoluten Mehrs (Stimmquorum).
+  - Manuelle Nachmeldung / Mutation via Modal (`gvDossierOpenRSVPModal`) direkt in `public.poll_responses`.
+- **Ansicht `[ 🍽️ Gastronomie & Wirt ]`:**
+  - Druck- und versandfertige Menü-Bestellung für den Schützenstuben-Wirt (Gesamtzahl Essen, Aufteilung Fleisch vs. Vegi, Gästeliste mit Sonderwünschen / Allergien).
+  - 1-Klick-Aktion «In Zwischenablage kopieren» für den unkomplizierten Versand per E-Mail oder WhatsApp an das Gastroteam.
+- **Automatische Verknüpfung über das Schlüsselwort «Generalversammlung»:**
+  - Beim Erstellen oder Auswählen einer GV verknüpft das System automatisch den passenden Umfrage-Event des gleichen Jahres, wenn der Titel das Wort **«Generalversammlung»** enthält (Case-Insensitive).
+  - Ein dezenter Hinweisbanner im Dashboard erinnert den Benutzer an diese Schreibweise.
+
+### 11.3 Harmonisierung Traktanden, SaveButtonKit, Präsenzliste & Mail-Verteiler (Oktober 2026)
+- **SortableJS Drag & Drop für Traktanden & Beilagen:**
+  - Haupttraktanden (`.gv-main-drag-handle`) und Unterpunkte (`.gv-sub-drag-handle`) sowie Dossier-Beilagen können intuitiv per Drag & Drop verschoben werden. Die Sortierreihenfolge (`sort_order`) wird direkt in Supabase persistiert.
+  - Wahljahr-Toggle (`gvDossierToggleWahljahr`) injiziert oder entfernt dynamisch das Traktandum «Wahlen» samt den 4 statutarischen Unterpunkten (Vorstand, Präsident, Revisoren, Fähnrich).
+  - Vorjahres-Übernahme (`gvDossierCopyPreviousYearTraktanden`) kopiert auf Knopfdruck alle Traktanden des Vorjahres inklusive Unterstrukturen.
+- **Globaler SaveButtonKit Dirty Tracker:**
+  - Stammdaten-Änderungen werden mit `SaveButtonKit` synchronisiert. Der Speichern-Button ist sowohl im Modul-Header (`btn-save-gv-global`) als auch im Stammdaten-Tab (`btn-save-gv-stammdaten`) aktiv und zeigt die Anzahl ungespeicherter Änderungen (`Speichern (N)`).
+  - Die Entwurfsdaten (`state.gvDraft`) bleiben beim Wechsel zwischen den Tabs vollständig erhalten.
+- **Druckfertige Präsenzliste DIN A4 (`generate-gv-praesenzliste`):**
+  - Edge Function generiert ein druckfertiges DIN A4 PDF mit Quorum-Box (Anwesende Stimmberechtigte / Absolutes Mehr), Stimmberechtigten-Tabelle (`Nr.`, `✔`, `Nachname`, `Vorname`, `Unterschrift`) und 15 Leerzeilen für spontane Nachmeldungen.
+- **Dynamische E-Mail-Verteiler (`public.system_mail_configs`):**
+  - Versand der druckfertigen Präsenzliste an den Aktuar via Schlüssel `Info_Mail_Aktuar`.
+  - Versand des aktuellen Zwischenstands der Anmeldungen an den Vorstand via Schlüssel `Info_Mail_Vorstand` (inkl. Quote, Zusagen/Absagen-Listen und Menü-Zusammenfassung).
+  - Beide Verteiler unterstützen Semikolon-getrennte Mehrfachempfänger und werden vollautomatisch über die Mail-Engine versendet.
+
+### 11.4 Vollständige Vorlagen-Konsolidierung & Outlook-Kompatibilität (Oktober 2026)
+- **RFC 2047 MIME-Header-Phrase-Encoding (`send-email/index.ts`):**
+  - Implementierung von `encodeHeaderPhrase()` in der Deno Edge Function `send-email`.
+  - Display-Namen in `From:`, `To:` und `Cc:` mit Nicht-ASCII-Zeichen (wie z. B. `Sportschützen Muhen`) werden standardkonform nach RFC 2047 Base64-enkodiert (`=?UTF-8?B?...?=`).
+  - Verhindert die fehlerhafte Dekodierung durch Microsoft Outlook Desktop als Latin-1 / ANSI (`SportschÃ¼tzen Muhen`).
+- **MSO / Word-Engine konforme Tabellen-Architektur:**
+  - In allen System- und Vermietungs-Mails (`vermietung-manager.js`, `schuetzenhaus_vermietung.html`, `templates-ui.js`) wurde die HTML-Struktur auf ein 100 % Outlook-kompatibles verschachteltes Tabellen-Layout umgestellt.
+  - Der Mail-Body ist in einer Tabellenzelle `<td style="padding:26px 25px 22px 25px;">` gekapselt, wodurch das bekannte MSO-Problem (Kollabieren von DIV-Margins/Paddings direkt unterhalb von Headern) behoben ist. Die Anrede ("Guten Tag ...") schliesst nun in allen Clients mit sauberem 26px Weissraum an das Header-Banner an.
+- **Konsolidierung externer Mails in `public.document_templates` (Single Source of Truth):**
+  - Vollständige Eliminierung von Hardcoded-E-Mail-Texten im Quellcode. Alle Fachmodule beziehen ihre Vorlagen zentral aus `document_templates`:
+    - `tm_aufgebot` (Team Manager): Dynamische Wettkampf- und PDF-Listen (`{wettkaempfe}`, `{wettkaempfe_liste}`, `{pdf_liste}`, `{absender_name}`).
+    - `gruppenanmeldung` (Umfragen/Events): Anmeldeschreiben an externe Veranstalter mit generierten Gruppentabellen (`{anlass}`, `{gruppen_tabellen}`, `{absender_name}`).
+    - `jm_standblatt_eingereicht` (Web-App Standblatt-Upload): Eingangsbestätigung an Schützen bei mobilem Upload mit Detailtabelle und Beleg-Link.
+    - `jm_standblatt_freigegeben` (Schützenmeister Inbox): Freigabe-Benachrichtigung mit Leistungsberechnung (`{punkte}`, `{max_punkte}`, `{prozent}`).
+  - **Harmonisierung der Signaturen:**
+    - In allen Vorlagen (`vm_anfrage`, `vm_vertrag`, `vm_storno`, `vm_storno_verzug` etc.) steht `Sportschützen Muhen` einheitlich in Zeile 1 über der Ansprechperson (`{vermieter_name}`).
+  - **Vorlagen-Cockpit:**
+    - `templates-ui.js` stellt für die neuen Vorlagen dynamische Platzhalter-Chips und eine 1:1 Live-Vorschau mit offiziellem Logo-Banner und Corporate Footer bereit.
+
+### 11.5 Produktiv-Umstellung SMTP-Versand auf Infomaniak (`info@sportschuetzen-muhen.ch`, November 2026)
+- **Zentrale Absender-Invariante (`send-email/index.ts`):** Sämtliche ausgehenden Vereins- und System-E-Mails werden über Infomaniak (`mail.infomaniak.com:465`, TLS) mit festem `From` und `MAIL FROM` auf `info@sportschuetzen-muhen.ch` versendet, um die aktive `DMARC p=reject`-Policy einzuhalten und Relay-Ablehnungen durch fremde Vorstands-Domains zu verhindern.
+- **Antwort-Adresse (`Reply-To`):** Ohne explizites `payload.replyTo` (wie beim Website-Kontaktformular) setzt `send-email` automatisch `Reply-To: <info@sportschuetzen-muhen.ch>`.
+- **Automatische Ablage im Ordner `Sent` (IMAP `APPEND`):** Da Infomaniak via SMTP verschickte Nachrichten nicht automatisch im Postfach-Ordner `Sent` ablegt, schreibt `send-email` nach erfolgreichem SMTP-Versand eine Kopie (inkl. Anhängen und `\Seen`-Flag) über TLS-IMAP (`mail.infomaniak.com:993`) direkt in `Sent` und protokolliert den Status in `mail_logs.metadata.sent_folder_saved`.
+- **Verifizierte Anhang-Freigabe für öffentliche Buchungen:** Anonyme Aufrufe des öffentlichen Vermietungsformulars dürfen ausschliesslich den exakt in `rental_requests.contract_storage_path` (bzw. `contract_file_url`) zur jeweiligen Buchung hinterlegten Vertrag aus `operatives-storage` anhängen; beliebige Storage-Pfade bleiben gesperrt.
+- **Bank-Mail-Ingest & Kalender:** Der automatische Bank-Mail-Eingang (`process-bank-mails`) liest direkt per TLS-IMAP (Port 993) das Infomaniak-Postfach `info@sportschuetzen-muhen.ch` (`0 2,3,4,13 * * *` UTC). Die Google-Kalender-Synchronisation (`sync-calendar`) verbleibt auf `sportschuetzen.muhen@gmail.com`.

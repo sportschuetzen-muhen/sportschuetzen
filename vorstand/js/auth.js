@@ -1,0 +1,1133 @@
+// === KONFIGURATION ===
+const WORKER_URL = "https://v1-vorstand-api.dan-hunziker73.workers.dev/"; 
+
+// === STATE ===
+// Wir verwenden window.* um sicherzustellen, dass diese Variablen global für alle Skripte verfügbar sind
+window.currentUser = localStorage.getItem('portal_user') || null;
+window.currentRoles = localStorage.getItem('portal_roles') ? localStorage.getItem('portal_roles').split(',') : [];
+window.userRole = localStorage.getItem('portal_role') || (window.currentRoles[0] || 'gast');
+window.currentRole = window.userRole; 
+window.csrfToken = null;
+
+console.log("🔐 Auth-State geladen:", { user: window.currentUser, roles: window.currentRoles });
+
+// Worker-Version abfragen und zur Diagnose im Entwicklerfenster loggen
+(async function checkWorkerVersion() {
+    try {
+        const res = await fetch(WORKER_URL + "?action=version");
+        if (res.ok) {
+            const data = await res.json();
+            console.log(`📡 Aktive Worker-Version auf Cloudflare: %c${data.version}`, "color: #198754; font-weight: bold;");
+        } else {
+            console.warn("⚠️ Worker-Versionscheck fehlgeschlagen (HTTP Status " + res.status + ")");
+        }
+    } catch (e) {
+        console.warn("⚠️ Fehler beim Abfragen der Worker-Version (Netzwerkfehler/CORS):", e.message);
+    }
+})();
+
+// =========================================================
+//  SECURITY: Passwort-Hashing (SHA-256)
+// =========================================================
+async function hashPassword(password) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// =========================================================
+//  SECURITY: CSRF-Token
+// =========================================================
+function generateCsrfToken() {
+    const array = new Uint8Array(32);
+    crypto.getRandomValues(array);
+    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function getCsrfToken() {
+    if (!csrfToken) {
+        csrfToken = sessionStorage.getItem('csrf_token');
+        if (!csrfToken) {
+            csrfToken = generateCsrfToken();
+            sessionStorage.setItem('csrf_token', csrfToken);
+        }
+    }
+    return csrfToken;
+}
+
+async function getPortalAccessToken() {
+    try {
+        const supa = (typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null)
+            || window.supabaseClient
+            || window.sbClient;
+        if (supa && supa.auth && typeof supa.auth.getSession === 'function') {
+            const { data } = await supa.auth.getSession();
+            if (data && data.session && data.session.access_token) {
+                return data.session.access_token;
+            }
+        }
+    } catch (_) {}
+    try {
+        const raw = localStorage.getItem('sb-supabase-muhen-auth-token');
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            return parsed?.access_token || parsed?.currentSession?.access_token || '';
+        }
+    } catch (_) {}
+    return '';
+}
+window.getPortalAccessToken = getPortalAccessToken;
+
+// =========================================================
+//  API HELPER (mit Supabase JWT & CSRF-Schutz)
+// =========================================================
+async function apiFetch(module, paramsOrObj, options) {
+    const csrf = getCsrfToken();
+    const role = userRole || localStorage.getItem('portal_role') || '';
+    const accessToken = await getPortalAccessToken();
+
+    // Standard-Methode bestimmen
+    let method = 'GET';
+    if (typeof options === 'string') {
+        method = options.toUpperCase();
+    } else if (options && options.method) {
+        method = options.method.toUpperCase();
+    }
+
+    const headers = {
+        'X-CSRF-Token': csrf,
+        'X-User-Role': role,
+        'Content-Type': 'application/json'
+    };
+    if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+
+    let url;
+    let fetchOptions = { method: method, headers: headers };
+
+    const qs = (typeof paramsOrObj === 'string') ? paramsOrObj : new URLSearchParams(paramsOrObj || {}).toString();
+
+    if (method === 'POST') {
+        let bodyContent = "";
+        const actionParam = (paramsOrObj && typeof paramsOrObj === 'object' && paramsOrObj.action) ? `&action=${encodeURIComponent(paramsOrObj.action)}` : '';
+        if (options && typeof options === 'object' && options.body) {
+            // Wenn body explizit übergeben wird, hängen wir qs an die URL an
+            url = WORKER_URL + "?module=" + module + actionParam + (qs ? "&" + qs : "");
+            bodyContent = options.body;
+        } else {
+            // Ansonsten ist paramsOrObj der Body; action bleibt zur Sicherheit in der URL
+            url = WORKER_URL + "?module=" + module + actionParam;
+            bodyContent = (typeof paramsOrObj === 'object') ? JSON.stringify(paramsOrObj) : String(paramsOrObj || '');
+        }
+        fetchOptions.body = bodyContent;
+    } else {
+        url = WORKER_URL + "?module=" + module + (qs ? "&" + qs : "");
+    }
+
+    console.log('📡 apiFetch:', method, url);
+    return fetch(url, fetchOptions);
+}
+
+// =========================================================
+//  LOGIN UI HELPER
+// =========================================================
+function toggleLoginPasswordVisibility() {
+    const pw = document.getElementById('login-pw');
+    const icon = document.getElementById('login-pw-toggle-icon');
+    if (!pw) return;
+    if (pw.type === 'password') {
+        pw.type = 'text';
+        if (icon) {
+            icon.classList.remove('fa-eye');
+            icon.classList.add('fa-eye-slash');
+        }
+    } else {
+        pw.type = 'password';
+        if (icon) {
+            icon.classList.remove('fa-eye-slash');
+            icon.classList.add('fa-eye');
+        }
+    }
+}
+
+function setLoginError(msg) {
+    const errDiv = document.getElementById('login-error');
+    const errText = document.getElementById('login-error-text');
+    if (errText) errText.textContent = msg;
+    else if (errDiv) errDiv.textContent = msg;
+    if (errDiv) errDiv.classList.remove('d-none');
+}
+
+function togglePasswordVisibility(inputId, iconId) {
+    const inp = document.getElementById(inputId);
+    const icon = document.getElementById(iconId);
+    if (!inp) return;
+    if (inp.type === 'password') {
+        inp.type = 'text';
+        if (icon) {
+            icon.classList.remove('fa-eye');
+            icon.classList.add('fa-eye-slash');
+        }
+    } else {
+        inp.type = 'password';
+        if (icon) {
+            icon.classList.remove('fa-eye-slash');
+            icon.classList.add('fa-eye');
+        }
+    }
+}
+
+// =========================================================
+//  AUTHENTICATED STATE HELPER
+// =========================================================
+async function applyAuthenticatedUser(authUser, loginIdentifier, profData, resolvedData) {
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    const targetEmail = authUser.email;
+
+    // Rollen ermitteln (JWT app_metadata oder user_roles Tabelle)
+    let roles = (authUser.app_metadata && Array.isArray(authUser.app_metadata.roles)) ? authUser.app_metadata.roles : [];
+    if (roles.length === 0 && supa) {
+        try {
+            const { data: rData } = await supa.from('user_roles').select('role').eq('user_id', authUser.id);
+            if (rData && rData.length > 0) roles = rData.map(x => x.role);
+        } catch (rErr) {
+            console.warn("Konnte user_roles nicht abfragen:", rErr);
+        }
+    }
+
+    let prof = profData;
+    if (!prof && supa) {
+        try {
+            const { data: pList } = await supa.from('admin_profiles')
+                .select('*')
+                .or(`auth_user_id.eq.${authUser.id},email.eq.${targetEmail}`);
+            if (pList && pList.length > 0) {
+                if (loginIdentifier) {
+                    prof = pList.find(x => x.username && x.username.toLowerCase() === loginIdentifier.toLowerCase())
+                        || pList.find(x => x.auth_user_id === authUser.id)
+                        || pList[0];
+                } else {
+                    prof = pList.find(x => x.auth_user_id === authUser.id) || pList[0];
+                }
+            }
+        } catch (profErr) {
+            console.warn("admin_profiles Suche fehlgeschlagen:", profErr);
+        }
+    }
+
+    // Falls auth_user_id im Profil noch fehlt: verknüpfen
+    if (prof && prof.id && !prof.auth_user_id && authUser.id && supa) {
+        supa.from('admin_profiles').update({ auth_user_id: authUser.id }).eq('id', prof.id).then();
+    }
+
+    // =========================================================
+    //  STRIKTER VORSTAND-GATEKEEPER (SSO-Absicherung)
+    // =========================================================
+    const BOARD_ROLES = ['admin', 'vorstand', 'kassier', 'aktuar', 'schuetzenmeister', 'jungschuetzenleiter', 'vermieter', 'materialwart'];
+    
+    // Rollen zusammenführen aus JWT, user_roles UND admin_profiles.role_external
+    const combinedRoles = [...roles];
+    if (prof && prof.role_external) {
+        const extList = prof.role_external.split(',').map(r => r.trim().toLowerCase());
+        extList.forEach(r => {
+            if (!combinedRoles.map(x => String(x).toLowerCase()).includes(r)) {
+                combinedRoles.push(r);
+            }
+        });
+    }
+    if (prof && prof.username === 'admin' && !combinedRoles.map(x => String(x).toLowerCase()).includes('admin')) {
+        combinedRoles.push('admin');
+    }
+
+    const userRoleList = combinedRoles.map(r => String(r).trim().toLowerCase());
+    const hasBoardRole = userRoleList.some(r => BOARD_ROLES.includes(r));
+    const hasActiveAdminProfile = Boolean(prof && prof.id && prof.is_active !== false);
+
+    if (!hasBoardRole && !hasActiveAdminProfile) {
+        console.warn("⛔ ZUGRIFF VERWEIGERT: Benutzer ist reguläres Vereinsmitglied ohne Vorstandsfunktion.", { email: targetEmail, roles });
+        
+        // Vorstands-Storage bereinigen
+        localStorage.removeItem('portal_user');
+        localStorage.removeItem('portal_role');
+        localStorage.removeItem('portal_roles');
+        localStorage.removeItem('portal_login_id');
+        localStorage.removeItem('portal_personnumber');
+        localStorage.removeItem('portal_mailadresse');
+        localStorage.removeItem('portal_mailanzeige');
+        localStorage.removeItem('portal_rolle_extern');
+        sessionStorage.removeItem('portal_session_id');
+
+        const errDiv = document.getElementById('login-error');
+        const alertMsg = "Zugriff verweigert: Dieses Konto besitzt keine Berechtigung für das Vorstandsportal. Bitte melde dich in der Schützen-App an.";
+        if (errDiv) {
+            errDiv.textContent = alertMsg;
+            errDiv.classList.remove('d-none');
+            errDiv.style.display = 'block';
+        }
+        if (typeof showError === 'function') showError(alertMsg);
+
+        // Nach 2 Sekunden Weiterleitung zur Mitglieder-App
+        setTimeout(() => {
+            const basePath = window.location.pathname.includes('/vorstand/')
+                ? window.location.pathname.replace(/\/vorstand\/?.*$/, '/')
+                : '/';
+            window.location.href = window.location.origin + basePath;
+        }, 2200);
+        return;
+    }
+
+    window.currentUser = (prof && prof.display_name) || (resolvedData && resolvedData.name) || authUser.email.split('@')[0];
+    
+    // Gültige Vorstandsrollen filtern
+    let validBoardRoles = userRoleList.filter(r => BOARD_ROLES.includes(r));
+    if (validBoardRoles.length === 0) validBoardRoles = ['vorstand'];
+
+    // Priorisierung: 'admin' immer an erster Stelle, gefolgt von Fachrollen ('kassier', 'aktuar', etc.), zuletzt 'vorstand'
+    validBoardRoles.sort((a, b) => {
+        if (a === 'admin') return -1;
+        if (b === 'admin') return 1;
+        if (a === 'vorstand') return 1;
+        if (b === 'vorstand') return -1;
+        return a.localeCompare(b);
+    });
+
+    window.currentRoles = validBoardRoles;
+    window.userRole = window.currentRoles[0] || 'vorstand';
+    window.currentRole = window.userRole;
+
+    if (window.AppState) {
+        AppState.set('currentUser', window.currentUser);
+        AppState.set('currentRoles', window.currentRoles);
+        AppState.set('userRole', window.userRole);
+    }
+
+    localStorage.setItem('portal_user', window.currentUser);
+    localStorage.setItem('portal_role', window.userRole);
+    localStorage.setItem('portal_roles', window.currentRoles.join(','));
+    localStorage.setItem('portal_login_id', loginIdentifier || targetEmail);
+    localStorage.setItem('portal_mailadresse', targetEmail);
+    localStorage.setItem('portal_mailanzeige', targetEmail);
+    localStorage.setItem('portal_personnumber', (prof && prof.person_number) || (resolvedData && resolvedData.person_number) || '');
+    localStorage.setItem('portal_rolle_extern', (prof && prof.role_external) || '');
+    localStorage.setItem('portal_strasse', (prof && prof.street) || '');
+    localStorage.setItem('portal_plz', (prof && prof.zip) || '');
+    localStorage.setItem('portal_ort', (prof && prof.city) || '');
+    localStorage.setItem('portal_telefon', (prof && prof.phone) || '');
+
+    // Letzten Login aktualisieren
+    if (prof && prof.id && supa) {
+        supa.from('admin_profiles').update({ last_login_at: new Date().toISOString() }).eq('id', prof.id).then();
+    }
+
+    if (typeof showApp === 'function') showApp();
+    if (typeof pingPresence === 'function') pingPresence();
+}
+
+// =========================================================
+//  MODALS & PASSWORT-RESET / MAGIC-LINK
+// =========================================================
+function openForgotPasswordModal() {
+    const alertDiv = document.getElementById('forgot-pw-alert');
+    if (alertDiv) alertDiv.classList.add('d-none');
+    const existingVal = (document.getElementById('login-user')?.value || '').trim();
+    const input = document.getElementById('forgot-pw-input');
+    if (input && existingVal) input.value = existingVal;
+
+    const modalEl = document.getElementById('forgot-password-modal');
+    if (modalEl) {
+        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+            const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+            modal.show();
+        } else {
+            modalEl.classList.add('show');
+            modalEl.style.display = 'block';
+        }
+        setTimeout(() => input?.focus(), 300);
+    }
+}
+window.openForgotPasswordModal = openForgotPasswordModal;
+
+function openMagicLinkModal() {
+    const alertDiv = document.getElementById('magic-link-alert');
+    if (alertDiv) alertDiv.classList.add('d-none');
+    const existingVal = (document.getElementById('login-user')?.value || '').trim();
+    const input = document.getElementById('magic-link-input');
+    if (input && existingVal) input.value = existingVal;
+
+    const modalEl = document.getElementById('magic-link-modal');
+    if (modalEl) {
+        const cancelBtn = document.getElementById('btn-magic-link-cancel');
+        if (cancelBtn) {
+            cancelBtn.textContent = 'Abbrechen';
+            cancelBtn.className = 'btn btn-light py-2 text-muted small';
+        }
+        const submitBtn = document.getElementById('btn-magic-link-submit');
+        if (submitBtn) {
+            submitBtn.classList.remove('d-none');
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-magic me-1"></i> Anmelde-Link senden';
+        }
+
+        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+            const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+            modal.show();
+        } else {
+            modalEl.classList.add('show');
+            modalEl.style.display = 'block';
+        }
+        setTimeout(() => input?.focus(), 300);
+    }
+}
+window.openMagicLinkModal = openMagicLinkModal;
+
+function openRecoveryPasswordModal() {
+    const alertDiv = document.getElementById('recovery-alert');
+    if (alertDiv) alertDiv.classList.add('d-none');
+    const modalEl = document.getElementById('recovery-password-modal');
+    if (modalEl) {
+        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+            const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+            modal.show();
+        } else {
+            modalEl.classList.add('show');
+            modalEl.style.display = 'block';
+        }
+    }
+}
+window.openRecoveryPasswordModal = openRecoveryPasswordModal;
+
+async function submitForgotPassword(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const inputVal = (document.getElementById('forgot-pw-input')?.value || '').trim();
+    const btn = document.getElementById('btn-forgot-pw-submit');
+    const alertDiv = document.getElementById('forgot-pw-alert');
+
+    if (!inputVal) {
+        if (alertDiv) {
+            alertDiv.className = 'alert alert-danger py-2 px-3 small mb-3';
+            alertDiv.textContent = 'Bitte Benutzername oder E-Mail eingeben.';
+            alertDiv.classList.remove('d-none');
+        }
+        return;
+    }
+
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    if (!supa || !supa.auth) {
+        showError("Supabase Auth ist nicht verfügbar.");
+        return;
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Prüfe & sende...';
+    }
+
+    try {
+        let targetEmail = null;
+
+        // 1. Zuerst via RPC auflösen (Username / SSV-Nummer / Mail)
+        try {
+            const { data: res } = await supa.rpc('resolve_login_identifier', { p_identifier: inputVal });
+            if (res && res.success && res.type === 'admin' && res.email) {
+                targetEmail = res.email;
+            }
+        } catch (rpcEx) {
+            console.warn("Identifier resolution failed:", rpcEx);
+        }
+
+        // 2. Falls noch nicht gefunden und Eingabe eine E-Mail ist: strikt in admin_profiles prüfen
+        if (!targetEmail && inputVal.includes('@')) {
+            const { data: apList } = await supa.from('admin_profiles')
+                .select('email')
+                .ilike('email', inputVal.trim())
+                .limit(1);
+            if (apList && apList.length > 0) {
+                targetEmail = apList[0].email;
+            }
+        }
+
+        if (!targetEmail) {
+            throw new Error(`Keine hinterlegte Vorstands-E-Mail-Adresse für «${inputVal}» gefunden. Bitte die für das Vorstandsportal registrierte Adresse eingeben.`);
+        }
+
+        const basePath = window.location.pathname.includes('/vorstand')
+            ? window.location.pathname.replace(/\/vorstand\/?.*$/, '/vorstand/index.html')
+            : '/vorstand/index.html';
+        const redirectUrl = window.location.origin + basePath + '?portal=vorstand';
+        const { error: resetErr } = await supa.auth.resetPasswordForEmail(targetEmail, {
+            redirectTo: redirectUrl
+        });
+
+        if (resetErr) throw resetErr;
+
+        // Audit-Log in public.mail_logs via SECURITY DEFINER RPC (Single Source of Truth / Postausgang)
+        try {
+            await supa.rpc('log_auth_mail_event', {
+                p_event_type: 'pwd_reset',
+                p_recipient_email: targetEmail,
+                p_recipient_name: inputVal,
+                p_record_id: 'pwd_reset_' + Date.now()
+            });
+        } catch (logErr) {
+            console.warn("Konnte mail_logs nicht aktualisieren:", logErr);
+        }
+
+        if (alertDiv) {
+            alertDiv.className = 'alert alert-success py-2.5 px-3 small mb-3';
+            alertDiv.innerHTML = `<i class="fas fa-check-circle me-1"></i> Ein Reset-Link wurde erfolgreich an <strong>${escapeHtml(targetEmail)}</strong> gesendet!<br><span class="mt-1 d-block">Bitte prüfe deinen Posteingang sowie den <strong>Spam-/Junk-Ordner</strong>.</span><small class="text-muted d-block mt-1"><i class="fas fa-paper-plane me-1"></i>Vorgang im System-Postausgang (Mail-Log) erfasst.</small>`;
+            alertDiv.classList.remove('d-none');
+        }
+        if (btn) btn.classList.add('d-none');
+    } catch (err) {
+        console.error("Fehler bei submitForgotPassword:", err);
+        let msg = err.message || 'Fehler beim Versenden des Links.';
+        if (msg.includes('Error sending confirmation email') || msg.includes('unexpected_failure')) {
+            msg = 'Der E-Mail-Dienst (GoTrue SMTP) auf der Supabase-Instanz konnte die Nachricht nicht versenden. Bitte mit Benutzername und Passwort anmelden oder den Server-Admin bezüglich SMTP kontaktieren.';
+        } else if (msg.includes('over_email_send_rate_limit')) {
+            msg = 'Aus Sicherheitsgründen kann nur eine Anfrage pro Minute gesendet werden. Bitte warte kurz vor einem erneuten Versuch.';
+        }
+        if (alertDiv) {
+            alertDiv.className = 'alert alert-danger py-2 px-3 small mb-3';
+            alertDiv.textContent = msg;
+            alertDiv.classList.remove('d-none');
+        }
+    } finally {
+        if (btn && !alertDiv?.classList.contains('alert-success')) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-paper-plane me-1"></i> Reset-Link anfordern';
+        }
+    }
+}
+
+async function submitMagicLink(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const inputVal = (document.getElementById('magic-link-input')?.value || '').trim();
+    const btn = document.getElementById('btn-magic-link-submit');
+    const alertDiv = document.getElementById('magic-link-alert');
+
+    if (!inputVal) {
+        if (alertDiv) {
+            alertDiv.className = 'alert alert-danger py-2 px-3 small mb-3';
+            alertDiv.textContent = 'Bitte Benutzername oder E-Mail eingeben.';
+            alertDiv.classList.remove('d-none');
+        }
+        return;
+    }
+
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    if (!supa || !supa.auth) {
+        showError("Supabase Auth ist nicht verfügbar.");
+        return;
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Sende Anmelde-Link...';
+    }
+
+    try {
+        let targetEmail = null;
+
+        // 1. Zuerst via RPC auflösen (Username / SSV-Nummer / Mail)
+        try {
+            const { data: res } = await supa.rpc('resolve_login_identifier', { p_identifier: inputVal });
+            if (res && res.success) {
+                if (res.type === 'admin' && res.email) {
+                    targetEmail = res.email;
+                } else if (res.type === 'member') {
+                    throw new Error(`«${res.name || inputVal}» ist als Vereinsmitglied registriert. Das Vorstandsportal ist ausschliesslich dem Vorstand vorbehalten. Bitte nutze die Schützen-App.`);
+                }
+            }
+        } catch (rpcEx) {
+            if (rpcEx.message && rpcEx.message.includes('Vereinsmitglied')) {
+                throw rpcEx;
+            }
+            console.warn("Identifier resolution failed:", rpcEx);
+        }
+
+        // 2. Falls noch nicht gefunden und Eingabe eine E-Mail ist: strikt in admin_profiles prüfen
+        if (!targetEmail && inputVal.includes('@')) {
+            const { data: apList } = await supa.from('admin_profiles')
+                .select('email')
+                .ilike('email', inputVal.trim())
+                .limit(1);
+            if (apList && apList.length > 0) {
+                targetEmail = apList[0].email;
+            }
+        }
+
+        if (!targetEmail) {
+            throw new Error(`Keine hinterlegte Vorstands-E-Mail-Adresse für «${inputVal}» gefunden. Bitte die für das Vorstandsportal registrierte Adresse eingeben.`);
+        }
+
+        const basePath = window.location.pathname.includes('/vorstand')
+            ? window.location.pathname.replace(/\/vorstand\/?.*$/, '/vorstand/index.html')
+            : '/vorstand/index.html';
+        const redirectUrl = window.location.origin + basePath + '?portal=vorstand';
+        const { error: otpErr } = await supa.auth.signInWithOtp({
+            email: targetEmail,
+            options: {
+                emailRedirectTo: redirectUrl,
+                shouldCreateUser: false
+            }
+        });
+
+        if (otpErr) throw otpErr;
+
+        // Audit-Log in public.mail_logs via SECURITY DEFINER RPC (Single Source of Truth / Postausgang)
+        try {
+            await supa.rpc('log_auth_mail_event', {
+                p_event_type: 'magic_link',
+                p_recipient_email: targetEmail,
+                p_recipient_name: inputVal,
+                p_record_id: 'magic_link_' + Date.now()
+            });
+        } catch (logErr) {
+            console.warn("Konnte mail_logs nicht aktualisieren:", logErr);
+        }
+
+        if (alertDiv) {
+            alertDiv.className = 'alert alert-success py-2.5 px-3 small mb-3';
+            alertDiv.innerHTML = `<i class="fas fa-check-circle me-1"></i> Der Anmelde-Link wurde an <strong>${escapeHtml(targetEmail)}</strong> gesendet!<br><span class="mt-1 d-block">Klicke in der E-Mail auf den Link, um dich sofort anzumelden (bitte auch <strong>Spam-/Junk-Ordner</strong> prüfen).</span><small class="text-muted d-block mt-1"><i class="fas fa-paper-plane me-1"></i>Vorgang im System-Postausgang (Mail-Log) erfasst.</small>`;
+            alertDiv.classList.remove('d-none');
+        }
+        if (btn) btn.classList.add('d-none');
+        const cancelBtn = document.getElementById('btn-magic-link-cancel');
+        if (cancelBtn) {
+            cancelBtn.textContent = 'OK';
+            cancelBtn.className = 'btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm';
+        }
+    } catch (err) {
+        console.error("Fehler bei submitMagicLink:", err);
+        let msg = err.message || 'Fehler beim Versenden des Anmelde-Links.';
+        if (msg.includes('Error sending confirmation email') || msg.includes('unexpected_failure')) {
+            msg = 'Der E-Mail-Dienst (GoTrue SMTP) auf der Supabase-Instanz konnte die Nachricht nicht versenden. Bitte mit Benutzername und Passwort anmelden oder den Server-Admin bezüglich SMTP kontaktieren.';
+        } else if (msg.includes('Signups not allowed for otp') || msg.includes('otp_disabled')) {
+            msg = 'Für diese Vorstands-E-Mail existiert noch kein aktives Supabase-Auth-Konto. Bitte zuerst mit Benutzername und Passwort anmelden.';
+        } else if (msg.includes('over_email_send_rate_limit')) {
+            msg = 'Aus Sicherheitsgründen kann nur eine Anfrage pro Minute gesendet werden. Bitte warte kurz vor einem erneuten Versuch.';
+        }
+        if (alertDiv) {
+            alertDiv.className = 'alert alert-danger py-2 px-3 small mb-3';
+            alertDiv.textContent = msg;
+            alertDiv.classList.remove('d-none');
+        }
+    } finally {
+        if (btn && !alertDiv?.classList.contains('alert-success')) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-magic me-1"></i> Anmelde-Link senden';
+        }
+    }
+}
+
+async function submitRecoveryPassword(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const newPw = (document.getElementById('recovery-new-pw')?.value || '').trim();
+    const confirmPw = (document.getElementById('recovery-confirm-pw')?.value || '').trim();
+    const btn = document.getElementById('btn-recovery-submit');
+    const alertDiv = document.getElementById('recovery-alert');
+
+    if (newPw.length < 6) {
+        if (alertDiv) {
+            alertDiv.className = 'alert alert-danger py-2 px-3 small mb-3';
+            alertDiv.textContent = 'Das Passwort muss mindestens 6 Zeichen lang sein.';
+            alertDiv.classList.remove('d-none');
+        }
+        return;
+    }
+
+    if (newPw !== confirmPw) {
+        if (alertDiv) {
+            alertDiv.className = 'alert alert-danger py-2 px-3 small mb-3';
+            alertDiv.textContent = 'Die Passwörter stimmen nicht überein.';
+            alertDiv.classList.remove('d-none');
+        }
+        return;
+    }
+
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    if (!supa || !supa.auth) {
+        showError("Supabase Auth nicht verfügbar.");
+        return;
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Speichere neues Passwort...';
+    }
+
+    try {
+        const { data: updateData, error: updateErr } = await supa.auth.updateUser({
+            password: newPw
+        });
+
+        if (updateErr) throw updateErr;
+
+        if (alertDiv) {
+            alertDiv.className = 'alert alert-success py-2 px-3 small mb-3';
+            alertDiv.innerHTML = '<i class="fas fa-check-circle me-1"></i> Passwort erfolgreich geändert! Du wirst angemeldet...';
+            alertDiv.classList.remove('d-none');
+        }
+
+        setTimeout(async () => {
+            const modalEl = document.getElementById('recovery-password-modal');
+            if (modalEl) {
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                if (modal) modal.hide();
+            }
+
+            if (updateData && updateData.user) {
+                await applyAuthenticatedUser(updateData.user, updateData.user.email);
+                showSuccess("Willkommen zurück! Passwort wurde erfolgreich aktualisiert.");
+            } else {
+                location.reload();
+            }
+        }, 1200);
+
+    } catch (err) {
+        console.error("Fehler bei submitRecoveryPassword:", err);
+        if (alertDiv) {
+            alertDiv.className = 'alert alert-danger py-2 px-3 small mb-3';
+            alertDiv.textContent = err.message || 'Passwort-Aktualisierung fehlgeschlagen.';
+            alertDiv.classList.remove('d-none');
+        }
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check-circle me-1"></i> Passwort speichern & anmelden';
+        }
+    }
+}
+
+// === LOGIN / LOGOUT (Supabase Native Auth Integration) ===
+let isLoggingIn = false;
+async function doLogin() {
+    if (isLoggingIn) return;
+    const u = (document.getElementById('login-user')?.value || '').trim();
+    const p = (document.getElementById('login-pw')?.value || '').trim();
+    const btn = document.getElementById('btn-login-submit') || document.querySelector('button[onclick="doLogin()"]');
+    const errDiv = document.getElementById('login-error');
+    
+    if (!u || !p) {
+        setLoginError("Bitte Benutzername/E-Mail und Passwort eingeben.");
+        return;
+    }
+    
+    isLoggingIn = true;
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Prüfe Anmeldung...';
+    }
+    if (errDiv) errDiv.classList.add('d-none');
+
+    try {
+        const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+        if (!supa || !supa.auth) {
+            throw new Error("Supabase Auth-Dienst ist momentan nicht erreichbar.");
+        }
+
+        console.log("🔐 Starte Supabase Auth-Check für:", u);
+        let targetEmail = u.includes('@') ? u : null;
+        let resolvedData = null;
+
+        // Identifikator auflösen (Username / SSV-PersonNumber / PIN -> E-Mail)
+        try {
+            const { data: res, error: rpcErr } = await supa.rpc('resolve_login_identifier', { p_identifier: u });
+            if (!rpcErr && res && res.success && res.email) {
+                targetEmail = res.email;
+                resolvedData = res;
+                console.log("✅ Identifikator aufgelöst zu Auth-E-Mail:", targetEmail);
+            }
+        } catch (rpcEx) {
+            console.warn("⚠️ Identifier RPC fehlgeschlagen, versuche Direktanmeldung:", rpcEx.message);
+        }
+
+        if (!targetEmail) {
+            setLoginError("Anmeldung fehlgeschlagen: Benutzername oder E-Mail nicht gefunden.");
+            showError("Benutzername oder E-Mail nicht gefunden.");
+            const userInput = document.getElementById('login-user');
+            if (userInput) {
+                userInput.focus();
+                userInput.select();
+            }
+            return;
+        }
+
+        if (resolvedData && resolvedData.type === 'member') {
+            const memberMsg = `«${resolvedData.name || u}» ist als Vereinsmitglied registriert. Das Vorstandsportal ist ausschliesslich dem Vorstand vorbehalten. Bitte nutze die Schützen-App.`;
+            setLoginError(memberMsg);
+            showError("Keine Berechtigung für das Vorstandsportal.");
+            return;
+        }
+
+        const { data: authData, error: authErr } = await supa.auth.signInWithPassword({
+            email: targetEmail,
+            password: p
+        });
+
+        if (!authErr && authData && authData.user) {
+            console.log("✅ Supabase Auth erfolgreich:", authData.user.email);
+            await applyAuthenticatedUser(authData.user, u, null, resolvedData);
+            showSuccess('Willkommen, ' + window.currentUser + '! (Supabase Auth)');
+        } else {
+            console.warn("ℹ️ Supabase Auth Passwort-Check ergab:", authErr ? authErr.message : "Keine Session");
+            let errorMsg = "Login fehlgeschlagen: Passwort oder Benutzername ungültig.";
+            if (authErr && authErr.message && authErr.message.includes('Email not confirmed')) {
+                errorMsg = "E-Mail-Adresse wurde noch nicht bestätigt. Bitte Posteingang prüfen.";
+            }
+            setLoginError(errorMsg);
+            showError(errorMsg);
+            const pwInput = document.getElementById('login-pw');
+            if (pwInput) {
+                pwInput.value = '';
+                pwInput.focus();
+            }
+        }
+    } catch (e) {
+        console.error("❌ Login-Verbindungsfehler:", e);
+        setLoginError("Verbindungsfehler: " + e.message);
+        showError("Verbindungsfehler: " + e.message);
+    } finally {
+        isLoggingIn = false;
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-sign-in-alt me-1"></i> Anmelden';
+        }
+    }
+}
+
+async function doLogout() {
+    try {
+        const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+        if (supa && supa.auth) {
+            await supa.auth.signOut();
+        }
+    } catch (err) {
+        console.warn("Fehler bei Supabase signOut:", err);
+    }
+    localStorage.removeItem('portal_user');
+    localStorage.removeItem('portal_role');
+    localStorage.removeItem('portal_roles');
+    localStorage.removeItem('portal_login_id');
+    localStorage.removeItem('portal_personnumber');
+    localStorage.removeItem('portal_mailadresse');
+    localStorage.removeItem('portal_mailanzeige');
+    localStorage.removeItem('portal_rolle_extern');
+    localStorage.removeItem('portal_strasse');
+    localStorage.removeItem('portal_plz');
+    localStorage.removeItem('portal_ort');
+    localStorage.removeItem('portal_telefon');
+    sessionStorage.removeItem('csrf_token');
+    sessionStorage.removeItem('portal_session_id');
+    csrfToken = null;
+    currentRoles = [];
+    if (window.Perms) window.Perms.reset();
+    if ('clearAppBadge' in navigator) {
+        try { navigator.clearAppBadge().catch(() => {}); } catch(_) {}
+    }
+    location.reload();
+}
+
+// Supabase Session Auto-Restore & Auth Event Listener
+(async function initSupabaseAuthListener() {
+    try {
+        const setupAuth = async () => {
+            const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+            if (!supa || !supa.auth) return;
+
+            // 1. URL Hash prüfen (z.B. type=recovery, type=signup oder type=invite von Supabase Auth)
+            const hash = window.location.hash || '';
+            if (hash.includes('type=recovery') || hash.includes('type=signup') || hash.includes('type=invite')) {
+                console.log("🔑 Recovery/Signup/Invite-Token im URL-Hash erkannt!");
+                setTimeout(() => openRecoveryPasswordModal(), 300);
+            }
+
+            // 2. Auth State Listener
+            supa.auth.onAuthStateChange(async (event, session) => {
+                console.log("🔔 Supabase Auth Event:", event);
+                if (event === 'PASSWORD_RECOVERY') {
+                    console.log("🔑 PASSWORD_RECOVERY Event ausgelöst!");
+                    openRecoveryPasswordModal();
+                } else if (event === 'SIGNED_IN' && session && session.user) {
+                    console.log("✨ Anmeldung via Auth Event:", session.user.email);
+                    await applyAuthenticatedUser(session.user, localStorage.getItem('portal_login_id') || session.user.email);
+                } else if (event === 'SIGNED_OUT') {
+                    console.log("🚪 Abgemeldet via Supabase Auth");
+                }
+            });
+
+            // 3. Bestehende Session beim Seitenstart prüfen
+            const { data } = await supa.auth.getSession();
+            if (data && data.session && data.session.user) {
+                const user = data.session.user;
+                console.log("🔄 Supabase Session wiederhergestellt für:", user.email);
+                await applyAuthenticatedUser(user, localStorage.getItem('portal_login_id') || user.email);
+            }
+        };
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', setupAuth);
+        } else {
+            setTimeout(setupAuth, 400);
+        }
+    } catch (e) {
+        console.warn("Auth Listener Check fehlgeschlagen:", e);
+    }
+})();
+
+// =========================================================
+//  MEIN PROFIL & ABSENDERDATEN
+// =========================================================
+window.openMyProfileModal = async function() {
+    const modalEl = document.getElementById('my-profile-modal');
+    if (!modalEl) return;
+
+    const alertEl = document.getElementById('mp-alert');
+    if (alertEl) { alertEl.className = 'alert d-none'; alertEl.textContent = ''; }
+
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    let prof = null;
+
+    if (supa) {
+        try {
+            const { data, error } = await supa.rpc('get_my_profile');
+            if (!error && data && data.success && data.profile) {
+                prof = data.profile;
+            }
+        } catch (err) {
+            console.warn("Fehler beim Laden von get_my_profile:", err);
+        }
+    }
+
+    // Fallback auf LocalStorage / bisherige Daten
+    const displayName = prof?.display_name || localStorage.getItem('portal_user') || '';
+    const username = prof?.username || localStorage.getItem('portal_login_id') || 'benutzer';
+    const roleExternal = prof?.role_external || localStorage.getItem('portal_rolle_extern') || '';
+    const personNumber = prof?.person_number || localStorage.getItem('portal_personnumber') || '';
+    const street = prof?.street || localStorage.getItem('portal_strasse') || '';
+    const zip = prof?.zip || localStorage.getItem('portal_plz') || '';
+    const city = prof?.city || localStorage.getItem('portal_ort') || '';
+    const phone = prof?.phone || localStorage.getItem('portal_telefon') || '';
+    const email = prof?.email || localStorage.getItem('portal_mailadresse') || '';
+
+    const badgeUser = document.getElementById('mp-username-badge');
+    if (badgeUser) badgeUser.textContent = `@${username}`;
+
+    const inputName = document.getElementById('mp-display-name');
+    if (inputName) inputName.value = displayName;
+
+    const inputRole = document.getElementById('mp-role-external');
+    if (inputRole) inputRole.value = roleExternal;
+
+    const inputPN = document.getElementById('mp-person-number');
+    if (inputPN) inputPN.value = personNumber;
+
+    const inputStreet = document.getElementById('mp-street');
+    if (inputStreet) inputStreet.value = street;
+
+    const inputZip = document.getElementById('mp-zip');
+    if (inputZip) inputZip.value = zip;
+
+    const inputCity = document.getElementById('mp-city');
+    if (inputCity) inputCity.value = city;
+
+    const inputPhone = document.getElementById('mp-phone');
+    if (inputPhone) inputPhone.value = phone;
+
+    const inputEmail = document.getElementById('mp-email');
+    if (inputEmail) inputEmail.value = email;
+
+    const statusBadge = document.getElementById('mp-member-status-badge');
+    if (statusBadge) {
+        if (personNumber) {
+            statusBadge.className = 'badge bg-success-subtle text-success border border-success-subtle small';
+            statusBadge.innerHTML = `<i class="fas fa-check-circle me-1"></i>Verknüpft (Nr. ${personNumber})`;
+        } else {
+            statusBadge.className = 'badge bg-light text-secondary border small';
+            statusBadge.textContent = 'Nicht verknüpft';
+        }
+    }
+
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+};
+
+window.syncMyProfileFromMember = async function() {
+    const pnInput = document.getElementById('mp-person-number');
+    const pn = pnInput ? pnInput.value.trim() : '';
+    const alertEl = document.getElementById('mp-alert');
+
+    if (!pn) {
+        if (alertEl) {
+            alertEl.className = 'alert alert-warning py-2 px-3 small rounded-3';
+            alertEl.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i>Bitte zuerst eine gültige SSV-Personennummer eingeben.';
+        }
+        return;
+    }
+
+    let member = null;
+    let members = window._mglData || [];
+    if (members.length === 0 && window.AppCache) {
+        const cached = window.AppCache.get('mitglieder');
+        if (cached && Array.isArray(cached.data)) members = cached.data;
+    }
+
+    member = members.find(m => String(m.PersonNumber || m.person_number || '').trim() === pn);
+
+    if (!member) {
+        const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+        if (supa) {
+            try {
+                const { data } = await supa.from('members').select('*').eq('person_number', parseInt(pn, 10)).maybeSingle();
+                if (data) member = data;
+            } catch (_) {}
+        }
+    }
+
+    if (!member) {
+        if (alertEl) {
+            alertEl.className = 'alert alert-danger py-2 px-3 small rounded-3';
+            alertEl.innerHTML = `<i class="fas fa-circle-xmark me-1"></i>Kein Mitglied mit der Personennummer <strong>${escapeHtml(pn)}</strong> in public.members gefunden.`;
+        }
+        return;
+    }
+
+    // Stammdaten übernehmen
+    const fn = member.first_name || member.FirstName || '';
+    const ln = member.last_name || member.LastName || '';
+    const fullName = [fn, ln].filter(Boolean).join(' ');
+    const street = member.street || member.Street || member.Strasse || '';
+    const zip = String(member.post_code || member.PostCode || member.ZipCode || member.PLZ || '');
+    const city = member.city || member.City || member.Ort || '';
+    const phone = member.private_mobile_phone || member.PrivateMobilePhone || member.business_mobile_phone || member.BusinessMobilePhone || '';
+    const email = member.primary_email || member.PrimaryEmail || member.Email || '';
+
+    if (fullName) document.getElementById('mp-display-name').value = fullName;
+    if (street) document.getElementById('mp-street').value = street;
+    if (zip) document.getElementById('mp-zip').value = zip;
+    if (city) document.getElementById('mp-city').value = city;
+    if (phone) document.getElementById('mp-phone').value = phone;
+    if (email && !document.getElementById('mp-email').value) document.getElementById('mp-email').value = email;
+
+    // Funktion ermitteln falls leer
+    const roleInput = document.getElementById('mp-role-external');
+    if (roleInput && !roleInput.value.trim()) {
+        let detFn = '';
+        const fns = window._mglFunktionenCache?.[pn] || [];
+        const activeFns = fns.filter(f => !f.OfficialFunctionExitDate);
+        if (activeFns.length > 0) detFn = activeFns.map(f => f.OfficialFunctionCategory).filter(Boolean).join(', ');
+        if (!detFn && member.OfficialFunctionCategory) detFn = member.OfficialFunctionCategory;
+        if (!detFn && member.Funktion) detFn = member.Funktion;
+        if (detFn) roleInput.value = detFn;
+    }
+
+    const statusBadge = document.getElementById('mp-member-status-badge');
+    if (statusBadge) {
+        statusBadge.className = 'badge bg-success-subtle text-success border border-success-subtle small';
+        statusBadge.innerHTML = `<i class="fas fa-check-circle me-1"></i>Aus Mitgliedsstamm geladen: ${escapeHtml(fullName)}`;
+    }
+
+    if (alertEl) {
+        alertEl.className = 'alert alert-success py-2 px-3 small rounded-3';
+        alertEl.innerHTML = `<i class="fas fa-check-circle me-1"></i>Stammdaten von <strong>${escapeHtml(fullName)}</strong> erfolgreich übernommen. Bitte mit «Profil speichern» bestätigen.`;
+    }
+};
+
+window.saveMyProfile = async function(event) {
+    if (event) event.preventDefault();
+
+    const submitBtn = document.getElementById('mp-submit-btn');
+    const alertEl = document.getElementById('mp-alert');
+    if (alertEl) { alertEl.className = 'alert d-none'; alertEl.textContent = ''; }
+
+    const displayName = (document.getElementById('mp-display-name')?.value || '').trim();
+    const roleExternal = (document.getElementById('mp-role-external')?.value || '').trim();
+    const rawPn = (document.getElementById('mp-person-number')?.value || '').trim();
+    const personNumber = rawPn ? parseInt(rawPn, 10) : null;
+    const street = (document.getElementById('mp-street')?.value || '').trim();
+    const zip = (document.getElementById('mp-zip')?.value || '').trim();
+    const city = (document.getElementById('mp-city')?.value || '').trim();
+    const phone = (document.getElementById('mp-phone')?.value || '').trim();
+    const email = (document.getElementById('mp-email')?.value || '').trim();
+
+    if (!displayName || !email) {
+        if (alertEl) {
+            alertEl.className = 'alert alert-danger py-2 px-3 small rounded-3';
+            alertEl.textContent = 'Bitte mindestens Anzeigename und E-Mail ausfüllen.';
+        }
+        return;
+    }
+
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1.5" role="status"></span>Wird gespeichert...';
+    }
+
+    try {
+        const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+        if (!supa) throw new Error("Supabase Client ist nicht verfügbar.");
+
+        const { data, error } = await supa.rpc('update_my_profile', {
+            p_display_name: displayName,
+            p_role_external: roleExternal,
+            p_street: street,
+            p_zip: zip,
+            p_city: city,
+            p_phone: phone,
+            p_email: email,
+            p_person_number: personNumber
+        });
+
+        if (error) throw error;
+        if (data && data.success === false) throw new Error(data.error || 'Fehler beim Speichern');
+
+        // LocalStorage & Session synchronisieren
+        localStorage.setItem('portal_user', displayName);
+        window.currentUser = displayName;
+        if (roleExternal) localStorage.setItem('portal_rolle_extern', roleExternal);
+        if (personNumber) localStorage.setItem('portal_personnumber', String(personNumber));
+        if (street) localStorage.setItem('portal_strasse', street); else localStorage.removeItem('portal_strasse');
+        if (zip) localStorage.setItem('portal_plz', zip); else localStorage.removeItem('portal_plz');
+        if (city) localStorage.setItem('portal_ort', city); else localStorage.removeItem('portal_ort');
+        if (phone) localStorage.setItem('portal_telefon', phone); else localStorage.removeItem('portal_telefon');
+        if (email) localStorage.setItem('portal_mailadresse', email);
+
+        // UI-Aktualisierungen
+        const userInfo = document.getElementById('user-info');
+        if (userInfo) {
+            const role = localStorage.getItem('portal_role') || 'vorstand';
+            userInfo.innerHTML = `<span class="fw-semibold text-dark">${escapeHtml(displayName)}</span> <span class="badge bg-primary-subtle text-primary rounded-pill ms-1" style="font-size:0.7rem;">${escapeHtml(role)}</span>`;
+        }
+        const dbName = document.getElementById('dashboard-user-name');
+        if (dbName) dbName.textContent = displayName;
+
+        if (alertEl) {
+            alertEl.className = 'alert alert-success py-2 px-3 small rounded-3';
+            alertEl.innerHTML = '<i class="fas fa-check-circle me-1"></i>Profil &amp; Absenderdaten wurden erfolgreich in Supabase gespeichert!';
+        }
+
+        setTimeout(() => {
+            const modalEl = document.getElementById('my-profile-modal');
+            if (modalEl) {
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                if (modal) modal.hide();
+            }
+        }, 1200);
+
+    } catch (err) {
+        console.error("❌ Fehler beim Speichern des Profils:", err);
+        if (alertEl) {
+            alertEl.className = 'alert alert-danger py-2 px-3 small rounded-3';
+            alertEl.innerHTML = `<i class="fas fa-circle-xmark me-1"></i>Fehler beim Speichern: ${escapeHtml(err.message || 'Unbekannter Fehler')}`;
+        }
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-save me-1.5"></i>Profil speichern';
+        }
+    }
+};
+
+

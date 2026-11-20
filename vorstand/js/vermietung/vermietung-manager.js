@@ -1,0 +1,1587 @@
+// === SUB-MODUL: VERMIETUNG - MANAGER & CRUD (Native Supabase Single Source of Truth) ===
+
+// Kopiert die Buchungsdetails als formatierten Text in die Zwischenablage
+function copyReservationDetails(rowOrId) {
+  const d = vermietungDaten.find(x => x.row === rowOrId || x.id === rowOrId || x.vertragsnr === rowOrId);
+  if (!d) return;
+
+  const text = `🎯 RESERVATION DETAILS (Schützenstube Muhen)
+---------------------------------------------
+Vertragsnr:     ${d.vertragsnr || '–'}
+Name:           ${d.vorname || ''} ${d.nachname || ''}
+E-Mail:         ${d.email || '–'}
+Telefon:        ${d.telefon || '–'}
+Adresse:        ${d.strasse || ''}, ${d.plz || ''} ${d.wohnort || ''}
+Mietdatum:      ${d.mietdatum || '–'}
+Festbeginn:     ${d.festbeginn || '–'}
+Mietbetrag:     ${d.mietbetrag || '–'}
+Status:         ${getStatusLabel(d.status)}
+---------------------------------------------`;
+
+  navigator.clipboard.writeText(text).then(() => {
+    showToast("📋 Details in die Zwischenablage kopiert!");
+  }).catch(err => {
+    console.error("Kopieren fehlgeschlagen:", err);
+    if (window.UIConfirmKit) {
+      UIConfirmKit.alert({ title: "Zwischenablage", message: "Kopieren in die Zwischenablage ist fehlgeschlagen.", type: "warning" });
+    } else {
+      alert("Kopieren fehlgeschlagen.");
+    }
+  });
+}
+
+// Öffnet das Detailmodal mit Timeline, Statusprotokoll und geschützten Aktionsknöpfen
+function openVermietungModal(rowOrId) {
+  const d = vermietungDaten.find(x => x.row === rowOrId || x.id === rowOrId || x.vertragsnr === rowOrId);
+  if (!d) return;
+
+  const statusColor  = getStatusColor(d.status);
+  const statusLabel  = getStatusLabel(d.status);
+  const s            = String(d.status || '').toLowerCase();
+  const istStorniert = s.includes("05") || s === 'cancelled';
+  const istBezahlt   = s.includes("03") || s.includes("04") || s === 'paid' || s === 'keys_issued' || s === 'completed';
+
+  document.getElementById('vermietung-modal-body').innerHTML = `
+    <!-- Buchungs-Timeline -->
+    ${getTimelineHtml(d.status)}
+    
+    <div class="row g-4 mt-2">
+      <!-- Linke Spalte: Kontaktdaten & Buchung -->
+      <div class="col-md-6 border-end">
+        <h6 class="fw-bold text-primary mb-3 border-bottom pb-1">
+          <i class="fas fa-address-card me-2"></i>Kontaktdaten & Buchung
+        </h6>
+        <table class="table table-sm table-borderless align-middle" style="font-size:0.88rem;">
+          <tr><td class="text-muted fw-semibold" style="width: 120px;">Vertragsnr.</td><td><strong>${escapeHtml(d.vertragsnr)}</strong></td></tr>
+          <tr><td class="text-muted fw-semibold">Mieter</td><td>${escapeHtml((d.anrede ? d.anrede + ' ' : '') + d.vorname + ' ' + d.nachname)}</td></tr>
+          <tr><td class="text-muted fw-semibold">Adresse</td><td>${escapeHtml(d.strasse || '–')}, ${escapeHtml(d.plz || '')} ${escapeHtml(d.wohnort || '')}</td></tr>
+          <tr><td class="text-muted fw-semibold">E-Mail</td>
+              <td><a href="mailto:${escapeHtml(d.email)}" class="text-decoration-none"><i class="far fa-envelope me-1"></i>${escapeHtml(d.email)}</a></td></tr>
+          <tr><td class="text-muted fw-semibold">Telefon</td>
+              <td><a href="tel:${escapeHtml(d.telefon)}" class="text-decoration-none"><i class="fas fa-phone-alt me-1"></i>${escapeHtml(d.telefon)}</a></td></tr>
+          <tr><td class="text-muted fw-semibold">Mietdatum</td><td><span class="badge bg-light text-dark border fw-semibold">${escapeHtml(d.mietdatum)}</span></td></tr>
+          <tr><td class="text-muted fw-semibold">Festbeginn</td><td>${escapeHtml(d.festbeginn)}</td></tr>
+          <tr><td class="text-muted fw-semibold">Mietbetrag</td><td><strong class="text-primary fs-6">${escapeHtml(d.mietbetrag)}</strong></td></tr>
+        </table>
+        
+        <div class="d-flex flex-wrap gap-2 mt-3">
+          <button class="btn btn-xs btn-outline-secondary" style="font-size:0.75rem; font-weight:600;" onclick="copyReservationDetails('${d.id || d.row}')">
+            <i class="far fa-copy me-1"></i>Details kopieren
+          </button>
+          <button class="btn btn-xs btn-outline-success" style="font-size:0.75rem; font-weight:600;" onclick="vmGenerateRentalContractPdf('${d.vertragsnr || d.id}')">
+            <i class="fas fa-file-pdf me-1"></i>PDF QR-Vertrag
+          </button>
+          ${d.contract_file_url ? `
+            <a href="${escapeHtml(d.contract_file_url)}" target="_blank" class="btn btn-xs btn-outline-primary" style="font-size:0.75rem; font-weight:600;">
+              <i class="fas fa-external-link-alt me-1"></i>PDF öffnen
+            </a>` : ''}
+          ${!istStorniert && !(d.status === 'inquiry' || d.status === '00') ? `
+            <button class="btn btn-xs btn-outline-info" style="font-size:0.75rem; font-weight:600;" onclick="vermietungAktion('vertrag_mail', '${d.id || d.row}')">
+              <i class="far fa-paper-plane me-1"></i>Vertrag per Mail
+            </button>` : ''}
+          <button class="btn btn-xs btn-outline-warning" style="font-size:0.75rem; font-weight:600;" onclick="vermietungAktion('info_wirtschaft', '${d.id || d.row}')" title="Info-Mail an Wirtschaftsverantwortliche senden">
+            <i class="fas fa-bullhorn me-1"></i>Info Wirtschaftsteam
+          </button>
+        </div>
+      </div>
+
+      <!-- Rechte Spalte: Protokolle & Workflow-Notizen -->
+      <div class="col-md-6">
+        <h6 class="fw-bold text-primary mb-3 border-bottom pb-1">
+          <i class="fas fa-clipboard-check me-2"></i>Statusprotokoll & Audit
+        </h6>
+        <div class="p-2 rounded mb-3 text-center"
+             style="background:${statusColor}18; border: 1px solid ${statusColor}33; color: ${statusColor}; font-weight:bold; font-size:0.9rem;">
+          Status: ${escapeHtml(statusLabel)}
+        </div>
+        <table class="table table-sm table-borderless" style="font-size: 0.82rem;">
+          <tr><td class="text-muted" style="width: 140px;">Mietvertrag versandt</td><td>${escapeHtml(d.datum_vertrag || '–')}</td></tr>
+          <tr><td class="text-muted">Mahnung versandt</td><td>${escapeHtml(d.datum_mahnung || '–')}</td></tr>
+          <tr>
+            <td class="text-muted">Zahlungsstatus</td>
+            <td>
+              ${(() => {
+                const sRaiff = String(d.status_raiffeisen || (d.raw && d.raw.status_raiffeisen) || '').toLowerCase();
+                const isFibu = sRaiff === 'fibu_gebucht';
+                const isBankNotified = sRaiff === 'bank_notified' || sRaiff === 'info_mail' || (d.is_paid && !isFibu);
+                if (isFibu) {
+                  return `<span class="badge text-white px-2 py-1" style="background-color:#166534; font-size:0.78rem; font-weight:600;"><i class="fas fa-check-double me-1"></i>FIBU gebucht (CAMT) ${escapeHtml(d.datum_raiffeisen ? 'am ' + d.datum_raiffeisen : '')}</span>`;
+                } else if (isBankNotified) {
+                  return `<span class="badge px-2 py-1" style="background-color:#dcfce7; color:#15803d; border:1px solid #86efac; font-size:0.78rem; font-weight:600;"><i class="fas fa-envelope-open-text me-1"></i>Info-Mail Bank erhalten ${escapeHtml(d.datum_raiffeisen ? 'am ' + d.datum_raiffeisen : '')}</span>`;
+                }
+                return '<span class="text-muted">–</span>';
+              })()}
+            </td>
+          </tr>
+          ${d.invoice_id ? `<tr><td class="text-muted">FIBU-Rechnung</td><td><span class="badge bg-light text-primary border"><i class="fas fa-file-invoice me-1"></i>${escapeHtml(d.invoice_id)}</span></td></tr>` : ''}
+          <tr><td class="text-muted">Schlüsselübergabe</td><td>${escapeHtml(d.datum_schluessel || '–')}</td></tr>
+          <tr><td class="text-muted">Storniert am</td><td>${escapeHtml(d.datum_storno || '–')}</td></tr>
+        </table>
+
+        ${d.kommentar ? `
+          <div class="alert alert-info p-2 small border-0 mt-2 d-flex align-items-start gap-2" style="background:#e3f2fd; color:#0d47a1; border-radius:6px;">
+            <i class="fas fa-info-circle mt-1" style="font-size: 1rem;"></i>
+            <div><strong>Notiz / Kommentar:</strong><br>${escapeHtml(d.kommentar)}</div>
+          </div>` : ''}
+
+        ${d.is_inquiry ? `
+          <div class="alert alert-warning p-2 small border-0 mt-2 d-flex align-items-start gap-2" style="border-radius:6px;">
+            <i class="fas fa-question-circle mt-1"></i>
+            <div><strong>Vorab-Terminanfrage:</strong><br>${escapeHtml(d.inquiry_note || 'Kunde wünscht Vorab-Prüfung')}</div>
+          </div>` : ''}
+      </div>
+    </div>`;
+
+  // Aktionsknöpfe mit Schutz vor Doppelversand & zwei-stufigem Zahlungsvermerk
+  const sRaiffCur = String(d.status_raiffeisen || (d.raw && d.raw.status_raiffeisen) || '').toLowerCase();
+  const isFibuCur = sRaiffCur === 'fibu_gebucht';
+  const isBankNotifiedCur = sRaiffCur === 'bank_notified' || sRaiffCur === 'info_mail' || (d.is_paid && !isFibuCur);
+
+  const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('vermietung') : true;
+  const isInquiryState = d.status === 'inquiry' || d.status === '00';
+  const modalFooter = document.getElementById('vermietung-modal-footer');
+  modalFooter.innerHTML = `
+    <button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Schliessen</button>
+
+    ${canWrite && !istStorniert && isInquiryState ? `
+      <button class="btn btn-sm btn-success fw-semibold"
+              onclick="vermietungAktion('anfrage_annehmen', '${d.id || d.row}')">
+        <i class="fas fa-check-circle me-1"></i>Anfrage annehmen &amp; Vertrag senden
+      </button>` : ''}
+    
+    ${canWrite && !istStorniert && !isInquiryState && !isBankNotifiedCur && !isFibuCur ? `
+      <button class="btn btn-sm btn-warning fw-semibold"
+              onclick="vermietungAktion('mahnung', '${d.id || d.row}')">
+        <i class="fas fa-exclamation-triangle me-1"></i>❗ Mahnung
+      </button>` : ''}
+    
+    ${canWrite && !istStorniert && !isInquiryState && !isFibuCur ? `
+      ${!isBankNotifiedCur ? `
+        <button class="btn btn-sm fw-semibold" style="background-color:#dcfce7; color:#15803d; border:1px solid #86efac;"
+                onclick="vermietungAktion('bestaetigen', '${d.id || d.row}')"
+                title="Stufe 1: Bestätigt Eingang der Bank-Benachrichtigung (Info-Mail Bank)">
+          <i class="fas fa-envelope-open-text me-1"></i>Info-Mail Bank vermerken
+        </button>` : `
+        <button class="btn btn-sm text-white fw-semibold" style="background-color:#166534;"
+                onclick="vermietungAktion('fibu_manuell', '${d.id || d.row}')"
+                title="Stufe 2: Als in FIBU gebucht markieren">
+          <i class="fas fa-check-double me-1"></i>In FIBU gebucht vermerken
+        </button>`}
+    ` : ''}
+
+    ${canWrite && !istStorniert && !isInquiryState && (istBezahlt || isBankNotifiedCur || isFibuCur) && d.status !== 'keys_issued' && d.status !== '04' && d.status !== 'completed' ? `
+      <button class="btn btn-sm btn-info text-white fw-semibold"
+              onclick="vermietungAktion('schluessel', '${d.id || d.row}')">
+        <i class="fas fa-key me-1"></i>Schlüsselübergabe senden
+      </button>` : ''}
+            
+    ${canWrite && !istStorniert ? `
+      <button class="btn btn-sm btn-danger fw-semibold"
+              onclick="vermietungAktion('stornieren', '${d.id || d.row}')">
+        <i class="fas fa-trash-alt me-1"></i>${isInquiryState ? 'Ablehnen / Stornieren' : 'Stornieren'}
+      </button>` : ''}
+  `;
+
+  new bootstrap.Modal(document.getElementById('vermietungModal')).show();
+}
+
+const RENTAL_BANNER_CONFIG = {
+  vm_vertrag: { color: '#0f3c5c', title: 'Mietvertrag & QR-Rechnung' },
+  vm_anfrage: { color: '#d97706', title: 'Bestätigung Terminanfrage' },
+  vm_anfrage_intern: { color: '#d97706', title: 'Neue Vorab-Terminanfrage' },
+  vm_mahnung: { color: '#c53030', title: 'Zahlungserinnerung' },
+  vm_bestaetigung: { color: '#22543d', title: 'Zahlungseingang bestätigt' },
+  vm_schluessel: { color: '#2b6cb0', title: 'Schlüsselübergabe & Hinweise' },
+  vm_storno: { color: '#742a2a', title: 'Reservation storniert' },
+  vm_storno_verzug: { color: '#7f1d1d', title: 'Stornierung Zahlungsverzug' },
+  vm_storno_alarm: { color: '#b91c1c', title: 'Dringend: Storno-Rückmeldung' },
+  vm_info_wirtschaft: { color: '#d97706', title: 'Info Wirtschaftsteam' },
+  vm_bank_report: { color: '#1e40af', title: 'Bank-Mail-Automation' }
+};
+window.RENTAL_BANNER_CONFIG = RENTAL_BANNER_CONFIG;
+
+// Normalisiert WYSIWYG-HTML für Outlook Desktop (Word-Engine) & Webmail
+function normalizeRentalBodyForEmail(rawHtml) {
+  let out = String(rawHtml || '').trim();
+  if (!out) return '';
+
+  // 1. Callout-Banner (<div class="club-banner-callout">) in Outlook-feste 2-Zellen-Tabelle umwandeln
+  out = out.replace(
+    /<div\b[^>]*class="[^"]*club-banner-callout[^"]*"[^>]*style="([^"]*)"[^>]*>([\s\S]*?)<\/div>/gi,
+    (_m, styleStr, inner) => {
+      const bgMatch = styleStr.match(/background-color:\s*([^;]+)/i);
+      const borderMatch = styleStr.match(/border-left:\s*[^;]*?\s(#[0-9a-fA-F]{3,8}|[a-z]+)/i);
+      const colorMatch = styleStr.match(/(?:^|;)\s*color:\s*([^;]+)/i);
+      const bg = bgMatch ? bgMatch[1].trim() : '#fffbeb';
+      const borderCol = borderMatch ? borderMatch[1].trim() : '#f59e0b';
+      const textCol = colorMatch ? colorMatch[1].trim() : '#78350f';
+      return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; border-collapse:collapse;"><tr><td colspan="2" height="4" style="font-size:1px; line-height:4px;">&nbsp;</td></tr><tr><td width="4" bgcolor="${borderCol}" style="width:4px; background-color:${borderCol}; font-size:1px; line-height:1px;">&nbsp;</td><td bgcolor="${bg}" style="background-color:${bg}; padding:12px 16px; font-family:'Segoe UI',Arial,Helvetica,sans-serif; font-size:13.5px; line-height:1.55; color:${textCol};">${inner.trim()}</td></tr><tr><td colspan="2" height="12" style="font-size:1px; line-height:12px;">&nbsp;</td></tr></table>`;
+    }
+  );
+
+  // 2. ClubWysiwyg CTA-Container (<div class="club-cta-container">) in Outlook-Button-Tabelle umwandeln
+  out = out.replace(
+    /<div\b[^>]*class="[^"]*club-cta-container[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+    (_m, inner) => {
+      const aMatch = inner.match(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+      if (!aMatch) return inner;
+      const href = aMatch[1];
+      const label = aMatch[2].replace(/<[^>]*>/g, '').trim();
+      return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;"><tr><td align="center" style="padding:8px 0 16px 0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;"><tr><td align="center" bgcolor="#0f3c5c" style="background-color:#0f3c5c; border-radius:6px; padding:12px 24px;"><a href="${href}" target="_blank" rel="noopener noreferrer" style="color:#ffffff; font-family:'Segoe UI',Arial,Helvetica,sans-serif; font-size:14px; font-weight:bold; line-height:18px; text-decoration:none; display:inline-block;">${label}</a></td></tr></table></td></tr></table>`;
+    }
+  );
+
+  // 3. Info-Tabellen (.vm-info-table) mit Outlook-Spacing und kompakter Zeilenhöhe versehen
+  out = out.replace(
+    /<table\b([^>]*class="[^"]*vm-info-table[^"]*"[^>]*)>([\s\S]*?)<\/table>/gi,
+    (_m, attrs, inner) => {
+      const cleanAttrs = attrs.replace(/\s*margin\s*:[^;"]+;?/gi, '');
+      const styledInner = inner.replace(/<td(\s+[^>]*)?>/gi, (_tm, tdAttrs = '') => {
+        if (!tdAttrs || !/style=/i.test(tdAttrs)) {
+          return `<td${tdAttrs} style="padding:7px 12px; font-family:'Segoe UI',Arial,Helvetica,sans-serif; font-size:13.5px; line-height:1.4;">`;
+        }
+        return `<td${tdAttrs.replace(/style="([^"]*)"/i, (_sm, s) => {
+          let c = s.trim();
+          if (!/font-family/i.test(c)) c += (c && !c.endsWith(';') ? ';' : '') + "font-family:'Segoe UI',Arial,Helvetica,sans-serif;";
+          if (!/line-height/i.test(c)) c += (c && !c.endsWith(';') ? ';' : '') + 'line-height:1.4;';
+          return `style="${c}"`;
+        })}>`;
+      });
+      return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; border-collapse:collapse;"><tr><td style="padding:4px 0 14px 0;"><table${cleanAttrs}>${styledInner}</table></td></tr></table>`;
+    }
+  );
+
+  // 4. Bulletproof-Buttons mit margin auf <table> in Outlook-sichere Spacer-Zeile betten
+  out = out.replace(
+    /<table\b([^>]*style="[^"]*border-collapse:\s*separate[^"]*"[^>]*)>([\s\S]*?)<\/table>/gi,
+    (_m, attrs, inner) => {
+      const cleanAttrs = attrs.replace(/\s*margin\s*:[^;"]+;?/gi, '');
+      return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;"><tr><td style="padding:4px 0 16px 0;"><table${cleanAttrs}>${inner}</table></td></tr></table>`;
+    }
+  );
+
+  // 5. <p>-Tags explizit für Outlook stylen
+  out = out.replace(/<p(\s+[^>]*)?>/gi, (_m, attrs = '') => {
+    const baseStyle = "margin:0 0 12px 0; line-height:1.55; font-family:'Segoe UI',Arial,Helvetica,sans-serif; font-size:15px; color:#333333;";
+    if (!attrs || !/style=/i.test(attrs)) {
+      return `<p${attrs} style="${baseStyle}">`;
+    }
+    const updatedAttrs = attrs.replace(/style="([^"]*)"/i, (_sm, s) => {
+      let cleaned = s.replace(/background\s*:\s*white\s*;?/gi, '').trim();
+      if (!/font-family/i.test(cleaned)) cleaned += (cleaned && !cleaned.endsWith(';') ? ';' : '') + "font-family:'Segoe UI',Arial,Helvetica,sans-serif;";
+      if (!/font-size/i.test(cleaned)) cleaned += 'font-size:15px;';
+      if (!/line-height/i.test(cleaned)) cleaned += 'line-height:1.55;';
+      if (!/(?:^|;)\s*color/i.test(cleaned)) cleaned += 'color:#333333;';
+      if (!/margin/i.test(cleaned)) cleaned += 'margin:0 0 12px 0;';
+      return `style="${cleaned}"`;
+    });
+    return `<p${updatedAttrs}>`;
+  });
+
+  // 6. Listen (<ul>/<ol>) einheitlich stylen
+  out = out.replace(/<(ul|ol)(\s+[^>]*)?>/gi, (_m, tag, attrs = '') => {
+    if (/style=/i.test(attrs)) return `<${tag}${attrs}>`;
+    return `<${tag}${attrs} style="margin:0 0 14px 0; padding-left:22px; font-family:'Segoe UI',Arial,Helvetica,sans-serif; font-size:15px; line-height:1.55; color:#333333;">`;
+  });
+
+  return out;
+}
+window.normalizeRentalBodyForEmail = normalizeRentalBodyForEmail;
+
+// Baut das Outlook-/MSO-kompatible HTML-Layout (linksbündig max. 800px, iPhone-responsive 100%)
+function buildRentalEmailHtml(title, bannerColor, bodyHtml, settings, options = {}) {
+  const logoUrl = settings?.logo_url || 'https://sps-b55.pages.dev/icons/icon-512.png';
+  const clubName = settings?.club_name || 'Sportschützen Muhen';
+  const bannerTitle = options.bannerTitle || title;
+  const esc = typeof escapeHtml === 'function' ? escapeHtml : (v) => String(v ?? '');
+  const normalizedBody = normalizeRentalBodyForEmail(bodyHtml);
+
+  const cardHtml = `
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#ffffff" style="width:100%; background-color:#ffffff; border-collapse:collapse;">
+      <tr>
+        <td align="left" style="padding:12px 16px;">
+          <!--[if mso]>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="800" align="left" style="border-collapse:collapse;"><tr><td>
+          <![endif]-->
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#ffffff" style="width:100%; max-width:800px; margin:0; border:1px solid #cbd5e1; border-radius:8px; overflow:hidden; background-color:#ffffff; border-collapse:collapse; font-family:'Segoe UI',Arial,Helvetica,sans-serif;">
+            <tr>
+              <td bgcolor="${bannerColor}" style="background-color:${bannerColor}; padding:18px 24px; text-align:left; vertical-align:middle;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+                  <tr>
+                    <td style="vertical-align:middle; padding-right:14px; width:42px;">
+                      <img src="${logoUrl}" width="38" height="38" style="width:38px; height:38px; display:block; border-radius:6px; border:1px solid #cbd5e1;" border="0" alt="Logo">
+                    </td>
+                    <td style="vertical-align:middle; font-family:'Segoe UI',Arial,Helvetica,sans-serif;">
+                      <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif; font-size:19px; font-weight:600; color:#ffffff; line-height:1.25;">${esc(bannerTitle)}</div>
+                      <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif; font-size:12px; color:#e2e8f0; margin-top:3px; line-height:1.3;">${esc(clubName)} – Schützenstube Muhen</div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td align="left" style="padding:24px 24px 18px 24px; background-color:#ffffff; color:#333333; line-height:1.55; font-family:'Segoe UI',Arial,Helvetica,sans-serif; font-size:15px;">
+                ${normalizedBody}
+              </td>
+            </tr>
+            <tr>
+              <td bgcolor="#f8fafc" align="center" style="background-color:#f8fafc; padding:15px 24px; border-top:1px solid #e2e8f0; font-family:'Segoe UI',Arial,Helvetica,sans-serif; font-size:11px; color:#64748b; text-align:center; line-height:1.6;">
+                <strong>Sportschützen Muhen</strong> (gegründet 1919) &bull; Schiessanlage Rüteli &bull; 5037 Muhen<br>
+                Web: <a href="https://sportschuetzen-muhen.ch" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none;">www.sportschuetzen-muhen.ch</a> &bull; E-Mail: <a href="mailto:info@sportschuetzen-muhen.ch" style="color:#0284c7; text-decoration:none;">info@sportschuetzen-muhen.ch</a><br>
+                <a href="https://www.instagram.com/sportschuetzen.muhen/" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none; font-weight:500;">Instagram</a> &bull; <a href="https://www.facebook.com/SportschuetzenMuhen/?locale=de_DE" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none; font-weight:500;">Facebook</a>
+              </td>
+            </tr>
+          </table>
+          <!--[if mso]>
+          </td></tr></table>
+          <![endif]-->
+        </td>
+      </tr>
+    </table>`;
+
+  if (options.fullDocument === false) {
+    return cardHtml;
+  }
+
+  return `<!DOCTYPE html>
+<html lang="de" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>${esc(title)}</title>
+</head>
+<body bgcolor="#ffffff" style="margin:0; padding:0; background-color:#ffffff; font-family:'Segoe UI',Arial,Helvetica,sans-serif; color:#333333; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%;">
+${cardHtml}
+</body>
+</html>`;
+}
+window.buildRentalEmailHtml = buildRentalEmailHtml;
+
+// Sendet Workflow-Mails über die zentrale Supabase Edge Function Mail-Engine basierend auf Vorlagen aus document_templates
+async function sendRentalWorkflowEmail(action, d, settings) {
+  if (typeof window.sendMailViaEngine !== 'function') {
+    console.warn("⚠️ window.sendMailViaEngine nicht verfügbar.");
+    return { success: false, error: "Mail-Engine nicht geladen" };
+  }
+
+  const s = settings || window._rentalSettings || {};
+  const clubEmail = s.club_email || "info@sportschuetzen-muhen.ch";
+  const wirtschaftEmail = s.wirtschaft_email || clubEmail;
+  const wirtschaftName = s.wirtschaft_name || "Wirtschaftsteam";
+  const wirtschaftPhone = s.wirtschaft_phone || "079 123 45 67";
+  // Kein Hardcoded-Fallback: fehlt die Einstellung, wird bei Vorlagen mit {feedback_url} unten ein klarer Fehler geworfen.
+  const feedbackBaseUrl = s.feedback_base_url || "";
+
+  // Vermieter-Kontaktdaten aus Tarife & Einstellungen
+  const vermieterFirst = s.sender_first_name || '';
+  const vermieterLast = s.sender_last_name || '';
+  const vermieterName = `${vermieterFirst} ${vermieterLast}`.trim() || 'Sportschützen Muhen';
+  const vermieterPhone = s.sender_phone || '';
+  const vermieterEmail = s.club_email || 'info@sportschuetzen-muhen.ch';
+
+  // 1. Zuweisung des Aktionscodes zur Template-ID
+  const actionToTplCode = {
+    'vertrag_mail': 'vm_vertrag',
+    'anfrage_annehmen': 'vm_vertrag',
+    'anfrage': 'vm_anfrage',
+    'mahnung': 'vm_mahnung',
+    'bestaetigen': 'vm_bestaetigung',
+    'schluessel': 'vm_schluessel',
+    'stornieren': (d.datum_mahnung && d.datum_mahnung !== '–') ? 'vm_storno_verzug' : 'vm_storno',
+    'storno_verzug': 'vm_storno_verzug',
+    'info_wirtschaft': 'vm_info_wirtschaft'
+  };
+  const tplCode = actionToTplCode[action] || action;
+
+  // 2. Vorlage aus Supabase / Cache laden
+  let tpl = (window._docTemplatesData || []).find(t => t.code === tplCode || t.id === tplCode);
+  if (!tpl) {
+    const supa = (typeof window.getSupabaseClient === 'function') ? window.getSupabaseClient() : window.supabaseClient;
+    if (supa) {
+      const { data } = await supa.from('document_templates').select('*').eq('code', tplCode).maybeSingle();
+      if (data) tpl = data;
+    }
+  }
+
+  // 3. STRIKTER CHECK: Keine stillen Fallbacks bei unvollständigen/fehlenden Vorlagen!
+  if (!tpl || !tpl.mail_subject || !tpl.mail_body) {
+    throw new Error(
+      `Konfigurationsfehler: Die E-Mail-Vorlage '${tplCode}' ist in Supabase ('document_templates') nicht vorhanden oder unvollständig. Bitte im Modul 'Dokumente-Vorlagen' konfigurieren.`
+    );
+  }
+
+  // Banner-Farben & Titel je nach Workflow-Schritt
+  const bannerCfg = RENTAL_BANNER_CONFIG[tplCode] || { color: '#0f3c5c', title: '' };
+  const bannerColor = bannerCfg.color;
+
+  // 4. Platzhalter-Auflösung
+  const bookingNr = d.booking_number || d.vertragsnr || d.id || '';
+  const isoDateRaw = d.start_date_iso || d.start_date || '';
+  const dateStr = isoDateRaw
+    ? (window.UIFormatKit ? UIFormatKit.formatDate(isoDateRaw) : new Date(isoDateRaw).toLocaleDateString('de-CH'))
+    : (d.mietdatum || '–');
+  const rawAmt = (d.total_amount_chf !== undefined && d.total_amount_chf !== null)
+    ? d.total_amount_chf
+    : (d.betrag_raw || (d.mietbetrag ? String(d.mietbetrag).replace(/[^\d.]/g, '') : 300));
+  const amountStr = Number(rawAmt || 300).toFixed(2);
+  const rawDep = (d.deposit_amount_chf !== undefined && d.deposit_amount_chf !== null)
+    ? d.deposit_amount_chf
+    : (d.kaution ? String(d.kaution).replace(/[^\d.]/g, '') : 200);
+  const depositStr = Number(rawDep || 200).toFixed(2);
+  if (/feedback_url/i.test(`${tpl.mail_subject} ${tpl.mail_body}`) && !feedbackBaseUrl) {
+    throw new Error(
+      `Konfigurationsfehler: Die Vorlage '${tplCode}' benötigt {feedback_url}, aber die Storno-Feedback-URL fehlt. Bitte unter 'Tarife & Einstellungen' eintragen.`
+    );
+  }
+  const feedbackUrl = feedbackBaseUrl ? `${feedbackBaseUrl}?vnr=${encodeURIComponent(bookingNr)}` : '';
+
+  const mieterFirst = d.first_name || d.vorname || '';
+  const mieterLast = d.last_name || d.nachname || '';
+  const mieterAnrede = d.salutation || d.anrede || 'Guten Tag';
+  const mieterEmail = d.email || '';
+  const mieterPhone = d.phone || d.telefon || '';
+  const mieterStrasse = d.street || d.strasse || '';
+  const mieterPlz = d.post_code || d.plz || '';
+  const mieterOrt = d.city || d.wohnort || d.ort || '';
+  const mieterAdresse = mieterStrasse ? `${mieterStrasse}, ${mieterPlz} ${mieterOrt}`.trim() : `${mieterPlz} ${mieterOrt}`.trim();
+  const bemerkung = d.kommentar || d.inquiry_note || d.notes || '–';
+  const cockpitUrl = 'https://sportschuetzen-muhen.ch/vorstand/#vermietung';
+
+  const placeholderMap = {
+    // Mieter (klar benannt)
+    'mieter_vorname': mieterFirst,
+    'mieter_nachname': mieterLast,
+    'mieter_anrede': mieterAnrede,
+    'mieter_email': mieterEmail,
+    'mieter_telefon': mieterPhone,
+    'mieter_strasse': mieterStrasse,
+    'mieter_plz': mieterPlz,
+    'mieter_ort': mieterOrt,
+    'mieter_adresse': mieterAdresse,
+    // Abwärtskompatible Aliase
+    'vorname': mieterFirst,
+    'nachname': mieterLast,
+    'anrede': mieterAnrede,
+    // Vermieter (aus Tarife & Einstellungen)
+    'vermieter_vorname': vermieterFirst,
+    'vermieter_nachname': vermieterLast,
+    'vermieter_name': vermieterName,
+    'vermieter_telefon': vermieterPhone,
+    'vermieter_email': vermieterEmail,
+    // Wirtschaftsteam
+    'wirtschaft_name': wirtschaftName,
+    'wirtschaft_phone': wirtschaftPhone,
+    'wirtschaft_email': wirtschaftEmail,
+    // Reservation / Buchung
+    'mietdatum': dateStr,
+    'festbeginn': d.festbeginn || '14:00 Uhr',
+    'vertragsnr': bookingNr,
+    'buchungsnummer': bookingNr,
+    'mietbetrag': amountStr,
+    'kaution': '0.00',
+    'zahlungsfrist_tage': String(settings?.payment_due_days || 14),
+    'zahlungsfrist': String(settings?.payment_due_days || 14),
+    'mietobjekt': settings?.rental_object || 'Schützenstube Rüteli',
+    'gebuehr_glas': settings?.glass_fee || '2.00',
+    'gebuehr_teller': settings?.plate_fee || '5.00',
+    'gebuehr_holz': settings?.wood_fee || '20.00',
+    'gebuehr_abfallsack': settings?.garbage_bag_fee || '4.00',
+    'gebuehr_reinigung': settings?.cleaning_fee_per_hour || '35.00',
+    'gebuehr_storno': settings?.storno_fee || '100.00',
+    'bemerkung': bemerkung,
+    'cockpit_url': cockpitUrl,
+    'feedback_url': feedbackUrl,
+    'club_email': clubEmail
+  };
+
+  let renderedSubject = tpl.mail_subject;
+  let renderedBody = tpl.mail_body;
+
+  Object.entries(placeholderMap).forEach(([k, v]) => {
+    const rx = new RegExp(`\\{{1,2}${k}\\}{1,2}`, 'gi');
+    renderedSubject = renderedSubject.replace(rx, v);
+    renderedBody = renderedBody.replace(rx, v);
+  });
+
+  // Body in HTML-Inhalt umwandeln: Falls bereits HTML vorhanden (aus ClubWysiwyg), direkt verwenden; sonst Absätze bilden
+  let bodyContentHtml = '';
+  if (/<[a-z][\s\S]*>/i.test(renderedBody)) {
+    bodyContentHtml = renderedBody;
+  } else {
+    bodyContentHtml = renderedBody.split(/\n\s*\n/).map(p => 
+      `<p style="margin:0 0 12px 0; line-height: 1.55;">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`
+    ).join('');
+  }
+
+  // 5. Anhänge ermitteln (mit voller Storage-Path und URL Unterstützung)
+  let attachments = [];
+  if (action === 'vertrag_mail' || action === 'anfrage_annehmen' || action === 'mahnung') {
+    const bookingNrClean = bookingNr || 'Vertrag';
+    if (d.contract_storage_path) {
+      attachments.push({
+        filename: `Mietvertrag_${bookingNrClean}.pdf`,
+        storagePath: d.contract_storage_path,
+        storageBucket: 'operatives-storage'
+      });
+    } else if (d.contract_file_url) {
+      attachments.push({
+        filename: `Mietvertrag_${bookingNrClean}.pdf`,
+        path: d.contract_file_url
+      });
+    }
+  }
+
+  const fullHtml = buildRentalEmailHtml(renderedSubject, bannerColor, bodyContentHtml, s, {
+    bannerTitle: bannerCfg.title || renderedSubject
+  });
+
+  const unifiedCc = s.rental_cc_emails || s.club_email || 'info@sportschuetzen-muhen.ch';
+
+  if (tplCode === 'vm_info_wirtschaft') {
+    return await window.sendMailViaEngine({
+      to: unifiedCc,
+      systemMailKey: 'Info_Mail_an_Wirtschaftsverantwortliche',
+      subject: renderedSubject,
+      html: fullHtml,
+      attachments: attachments,
+      module: 'vermietung',
+      referenceId: bookingNr
+    });
+  }
+
+  return await window.sendMailViaEngine({
+    to: d.email,
+    cc: unifiedCc,
+    ccSystemMailKey: 'Info_Mail_an_Wirtschaftsverantwortliche',
+    subject: renderedSubject,
+    html: fullHtml,
+    attachments: attachments,
+    module: 'vermietung',
+    referenceId: bookingNr
+  });
+}
+
+/**
+ * Synchronisiert eine Vermietung mit Google Calendar über die Edge Function 'sync-calendar'.
+ * Verwendet den aktuellen Vorstands-Session-JWT statt des anonymen Keys.
+ */
+async function syncRentalCalendar(calAction, record) {
+  try {
+    const supa = (typeof window.getSupabaseClient === 'function') ? window.getSupabaseClient() : window.supabaseClient;
+    const supaUrl = window.SUPABASE_URL || 'https://supabase-muhen.danfamily.uk';
+    const anonKey = (supa && supa.supabaseKey) || window.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
+    let bearerToken = anonKey;
+    if (supa) {
+      try {
+        const { data: { session } } = await supa.auth.getSession();
+        if (session?.access_token) bearerToken = session.access_token;
+      } catch (_) {}
+    }
+
+    const first = record.first_name || record.vorname || '';
+    const last = record.last_name || record.nachname || '';
+    const initials = `${first.charAt(0)}${last.charAt(0)}`.toUpperCase() || 'Kunde';
+    const resp = await fetch(`${supaUrl}/functions/v1/sync-calendar`, {
+      method: 'POST',
+      headers: {
+        'apikey': anonKey,
+        'Authorization': `Bearer ${bearerToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        action: calAction,
+        date: record.start_date_iso || record.start_date || record.mietdatum,
+        bookingId: record.vertragsnr || record.booking_number || record.id,
+        initials: initials,
+        vorname: first,
+        nachname: last
+      })
+    });
+    const resJson = await resp.json().catch(() => ({}));
+    if (!resp.ok || resJson?.success === false) {
+      console.warn(`⚠️ [Kalender-Sync ${calAction}] Warnung:`, resJson?.error || resp.status);
+      return { success: false, error: resJson?.error || `HTTP ${resp.status}` };
+    }
+    return resJson;
+  } catch (err) {
+    console.warn(`⚠️ [Kalender-Sync ${calAction}] Fehler:`, err);
+    return { success: false, error: err.message };
+  }
+}
+
+// Führt Vermietungsaktionen aus (Supabase Single Source of Truth, Audit-Log & Mail-Engine)
+async function vermietungAktion(action, idOrRow) {
+  const d = vermietungDaten.find(x => x.row === idOrRow || x.id === idOrRow || x.vertragsnr === idOrRow);
+  if (!d) return;
+
+  // Schutz vor versehentlichem Doppelversand:
+  if (action === 'mahnung') {
+    let warnung = "Mahnung an " + d.email + " senden?";
+    let isWarning = false;
+    if (d.datum_mahnung && d.datum_mahnung !== '–') {
+      warnung = `⚠️ HINWEIS: Eine Mahnung wurde bereits am ${d.datum_mahnung} versandt.\n\nMöchtest du wirklich eine ERNEUTE Mahnung senden?`;
+      isWarning = true;
+    }
+    if (window.UIConfirmKit) {
+      const ok = await UIConfirmKit.confirm({
+        title: "Mahnung versenden",
+        message: warnung,
+        confirmText: "Mahnung senden",
+        type: isWarning ? "warning" : "primary"
+      });
+      if (!ok) return;
+    } else if (!confirm(warnung)) return;
+  } else if (action === 'schluessel') {
+    let warnung = "Schlüsselübergabe-Mail an " + d.email + " senden?";
+    let isWarning = false;
+    if (d.datum_schluessel && d.datum_schluessel !== '–') {
+      warnung = `⚠️ HINWEIS: Schlüsselübergabe-Mail wurde bereits am ${d.datum_schluessel} versandt.\n\nTrotzdem erneut senden?`;
+      isWarning = true;
+    }
+    if (window.UIConfirmKit) {
+      const ok = await UIConfirmKit.confirm({
+        title: "Schlüsselübergabe senden",
+        message: warnung,
+        confirmText: "Senden",
+        type: isWarning ? "warning" : "primary"
+      });
+      if (!ok) return;
+    } else if (!confirm(warnung)) return;
+  } else if (action === 'bestaetigen') {
+    const msg = `Zahlungseingang (Info-Mail Bank) für Vertrag ${d.vertragsnr} vermerken?\n\nDies setzt Zahlungsstufe 1 (Info-Mail Bank) und informiert den Mieter sowie das Wirtschaftsteam.`;
+    if (window.UIConfirmKit) {
+      const ok = await UIConfirmKit.confirm({
+        title: "Zahlungseingang vermerken",
+        message: msg,
+        confirmText: "Zahlungseingang vermerken",
+        type: "primary"
+      });
+      if (!ok) return;
+    } else if (!confirm(msg)) return;
+  } else if (action === 'fibu_manuell') {
+    const msg = `Zahlung für Vertrag ${d.vertragsnr} als in FIBU gebucht markieren?\n\nDies setzt Zahlungsstufe 2 (FIBU gebucht).`;
+    if (window.UIConfirmKit) {
+      const ok = await UIConfirmKit.confirm({
+        title: "FIBU-Status aktualisieren",
+        message: msg,
+        confirmText: "Als gebucht markieren",
+        type: "primary"
+      });
+      if (!ok) return;
+    } else if (!confirm(msg)) return;
+  } else if (action === 'stornieren') {
+    const isVerzug = Boolean(d.datum_mahnung && d.datum_mahnung !== '–');
+    const msg = isVerzug 
+      ? `Reservation ${d.vertragsnr} wirklich stornieren?\n\nDa eine Mahnung versandt wurde, wird die Vorlage 'Stornierung wegen Zahlungsverzug' an ${d.email} gesendet.`
+      : `Reservation ${d.vertragsnr} wirklich stornieren?\n\nDadurch wird die Reservation freigegeben und dem Mieter ein Stornomail mit Feedbacklink gesendet.`;
+    if (window.UIConfirmKit) {
+      const ok = await UIConfirmKit.confirm({
+        title: "Reservation stornieren",
+        message: msg,
+        confirmText: "Ja, stornieren",
+        type: "danger"
+      });
+      if (!ok) return;
+    } else if (!confirm(msg)) return;
+  } else if (action === 'info_wirtschaft') {
+    const msg = `Info-Mail über Vertrag ${d.vertragsnr} an die Wirtschaftsverantwortlichen senden?`;
+    if (window.UIConfirmKit) {
+      const ok = await UIConfirmKit.confirm({
+        title: "Info-Mail versenden",
+        message: msg,
+        confirmText: "Info-Mail senden",
+        type: "primary"
+      });
+      if (!ok) return;
+    } else if (!confirm(msg)) return;
+  } else if (action === 'vertrag_mail') {
+    const msg = `Mietvertrag per E-Mail an ${d.email} senden?`;
+    if (window.UIConfirmKit) {
+      const ok = await UIConfirmKit.confirm({
+        title: "Mietvertrag versenden",
+        message: msg,
+        confirmText: "Vertrag senden",
+        type: "primary"
+      });
+      if (!ok) return;
+    } else if (!confirm(msg)) return;
+  } else if (action === 'anfrage_annehmen') {
+    const msg = `Vorab-Anfrage ${d.vertragsnr} verbindlich annehmen?\n\nDadurch wird die Buchung aktiviert, der Google Kalender blockiert, das Mietvertrags-PDF (QR) erzeugt, die Proforma-Rechnung angelegt und der Vertrag an ${d.email} versandt.`;
+    if (window.UIConfirmKit) {
+      const ok = await UIConfirmKit.confirm({
+        title: "Terminanfrage annehmen",
+        message: msg,
+        confirmText: "Annehmen & Vertrag senden",
+        type: "primary"
+      });
+      if (!ok) return;
+    } else if (!confirm(msg)) return;
+  }
+
+  const modalFooter = document.getElementById('vermietung-modal-footer');
+  const originalFooter = modalFooter ? modalFooter.innerHTML : '';
+  if (modalFooter) {
+    modalFooter.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> Verarbeite ${action}...`;
+  }
+
+  try {
+    const supa = (typeof window.getSupabaseClient === 'function') ? window.getSupabaseClient() : window.supabaseClient;
+    if (!supa) throw new Error("Supabase Client ist nicht verfügbar.");
+
+    const todayIso = new Date().toISOString().split('T')[0];
+    const updatePayload = {};
+    let statusLogNewStatus = null;
+
+    if (action === 'anfrage_annehmen') {
+      updatePayload.is_inquiry = false;
+      updatePayload.status = 'contract_sent';
+      updatePayload.datum_vertrag = todayIso;
+      statusLogNewStatus = 'contract_sent';
+    } else if (action === 'mahnung') {
+      updatePayload.status = 'reminded';
+      updatePayload.datum_mahnung = todayIso;
+      statusLogNewStatus = 'reminded';
+    } else if (action === 'bestaetigen') {
+      // Stufe 1: Info-Mail Bank (inkl. Schlüsselübergabe-Hinweis & Info Wirtschaftsteam -> direkt Stufe 4)
+      updatePayload.status = 'keys_issued';
+      updatePayload.is_paid = true;
+      updatePayload.status_raiffeisen = 'bank_notified';
+      updatePayload.datum_raiffeisen = todayIso;
+      updatePayload.datum_schluessel = todayIso;
+      updatePayload.kommentar_raiffeisen = 'Info-Mail Bank eingegangen & Schlüsselübergabe-Info versandt';
+      statusLogNewStatus = 'keys_issued';
+    } else if (action === 'fibu_manuell') {
+      // Stufe 2: In FIBU gebucht (bestehenden Schlüssel-Status nicht zurückstufen)
+      const rawStatus = d.raw?.status || d.status;
+      const keepStatus = (rawStatus === 'keys_issued' || rawStatus === 'completed') ? rawStatus : 'paid';
+      updatePayload.status = keepStatus;
+      updatePayload.is_paid = true;
+      updatePayload.status_raiffeisen = 'fibu_gebucht';
+      updatePayload.datum_raiffeisen = todayIso;
+      updatePayload.kommentar_raiffeisen = 'In FIBU verbucht (manuell)';
+      statusLogNewStatus = keepStatus;
+    } else if (action === 'schluessel') {
+      updatePayload.status = 'keys_issued';
+      updatePayload.datum_schluessel = todayIso;
+      statusLogNewStatus = 'keys_issued';
+    } else if (action === 'stornieren') {
+      updatePayload.status = 'cancelled';
+      updatePayload.datum_storno = todayIso;
+      statusLogNewStatus = 'cancelled';
+    }
+
+    // 1. Supabase-Aktualisierung
+    if (Object.keys(updatePayload).length > 0) {
+      const prevStatus = d.raw?.status || d.status;
+      const { error: supaErr } = await supa
+        .from('rental_requests')
+        .update(updatePayload)
+        .eq('id', d.id);
+      if (supaErr) throw supaErr;
+
+      // DB-Trigger trg_log_rental_status protokolliert echte Statusübergänge automatisch;
+      // manueller Audit-Eintrag nur, wenn der Status gleich geblieben ist (z.B. paid -> fibu_manuell).
+      if (statusLogNewStatus && prevStatus === statusLogNewStatus) {
+        await supa.from('rental_status_logs').insert([{
+          rental_request_id: d.id,
+          previous_status: prevStatus,
+          new_status: statusLogNewStatus,
+          comment: `Aktion ${action} durch Vorstand ausgeführt`,
+          changed_by: (window.currentUser && (window.currentUser.display_name || window.currentUser.email)) || 'Vorstand'
+        }]);
+      }
+    }
+
+    // 1.1 RechnungsCore-Synchronisation (Single Source of Truth)
+    if (action === 'anfrage_annehmen') {
+      try {
+        await ensureRentalInvoice(d);
+      } catch (invErr) {
+        console.warn("⚠️ [Vermietung] RechnungsCore Anlage bei Anfrage-Freigabe:", invErr);
+      }
+    } else if (action === 'fibu_manuell' && window.RechnungsCore && typeof window.RechnungsCore.recordPayment === 'function') {
+      try {
+        const inv = await ensureRentalInvoice(d);
+        if (inv && (inv.status === 'offen' || inv.status === 'teilbezahlt' || inv.status === 'entwurf')) {
+          await window.RechnungsCore.recordPayment(inv.id, {
+            amount: inv.open_amount || inv.total_amount,
+            method: 'Bank',
+            notes: `Zahlungseingang Mietvertrag ${d.vertragsnr} (FIBU)`
+          });
+          console.log(`✅ [Vermietung] RechnungsCore-Zahlung verbucht: ${inv.id}`);
+        }
+      } catch (payErr) {
+        console.warn("⚠️ [Vermietung] RechnungsCore Zahlungseingang:", payErr);
+      }
+    } else if (action === 'stornieren' && window.RechnungsCore && typeof window.RechnungsCore.cancelInvoice === 'function') {
+      try {
+        const inv = await ensureRentalInvoice(d);
+        if (inv && inv.status !== 'storniert' && inv.status !== 'bezahlt') {
+          await window.RechnungsCore.cancelInvoice(inv.id, 'Reservation im Vermietungsmodul storniert');
+          console.log(`✅ [Vermietung] RechnungsCore-Storno verbucht: ${inv.id}`);
+        }
+      } catch (stornoErr) {
+        console.warn("⚠️ [Vermietung] RechnungsCore Stornierung:", stornoErr);
+      }
+    }
+
+    // 1.2 Falls Vertrag per E-Mail gesendet werden soll, aber PDF noch nicht vorhanden ist: On-the-fly generieren!
+    if ((action === 'vertrag_mail' || action === 'anfrage_annehmen') && (!d.contract_file_url && !d.contract_storage_path)) {
+      if (typeof window.vmGenerateRentalContractPdf === 'function') {
+        try {
+          const genRes = await window.vmGenerateRentalContractPdf(d.vertragsnr || d.id, { silent: true });
+          if (genRes) {
+            d.contract_file_url = genRes.pdfUrl || d.contract_file_url;
+            d.contract_storage_path = genRes.storagePath || d.contract_storage_path;
+          }
+        } catch (pdfErr) {
+          console.warn("⚠️ Vertrag PDF konnte vor Mailversand nicht generiert werden:", pdfErr);
+        }
+      }
+    }
+
+    // 1.3 Bei Anfrage-Annahme: Google Kalender blockieren
+    if (action === 'anfrage_annehmen') {
+      await syncRentalCalendar('block', d);
+    }
+
+    // 2. E-Mail-Versand über Supabase Mail-Engine (nur wenn nicht fibu_manuell)
+    let mailWarnMsg = '';
+    if (action !== 'fibu_manuell') {
+      const mailRes = await sendRentalWorkflowEmail(action, d, window._rentalSettings);
+      if (!mailRes.success) {
+        console.warn("Mailversand-Hinweis:", mailRes.error);
+        mailWarnMsg = ` (Mail-Hinweis: ${mailRes.error})`;
+      }
+    }
+
+    // 2.1 Bei Zahlungseingang (bestaetigen): Vollautomatisch das Wirtschaftsteam informieren!
+    if (action === 'bestaetigen') {
+      try {
+        console.log(`📢 [Vermietung] Sende automatische Info-Mail an Wirtschaftsteam für ${d.vertragsnr}...`);
+        await sendRentalWorkflowEmail('info_wirtschaft', d, window._rentalSettings);
+      } catch (wirtErr) {
+        console.warn("⚠️ [Vermietung] Wirtschaft-Mail Fehler:", wirtErr);
+      }
+    }
+
+    // 2.2 Bei Stornierung: Google Kalender Termine via Edge Function sync-calendar freigeben (Google Calendar API)
+    if (action === 'stornieren') {
+      await syncRentalCalendar('release', d);
+    }
+
+    // Modal schliessen und Daten neu laden
+    const modalElem = document.getElementById('vermietungModal');
+    const modalInstance = bootstrap.Modal.getInstance(modalElem);
+    if (modalInstance) modalInstance.hide();
+
+    showToast(`✅ Aktion «${action}» erfolgreich ausgeführt!${mailWarnMsg}`);
+    await loadVermietungData(true);
+
+  } catch (e) {
+    if (modalFooter) modalFooter.innerHTML = originalFooter;
+    console.error("Fehler bei Vermietungsaktion:", e);
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({ title: "Fehler beim Ausführen", message: "❌ Fehler beim Ausführen: " + e.message, type: "danger" });
+    } else {
+      alert("❌ Fehler beim Ausführen: " + e.message);
+    }
+  }
+}
+
+// Öffnet das Modal für die Schnellerfassung einer neuen Miete
+function openNewReservationModal() {
+  const modalBody = document.getElementById('new-reservation-modal-body');
+  if (!modalBody) return;
+
+  const pricingList = window._rentalPricing || [
+    { id: 'std', tariff_code: 'standard_tag', description: 'Ganzer Tag Schützenstube (Standard)', base_price_chf: 300 }
+  ];
+
+  const pricingOptions = pricingList.map(p => `
+    <option value="${p.id}" data-price="${p.base_price_chf}">
+      ${escapeHtml(p.description)} – CHF ${parseFloat(p.base_price_chf).toFixed(2)}
+    </option>
+  `).join('');
+
+  modalBody.innerHTML = `
+    <form id="new-reservation-form" class="row g-3">
+      <div class="col-md-3">
+        <label class="form-label small fw-bold text-muted">Anrede</label>
+        <select class="form-select form-select-sm" id="new-res-salutation">
+          <option value="Herr">Herr</option>
+          <option value="Frau">Frau</option>
+          <option value="Familie">Familie</option>
+          <option value="Firma">Firma / Verein</option>
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small fw-bold text-muted">Vorname *</label>
+        <input type="text" class="form-control form-control-sm" id="new-res-firstname" required placeholder="Vorname">
+      </div>
+      <div class="col-md-5">
+        <label class="form-label small fw-bold text-muted">Nachname *</label>
+        <input type="text" class="form-control form-control-sm" id="new-res-lastname" required placeholder="Nachname">
+      </div>
+
+      <div class="col-md-6">
+        <label class="form-label small fw-bold text-muted">E-Mail-Adresse *</label>
+        <input type="email" class="form-control form-control-sm" id="new-res-email" required placeholder="name@beispiel.ch">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label small fw-bold text-muted">Telefonnummer *</label>
+        <input type="tel" class="form-control form-control-sm" id="new-res-phone" required placeholder="079 000 00 00">
+      </div>
+
+      <div class="col-md-6">
+        <label class="form-label small fw-bold text-muted">Strasse / Nr.</label>
+        <input type="text" class="form-control form-control-sm" id="new-res-street" placeholder="Musterweg 1">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small fw-bold text-muted">PLZ</label>
+        <input type="text" class="form-control form-control-sm" id="new-res-plz" placeholder="5037">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small fw-bold text-muted">Ort</label>
+        <input type="text" class="form-control form-control-sm" id="new-res-city" placeholder="Muhen">
+      </div>
+
+      <hr class="my-2">
+
+      <div class="col-md-4">
+        <label class="form-label small fw-bold text-muted">Mietdatum *</label>
+        <input type="date" class="form-control form-control-sm" id="new-res-date" required>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-bold text-muted">Festbeginn</label>
+        <input type="time" class="form-control form-control-sm" id="new-res-time" value="14:00">
+      </div>
+      <div class="col-md-5">
+        <label class="form-label small fw-bold text-muted">Tarif & Mietbetrag</label>
+        <select class="form-select form-select-sm" id="new-res-tariff">
+          ${pricingOptions}
+        </select>
+      </div>
+
+      <div class="col-12">
+        <label class="form-label small fw-bold text-muted">Bemerkungen / Admin-Notiz</label>
+        <textarea class="form-control form-control-sm" id="new-res-notes" rows="2" placeholder="Zusätzliche Vereinbarungen..."></textarea>
+      </div>
+
+      <div class="col-12">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="new-res-send-mail" checked>
+          <label class="form-check-label small fw-semibold" for="new-res-send-mail">
+            Mietvertrag (PDF + QR) sofort per E-Mail senden &amp; Google Kalender blockieren
+          </label>
+        </div>
+      </div>
+    </form>
+  `;
+
+  new bootstrap.Modal(document.getElementById('newReservationModal')).show();
+}
+
+// Speichert die neu erfasste Reservation direkt in Supabase
+async function saveNewReservation() {
+  const firstname = document.getElementById('new-res-firstname')?.value.trim();
+  const lastname  = document.getElementById('new-res-lastname')?.value.trim();
+  const email     = document.getElementById('new-res-email')?.value.trim();
+  const phone     = document.getElementById('new-res-phone')?.value.trim();
+  const dateStr   = document.getElementById('new-res-date')?.value;
+  const timeStr   = document.getElementById('new-res-time')?.value || '14:00';
+  const salutation= document.getElementById('new-res-salutation')?.value || 'Herr';
+  const street    = document.getElementById('new-res-street')?.value.trim() || '–';
+  const plz       = document.getElementById('new-res-plz')?.value.trim() || '5037';
+  const city      = document.getElementById('new-res-city')?.value.trim() || 'Muhen';
+  const notes     = document.getElementById('new-res-notes')?.value.trim() || '';
+
+  const tariffSelect = document.getElementById('new-res-tariff');
+  const pricingId    = tariffSelect?.value;
+  const priceOption  = tariffSelect?.options[tariffSelect.selectedIndex];
+  const totalAmount  = parseFloat(priceOption?.getAttribute('data-price') || 300.00);
+
+  if (!firstname || !lastname || !email || !phone || !dateStr) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({ title: "Pflichtfelder ausfüllen", message: "Bitte fülle alle mit * markierten Pflichtfelder aus.", type: "warning" });
+    } else {
+      alert("Bitte fülle alle mit * markierten Pflichtfelder aus.");
+    }
+    return;
+  }
+
+  const supa = (typeof window.getSupabaseClient === 'function') ? window.getSupabaseClient() : window.supabaseClient;
+  if (!supa) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({ title: "Verbindungsfehler", message: "Supabase Verbindung nicht initialisiert.", type: "danger" });
+    } else {
+      alert("Supabase Verbindung nicht initialisiert.");
+    }
+    return;
+  }
+
+  const executeSave = async () => {
+    try {
+      const payload = {
+        salutation: salutation,
+        first_name: firstname,
+        last_name: lastname,
+        street: street,
+        post_code: plz,
+        city: city,
+        email: email,
+        phone: phone,
+        start_date: dateStr,
+        end_date: dateStr,
+        festbeginn: timeStr,
+        pricing_id: pricingId && pricingId !== 'std' ? pricingId : null,
+        total_amount_chf: totalAmount,
+        status: 'contract_sent',
+        datum_vertrag: new Date().toISOString().split('T')[0],
+        admin_comment: notes
+      };
+
+      const { data, error } = await supa
+        .from('rental_requests')
+        .insert([payload])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // RechnungsCore: Zentrale Forderung/Rechnung automatisch anlegen
+      try {
+        await ensureRentalInvoice(data);
+      } catch (invErr) {
+        console.warn("⚠️ RechnungsCore Erstellung Vermietung:", invErr);
+      }
+
+      // Automatisches Generieren des Mietvertrags-PDFs mit Schweizer QR-Rechnung
+      if (typeof window.vmGenerateRentalContractPdf === 'function') {
+        try {
+          const pdfRes = await window.vmGenerateRentalContractPdf(data.booking_number, { silent: true });
+          if (pdfRes) {
+            data.contract_file_url = pdfRes.pdfUrl || data.contract_file_url;
+            data.contract_storage_path = pdfRes.storagePath || data.contract_storage_path;
+          }
+        } catch (pdfErr) {
+          console.warn("Hinweis PDF-Generierung:", pdfErr);
+        }
+      }
+
+      const shouldDispatch = document.getElementById('new-res-send-mail')?.checked !== false;
+      let dispatchNote = '';
+      if (shouldDispatch) {
+        await syncRentalCalendar('block', data);
+        try {
+          const mailRes = await sendRentalWorkflowEmail('vertrag_mail', data, window._rentalSettings);
+          if (!mailRes?.success) {
+            dispatchNote = ` (Mail-Hinweis: ${mailRes?.error || 'Versand prüfen'})`;
+          }
+        } catch (mailErr) {
+          console.warn("Hinweis Vertrag-Mail bei Neuerfassung:", mailErr);
+          dispatchNote = ` (Mail-Hinweis: ${mailErr.message})`;
+        }
+      }
+
+      // Modal schliessen
+      const modalElem = document.getElementById('newReservationModal');
+      const modalInstance = bootstrap.Modal.getInstance(modalElem);
+      if (modalInstance) modalInstance.hide();
+
+      showToast(`✅ Reservation ${data.booking_number} erfolgreich in Supabase erfasst!${dispatchNote}`);
+      await loadVermietungData(true);
+
+    } catch (err) {
+      console.error("Fehler beim Speichern der Reservation:", err);
+      if (window.UIConfirmKit) {
+        await UIConfirmKit.alert({ title: "Fehler beim Speichern", message: "❌ Fehler beim Speichern: " + err.message, type: "danger" });
+      } else {
+        alert("❌ Fehler beim Speichern: " + err.message);
+      }
+    }
+  };
+
+  if (window.UIButtonKit && document.getElementById('btn-save-new-reservation')) {
+    await UIButtonKit.withLoading('#btn-save-new-reservation', executeSave);
+  } else {
+    await executeSave();
+  }
+}
+
+/**
+ * Stellt sicher, dass zu einer Vermietung ein zentraler Rechnungsdatensatz via RechnungsCore existiert
+ * @param {Object} d Vermietungsdatensatz
+ * @returns {Promise<Object|null>} Rechnungsdatensatz
+ */
+async function ensureRentalInvoice(d) {
+  if (!d) return null;
+  const supa = (typeof window.getSupabaseClient === 'function') ? window.getSupabaseClient() : window.supabaseClient;
+  if (!supa) return null;
+
+  const bookingNr = d.booking_number || d.vertragsnr || d.id;
+
+  try {
+    // 1. Prüfen, ob bereits eine Rechnung vorhanden ist
+    const { data: existing } = await supa
+      .from('invoices')
+      .select('id, total_amount, open_amount, status, recipient_address')
+      .eq('source_module', 'vermietung')
+      .or(`source_id.eq.${bookingNr},source_id.eq.${d.id}`)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      if (d.id && !d.invoice_id) {
+        await supa.from('rental_requests').update({ invoice_id: existing[0].id }).eq('id', d.id);
+      }
+      return existing[0];
+    }
+
+    if (!window.RechnungsCore || typeof window.RechnungsCore.createInvoice !== 'function') {
+      return null;
+    }
+
+    // 2. Einheitliches InvoiceOrder-Payload nach Vertragsstandard
+    const invoiceOrder = {
+      source: {
+        module: 'vermietung',
+        id: bookingNr
+      },
+      recipient: {
+        name: `${d.first_name || d.vorname || ''} ${d.last_name || d.nachname || ''}`.trim() || 'Mieter Schützenstube',
+        salutation: d.salutation || d.anrede || '',
+        street: d.street || d.strasse || '',
+        zip: d.post_code || d.plz || '',
+        city: d.city || d.wohnort || '',
+        email: d.email || ''
+      },
+      sender: {
+        bereich: 'Vermietung Schützenstube',
+        funktion: 'Vermieter'
+      },
+      positions: [
+        {
+          title: `Miete Schützenstube Muhen (${d.start_date || d.mietdatum || 'Reservation'})`,
+          quantity: 1,
+          unitPrice: Number(d.total_amount_chf || d.betrag_raw || 300),
+          account: '3400' // Ertrag Vermietung Schützenhaus
+        }
+      ],
+      options: {
+        dueDateDays: parseInt(window._rentalSettings?.payment_due_days, 10) || 14,
+        type: 'Vermietung',
+        notes: `Mietvertrag ${bookingNr}`,
+        bookingNumber: bookingNr
+      }
+    };
+
+    const coreRes = await window.RechnungsCore.createInvoice(invoiceOrder);
+    const newInvoice = coreRes?.invoice || coreRes;
+    if (newInvoice?.id && d.id) {
+      const { error: linkErr } = await supa.from('rental_requests').update({ invoice_id: newInvoice.id }).eq('id', d.id);
+      if (linkErr) console.warn("⚠️ [Vermietung] Konnte invoice_id auf rental_requests nicht verknüpfen:", linkErr);
+    }
+    console.log(`✅ [Vermietung] Zentrale Rechnung erfolgreich via RechnungsCore erstellt: ${newInvoice.id}`);
+    return newInvoice;
+  } catch (err) {
+    console.warn("⚠️ [Vermietung] Fehler bei ensureRentalInvoice:", err);
+    return null;
+  }
+}
+
+/**
+ * Speichert alle Tarife und Systemeinstellungen der Vermietung atomar in Supabase
+ */
+async function saveRentalSettings() {
+  const supa = (typeof window.getSupabaseClient === 'function') ? window.getSupabaseClient() : window.supabaseClient;
+  if (!supa) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({ title: "Verbindungsfehler", message: "Supabase Client nicht initialisiert.", type: "danger" });
+    } else {
+      alert("Supabase Client nicht initialisiert.");
+    }
+    return;
+  }
+
+  const runSave = async () => {
+    const stdPrice = parseFloat(document.getElementById('cfg-price-standard')?.value || 300);
+    const mbrPrice = parseFloat(document.getElementById('cfg-price-member')?.value || 150);
+    const glassFee = parseFloat(document.getElementById('cfg-glass-fee')?.value || 2);
+    const plateFee = parseFloat(document.getElementById('cfg-plate-fee')?.value || 5);
+    const stornoFee = parseFloat(document.getElementById('cfg-storno-fee')?.value || 100);
+    const woodFee = parseFloat(document.getElementById('cfg-wood-fee')?.value || 20);
+    const cleanFee = parseFloat(document.getElementById('cfg-cleaning-fee')?.value || 35);
+    const garbageFee = parseFloat(document.getElementById('cfg-garbage-fee')?.value || 4);
+    const paymentDueDays = parseInt(document.getElementById('cfg-payment-due-days')?.value, 10) || 14;
+
+    const sFirst = document.getElementById('cfg-sender-firstname')?.value.trim() || '';
+    const sLast = document.getElementById('cfg-sender-lastname')?.value.trim() || '';
+    const sPhone = document.getElementById('cfg-sender-phone')?.value.trim() || '';
+    const clubEmail = document.getElementById('cfg-club-email')?.value.trim() || '';
+    // Leerer CC-Verteiler bleibt leer (kein stiller Zwangsrückfall auf clubEmail)
+    const ccEmails = document.getElementById('cfg-cc-emails')?.value.trim() ?? '';
+
+    const wName = document.getElementById('cfg-wirtschaft-name')?.value.trim() || '';
+    const wPhone = document.getElementById('cfg-wirtschaft-phone')?.value.trim() || '';
+    const wEmail = document.getElementById('cfg-wirtschaft-email')?.value.trim() || '';
+
+    const iban = document.getElementById('cfg-iban')?.value.trim() || '';
+    const mapsUrl = document.getElementById('cfg-maps-url')?.value.trim() || '';
+    const fbUrl = document.getElementById('cfg-feedback-url')?.value.trim() || '';
+
+    const nowIso = new Date().toISOString();
+
+    // 1. Settings Batch-Upsert in public.rental_settings (inkl. updated_at)
+    const settingsRows = [
+      { setting_key: 'sender_first_name', setting_value: sFirst, description: 'Vorname des Vermieters / Absenders', updated_at: nowIso },
+      { setting_key: 'sender_last_name', setting_value: sLast, description: 'Nachname des Vermieters / Absenders', updated_at: nowIso },
+      { setting_key: 'sender_phone', setting_value: sPhone, description: 'Telefonnummer des Vermieters', updated_at: nowIso },
+      { setting_key: 'club_email', setting_value: clubEmail, description: 'Hauptkontakt / Absender für Vermietungen', updated_at: nowIso },
+      { setting_key: 'rental_cc_emails', setting_value: ccEmails, description: 'Zentraler E-Mail-Verteiler für alle Vermietungs-Mails (Kopien an Verein & Team, kommagetrennt)', updated_at: nowIso },
+      { setting_key: 'wirtschaft_name', setting_value: wName, description: 'Name / Kontakt Schlüsselübergabe', updated_at: nowIso },
+      { setting_key: 'wirtschaft_phone', setting_value: wPhone, description: 'Telefon Schlüsselübergabe', updated_at: nowIso },
+      { setting_key: 'wirtschaft_email', setting_value: wEmail, description: 'E-Mail Schlüsselübergabe', updated_at: nowIso },
+      { setting_key: 'iban', setting_value: iban, description: 'IBAN für Schweizer QR-Rechnung', updated_at: nowIso },
+      { setting_key: 'maps_url', setting_value: mapsUrl, description: 'Google Maps Link Schützenhaus', updated_at: nowIso },
+      { setting_key: 'feedback_base_url', setting_value: fbUrl, description: 'Basis-URL für Storno-Rückmeldung', updated_at: nowIso },
+      { setting_key: 'deposit_amount', setting_value: '0', description: 'Kaution entfällt (nicht mehr verwendet)', updated_at: nowIso },
+      { setting_key: 'glass_fee', setting_value: String(glassFee), description: 'Glasbruch pro Glas in CHF', updated_at: nowIso },
+      { setting_key: 'plate_fee', setting_value: String(plateFee), description: 'Glasbruch / Bruch pro Teller in CHF', updated_at: nowIso },
+      { setting_key: 'storno_fee', setting_value: String(stornoFee), description: 'Stornogebühr in CHF', updated_at: nowIso },
+      { setting_key: 'wood_fee', setting_value: String(woodFee), description: 'Zusatz Cheminéeholz pro Kiste in CHF', updated_at: nowIso },
+      { setting_key: 'cleaning_fee_per_hour', setting_value: String(cleanFee), description: 'Nachreinigung pro Stunde in CHF', updated_at: nowIso },
+      { setting_key: 'garbage_bag_fee', setting_value: String(garbageFee), description: 'Kehrichtsack pro Stk in CHF', updated_at: nowIso },
+      { setting_key: 'payment_due_days', setting_value: String(paymentDueDays), description: 'Zahlungsfrist in Tagen für Mietvertrag und QR-Rechnung', updated_at: nowIso }
+    ];
+
+    const { error: setErr } = await supa.from('rental_settings').upsert(settingsRows, { onConflict: 'setting_key' });
+    if (setErr) throw setErr;
+
+    // 1b. Synchronisiere Zahlungsfrist auch in document_templates für Mietvertrag
+    try {
+      const { error: docErr } = await supa.from('document_templates')
+        .update({ due_days: paymentDueDays, updated_at: nowIso })
+        .or('code.eq.mietvertrag,id.eq.mietvertrag_rueteli');
+      if (docErr) console.warn("Warnung beim Sync document_templates.due_days:", docErr);
+      if (window._docTemplatesData) {
+        const t = window._docTemplatesData.find(x => x.code === 'mietvertrag' || x.id === 'mietvertrag_rueteli');
+        if (t) t.due_days = paymentDueDays;
+      }
+    } catch (syncErr) {
+      console.warn("Hinweis: Synchronisation document_templates.due_days:", syncErr);
+    }
+
+    // 2. Pricing Updates in public.rental_pricing (Kaution immer 0.00)
+    const { error: p1Err } = await supa.from('rental_pricing').update({
+      base_price_chf: stdPrice,
+      deposit_chf: 0
+    }).eq('tariff_code', 'standard_tag');
+    if (p1Err) throw p1Err;
+
+    const { error: p2Err } = await supa.from('rental_pricing').update({
+      base_price_chf: mbrPrice,
+      deposit_chf: 0
+    }).eq('tariff_code', 'mitglied_rabatt');
+    if (p2Err) throw p2Err;
+
+    // 3. Lokalen State synchronisieren
+    if (!window._rentalSettings) window._rentalSettings = {};
+    settingsRows.forEach(r => {
+      window._rentalSettings[r.setting_key] = r.setting_value;
+    });
+
+    if (window._rentalPricing) {
+      const std = window._rentalPricing.find(p => p.tariff_code === 'standard_tag');
+      if (std) { std.base_price_chf = stdPrice; std.deposit_chf = 0; }
+      const mbr = window._rentalPricing.find(p => p.tariff_code === 'mitglied_rabatt');
+      if (mbr) { mbr.base_price_chf = mbrPrice; mbr.deposit_chf = 0; }
+    }
+
+    showToast("✅ Einstellungen und Tarife erfolgreich in Supabase gespeichert!");
+  };
+
+  try {
+    if (window.UIButtonKit && typeof window.UIButtonKit.withLoading === 'function') {
+      await window.UIButtonKit.withLoading('#cfg-save-btn', runSave);
+    } else {
+      const btn = document.getElementById('cfg-save-btn');
+      const origBtnText = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> Speichere Einstellungen...`;
+      }
+      try {
+        await runSave();
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = origBtnText;
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Fehler beim Speichern der Einstellungen:", err);
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({ title: "Fehler beim Speichern", message: "❌ Fehler beim Speichern: " + err.message, type: "danger" });
+    } else {
+      alert("❌ Fehler beim Speichern: " + err.message);
+    }
+  }
+}
+
+// ==============================================================================
+// NOTFALL-BUCHUNGEN SYNCHRONISATION (GOOGLE APPS SCRIPT -> SUPABASE)
+// ==============================================================================
+
+/**
+ * Konvertiert Datumsangaben aus Google Sheets (DD.MM.YYYY, YYYY-MM-DD oder UTC-ISO-Zeitstempel)
+ * zeitzonensicher in Europe/Zurich nach YYYY-MM-DD.
+ */
+function parseNotfallSheetDateToIso(rawVal) {
+  if (rawVal === null || rawVal === undefined) return null;
+  const s = String(rawVal).trim();
+  if (!s) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  const chMatch = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (chMatch) {
+    return `${chMatch[3]}-${chMatch[2].padStart(2, '0')}-${chMatch[1].padStart(2, '0')}`;
+  }
+
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Zurich',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(d);
+    const y = parts.find(p => p.type === 'year')?.value;
+    const m = parts.find(p => p.type === 'month')?.value;
+    const day = parts.find(p => p.type === 'day')?.value;
+    if (y && m && day) return `${y}-${m}-${day}`;
+  }
+
+  return null;
+}
+
+/**
+ * Normalisiert das Festbeginn-Feld aus Google Sheets (Zahl, Zeit-ISO oder Freitext) zu einem String.
+ */
+function normalizeNotfallFestbeginn(rawVal) {
+  if (rawVal === null || rawVal === undefined) return null;
+  const s = String(rawVal).trim();
+  if (!s || s === '–' || s === '-') return null;
+
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      const parts = new Intl.DateTimeFormat('de-CH', {
+        timeZone: 'Europe/Zurich',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      }).formatToParts(d);
+      const hh = parts.find(p => p.type === 'hour')?.value;
+      const mm = parts.find(p => p.type === 'minute')?.value;
+      if (hh && mm) return `${hh}:${mm}`;
+    }
+  }
+
+  if (/^\d{1,2}$/.test(s)) {
+    const h = parseInt(s, 10);
+    if (h >= 0 && h <= 24) return `${String(h).padStart(2, '0')}:00`;
+  }
+
+  return s;
+}
+
+/**
+ * Normalisiert Telefonnummern aus Google Sheets (stellt z.B. verlorene führende Null wieder her).
+ */
+function normalizeNotfallPhone(rawVal) {
+  if (rawVal === null || rawVal === undefined) return '';
+  let s = String(rawVal).trim();
+  if (!s) return '';
+  if (/^[1-9]\d{8}$/.test(s)) {
+    s = '0' + s;
+  }
+  if (window.UIFormatKit && typeof window.UIFormatKit.formatPhone === 'function') {
+    return window.UIFormatKit.formatPhone(s, { fallback: s });
+  }
+  return s;
+}
+
+async function syncNotfallBuchungen() {
+  const executeSync = async () => {
+    const supa = getSupabaseClient();
+    const { data: sessData } = await supa.auth.getSession();
+    const accessToken = sessData?.session?.access_token || '';
+    const workerAuthHeaders = accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {};
+    const proxyUrl = "https://github-dropdown-refresh.dan-hunziker73.workers.dev?action=getUnsyncedRentals";
+    const resp = await fetch(proxyUrl, { headers: workerAuthHeaders });
+    if (!resp.ok) throw new Error("Fehler beim Abrufen der Notfall-Buchungen: HTTP " + resp.status);
+
+    const data = await resp.json();
+    const unsynced = data.bookings || [];
+
+    if (unsynced.length === 0) {
+      if (typeof showToast === 'function') {
+        showToast("ℹ️ Keine offenen Notfall-Buchungen im Google Sheet vorhanden. Alles auf aktuellem Stand!");
+      } else if (window.UIConfirmKit) {
+        await UIConfirmKit.alert({
+          title: "Notfall-Sheet synchron",
+          message: "Keine offenen Notfall-Buchungen im Google Sheet vorhanden. Alles auf aktuellem Stand!",
+          type: "info"
+        });
+      }
+      return;
+    }
+
+    const confirmMsg = `Es wurden ${unsynced.length} neue Notfall-Buchung(en) im Google Sheet gefunden:\n\n` +
+      unsynced.map(b => {
+        const iso = parseNotfallSheetDateToIso(b.mietdatum);
+        const dateDisp = iso
+          ? (window.UIFormatKit ? UIFormatKit.formatDate(iso) : iso)
+          : String(b.mietdatum || 'unbekanntes Datum');
+        return `• ${b.booking_number}: ${b.vorname || ''} ${b.nachname || ''} (${dateDisp})`;
+      }).join('\n') +
+      `\n\nJetzt in die Supabase-Datenbank importieren?`;
+
+    if (window.UIConfirmKit) {
+      const ok = await UIConfirmKit.confirm({
+        title: "Notfall-Buchungen importieren",
+        message: confirmMsg,
+        confirmText: "Jetzt importieren",
+        type: "primary"
+      });
+      if (!ok) return;
+    }
+
+    let importedCount = 0;
+    const syncedBookingNumbers = [];
+    const failedBookings = [];
+
+    for (const b of unsynced) {
+      const bookingNr = String(b.booking_number || '').trim();
+      const isoDate = parseNotfallSheetDateToIso(b.mietdatum);
+      if (!isoDate) {
+        failedBookings.push(`${bookingNr || 'Unbekannt'}: Ungültiges Mietdatum (${b.mietdatum || 'leer'})`);
+        continue;
+      }
+
+      const isInq = String(b.typ || '').toLowerCase().includes('anfrage') || String(b.status || '').toLowerCase().includes('anfrage');
+      const rawPdf = String(b.pdf_url || '').trim();
+      const pdfUrl = (rawPdf && rawPdf !== 'Kein PDF') ? rawPdf : null;
+
+      const payload = {
+        booking_number: bookingNr,
+        is_inquiry: isInq,
+        inquiry_type: isInq ? (String(b.bemerkung || '').trim() || 'Vorab-Prüfung') : null,
+        inquiry_note: String(b.bemerkung || '').trim() || null,
+        salutation: String(b.anrede || '').trim() || null,
+        first_name: String(b.vorname || '').trim() || 'Unbekannt',
+        last_name: String(b.nachname || '').trim() || 'Unbekannt',
+        email: String(b.email || '').trim(),
+        phone: normalizeNotfallPhone(b.telefon),
+        street: String(b.strasse ?? '').trim(),
+        post_code: String(b.plz ?? '').trim(),
+        city: String(b.wohnort ?? '').trim(),
+        start_date: isoDate,
+        end_date: isoDate,
+        festbeginn: normalizeNotfallFestbeginn(b.festbeginn),
+        total_amount_chf: Number(b.mietbetrag) || 300.00,
+        deposit_amount_chf: 0,
+        status: isInq ? 'inquiry' : 'contract_sent',
+        datum_vertrag: parseNotfallSheetDateToIso(b.zeitstempel) || new Date().toISOString().split('T')[0],
+        source: 'google_fallback',
+        contract_file_url: pdfUrl
+      };
+
+      const { data: inserted, error: insertErr } = await supa
+        .from('rental_requests')
+        .upsert(payload, { onConflict: 'booking_number' })
+        .select('id, booking_number');
+
+      if (insertErr) {
+        console.warn("Fehler beim Import von " + bookingNr, insertErr);
+        failedBookings.push(`${bookingNr}: ${insertErr.message || 'Datenbankfehler'}`);
+        continue;
+      }
+
+      // Proforma-Rechnung im RechnungsCore anlegen falls feste Buchung
+      if (!isInq && inserted && inserted[0]) {
+        try {
+          await supa.rpc('ensure_rental_proforma_invoice', { p_booking_number: inserted[0].booking_number });
+        } catch (invErr) {
+          console.warn("Proforma-Rechnung Hinweis:", invErr);
+        }
+      }
+
+      importedCount++;
+      syncedBookingNumbers.push(bookingNr);
+    }
+
+    // Nur erfolgreich importierte Buchungen im Google Sheet als synchronisiert markieren
+    if (syncedBookingNumbers.length > 0) {
+      const markResp = await fetch("https://github-dropdown-refresh.dan-hunziker73.workers.dev?action=markSyncedRentals", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...workerAuthHeaders },
+        body: JSON.stringify({ booking_numbers: syncedBookingNumbers })
+      }).catch(e => {
+        console.warn("Sync-Markierung Hinweis:", e);
+        return null;
+      });
+      if (markResp && !markResp.ok) {
+        console.warn("Sync-Markierung HTTP-Fehler:", markResp.status);
+      }
+    }
+
+    if (failedBookings.length > 0) {
+      const errDetail = failedBookings.join('\n');
+      const msg = importedCount > 0
+        ? `⚠️ ${importedCount} Notfall-Buchung(en) importiert, aber ${failedBookings.length} Buchung(en) konnten nicht übernommen werden:\n\n${errDetail}`
+        : `❌ Keine Notfall-Buchung konnte importiert werden:\n\n${errDetail}`;
+      if (window.UIConfirmKit) {
+        await UIConfirmKit.alert({
+          title: importedCount > 0 ? "Teilweiser Import" : "Import fehlgeschlagen",
+          message: msg,
+          type: importedCount > 0 ? "warning" : "danger"
+        });
+      }
+    } else if (typeof showToast === 'function') {
+      showToast(`✅ ${importedCount} Notfall-Buchung(en) nach Supabase importiert!`);
+    } else if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: "Import erfolgreich",
+        message: `✅ Erfolgreich ${importedCount} Notfall-Buchung(en) nach Supabase importiert und im Google Sheet als synchronisiert markiert.`,
+        type: "info"
+      });
+    }
+
+    // Daten im Cockpit neu laden, sobald mindestens ein Datensatz importiert wurde
+    if (importedCount > 0 && typeof loadVermietungData === 'function') {
+      await loadVermietungData(true);
+    }
+  };
+
+  try {
+    if (window.UIButtonKit && typeof window.UIButtonKit.withLoading === 'function') {
+      await window.UIButtonKit.withLoading('#btn-sync-notfall', executeSync, { loadingText: 'Prüfe Notfall-Sheet...' });
+    } else {
+      await executeSync();
+    }
+  } catch (err) {
+    console.error("Notfall-Sync Fehler:", err);
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({
+        title: "Synchronisations-Fehler",
+        message: "❌ Fehler beim Synchronisieren: " + err.message,
+        type: "danger"
+      });
+    }
+  }
+}
+

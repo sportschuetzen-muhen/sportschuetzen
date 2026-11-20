@@ -1,0 +1,5157 @@
+// supabase/functions/generate-pdf/index.ts
+// ==============================================================================
+// Phase 21: Zentrale Dokument- & PDF-Engine (Supabase Edge Function)
+// Projekt: Vereinsportal Sportschützen Muhen
+//
+// Features:
+// - Standardisierte Schweizer QR-Rechnung nach SIX-Spezifikation (SPC 0200 1)
+// - Vektorbasierte PDF-Erstellung mittels pdf-lib (A4, DIN 5008 Fenster rechts)
+// - Empfangsschein (Receipt, 62mm) & Zahlteil (Payment part, 148mm) mit Perforationslinie
+// - Vektorbasiertes Schweizerkreuz (7x7mm) im QR-Code Zentrum (Fehlerkorrektur Level M)
+// - Unterstützung für Rechnungen, Jahresbeiträge, Mietverträge und Quittungen
+// - Direkter Upload in Supabase Storage (Bucket 'operatives-storage')
+// - Automatische Verknüpfung in public.invoices & public.rental_bookings
+// - Optionale Weiterleitung an Paperless-NGX REST-API (Langzeitarchiv)
+// ==============================================================================
+
+import { corsHeaders } from "../_shared/cors.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.8";
+import { PDFDocument, PDFName, PDFString, rgb, StandardFonts } from "https://esm.sh/pdf-lib@1.17.1";
+import qrcode from "https://esm.sh/qrcode-generator@1.4.4";
+import { EMBEDDED_LOGO_BASE64 } from "./logo-base64.ts";
+
+// Vereins-Standard-Konstanten
+const CLUB_IBAN = "CH0680808003633131892";
+const CLUB_IBAN_FORMATTED = "CH06 8080 8003 6331 3189 2";
+const CLUB_NAME = "Sportschützen Muhen";
+const CLUB_STREET = "Schiessanlage Rüteli";
+const CLUB_ZIP = "5037";
+const CLUB_CITY = "Muhen";
+const CLUB_COUNTRY = "CH";
+const CLUB_EMAIL = "info@sportschuetzen-muhen.ch";
+const CLUB_WEBSITE = "www.sportschuetzen-muhen.ch";
+
+// Schweizer Tausendertrennzeichen (Apostroph: 2'280.00)
+function formatSwissChf(num: number | string | null | undefined): string {
+  const n = Number(num || 0);
+  const parts = n.toFixed(2).split(".");
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, "'");
+  return parts.join(".");
+}
+
+// mm zu PDF-Points (72 pt pro Inch = 72 / 25.4 pt/mm)
+const MM = 72 / 25.4;
+const A4_WIDTH = 595.28;
+const A4_HEIGHT = 841.89;
+
+// Globaler In-Memory Cache für Logo-Bytes (Latenz- & Cold-Start-Optimierung)
+let cachedLogoBytes: Uint8Array | null = null;
+
+// Hilfsfunktion: Logo mit In-Memory Cache, Base64-Inlining und Storage-Fallback laden
+async function getOrLoadLogoBytes(supabaseClient?: any): Promise<Uint8Array | null> {
+  if (cachedLogoBytes) return cachedLogoBytes;
+
+  // 1. Primär: Kompiliertes Base64-Logo nutzen (Cold-Start Latenz: 0 ms)
+  if (EMBEDDED_LOGO_BASE64) {
+    try {
+      const binStr = atob(EMBEDDED_LOGO_BASE64);
+      const len = binStr.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binStr.charCodeAt(i);
+      }
+      cachedLogoBytes = bytes;
+      return cachedLogoBytes;
+    } catch (err) {
+      console.warn("⚠️ [PDF-Engine] Base64-Logo Decode Warnung:", err);
+    }
+  }
+
+  // 2. Sekundär: Supabase Storage Bucket 'operatives-storage'
+  if (supabaseClient) {
+    try {
+      const { data: logoBlob } = await supabaseClient.storage.from("operatives-storage").download("assets/logo.png");
+      if (logoBlob) {
+        cachedLogoBytes = new Uint8Array(await logoBlob.arrayBuffer());
+        return cachedLogoBytes;
+      }
+    } catch (err) {
+      console.warn("⚠️ [PDF-Engine] Storage Logo-Download Warnung:", err);
+    }
+  }
+
+  return null;
+}
+
+// Zweistufiger Text-Sanitizer für sicheres WinAnsi-Encoding (StandardFonts.Helvetica)
+// Stufe 1: Typografie & Sonderzeichen (Anführungszeichen, Gedankenstriche, Aufzählungspunkte, NBSP)
+// Stufe 2: Europäische Umlaut-Garantie (ä, ö, ü, Ä, Ö, Ü, é, è, ê, à, â, ç) & WinAnsi-Crash-Schutz
+function sanitizeWinAnsiText(str: string | null | undefined): string {
+  if (!str) return "";
+  let text = String(str).normalize("NFC");
+
+  // Stufe 1: Typografische Zeichen & Whitespace
+  text = text
+    .replace(/[\u00AB\u00BB\u201C\u201D\u201E\u201F]/g, '"') // « » “ ” „
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")             // ‘ ’ ‚
+    .replace(/[\u2013\u2014]/g, "-")                         // – —
+    .replace(/\u2022/g, "-")                                 // •
+    .replace(/\u2026/g, "...")                               // …
+    .replace(/[\u00A0\u202F]/g, " ")                         // Non-breaking spaces
+    .replace(/a\u0308/g, "ä").replace(/o\u0308/g, "ö").replace(/u\u0308/g, "ü")
+    .replace(/A\u0308/g, "Ä").replace(/O\u0308/g, "Ö").replace(/U\u0308/g, "Ü")
+    .replace(/M\?rz/g, "März");                              // Reparatur allfälliger Alt-Artefakte
+
+  // Stufe 2: WinAnsi-Bereich (0x00 - 0xFF) sicherstellen
+  // Bekannte Sonderzeichen oberhalb von 255 sauber mappen
+  const extendedMap: Record<string, string> = {
+    'Š': 'S', 'š': 's', 'Ž': 'Z', 'ž': 'z', 'Œ': 'OE', 'œ': 'oe', 'Ÿ': 'Y',
+    '€': 'CHF', '’': "'", '–': "-", '—': "-", '™': "TM", '•': "-"
+  };
+
+  return text.replace(/[^\x00-\xFF]/g, (char) => {
+    return extendedMap[char] || "?";
+  });
+}
+
+// Abwärtskompatibler Alias
+function sanitizeText(str: string | null | undefined): string {
+  return sanitizeWinAnsiText(str);
+}
+
+// Text-Wrapping für dynamische Beschreibungszeilen
+function wrapText(text: string, font: any, fontSize: number, maxWidth: number): string[] {
+  const clean = sanitizeText(text);
+  const words = clean.split(/\s+/);
+  const lines: string[] = [];
+  let currentLine = "";
+
+  for (const word of words) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word;
+    const width = font.widthOfTextAtSize(testLine, fontSize);
+    if (width <= maxWidth) {
+      currentLine = testLine;
+    } else {
+      if (currentLine) lines.push(currentLine);
+      currentLine = word;
+    }
+  }
+  if (currentLine) lines.push(currentLine);
+  return lines.length > 0 ? lines : [clean];
+}
+
+// Zeichnet mehrzeiligen Text mit Unterstützung für **fett** / <b>...</b> / <strong>...</strong> Tags
+function drawFormattedLines(
+  page: any,
+  rawText: string,
+  startX: number,
+  startY: number,
+  fontReg: any,
+  fontBld: any,
+  fontSize: number,
+  lineHeight: number,
+  maxWidth: number,
+  textColor: any
+): number {
+  if (!rawText) return startY;
+  let curY = startY;
+
+  const paragraphs = rawText.split("\n");
+
+  for (const para of paragraphs) {
+    const trimmed = para.trim();
+    if (!trimmed) {
+      curY -= lineHeight * 0.65;
+      continue;
+    }
+
+    // Normalisiere HTML-Tags zu **
+    const normalized = trimmed
+      .replace(/<strong[^>]*>/gi, "**")
+      .replace(/<\/strong>/gi, "**")
+      .replace(/<b[^>]*>/gi, "**")
+      .replace(/<\/b>/gi, "**")
+      .replace(/<br\s*\/?>/gi, "\n");
+
+    const subLines = normalized.split("\n");
+    for (const subLine of subLines) {
+      const tokens: Array<{ text: string; bold: boolean }> = [];
+      const parts = subLine.split(/(\*\*.*?\*\*)/g);
+      for (const p of parts) {
+        if (!p) continue;
+        if (p.startsWith("**") && p.endsWith("**") && p.length >= 4) {
+          const inner = p.slice(2, -2);
+          const words = inner.split(/\s+/);
+          words.forEach((w, wIdx) => {
+            if (w) tokens.push({ text: (wIdx > 0 ? " " : "") + w, bold: true });
+          });
+        } else {
+          const words = p.split(/\s+/);
+          words.forEach((w, wIdx) => {
+            if (w) tokens.push({ text: (wIdx > 0 ? " " : "") + w, bold: false });
+          });
+        }
+      }
+
+      let currentLineTokens: Array<{ text: string; bold: boolean }> = [];
+      let currentLineWidth = 0;
+
+      for (let i = 0; i < tokens.length; i++) {
+        const tok = tokens[i];
+        const tokFont = tok.bold ? fontBld : fontReg;
+        const tokWidth = tokFont.widthOfTextAtSize(tok.text, fontSize);
+
+        if (currentLineWidth + tokWidth <= maxWidth || currentLineTokens.length === 0) {
+          currentLineTokens.push(tok);
+          currentLineWidth += tokWidth;
+        } else {
+          let drawX = startX;
+          for (const cTok of currentLineTokens) {
+            const f = cTok.bold ? fontBld : fontReg;
+            page.drawText(sanitizeWinAnsiText(cTok.text), {
+              x: drawX,
+              y: curY,
+              size: fontSize,
+              font: f,
+              color: textColor,
+            });
+            drawX += f.widthOfTextAtSize(cTok.text, fontSize);
+          }
+          curY -= lineHeight;
+          const cleanTokText = tok.text.trimStart();
+          currentLineTokens = [{ text: cleanTokText, bold: tok.bold }];
+          currentLineWidth = (tok.bold ? fontBld : fontReg).widthOfTextAtSize(cleanTokText, fontSize);
+        }
+      }
+
+      if (currentLineTokens.length > 0) {
+        let drawX = startX;
+        for (const cTok of currentLineTokens) {
+          const f = cTok.bold ? fontBld : fontReg;
+          page.drawText(sanitizeWinAnsiText(cTok.text), {
+            x: drawX,
+            y: curY,
+            size: fontSize,
+            font: f,
+            color: textColor,
+          });
+          drawX += f.widthOfTextAtSize(cTok.text, fontSize);
+        }
+        curY -= lineHeight;
+      }
+    }
+  }
+
+  return curY;
+}
+
+interface InvoicePosition {
+  position_nr?: number;
+  description: string;
+  quantity?: number;
+  unit_price?: number;
+  amount?: number;
+}
+
+interface RecipientData {
+  vorname?: string;
+  nachname?: string;
+  name?: string;
+  firma?: string;
+  abteilung?: string;
+  adresszusatz?: string;
+  anrede?: string;
+  strasse?: string;
+  plz?: string;
+  ort?: string;
+  land?: string;
+  email?: string;
+  telefon?: string;
+  typ?: string; // 'privat' | 'firma'
+}
+
+interface SenderData {
+  vorname?: string;
+  nachname?: string;
+  funktion?: string;
+  bereich?: string;
+  verein?: string;
+  strasse?: string;
+  plz?: string;
+  ort?: string;
+  email?: string;
+  mobil?: string;
+}
+
+interface LayoutData {
+  title?: string;
+  intro?: string;
+  outro?: string;
+  notice?: string;
+}
+
+interface GeneratePdfPayload {
+  action?: string; // 'generate-invoice' | 'generateInvoicePDF' | 'generate-contract' | 'generateRentalContractPDF' | 'generate-swiss-qr' | 'generate-gv-invitation' | 'compile-gv-dossier' | 'generate-letter' | 'generateLetterPDF'
+  invoiceId?: string;
+  bookingId?: string;
+  campaignId?: string;
+  campaignRecipientId?: string;
+  letterId?: string;
+  subject?: string;
+  bodyText?: string;
+  letterDate?: string;
+  signers?: Array<{ name: string; role: string }>;
+  gvData?: any;
+  recipient?: RecipientData;
+  sender?: SenderData;
+  layout?: LayoutData;
+  positions?: InvoicePosition[];
+  totalAmount?: number | string;
+  year?: number | string;
+  type?: string;
+  // Mietvertrags-Spezifisch:
+  mietdatum?: string;
+  festbeginn?: string;
+  mietbetrag?: number | string;
+  kaution?: number | string;
+  saveToStorage?: boolean;
+  syncPaperless?: boolean;
+  forceRecreate?: boolean;
+}
+
+// Hilfsfunktion: Empfänger-Daten universell normalisieren (deutsche & englische Keys)
+function normalizeRecipient(r: any): RecipientData {
+  if (!r) return { name: "Mitglied" };
+  const vorname = (r.vorname || r.first_name || r.firstName || "").trim();
+  const nachname = (r.nachname || r.last_name || r.lastName || "").trim();
+  let name = (r.name || "").trim();
+  if (!name && (vorname || nachname)) {
+    name = [vorname, nachname].filter(Boolean).join(" ");
+  }
+
+  const anrede = (r.anrede || r.salutation || "").trim();
+  const strasse = (r.strasse || r.street || r.adresse || "").trim();
+  const plz = String(r.plz || r.zip || r.post_code || r.postCode || "").trim();
+  const ort = (r.ort || r.city || "").trim();
+  let firma = (r.firma || r.company || "").trim();
+  const abteilung = (r.abteilung || r.department || r.zusatz || "").trim();
+  const adresszusatz = (r.adresszusatz || r.addition || "").trim();
+  const email = (r.email || r.mail || r.primary_email || "").trim();
+  const telefon = (r.telefon || r.phone || r.mobil || "").trim();
+  const land = (r.land || r.country || "Schweiz").trim();
+  let typ = (r.typ || r.type || (firma ? "firma" : "privat")).trim().toLowerCase();
+
+  // Schutz gegen versehentlich als Firma gesetzte Personennamen (niemals fLower === nLower prüfen, da bei Firmen name === firma ist!)
+  if (typ === "privat" || typ === "mitglied") {
+    firma = "";
+  } else if (firma) {
+    const fnLn = `${vorname} ${nachname}`.trim().toLowerCase();
+    const lnFn = `${nachname} ${vorname}`.trim().toLowerCase();
+    const fLower = firma.trim().toLowerCase();
+    if (fnLn && (fLower === fnLn || fLower === lnFn)) {
+      firma = "";
+      typ = "privat";
+    } else {
+      typ = "firma";
+    }
+  }
+
+  return {
+    vorname,
+    nachname,
+    name: name || [vorname, nachname].filter(Boolean).join(" ") || firma || "Mitglied",
+    firma,
+    abteilung,
+    adresszusatz,
+    anrede,
+    strasse,
+    plz,
+    ort,
+    land,
+    email,
+    telefon,
+    typ,
+  };
+}
+
+// Hilfsfunktion: Wandelt Ländereingaben in normierte 2-stellige ISO 3166-1 alpha-2 Codes um (SIX-Pflicht)
+function normalizeCountryCode(country: string | null | undefined): string {
+  if (!country) return "CH";
+  const c = country.trim().toUpperCase();
+  if (c === "CH" || c === "SCHWEIZ" || c === "SWITZERLAND" || c === "SUISSE" || c === "SVIZZERA") return "CH";
+  if (c === "LI" || c === "LIECHTENSTEIN" || c === "FL") return "LI";
+  if (c === "DE" || c === "DEUTSCHLAND" || c === "GERMANY") return "DE";
+  if (c === "AT" || c === "ÖSTERREICH" || c === "OESTERREICH" || c === "AUSTRIA") return "AT";
+  if (c === "FR" || c === "FRANKREICH" || c === "FRANCE") return "FR";
+  if (c === "IT" || c === "ITALIEN" || c === "ITALY") return "IT";
+  if (/^[A-Z]{2}$/.test(c)) return c;
+  return "CH";
+}
+
+// Hilfsfunktion: Strasse und Hausnummer trennen
+function splitStreetAndNumber(strasse: string): { streetName: string; houseNumber: string } {
+  if (!strasse) return { streetName: "", houseNumber: "" };
+  const parts = strasse.trim().split(/\s+(?=\d)/);
+  return {
+    streetName: (parts[0] || strasse.trim()).substring(0, 70),
+    houseNumber: (parts.slice(1).join(" ") || "").substring(0, 16),
+  };
+}
+
+// Schweizer QR-Payload nach SIX SPC 0200 1 erzeugen
+function createSwissQrBillString(
+  iban: string,
+  amount: number,
+  invoiceRef: string,
+  recipient: RecipientData,
+  yearStr: string,
+  docType: string
+): string {
+  const cleanIban = iban.replace(/\s/g, "");
+  const isFirma =
+    recipient.typ === "firma" ||
+    Boolean(recipient.firma) ||
+    Boolean(recipient.name && recipient.name.match(/\b(AG|GmbH|Genossenschaft|Verein|Verband|Stiftung|Gemeinde)\b/i));
+
+  const { streetName, houseNumber } = splitStreetAndNumber(recipient.strasse || "");
+
+  let debtorName = "";
+  if (isFirma) {
+    debtorName = recipient.firma || recipient.name || "";
+  } else {
+    debtorName = [recipient.vorname, recipient.nachname].filter(Boolean).join(" ").trim() || (recipient.name || "");
+  }
+  if (debtorName.length > 70) debtorName = debtorName.substring(0, 70);
+
+  const qrRefText = `${invoiceRef} / ${docType || "Rechnung"} ${yearStr}`.trim();
+  const formattedAmount = amount > 0 ? amount.toFixed(2) : "";
+
+  return [
+    "SPC",
+    "0200",
+    "1",
+    cleanIban,
+    "S",
+    CLUB_NAME,
+    CLUB_STREET,
+    "",
+    CLUB_ZIP,
+    CLUB_CITY,
+    CLUB_COUNTRY,
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    formattedAmount,
+    "CHF",
+    "S",
+    debtorName || "Debitor",
+    streetName,
+    houseNumber,
+    (recipient.plz || CLUB_ZIP).substring(0, 16),
+    (recipient.ort || CLUB_CITY).substring(0, 35),
+    normalizeCountryCode(recipient.land),
+    "NON",
+    "",
+    qrRefText.substring(0, 140),
+    "EPD",
+  ].join("\n");
+}
+
+// Hilfsfunktion: Zeichnet den Schweizer QR-Code mit zentriertem Schweizerkreuz via pdf-lib Vektoren
+function drawSwissQrCodeVector(
+  page: any,
+  qrText: string,
+  x: number, // PDF-Points (Links)
+  y: number, // PDF-Points (Unten)
+  sizeMm: number = 46
+) {
+  const sizePt = sizeMm * MM;
+
+  // UTF-8 Encoding für SIX SPC 0200 1 sicherstellen (CodingType 1 = UTF-8)
+  if (qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs["UTF-8"]) {
+    qrcode.stringToBytes = qrcode.stringToBytesFuncs["UTF-8"];
+  }
+
+  // QR-Code Matrix mit Level M (erforderlich für 7x7mm Logo-Überdeckung)
+  const qr = qrcode(0, "M");
+  qr.addData(qrText, "Byte");
+  qr.make();
+  const moduleCount = qr.getModuleCount();
+  const moduleSize = sizePt / moduleCount;
+
+  // 1. QR-Code Module (Vektor-Rechtecke) zeichnen
+  for (let row = 0; row < moduleCount; row++) {
+    for (let col = 0; col < moduleCount; col++) {
+      if (qr.isDark(row, col)) {
+        page.drawRectangle({
+          x: x + col * moduleSize,
+          y: y + (moduleCount - 1 - row) * moduleSize,
+          width: moduleSize,
+          height: moduleSize,
+          color: rgb(0, 0, 0),
+        });
+      }
+    }
+  }
+
+  // 2. Schweizerkreuz im Zentrum (exakt 7x7 mm nach SIX-Vorgabe)
+  const crossBoxMm = 7;
+  const crossBoxPt = crossBoxMm * MM;
+  const crossX = x + (sizePt - crossBoxPt) / 2;
+  const crossY = y + (sizePt - crossBoxPt) / 2;
+
+  // Schwarzes Hintergrund-Quadrat mit weissem Rand
+  const borderMm = 0.5;
+  const borderPt = borderMm * MM;
+  page.drawRectangle({
+    x: crossX - borderPt,
+    y: crossY - borderPt,
+    width: crossBoxPt + borderPt * 2,
+    height: crossBoxPt + borderPt * 2,
+    color: rgb(1, 1, 1),
+  });
+
+  page.drawRectangle({
+    x: crossX,
+    y: crossY,
+    width: crossBoxPt,
+    height: crossBoxPt,
+    color: rgb(0, 0, 0),
+  });
+
+  // Weisses Schweizerkreuz (Arme: 5x1.5mm und 1.5x5mm)
+  const armLenPt = 4.8 * MM;
+  const armThickPt = 1.6 * MM;
+
+  // Horizontaler Balken
+  page.drawRectangle({
+    x: crossX + (crossBoxPt - armLenPt) / 2,
+    y: crossY + (crossBoxPt - armThickPt) / 2,
+    width: armLenPt,
+    height: armThickPt,
+    color: rgb(1, 1, 1),
+  });
+
+  // Vertikaler Balken
+  page.drawRectangle({
+    x: crossX + (crossBoxPt - armThickPt) / 2,
+    y: crossY + (crossBoxPt - armLenPt) / 2,
+    width: armThickPt,
+    height: armLenPt,
+    color: rgb(1, 1, 1),
+  });
+}
+
+// Zeichnet den normierten Schweizer QR-Zahlteil nach SIX Spezifikation (SPC 0200 1)
+function drawSwissQrBillSection(
+  page: any,
+  fontRegular: any,
+  fontBold: any,
+  invoiceRef: string,
+  totalAmount: number,
+  recipient: RecipientData,
+  yearStr: string,
+  docType: string
+) {
+  const qrBillHeightPt = 105 * MM; // 105mm Höhe
+  const receiptWidthPt = 62 * MM;  // 62mm Breite Empfangsschein
+  const fullWidthPt = 210 * MM;    // 210mm Seitenbreite
+
+  // 1. Perforationslinien (Trennlinien oben und zwischen Empfangsschein und Zahlteil)
+  // Horizontale Trennlinie bei 105mm
+  page.drawLine({
+    start: { x: 0, y: qrBillHeightPt },
+    end: { x: fullWidthPt, y: qrBillHeightPt },
+    thickness: 0.5,
+    color: rgb(0.4, 0.4, 0.4),
+    dashArray: [4, 4],
+  });
+
+  // Scheren-Hinweis
+  page.drawText("Vor der Einzahlung abzutrennen", {
+    x: 85 * MM,
+    y: qrBillHeightPt + 2 * MM,
+    size: 7,
+    font: fontRegular,
+    color: rgb(0.4, 0.4, 0.4),
+  });
+
+  // Vertikale Trennlinie bei 62mm
+  page.drawLine({
+    start: { x: receiptWidthPt, y: 0 },
+    end: { x: receiptWidthPt, y: qrBillHeightPt },
+    thickness: 0.5,
+    color: rgb(0.4, 0.4, 0.4),
+    dashArray: [4, 4],
+  });
+
+  // ============================================================================
+  // A. EMPFANGSSCHEIN (Links, 62mm breit)
+  // ============================================================================
+  const recX = 5 * MM;
+
+  // Titel
+  page.drawText("Empfangsschein", {
+    x: recX,
+    y: qrBillHeightPt - 12 * MM,
+    size: 11,
+    font: fontBold,
+    color: rgb(0, 0, 0),
+  });
+
+  // Konto / Zahlbar an
+  page.drawText("Konto / Zahlbar an", {
+    x: recX,
+    y: qrBillHeightPt - 20 * MM,
+    size: 6,
+    font: fontBold,
+    color: rgb(0, 0, 0),
+  });
+  page.drawText(CLUB_IBAN_FORMATTED, {
+    x: recX,
+    y: qrBillHeightPt - 24 * MM,
+    size: 8,
+    font: fontRegular,
+    color: rgb(0, 0, 0),
+  });
+  page.drawText(CLUB_NAME, {
+    x: recX,
+    y: qrBillHeightPt - 27.5 * MM,
+    size: 8,
+    font: fontRegular,
+    color: rgb(0, 0, 0),
+  });
+  page.drawText(`${CLUB_ZIP} ${CLUB_CITY}`, {
+    x: recX,
+    y: qrBillHeightPt - 31 * MM,
+    size: 8,
+    font: fontRegular,
+    color: rgb(0, 0, 0),
+  });
+
+  // Referenz (Ohne Referenz / NON)
+  page.drawText("Referenz", {
+    x: recX,
+    y: qrBillHeightPt - 38 * MM,
+    size: 6,
+    font: fontBold,
+    color: rgb(0, 0, 0),
+  });
+  page.drawText("-", {
+    x: recX,
+    y: qrBillHeightPt - 42 * MM,
+    size: 8,
+    font: fontRegular,
+    color: rgb(0, 0, 0),
+  });
+
+  // Zahlbar durch (Debitor)
+  page.drawText("Zahlbar durch", {
+    x: recX,
+    y: qrBillHeightPt - 49 * MM,
+    size: 6,
+    font: fontBold,
+    color: rgb(0, 0, 0),
+  });
+
+  const debtorLines: string[] = [];
+  const pName = [recipient.vorname, recipient.nachname].filter(Boolean).join(" ").trim() || recipient.name || "";
+  const isComp = Boolean(recipient.firma && recipient.typ !== "privat" && recipient.typ !== "mitglied");
+
+  if (isComp) {
+    debtorLines.push(sanitizeText(recipient.firma!));
+    if (pName && pName.toLowerCase() !== recipient.firma!.toLowerCase() && debtorLines.length < 2) {
+      debtorLines.push(sanitizeText(pName));
+    }
+  } else if (pName) {
+    debtorLines.push(sanitizeText(pName));
+  }
+
+  if (recipient.strasse) debtorLines.push(sanitizeText(recipient.strasse));
+  const plzOrt = `${recipient.plz || ""} ${recipient.ort || ""}`.trim();
+  if (plzOrt) debtorLines.push(sanitizeText(plzOrt));
+
+  debtorLines.slice(0, 4).forEach((line, idx) => {
+    page.drawText(line, {
+      x: recX,
+      y: qrBillHeightPt - (53 + idx * 3.5) * MM,
+      size: 8,
+      font: fontRegular,
+      color: rgb(0, 0, 0),
+    });
+  });
+
+  // Währung & Betrag (unten links im Empfangsschein)
+  page.drawText("Währung", {
+    x: recX,
+    y: 18 * MM,
+    size: 6,
+    font: fontBold,
+    color: rgb(0, 0, 0),
+  });
+  page.drawText("CHF", {
+    x: recX,
+    y: 13 * MM,
+    size: 9,
+    font: fontRegular,
+    color: rgb(0, 0, 0),
+  });
+
+  page.drawText("Betrag", {
+    x: recX + 15 * MM,
+    y: 18 * MM,
+    size: 6,
+    font: fontBold,
+    color: rgb(0, 0, 0),
+  });
+  page.drawText(totalAmount > 0 ? totalAmount.toFixed(2) : "", {
+    x: recX + 15 * MM,
+    y: 13 * MM,
+    size: 9,
+    font: fontRegular,
+    color: rgb(0, 0, 0),
+  });
+
+  // Annahmestelle
+  page.drawText("Annahmestelle", {
+    x: receiptWidthPt - 22 * MM,
+    y: 18 * MM,
+    size: 6,
+    font: fontBold,
+    color: rgb(0.3, 0.3, 0.3),
+  });
+
+  // ============================================================================
+  // B. ZAHLTEIL (Rechts, 148mm breit)
+  // ============================================================================
+  const payX = receiptWidthPt + 5 * MM;
+
+  // Titel
+  page.drawText("Zahlteil", {
+    x: payX,
+    y: qrBillHeightPt - 12 * MM,
+    size: 11,
+    font: fontBold,
+    color: rgb(0, 0, 0),
+  });
+
+  // 1. Schweizer QR-Code einfügen
+  const qrString = createSwissQrBillString(CLUB_IBAN, totalAmount, invoiceRef, recipient, yearStr, docType);
+  const qrX = payX;
+  const qrY = qrBillHeightPt - (17 + 46) * MM;
+  drawSwissQrCodeVector(page, qrString, qrX, qrY, 46);
+
+  // Währung & Betrag unterhalb des QR-Codes
+  page.drawText("Währung", {
+    x: qrX,
+    y: 18 * MM,
+    size: 7,
+    font: fontBold,
+    color: rgb(0, 0, 0),
+  });
+  page.drawText("CHF", {
+    x: qrX,
+    y: 13 * MM,
+    size: 10,
+    font: fontRegular,
+    color: rgb(0, 0, 0),
+  });
+
+  page.drawText("Betrag", {
+    x: qrX + 18 * MM,
+    y: 18 * MM,
+    size: 7,
+    font: fontBold,
+    color: rgb(0, 0, 0),
+  });
+  page.drawText(totalAmount > 0 ? totalAmount.toFixed(2) : "", {
+    x: qrX + 18 * MM,
+    y: 13 * MM,
+    size: 10,
+    font: fontRegular,
+    color: rgb(0, 0, 0),
+  });
+
+  // 2. Rechte Textspalte im Zahlteil
+  const rightColX = payX + 51 * MM;
+
+  // Konto / Zahlbar an
+  page.drawText("Konto / Zahlbar an", {
+    x: rightColX,
+    y: qrBillHeightPt - 12 * MM,
+    size: 8,
+    font: fontBold,
+    color: rgb(0, 0, 0),
+  });
+  page.drawText(CLUB_IBAN_FORMATTED, {
+    x: rightColX,
+    y: qrBillHeightPt - 16.5 * MM,
+    size: 9,
+    font: fontRegular,
+    color: rgb(0, 0, 0),
+  });
+  page.drawText(CLUB_NAME, {
+    x: rightColX,
+    y: qrBillHeightPt - 20.5 * MM,
+    size: 9,
+    font: fontRegular,
+    color: rgb(0, 0, 0),
+  });
+  page.drawText(`${CLUB_ZIP} ${CLUB_CITY}`, {
+    x: rightColX,
+    y: qrBillHeightPt - 24.5 * MM,
+    size: 9,
+    font: fontRegular,
+    color: rgb(0, 0, 0),
+  });
+
+  // Referenz
+  page.drawText("Referenz", {
+    x: rightColX,
+    y: qrBillHeightPt - 31 * MM,
+    size: 8,
+    font: fontBold,
+    color: rgb(0, 0, 0),
+  });
+  page.drawText("-", {
+    x: rightColX,
+    y: qrBillHeightPt - 35.5 * MM,
+    size: 9,
+    font: fontRegular,
+    color: rgb(0, 0, 0),
+  });
+
+  // Zusätzliche Informationen
+  page.drawText("Zusätzliche Informationen", {
+    x: rightColX,
+    y: qrBillHeightPt - 42 * MM,
+    size: 8,
+    font: fontBold,
+    color: rgb(0, 0, 0),
+  });
+  const infoText = sanitizeText(`${invoiceRef} / ${docType || "Rechnung"} ${yearStr}`);
+  page.drawText(infoText, {
+    x: rightColX,
+    y: qrBillHeightPt - 46.5 * MM,
+    size: 9,
+    font: fontRegular,
+    color: rgb(0, 0, 0),
+  });
+
+  // Zahlbar durch
+  page.drawText("Zahlbar durch", {
+    x: rightColX,
+    y: qrBillHeightPt - 53 * MM,
+    size: 8,
+    font: fontBold,
+    color: rgb(0, 0, 0),
+  });
+
+  debtorLines.slice(0, 4).forEach((line, idx) => {
+    page.drawText(sanitizeText(line), {
+      x: rightColX,
+      y: qrBillHeightPt - (57.5 + idx * 4) * MM,
+      size: 9,
+      font: fontRegular,
+      color: rgb(0, 0, 0),
+    });
+  });
+}
+
+// Erstellt das vollständige Rechnungs-PDF (A4, dynamischer Y-Cursor, Lookahead-Paginierung)
+async function generateInvoicePdf(
+  invoiceId: string,
+  recipient: RecipientData,
+  sender: SenderData,
+  layout: LayoutData,
+  positions: InvoicePosition[],
+  totalAmount: number,
+  yearStr: string,
+  docType: string,
+  supabaseClient?: any
+): Promise<Uint8Array> {
+  const normRecipient = normalizeRecipient(recipient);
+  const pdfDoc = await PDFDocument.create();
+  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  // 0. Server-Side Resolution: Vorlage aus document_templates nachladen
+  let resolvedLayout: LayoutData = { ...layout };
+  if (supabaseClient) {
+    try {
+      let typeKey = (docType || "jahresbeitrag").toLowerCase().trim();
+      if (typeKey === "depot / pfand" || typeKey === "depot/pfand" || typeKey === "depot" || typeKey === "pfand" || typeKey === "kaution" || typeKey === "depot & kaution") {
+        typeKey = "depot_pfand";
+      } else if (typeKey === "material- & kleiderbezug" || typeKey === "material" || typeKey === "kleiderverkauf") {
+        typeKey = "materialverkauf";
+      }
+      let { data: tmpl } = await supabaseClient
+        .from("document_templates")
+        .select("*")
+        .or(`code.eq.${typeKey},id.eq.${typeKey}`)
+        .limit(1)
+        .maybeSingle();
+
+      if (!tmpl) {
+        const { data: tmplCat } = await supabaseClient
+          .from("document_templates")
+          .select("*")
+          .eq("category", typeKey)
+          .order("is_default", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        tmpl = tmplCat;
+      }
+
+      if (tmpl) {
+        const isPreviewTest = invoiceId.startsWith("TEST-PREVIEW-");
+        resolvedLayout = isPreviewTest
+          ? {
+              title: resolvedLayout.title || tmpl.title,
+              intro: resolvedLayout.intro || tmpl.intro,
+              outro: resolvedLayout.outro || tmpl.outro,
+              notice: resolvedLayout.notice || tmpl.notice,
+            }
+          : {
+              title: tmpl.title || resolvedLayout.title,
+              intro: tmpl.intro || resolvedLayout.intro,
+              outro: tmpl.outro || resolvedLayout.outro,
+              notice: tmpl.notice || resolvedLayout.notice,
+            };
+      }
+    } catch (_) {}
+  }
+
+  // 1. Logo mit In-Memory Cache & Base64-Inlining laden (scaleToFit)
+  let logoImage: any = null;
+  const logoBytes = await getOrLoadLogoBytes(supabaseClient);
+  if (logoBytes) {
+    try {
+      logoImage = await pdfDoc.embedPng(logoBytes);
+    } catch (embedErr) {
+      console.warn("⚠️ [PDF-Engine] Logo-Embed Warnung:", embedErr);
+    }
+  }
+
+  const isFirma =
+    normRecipient.typ === "firma" ||
+    Boolean(normRecipient.firma) ||
+    Boolean(normRecipient.name && normRecipient.name.match(/\b(AG|GmbH|Genossenschaft|Verein|Verband|Stiftung|Gemeinde)\b/i));
+
+  const validPositions = (positions && positions.length > 0)
+    ? positions
+    : [{ position_nr: 1, description: docType || "Jahresbeitrag", quantity: 1, unit_price: totalAmount, amount: totalAmount }];
+
+  const dateStr = new Date().toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" });
+  
+  // Geometrie-Konstanten
+  const A4_WIDTH = 595.28;
+  const A4_HEIGHT = 841.89;
+  const tblX = 20 * MM;
+  const tblW = 170 * MM;
+  const colW = { pos: 12 * MM, desc: 92 * MM, qty: 18 * MM, price: 22 * MM, total: 26 * MM };
+  const QR_BILL_HEIGHT = 105 * MM;
+  const MARGIN_BOTTOM = 22 * MM;
+  const TOTALS_FOOTER_HEIGHT = 38 * MM;
+  const QR_SAFE_FLOOR = QR_BILL_HEIGHT + 6 * MM; // 111 mm
+
+  // 2. Vorbereitung der Tabellenzeilen mit automatischem Text-Wrapping
+  interface PreparedRow {
+    posNr: string;
+    lines: string[];
+    qtyStr: string;
+    unitStr: string;
+    totalStr: string;
+    rowHeight: number;
+  }
+
+  const preparedRows: PreparedRow[] = validPositions.map((pos, idx) => {
+    const pAmt = Number(pos.amount || pos.unit_price || 0);
+    const pQty = Number(pos.quantity || 1);
+    const pUnit = Number(pos.unit_price || pAmt);
+    const lines = wrapText(pos.description || "", fontRegular, 8.5, colW.desc - 4 * MM);
+    const rowHeight = Math.max(lines.length * 3.8 * MM + 2.0 * MM, 5.8 * MM);
+    return {
+      posNr: String(pos.position_nr || idx + 1),
+      lines,
+      qtyStr: pQty > 1 ? String(pQty) : "1",
+      unitStr: pUnit.toFixed(2),
+      totalStr: pAmt.toFixed(2),
+      rowHeight,
+    };
+  });
+
+  // Koordinaten für Spalten
+  const xPos = tblX + 2 * MM;
+  const xDesc = tblX + colW.pos + 2 * MM;
+  const xQty = tblX + colW.pos + colW.desc + 2 * MM;
+  const xPriceRight = tblX + colW.pos + colW.desc + colW.qty + colW.price - 2 * MM;
+  const xTotalRight = tblX + tblW - 2 * MM;
+
+  // Hilfsfunktion: Tabellenkopf zeichnen (schlichte Linien nach Referenz-Layout)
+  const drawTableHeader = (p: any, y: number) => {
+    p.drawLine({
+      start: { x: tblX, y: y + 2 * MM },
+      end: { x: tblX + tblW, y: y + 2 * MM },
+      thickness: 0.8,
+      color: rgb(0.1, 0.1, 0.1),
+    });
+
+    p.drawText("Pos", { x: xPos, y: y - 2 * MM, size: 8, font: fontBold, color: rgb(0, 0, 0) });
+    p.drawText("Beschreibung", { x: xDesc, y: y - 2 * MM, size: 8, font: fontBold, color: rgb(0, 0, 0) });
+    p.drawText("Menge", { x: xQty, y: y - 2 * MM, size: 8, font: fontBold, color: rgb(0, 0, 0) });
+
+    const priceHdr = "Einzelpreis";
+    const totalHdr = "Preis (CHF)";
+    p.drawText(priceHdr, { x: xPriceRight - fontBold.widthOfTextAtSize(priceHdr, 8), y: y - 2 * MM, size: 8, font: fontBold, color: rgb(0, 0, 0) });
+    p.drawText(totalHdr, { x: xTotalRight - fontBold.widthOfTextAtSize(totalHdr, 8), y: y - 2 * MM, size: 8, font: fontBold, color: rgb(0, 0, 0) });
+
+    p.drawLine({
+      start: { x: tblX, y: y - 4 * MM },
+      end: { x: tblX + tblW, y: y - 4 * MM },
+      thickness: 0.6,
+      color: rgb(0.2, 0.2, 0.2),
+    });
+
+    return y - 8 * MM;
+  };
+
+  // Hilfsfunktion: Tabellenzeile zeichnen
+  const drawTableRow = (p: any, row: PreparedRow, _idx: number, y: number) => {
+    // Pos.-Nummer
+    p.drawText(row.posNr, { x: xPos, y, size: 8.5, font: fontRegular });
+
+    // Beschreibung (mehrzeilig gerendert)
+    row.lines.forEach((line, lIdx) => {
+      p.drawText(sanitizeText(line), {
+        x: xDesc,
+        y: y - (lIdx * 3.8 * MM),
+        size: 8.5,
+        font: fontRegular,
+      });
+    });
+
+    // Menge, Ansatz, Betrag auf erster Zeile mit Tabellenziffern
+    p.drawText(row.qtyStr, { x: xQty, y, size: 8.5, font: fontRegular });
+    p.drawText(row.unitStr, { x: xPriceRight - fontRegular.widthOfTextAtSize(row.unitStr, 8.5), y, size: 8.5, font: fontRegular });
+    p.drawText(row.totalStr, { x: xTotalRight - fontRegular.widthOfTextAtSize(row.totalStr, 8.5), y, size: 8.5, font: fontRegular });
+
+    return y - row.rowHeight;
+  };
+
+  // Hilfsfunktion: Summenzeile, Zahlungsfrist & Grussformel (Referenz-Design)
+  const drawTotalsAndFooter = (p: any, y: number) => {
+    p.drawLine({
+      start: { x: tblX, y: y + 1 * MM },
+      end: { x: tblX + tblW, y: y + 1 * MM },
+      thickness: 0.8,
+      color: rgb(0.1, 0.1, 0.1),
+    });
+
+    // "Total" bündig links (wie Pos-Spalte)
+    p.drawText("Total", { x: xPos, y: y - 3.5 * MM, size: 9.5, font: fontBold });
+
+    // Betrag exakt rechtsbündig unter Spalte Preis (CHF)
+    const totalAmountStr = formatSwissChf(totalAmount);
+    const totalW = fontBold.widthOfTextAtSize(totalAmountStr, 10);
+    p.drawText(totalAmountStr, { x: xTotalRight - totalW, y: y - 3.5 * MM, size: 10, font: fontBold });
+
+    p.drawLine({
+      start: { x: tblX, y: y - 6 * MM },
+      end: { x: tblX + tblW, y: y - 6 * MM },
+      thickness: 1.0,
+      color: rgb(0.1, 0.1, 0.1),
+    });
+
+    y -= 12 * MM;
+
+    // Outro / Notiz mit vollständiger Variablen-Ersetzung und automatischem Umbruch
+    const senderFullName = [sender.vorname, sender.nachname].filter(Boolean).join(" ") || CLUB_NAME;
+    const senderRole = sender.funktion || sender.bereich || "Vorstand";
+
+    const noticeDefault = "Bei allfälligen Fragen bitte bei mir melden.\nVielen Dank für das Vertrauen.";
+    const noticeRaw = (resolvedLayout.outro || resolvedLayout.notice || noticeDefault)
+      .replace(/{rechnungsnummer}/g, invoiceId)
+      .replace(/{rechnungsjahr}/g, yearStr)
+      .replace(/{anrede}/g, normRecipient.anrede || "")
+      .replace(/{vorname}/g, normRecipient.vorname || "")
+      .replace(/{nachname}/g, normRecipient.nachname || "")
+      .replace(/{gesamtbetrag}/g, formatSwissChf(totalAmount))
+      .replace(/{absender_name}/g, senderFullName)
+      .replace(/{absender_vorname}/g, sender.vorname || "")
+      .replace(/{absender_nachname}/g, sender.nachname || "")
+      .replace(/{absender_funktion}/g, senderRole)
+      .replace(/{absender_email}/g, sender.email || "")
+      .replace(/{absender_mobil}/g, sender.mobil || "");
+
+    const noticeLines = noticeRaw.split("\n");
+    noticeLines.forEach((nl: string) => {
+      const trimmed = nl.trim();
+      if (!trimmed) {
+        y -= 3.2 * MM;
+      } else {
+        const wrapped = wrapText(trimmed, fontRegular, 9, 170 * MM);
+        wrapped.forEach((wl) => {
+          p.drawText(sanitizeText(wl), { x: 20 * MM, y, size: 9, font: fontRegular, color: rgb(0.15, 0.15, 0.15) });
+          y -= 4.2 * MM;
+        });
+      }
+    });
+
+    // Grusszeile & Signatur nur anhängen, wenn im Outro nicht bereits eine Grussformel enthalten ist
+    const hasGreetingInOutro = /freundliche gr[üu]sse|beste gr[üu]sse|sportliche gr[üu]sse/i.test(noticeRaw);
+    if (!hasGreetingInOutro) {
+      y -= 3.5 * MM;
+      p.drawText("Mit besten Grüssen", { x: 20 * MM, y, size: 9, font: fontRegular });
+      y -= 4.8 * MM;
+      p.drawText(CLUB_NAME, { x: 20 * MM, y, size: 9.5, font: fontBold });
+      y -= 7.5 * MM;
+      p.drawText(sanitizeText(senderFullName), { x: 20 * MM, y, size: 9, font: fontRegular });
+      y -= 4.0 * MM;
+      p.drawText(sanitizeText(senderRole), { x: 20 * MM, y, size: 9, font: fontRegular });
+    }
+
+    return y - 4 * MM;
+  };
+
+  // Hilfsfunktion: Folgeseiten-Header mit Dokument-Metadaten
+  const renderFollowUpHeader = (p: any) => {
+    p.drawText(sanitizeText(`${CLUB_NAME} · Rechnung ${invoiceId} · ${dateStr}`), {
+      x: 20 * MM,
+      y: 278 * MM,
+      size: 8.5,
+      font: fontRegular,
+      color: rgb(0.4, 0.45, 0.55),
+    });
+    p.drawLine({
+      start: { x: 20 * MM, y: 274 * MM },
+      end: { x: 190 * MM, y: 274 * MM },
+      thickness: 0.3,
+      color: rgb(0.7, 0.7, 0.7),
+    });
+    return 265 * MM;
+  };
+
+  // Hilfsfunktion: Juristischer Vereins-Footer (nur auf Inhaltsseiten, zentriert)
+  const drawClubLegalFooter = (p: any, yPos: number = 12 * MM) => {
+    p.drawLine({
+      start: { x: 20 * MM, y: yPos + 3 * MM },
+      end: { x: 190 * MM, y: yPos + 3 * MM },
+      thickness: 0.3,
+      color: rgb(0.75, 0.75, 0.75),
+    });
+    const footerStr = "Sportschützen Muhen · sportschützen.muhen@gmail.com · www.sportschuetzen-muhen.ch";
+    const strW = fontRegular.widthOfTextAtSize(footerStr, 7.5);
+    p.drawText(footerStr, {
+      x: (A4_WIDTH - strW) / 2,
+      y: yPos,
+      size: 7.5,
+      font: fontRegular,
+      color: rgb(0.45, 0.45, 0.45),
+    });
+  };
+
+  // ============================================================================
+  // SEITE 1: RECHNUNGSINHALT (KOPF, ADRESSEN, TABELLE, TOTAL & SIGNATUR)
+  // ============================================================================
+  let currentPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+
+  // 1. Logo oben links + zweizeiliger Vereinskopf daneben (harmonisiert: weiter links oben, 14pt)
+  let textStartX = 15 * MM;
+  if (logoImage) {
+    const scaledLogo = logoImage.scaleToFit(32 * MM, 32 * MM);
+    currentPage.drawImage(logoImage, {
+      x: 15 * MM,
+      y: 291 * MM - scaledLogo.height,
+      width: scaledLogo.width,
+      height: scaledLogo.height,
+    });
+    textStartX = 15 * MM + scaledLogo.width + 3.5 * MM;
+  }
+  currentPage.drawText(CLUB_NAME.toUpperCase(), {
+    x: textStartX,
+    y: 281.5 * MM,
+    size: 14,
+    font: fontBold,
+    color: rgb(0.12, 0.23, 0.54),
+  });
+  currentPage.drawText("gegründet 1919 · Schiessanlage Rüteli", {
+    x: textStartX,
+    y: 275.5 * MM,
+    size: 9,
+    font: fontRegular,
+    color: rgb(0.4, 0.45, 0.55),
+  });
+
+  // 2. Absenderblock links unter dem Logo (ab ca. 246 mm) - Nur Funktion ohne 'Sportschützen Muhen'
+  let sendY = 246 * MM;
+  const senderRole = sender.funktion || sender.bereich || "Vorstand";
+  currentPage.drawText(sanitizeText(senderRole), { x: 20 * MM, y: sendY, size: 9.5, font: fontBold });
+  sendY -= 4.2 * MM;
+
+  const senderNameStr = [sender.vorname, sender.nachname].filter(Boolean).join(" ");
+  if (senderNameStr) {
+    currentPage.drawText(sanitizeText(senderNameStr), { x: 20 * MM, y: sendY, size: 9, font: fontRegular });
+    sendY -= 4.0 * MM;
+  }
+  if (sender.strasse) {
+    currentPage.drawText(sanitizeText(sender.strasse), { x: 20 * MM, y: sendY, size: 9, font: fontRegular });
+    sendY -= 4.0 * MM;
+  }
+  const senderPlzOrt = `${sender.plz || ""} ${sender.ort || ""}`.trim();
+  if (senderPlzOrt) {
+    currentPage.drawText(sanitizeText(senderPlzOrt), { x: 20 * MM, y: sendY, size: 9, font: fontRegular });
+    sendY -= 4.0 * MM;
+  }
+  if (sender.mobil) {
+    currentPage.drawText(sanitizeText(`Mobil ${sender.mobil}`), { x: 20 * MM, y: sendY, size: 9, font: fontRegular });
+    sendY -= 4.0 * MM;
+  }
+  if (sender.email) {
+    currentPage.drawText(sanitizeText(sender.email), {
+      x: 20 * MM,
+      y: sendY,
+      size: 9,
+      font: fontRegular,
+      color: rgb(0.08, 0.35, 0.75), // Vereinsblau für Mail
+    });
+    sendY -= 4.0 * MM;
+  }
+
+  // Datum & Zahlbar bis unter dem Absender
+  sendY -= 3 * MM;
+  currentPage.drawText(`Datum:`, { x: 20 * MM, y: sendY, size: 8.5, font: fontRegular });
+  currentPage.drawText(dateStr, { x: 44 * MM, y: sendY, size: 8.5, font: fontRegular });
+  sendY -= 4.0 * MM;
+
+  const dueDays = 30;
+  const dueDateObj = new Date();
+  dueDateObj.setDate(dueDateObj.getDate() + dueDays);
+  const dueDateStr = dueDateObj.toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+  currentPage.drawText(`Zahlbar bis:`, { x: 20 * MM, y: sendY, size: 8.5, font: fontRegular });
+  currentPage.drawText(dueDateStr, { x: 44 * MM, y: sendY, size: 8.5, font: fontRegular });
+
+  // 3. Empfänger-Adresse (DIN 5008 Fenster rechts, ab 246 mm)
+  let addrY = 246 * MM;
+  const isCompany = Boolean(normRecipient.firma && normRecipient.typ !== 'privat' && normRecipient.typ !== 'mitglied');
+  const fullRecName = [normRecipient.vorname, normRecipient.nachname].filter(Boolean).join(" ").trim() || (normRecipient.name || "");
+
+  if (isCompany) {
+    // 1. Firmenname (Fett)
+    currentPage.drawText(sanitizeText(normRecipient.firma!), { x: 125 * MM, y: addrY, size: 9.5, font: fontBold });
+    addrY -= 4.2 * MM;
+
+    // 2. Abteilung (falls vorhanden)
+    if (normRecipient.abteilung || (normRecipient as any).zusatz) {
+      currentPage.drawText(sanitizeText(normRecipient.abteilung || (normRecipient as any).zusatz), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+      addrY -= 4.2 * MM;
+    }
+
+    // 3. Ansprechperson mit Anrede (falls vorhanden und weicht von Firma ab)
+    const contactPerson = [normRecipient.anrede, normRecipient.vorname, normRecipient.nachname].filter(Boolean).join(" ").trim();
+    if (contactPerson && contactPerson.toLowerCase() !== normRecipient.firma!.toLowerCase()) {
+      currentPage.drawText(sanitizeText(contactPerson), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+      addrY -= 4.2 * MM;
+    }
+
+    // 4. Optionaler Adresszusatz / Postfach (falls vorhanden und nicht identisch mit Abteilung)
+    if (normRecipient.adresszusatz && normRecipient.adresszusatz !== normRecipient.abteilung) {
+      currentPage.drawText(sanitizeText(normRecipient.adresszusatz), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+      addrY -= 4.2 * MM;
+    }
+  } else {
+    // PRIVATPERSON / VEREINSMITGLIED
+    // 1. Anrede (Herr / Frau)
+    if (normRecipient.anrede) {
+      currentPage.drawText(sanitizeText(normRecipient.anrede), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+      addrY -= 4.2 * MM;
+    }
+
+    // 2. Vorname Nachname (Normalschrift, KEIN Fett)
+    if (fullRecName) {
+      currentPage.drawText(sanitizeText(fullRecName), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+      addrY -= 4.2 * MM;
+    }
+
+    // 3. Adresszusatz / Postfach (falls vorhanden)
+    if (normRecipient.abteilung || (normRecipient as any).zusatz || (normRecipient as any).adresszusatz) {
+      currentPage.drawText(sanitizeText(normRecipient.abteilung || (normRecipient as any).zusatz || (normRecipient as any).adresszusatz), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+      addrY -= 4.2 * MM;
+    }
+  }
+
+  // 4. Strasse
+  if (normRecipient.strasse) {
+    currentPage.drawText(sanitizeText(normRecipient.strasse), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+    addrY -= 4.2 * MM;
+  }
+  const plzOrt = `${normRecipient.plz || ""} ${normRecipient.ort || ""}`.trim();
+  if (plzOrt) {
+    currentPage.drawText(sanitizeText(plzOrt), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+    addrY -= 4.2 * MM;
+  }
+  if (normRecipient.land && normRecipient.land !== "CH" && normRecipient.land !== "Schweiz") {
+    currentPage.drawText(sanitizeText(normRecipient.land), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+    addrY -= 4.2 * MM;
+  }
+
+  // 4. Rechnungstitel (H1, linksbündig ab ca. 195 mm) - Rechnungsnummer zwingend enthalten
+  const rawTitle = resolvedLayout.title || `${docType || "Rechnung"}`;
+  let finalTitle = rawTitle
+    .replace(/{rechnungsnummer}/g, invoiceId)
+    .replace(/{rechnungsjahr}/g, yearStr);
+  if (!finalTitle.includes(invoiceId)) {
+    const cleanDocTitle = finalTitle.replace(/^Rechnung\s*[-–]?\s*/i, "").trim();
+    finalTitle = `Rechnung ${invoiceId} – ${cleanDocTitle || docType || "Materialverkauf"}`;
+  }
+  const wrappedTitleLines = wrapText(sanitizeText(finalTitle), fontBold, 13.5, 170 * MM);
+  let titleY = 195 * MM;
+  for (const tLine of wrappedTitleLines) {
+    currentPage.drawText(tLine, {
+      x: 20 * MM,
+      y: titleY,
+      size: 13.5,
+      font: fontBold,
+      color: rgb(0.05, 0.05, 0.05),
+    });
+    titleY -= 5.5 * MM;
+  }
+
+  // 5. Einleitung (ab ca. 182 mm bzw. dynamisch unter mehrzeiligem Titel) mit Absätzen und automatischem Zeilenumbruch
+  let curY = Math.min(182 * MM, titleY - 4 * MM);
+
+  let introRaw = (resolvedLayout.intro || "Anbei erhalten Sie die Rechnung.")
+    .replace(/{rechnungsnummer}/g, invoiceId)
+    .replace(/{rechnungsjahr}/g, yearStr)
+    .replace(/{anrede}/g, normRecipient.anrede || "")
+    .replace(/{vorname}/g, normRecipient.vorname || "")
+    .replace(/{nachname}/g, normRecipient.nachname || "")
+    .replace(/{gesamtbetrag}/g, formatSwissChf(totalAmount))
+    .replace(/{absender_name}/g, [sender.vorname, sender.nachname].filter(Boolean).join(" ") || CLUB_NAME)
+    .replace(/{absender_vorname}/g, sender.vorname || "")
+    .replace(/{absender_nachname}/g, sender.nachname || "")
+    .replace(/{absender_funktion}/g, senderRole)
+    .replace(/{absender_email}/g, sender.email || "")
+    .replace(/{absender_mobil}/g, sender.mobil || "");
+
+  const introLines = introRaw.split("\n");
+  introLines.forEach((l) => {
+    const trimmed = l.trim();
+    if (!trimmed) {
+      curY -= 3.5 * MM;
+    } else {
+      const wrapped = wrapText(trimmed, fontRegular, 9.5, 170 * MM);
+      wrapped.forEach((wl) => {
+        currentPage.drawText(sanitizeText(wl), { x: 20 * MM, y: curY, size: 9.5, font: fontRegular, color: rgb(0.1, 0.1, 0.1) });
+        curY -= 4.5 * MM;
+      });
+    }
+  });
+
+  curY -= 3.5 * MM;
+
+  // 6. Tabelle der Rechnungspositionen
+  curY = drawTableHeader(currentPage, curY);
+
+  let rowIndex = 0;
+  while (rowIndex < preparedRows.length) {
+    const nextRow = preparedRows[rowIndex];
+    // Falls die Zeile unter 28mm fallen würde, neue Inhaltsseite anlegen
+    if (curY - nextRow.rowHeight < 28 * MM) {
+      drawClubLegalFooter(currentPage, 12 * MM);
+      currentPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+      curY = renderFollowUpHeader(currentPage);
+      curY = drawTableHeader(currentPage, curY);
+    }
+    curY = drawTableRow(currentPage, nextRow, rowIndex, curY);
+    rowIndex++;
+  }
+
+  // Totals & Grusszeile zeichnen (falls nicht genug Platz auf aktueller Inhaltsseite, Folgeseite anlegen)
+  if (curY - TOTALS_FOOTER_HEIGHT < 28 * MM) {
+    drawClubLegalFooter(currentPage, 12 * MM);
+    currentPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+    curY = renderFollowUpHeader(currentPage);
+  }
+  drawTotalsAndFooter(currentPage, curY);
+  drawClubLegalFooter(currentPage, 12 * MM);
+
+  // ============================================================================
+  // OPTIONALES BEIBLATT: ZUSAMMENSETZUNG GRUPPENGEWINNE (KONTO 1301) BEI JAHRESBEITRAG
+  // ============================================================================
+  const hasGgPosition = (positions || []).some((p: any) =>
+    String(p.konto || "") === "1301" ||
+    String(p.description || p.text || p.beschreibung || "").toLowerCase().includes("gruppengewinn")
+  );
+  const isJbInvoice = String(docType || "").toLowerCase().includes("jahresbeitrag") || hasGgPosition;
+
+  if (isJbInvoice && supabaseClient) {
+    try {
+      let targetPn = String(
+        (recipient as any)?.person_number ||
+        (recipient as any)?.personNumber ||
+        (normRecipient as any)?.person_number ||
+        ""
+      ).trim();
+
+      if (!targetPn && invoiceId) {
+        const { data: invLookup } = await supabaseClient
+          .from("invoices")
+          .select("person_number")
+          .eq("id", invoiceId)
+          .maybeSingle();
+        if (invLookup?.person_number) {
+          targetPn = String(invLookup.person_number).trim();
+        }
+      }
+
+      if (targetPn) {
+        const yrNum = parseInt(yearStr, 10) || new Date().getFullYear();
+        const [{ data: compsData }, { data: compFilesData }] = await Promise.all([
+          supabaseClient
+            .from("group_competitions")
+            .select("*, members:group_competition_members(*)")
+            .eq("jahr", yrNum)
+            .order("created_at", { ascending: false }),
+          supabaseClient
+            .from("jm_competition_files")
+            .select("*")
+            .eq("jahr", yrNum),
+        ]);
+
+        const normKey = (s: string) =>
+          String(s || "")
+            .toLowerCase()
+            .replace(/ä/g, "ae")
+            .replace(/ö/g, "oe")
+            .replace(/ü/g, "ue")
+            .replace(/ß/g, "ss")
+            .replace(/[^a-z0-9]/g, "");
+
+        const normBaseKey = (s: string) =>
+          String(s || "")
+            .toLowerCase()
+            .replace(/\([^)]*\)/g, "")
+            .replace(/\b20\d{2}\b/g, "")
+            .replace(/^\d+\.\s*/, "")
+            .replace(/ä/g, "ae")
+            .replace(/ö/g, "oe")
+            .replace(/ü/g, "ue")
+            .replace(/ß/g, "ss")
+            .replace(/[^a-z0-9]/g, "");
+
+        const filesMap: Record<string, any[]> = {};
+        (compFilesData || []).forEach((row: any) => {
+          const k = normKey(row.anlass_name);
+          const bk = normBaseKey(row.anlass_name);
+          const fls = Array.isArray(row.files) ? row.files : [];
+          if (k) filesMap[k] = [...(filesMap[k] || []), ...fls];
+          if (bk && bk !== k) filesMap[bk] = [...(filesMap[bk] || []), ...fls];
+        });
+
+        const externalDomain = Deno.env.get("API_EXTERNAL_URL") || "https://supabase-muhen.danfamily.uk";
+        const signedExpiresSec = 180 * 24 * 60 * 60; // 180 Tage
+        const ggItems: any[] = [];
+        let totalGgShare = 0;
+
+        for (const comp of (compsData || [])) {
+          const members = Array.isArray(comp.members) ? comp.members : [];
+          const myMem = members.find((m: any) => String(m.person_number || "").trim() === targetPn);
+          if (!myMem) continue;
+
+          const doppel = Number(comp.gruppendoppel ?? 30);
+          const gewinn = Number(comp.gruppengewinn ?? 0);
+          const ueberschuss = Math.max(0, gewinn - doppel);
+          const count = members.length > 0 ? members.length : Number(comp.anzahl_schuetzen || 5);
+          const defShare = count > 0 && ueberschuss > 0 ? Math.round((ueberschuss / count) * 20) / 20 : 0;
+          const myShare = Number(myMem.betrag !== undefined && myMem.betrag !== null ? myMem.betrag : defShare);
+
+          if (myShare <= 0 && ueberschuss <= 0) continue;
+          if (myMem.payout_method && myMem.payout_method !== "jahresbeitrag") continue;
+
+          const sortedTeam = [...members].sort((a: any, b: any) => (Number(b.punkte) || 0) - (Number(a.punkte) || 0));
+          const teamStr = sortedTeam
+            .map((tm: any) => `${tm.schuetze_name || ""}${tm.punkte ? " (" + tm.punkte + ")" : ""}`)
+            .join(", ");
+
+          const calcPtsSum = Math.round(members.reduce((acc: number, m: any) => acc + (Number(m.punkte) || 0), 0) * 10) / 10;
+          const totalPts = comp.punkte_total || (calcPtsSum > 0 ? calcPtsSum : null);
+
+          // Ranglisten zusammenführen und 180-Tage-Links erzeugen
+          const directFiles = Array.isArray(comp.ranglisten_files) ? comp.ranglisten_files : [];
+          const k = normKey(comp.anlass_name);
+          const bk = normBaseKey(comp.anlass_name);
+          const mergedFiles: any[] = [];
+          const seenPaths = new Set<string>();
+          [...directFiles, ...(filesMap[k] || []), ...(filesMap[bk] || [])].forEach((f: any) => {
+            if (!f || !f.storage_path || seenPaths.has(f.storage_path)) return;
+            seenPaths.add(f.storage_path);
+            mergedFiles.push(f);
+          });
+
+          const signedLinks: Array<{ label: string; url: string }> = [];
+          for (const rf of mergedFiles) {
+            try {
+              const bucket = rf.storage_bucket || "jm-ranglisten";
+              const { data: sData } = await supabaseClient.storage
+                .from(bucket)
+                .createSignedUrl(rf.storage_path, signedExpiresSec);
+              if (sData?.signedUrl) {
+                const publicSignedUrl = String(sData.signedUrl).replace(
+                  /^https?:\/\/(api-gw|kong):8000/,
+                  externalDomain
+                );
+                signedLinks.push({
+                  label: rf.is_group_ranking ? "Gruppenrangliste öffnen" : "Rangliste öffnen",
+                  url: publicSignedUrl,
+                });
+              }
+            } catch (_) {}
+          }
+
+          totalGgShare += myShare;
+          ggItems.push({
+            anlassName: String(comp.anlass_name || "Auswärtiges Schiessen"),
+            gruppeName: String(comp.gruppe_name || "Strohaus"),
+            rang: comp.rang || null,
+            totalPts,
+            myPts: myMem.punkte || null,
+            gewinn,
+            doppel,
+            ueberschuss,
+            count,
+            myShare,
+            teamStr,
+            links: signedLinks,
+          });
+        }
+
+        if (ggItems.length > 0 && totalGgShare > 0) {
+          totalGgShare = Math.round(totalGgShare * 20) / 20;
+          const expiryDate = new Date(Date.now() + signedExpiresSec * 1000);
+          const validUntilStr = expiryDate.toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+          const addUriAnnot = (page: any, x: number, y: number, w: number, h: number, url: string) => {
+            try {
+              const linkAnnot = pdfDoc.context.register(
+                pdfDoc.context.obj({
+                  Type: "Annot",
+                  Subtype: "Link",
+                  Rect: [x, y, x + w, y + h],
+                  Border: [0, 0, 0],
+                  A: {
+                    Type: "Action",
+                    S: "URI",
+                    URI: PDFString.of(url),
+                  },
+                })
+              );
+              const existing = page.node.lookup(PDFName.of("Annots"));
+              if (existing && typeof (existing as any).push === "function") {
+                (existing as any).push(linkAnnot);
+              } else {
+                page.node.set(PDFName.of("Annots"), pdfDoc.context.obj([linkAnnot]));
+              }
+            } catch (_) {}
+          };
+
+          let ggPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+          let ggY = renderFollowUpHeader(ggPage);
+
+          // Titel des Beiblatts
+          ggPage.drawText(sanitizeText(`Beiblatt: Zusammensetzung Gruppengewinne ${yrNum} (Konto 1301)`), {
+            x: 20 * MM,
+            y: ggY,
+            size: 12.5,
+            font: fontBold,
+            color: rgb(0.06, 0.23, 0.36),
+          });
+          ggY -= 5 * MM;
+
+          const shooterDisplay = [normRecipient.vorname, normRecipient.nachname].filter(Boolean).join(" ") || normRecipient.name || targetPn;
+          ggPage.drawText(
+            sanitizeText(
+              `Detailaufstellung zu Rechnung ${invoiceId} · Schütze: ${shooterDisplay} (Nr. ${targetPn}) · Ranglisten-Links gültig bis ${validUntilStr}`
+            ),
+            {
+              x: 20 * MM,
+              y: ggY,
+              size: 8.5,
+              font: fontRegular,
+              color: rgb(0.35, 0.4, 0.48),
+            }
+          );
+          ggY -= 6 * MM;
+
+          const drawGgTableHeader = (p: any, yPos: number): number => {
+            p.drawRectangle({
+              x: 20 * MM,
+              y: yPos - 5 * MM,
+              width: 170 * MM,
+              height: 6.8 * MM,
+              color: rgb(0.06, 0.23, 0.36),
+            });
+            p.drawText("Anlass / Gruppe & Teamkollegen", { x: 22 * MM, y: yPos - 3.2 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+            p.drawText("Deine Pkt.", { x: 102 * MM, y: yPos - 3.2 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+            p.drawText("Gruppenabrechnung", { x: 120 * MM, y: yPos - 3.2 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+            p.drawText("Dein Anteil", { x: 149 * MM, y: yPos - 3.2 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+            p.drawText("Rangliste", { x: 168 * MM, y: yPos - 3.2 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+            return yPos - 8.5 * MM;
+          };
+
+          ggY = drawGgTableHeader(ggPage, ggY);
+
+          for (let i = 0; i < ggItems.length; i++) {
+            const it = ggItems[i];
+            const rangTxt = it.rang ? ` · ${it.rang}. Rang` : "";
+            const totTxt = it.totalPts ? ` · Total: ${it.totalPts} Pkt.` : "";
+            const subLine = `Gruppe «${it.gruppeName}»${rangTxt}${totTxt}`;
+            const teamLines = wrapText(sanitizeText(`Team: ${it.teamStr}`), fontRegular, 7.3, 78 * MM);
+            const rowLinesCount = Math.max(3, 2 + teamLines.length, 1 + (it.links?.length || 0));
+            const rowH = (rowLinesCount * 3.6 + 3.2) * MM;
+
+            if (ggY - rowH < 32 * MM) {
+              drawClubLegalFooter(ggPage, 12 * MM);
+              ggPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+              ggY = renderFollowUpHeader(ggPage);
+              ggY = drawGgTableHeader(ggPage, ggY);
+            }
+
+            if (i % 2 === 0) {
+              ggPage.drawRectangle({
+                x: 20 * MM,
+                y: ggY - rowH + 2 * MM,
+                width: 170 * MM,
+                height: rowH,
+                color: rgb(0.97, 0.98, 0.99),
+              });
+            }
+
+            let lineY = ggY - 1.5 * MM;
+            // Spalte 1: Anlass, Gruppe, Team
+            ggPage.drawText(sanitizeText(it.anlassName), {
+              x: 22 * MM,
+              y: lineY,
+              size: 8.5,
+              font: fontBold,
+              color: rgb(0.08, 0.1, 0.15),
+            });
+            ggPage.drawText(sanitizeText(subLine), {
+              x: 22 * MM,
+              y: lineY - 3.6 * MM,
+              size: 7.5,
+              font: fontRegular,
+              color: rgb(0.3, 0.35, 0.42),
+            });
+            teamLines.forEach((tl: string, tIdx: number) => {
+              ggPage.drawText(sanitizeText(tl), {
+                x: 22 * MM,
+                y: lineY - (7.2 + tIdx * 3.4) * MM,
+                size: 7.2,
+                font: fontRegular,
+                color: rgb(0.4, 0.45, 0.52),
+              });
+            });
+
+            // Spalte 2: Deine Punkte
+            const myPtsTxt = it.myPts ? `${it.myPts} Pkt.` : "-";
+            ggPage.drawText(sanitizeText(myPtsTxt), {
+              x: 103 * MM,
+              y: lineY,
+              size: 8.2,
+              font: fontBold,
+              color: rgb(0.1, 0.15, 0.25),
+            });
+
+            // Spalte 3: Brutto / Doppel / Netto
+            ggPage.drawText(sanitizeText(`Brutto: ${formatSwissChf(it.gewinn)}`), {
+              x: 120 * MM,
+              y: lineY,
+              size: 7.5,
+              font: fontRegular,
+              color: rgb(0.2, 0.25, 0.3),
+            });
+            ggPage.drawText(sanitizeText(`./. Doppel: ${formatSwissChf(it.doppel)}`), {
+              x: 120 * MM,
+              y: lineY - 3.5 * MM,
+              size: 7.2,
+              font: fontRegular,
+              color: rgb(0.45, 0.5, 0.55),
+            });
+            ggPage.drawText(sanitizeText(`Netto: ${formatSwissChf(it.ueberschuss)}`), {
+              x: 120 * MM,
+              y: lineY - 7.0 * MM,
+              size: 7.6,
+              font: fontBold,
+              color: rgb(0.1, 0.15, 0.25),
+            });
+
+            // Spalte 4: Dein Anteil
+            ggPage.drawText(sanitizeText(`- ${formatSwissChf(it.myShare)}`), {
+              x: 149 * MM,
+              y: lineY,
+              size: 8.5,
+              font: fontBold,
+              color: rgb(0.08, 0.5, 0.24),
+            });
+            ggPage.drawText(sanitizeText(`(1/${it.count} Anteil)`), {
+              x: 149 * MM,
+              y: lineY - 3.5 * MM,
+              size: 7,
+              font: fontRegular,
+              color: rgb(0.4, 0.45, 0.52),
+            });
+
+            // Spalte 5: Klickbare 180-Tage-Links auf die Ranglisten
+            if (it.links && it.links.length > 0) {
+              it.links.forEach((lk: { label: string; url: string }, lIdx: number) => {
+                const lkY = lineY - lIdx * 4.2 * MM;
+                const shortLabel = lk.label.includes("Gruppen") ? "> Gruppen-RL" : "> Rangliste";
+                ggPage.drawText(sanitizeText(shortLabel), {
+                  x: 168 * MM,
+                  y: lkY,
+                  size: 7.4,
+                  font: fontBold,
+                  color: rgb(0.11, 0.3, 0.85),
+                });
+                addUriAnnot(ggPage, 167 * MM, lkY - 1 * MM, 22 * MM, 4 * MM, lk.url);
+              });
+            } else {
+              ggPage.drawText("-", {
+                x: 172 * MM,
+                y: lineY,
+                size: 7.5,
+                font: fontRegular,
+                color: rgb(0.6, 0.6, 0.6),
+              });
+            }
+
+            ggPage.drawLine({
+              start: { x: 20 * MM, y: ggY - rowH + 2 * MM },
+              end: { x: 190 * MM, y: ggY - rowH + 2 * MM },
+              thickness: 0.4,
+              color: rgb(0.85, 0.88, 0.92),
+            });
+
+            ggY -= rowH;
+          }
+
+          // Total-Zeile Gruppengewinne
+          ggPage.drawRectangle({
+            x: 20 * MM,
+            y: ggY - 6 * MM,
+            width: 170 * MM,
+            height: 7.5 * MM,
+            color: rgb(0.94, 0.99, 0.96),
+          });
+          ggPage.drawText(sanitizeText(`Total Gutschrift Gruppengewinne ${yrNum} (auf Rechnung abgezogen):`), {
+            x: 22 * MM,
+            y: ggY - 3.5 * MM,
+            size: 8.8,
+            font: fontBold,
+            color: rgb(0.08, 0.33, 0.18),
+          });
+          ggPage.drawText(sanitizeText(`- CHF ${formatSwissChf(totalGgShare)}`), {
+            x: 146 * MM,
+            y: ggY - 3.5 * MM,
+            size: 9.2,
+            font: fontBold,
+            color: rgb(0.08, 0.5, 0.24),
+          });
+
+          ggY -= 12 * MM;
+          ggPage.drawText(
+            sanitizeText(
+              `Hinweis: Die blauen Ranglisten-Links sind direkt im PDF anklickbar und während 180 Tagen (bis ${validUntilStr}) gültig.`
+            ),
+            {
+              x: 20 * MM,
+              y: ggY,
+              size: 7.8,
+              font: fontRegular,
+              color: rgb(0.12, 0.25, 0.55),
+            }
+          );
+
+          drawClubLegalFooter(ggPage, 12 * MM);
+        }
+      }
+    } catch (ggPdfErr) {
+      console.warn("⚠️ Beiblatt Gruppengewinne im Rechnungs-PDF konnte nicht gerendert werden:", ggPdfErr);
+    }
+  }
+
+  // ============================================================================
+  // FINALE SEITE: DEDIZIERTER SCHWEIZER QR-ZAHLTEIL (ES ALLEIN AUF SEITE)
+  // ============================================================================
+  const qrPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+  renderFollowUpHeader(qrPage);
+
+  // Belegbezugs-Kopf oberhalb des Zahlteils
+  qrPage.drawText(`Zahlteil & Beleg zu Rechnung: ${invoiceId}`, {
+    x: 20 * MM,
+    y: 258 * MM,
+    size: 11,
+    font: fontBold,
+    color: rgb(0.1, 0.15, 0.3),
+  });
+
+  const cpSummary = [normRecipient.anrede, normRecipient.vorname, normRecipient.nachname].filter(Boolean).join(" ").trim();
+  const recSummary = isCompany
+    ? (cpSummary && cpSummary.toLowerCase() !== normRecipient.firma!.toLowerCase()
+        ? `${normRecipient.firma} (${cpSummary})`
+        : normRecipient.firma!)
+    : (cpSummary || normRecipient.name || "Rechnungsempfänger");
+  qrPage.drawText(sanitizeWinAnsiText(`Rechnungsempfänger: ${recSummary}   |   Rechnungsbetrag: CHF ${formatSwissChf(totalAmount)}   |   Zahlbar bis: ${dueDateStr}`), {
+    x: 20 * MM,
+    y: 252 * MM,
+    size: 8.5,
+    font: fontRegular,
+    color: rgb(0.35, 0.35, 0.35),
+  });
+
+  // Schweizer QR-Zahlteil (SIX SPC 0200 1) auf den unteren 105 mm (kein Footer auf dieser Seite!)
+  drawSwissQrBillSection(qrPage, fontRegular, fontBold, invoiceId, totalAmount, normRecipient, yearStr, docType);
+
+  // ============================================================================
+  // SEITENNUMMERIERUNG & FORTSETZUNGSHINWEISE
+  // ============================================================================
+  const totalPages = pdfDoc.getPageCount();
+  const allPages = pdfDoc.getPages();
+  allPages.forEach((p, idx) => {
+    const pageNum = idx + 1;
+    const isQrPage = (pageNum === totalPages);
+
+    if (isQrPage) {
+      // Auf der QR-Seite: Stempel leicht oberhalb der Trennlinie des ES bei 108.5 mm
+      p.drawText(`Seite ${pageNum} von ${totalPages}`, {
+        x: 175 * MM,
+        y: 108.5 * MM,
+        size: 7.5,
+        font: fontRegular,
+        color: rgb(0.45, 0.45, 0.45),
+      });
+    } else {
+      // Auf Inhaltsseiten: Fortsetzungshinweis und Seitenzahl bei Y = 17 mm
+      p.drawText("Fortsetzung mit QR-Zahlteil auf der nächsten Seite...", {
+        x: 20 * MM,
+        y: 17 * MM,
+        size: 7.5,
+        font: fontRegular,
+        color: rgb(0.45, 0.45, 0.45),
+      });
+      p.drawText(`Seite ${pageNum} von ${totalPages}`, {
+        x: 175 * MM,
+        y: 17 * MM,
+        size: 7.5,
+        font: fontRegular,
+        color: rgb(0.45, 0.45, 0.45),
+      });
+    }
+  });
+
+  return await pdfDoc.save();
+}
+
+// Erstellt das Mietvertrags-PDF inkl. dynamischer Benützungsordnung (mehrseitig), Übergabeprotokoll und Schweizer QR-Rechnung auf separater Schlussseite
+async function generateRentalContractPdf(
+  bookingId: string,
+  recipient: RecipientData,
+  mietdatum: string,
+  festbeginn: string,
+  mietbetrag: number,
+  sender: SenderData,
+  supabaseClient?: any,
+  layoutData?: any,
+  templateId?: string
+): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.create();
+  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  const curYear = new Date().getFullYear().toString();
+  const A4_WIDTH = 595.28;
+  const A4_HEIGHT = 841.89;
+
+  // Logo laden (Base64-Inlining / Storage)
+  let logoImage: any = null;
+  const logoBytes = await getOrLoadLogoBytes(supabaseClient);
+  if (logoBytes) {
+    try {
+      logoImage = await pdfDoc.embedPng(logoBytes);
+    } catch (_) {}
+  }
+
+  // Dynamische Klauseln & Vorlagen-Felder aus Supabase laden
+  let clauses: any[] = [];
+  let templateTitle = layoutData?.title || "Mietvertrag & Benützungsreglement Schützenstube";
+  let templateNotice = layoutData?.notice || "Zahlbar innert 14 Tagen mit beiliegendem QR-Einzahlungsschein.";
+  let templateIntro = layoutData?.intro || "Benützungsordnung & Vereinbarungen:";
+  let dueDays = Number(layoutData?.due_days) || 14;
+  let templateData: any = null;
+
+  if (supabaseClient) {
+    try {
+      let tQuery = supabaseClient.from("document_templates").select("*");
+      if (templateId) {
+        tQuery = tQuery.eq("id", templateId);
+      } else {
+        tQuery = tQuery.or("code.eq.mietvertrag,id.eq.mietvertrag_rueteli,category.eq.vertrag");
+      }
+      const { data: tData } = await tQuery
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (tData) {
+        templateData = tData;
+        if (!layoutData?.title && tData.title) templateTitle = tData.title;
+        if (!layoutData?.notice && tData.notice) templateNotice = tData.notice;
+        if (!layoutData?.intro && tData.intro) templateIntro = tData.intro;
+        if (!layoutData?.due_days && tData.due_days) dueDays = Number(tData.due_days) || 14;
+
+        const { data: cData } = await supabaseClient
+          .from("document_template_clauses")
+          .select("*")
+          .eq("template_id", tData.id)
+          .order("sort_order", { ascending: true });
+
+        if (cData && cData.length > 0) {
+          clauses = cData;
+        }
+      }
+    } catch (err) {
+      console.warn("⚠️ [PDF-Engine] Fehler beim Laden der Vertragsklauseln:", err);
+    }
+  }
+
+  // STRIKTER BETRIEBS-CHECK: Keine stillen Fallbacks bei fehlenden Klauseln!
+  if (!clauses || clauses.length === 0) {
+    throw new Error(
+      "Konfigurationsfehler: In Supabase wurden keine Klauseln für den Mietvertrag gefunden (Tabelle 'document_template_clauses'). Bitte im Modul 'Dokumente-Vorlagen' hinterlegen."
+    );
+  }
+
+  // Vermietungs-Einstellungen (Single Source of Truth: public.rental_settings)
+  const rs: Record<string, string> = {};
+  if (supabaseClient) {
+    const { data: rsData, error: rsErr } = await supabaseClient
+      .from("rental_settings")
+      .select("setting_key, setting_value");
+    if (rsErr) {
+      throw new Error(`Vermietungs-Einstellungen (rental_settings) konnten nicht geladen werden: ${rsErr.message}`);
+    }
+    (rsData || []).forEach((r: any) => { rs[r.setting_key] = r.setting_value ?? ""; });
+  }
+
+  // Zahlungsfrist (Tage): Primär aus rental_settings (Vermietungs-Cockpit), Fallback layoutData / document_templates
+  if (rs.payment_due_days) {
+    const parsedDays = parseInt(rs.payment_due_days, 10);
+    if (!isNaN(parsedDays) && parsedDays > 0) {
+      dueDays = parsedDays;
+    }
+  }
+
+  const fmtFee = (v: string | undefined): string => {
+    const n = Number(String(v ?? "").replace(",", "."));
+    return Number.isFinite(n) && String(v ?? "").trim() !== "" ? formatSwissChf(n) : "–";
+  };
+
+  const vermieterName = [rs.sender_first_name, rs.sender_last_name].filter(Boolean).join(" ").trim()
+    || [sender.vorname, sender.nachname].filter(Boolean).join(" ").trim()
+    || "Vermietung";
+  const vermieterTelefon = (rs.sender_phone || sender.mobil || "").trim() || "–";
+  const vermieterEmail = (rs.club_email || sender.email || CLUB_EMAIL).trim();
+
+  const wirtschaftName = (rs.wirtschaft_name || "").trim() || "Wirtschaftsteam";
+  const wirtschaftTelefon = (rs.wirtschaft_phone || "").trim() || "–";
+  const wirtschaftEmail = (rs.wirtschaft_email || "").trim();
+
+  // Mietobjekt: Primär aus Dokumentenvorlage (Modul Dokumente: layoutData.rental_object oder templateDescription/description)
+  const mietobjekt = (layoutData?.rental_object || (templateData as any)?.rental_object || (templateData as any)?.description || rs.rental_object || "").trim() || "Schützenstube Muhen";
+
+  const contractPlaceholders: Record<string, string> = {
+    vermieter_name: vermieterName,
+    vermieter_vorname: rs.sender_first_name || "",
+    vermieter_nachname: rs.sender_last_name || "",
+    vermieter_telefon: vermieterTelefon,
+    vermieter_email: vermieterEmail,
+    wirtschaft_name: wirtschaftName,
+    wirtschaft_phone: wirtschaftTelefon,
+    wirtschaft_email: wirtschaftEmail,
+    mietobjekt: mietobjekt,
+    gebuehr_holz: fmtFee(rs.wood_fee),
+    gebuehr_abfallsack: fmtFee(rs.garbage_bag_fee),
+    gebuehr_reinigung: fmtFee(rs.cleaning_fee_per_hour),
+    gebuehr_storno: fmtFee(rs.storno_fee),
+    gebuehr_glas: fmtFee(rs.glass_fee),
+    gebuehr_teller: fmtFee(rs.plate_fee),
+    mietbetrag: formatSwissChf(mietbetrag),
+    mietdatum: mietdatum,
+    festbeginn: festbeginn || "",
+    buchungsnummer: bookingId,
+    vertragsnr: bookingId,
+    vorname: recipient.vorname || "",
+    nachname: recipient.nachname || "",
+    strasse: recipient.strasse || "",
+    plz: recipient.plz || "",
+    ort: recipient.ort || "",
+    zahlungsfrist_tage: String(dueDays),
+    zahlungsfrist: String(dueDays),
+  };
+  const applyContractPlaceholders = (txt: string): string =>
+    String(txt || "").replace(/\{([a-z_]+)\}/gi, (m, key) => {
+      const k = String(key).toLowerCase();
+      return Object.prototype.hasOwnProperty.call(contractPlaceholders, k) ? contractPlaceholders[k] : m;
+    });
+
+  // Aufzählungszeichen: echtes Bullet (WinAnsi 0x95), sonst Bindestrich
+  let bulletChar = "-";
+  try {
+    fontRegular.encodeText("\u2022");
+    bulletChar = "\u2022";
+  } catch (_) { /* Fallback '-' */ }
+
+  // ============================================================================
+  // SEITE 1: KOPFDATEN, PARTEIEN, MIETOBJEKT & KONDITIONEN
+  // ============================================================================
+  const page1 = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+  let currentPage = page1;
+
+  let textStartX = 15 * MM;
+  if (logoImage) {
+    const scaledLogo = logoImage.scaleToFit(32 * MM, 32 * MM);
+    page1.drawImage(logoImage, {
+      x: 15 * MM,
+      y: 291 * MM - scaledLogo.height,
+      width: scaledLogo.width,
+      height: scaledLogo.height,
+    });
+    textStartX = 15 * MM + scaledLogo.width + 3.5 * MM;
+  }
+
+  page1.drawText(CLUB_NAME.toUpperCase(), {
+    x: textStartX,
+    y: 281.5 * MM,
+    size: 14,
+    font: fontBold,
+    color: rgb(0.12, 0.23, 0.54),
+  });
+  page1.drawText("gegründet 1919 · Schiessanlage Rüteli, 5037 Muhen", {
+    x: textStartX,
+    y: 275.5 * MM,
+    size: 9,
+    font: fontRegular,
+    color: rgb(0.4, 0.45, 0.55),
+  });
+
+  page1.drawText(`${sanitizeWinAnsiText(templateTitle)}: ${bookingId}`, {
+    x: 20 * MM,
+    y: 257 * MM,
+    size: 12.5,
+    font: fontBold,
+    color: rgb(0.1, 0.15, 0.3),
+  });
+
+  let curY = 247 * MM;
+
+  // Parteien
+  page1.drawText("Vermieter:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
+  page1.drawText(sanitizeWinAnsiText(`${CLUB_NAME}, ${vermieterName}`), {
+    x: 50 * MM,
+    y: curY,
+    size: 9,
+    font: fontRegular,
+  });
+  curY -= 4 * MM;
+  page1.drawText(sanitizeWinAnsiText(`Kontakt: ${vermieterEmail} | Tel: ${vermieterTelefon}`), {
+    x: 50 * MM,
+    y: curY,
+    size: 8.5,
+    font: fontRegular,
+    color: rgb(0.3, 0.3, 0.3),
+  });
+  curY -= 6 * MM;
+
+  const mieterName = [recipient.vorname, recipient.nachname].filter(Boolean).join(" ") || recipient.name || "–";
+  page1.drawText("Mieter:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
+  page1.drawText(sanitizeWinAnsiText(`${mieterName}, ${recipient.strasse || ""}, ${recipient.plz || ""} ${recipient.ort || ""}`), {
+    x: 50 * MM,
+    y: curY,
+    size: 9,
+    font: fontRegular,
+  });
+  curY -= 4 * MM;
+  page1.drawText(sanitizeWinAnsiText(`Kontakt: ${recipient.email || "–"} | Tel: ${recipient.telefon || "–"}`), {
+    x: 50 * MM,
+    y: curY,
+    size: 8.5,
+    font: fontRegular,
+    color: rgb(0.3, 0.3, 0.3),
+  });
+  curY -= 6.5 * MM;
+
+  // Mietobjekt & Konditionen
+  page1.drawText("Mietdatum:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
+  page1.drawText(sanitizeWinAnsiText(`${mietdatum} (Festbeginn: ${festbeginn || "Nach Vereinbarung"})`), { x: 50 * MM, y: curY, size: 9, font: fontRegular });
+  curY -= 5 * MM;
+
+  page1.drawText("Mietobjekt:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
+  page1.drawText(sanitizeWinAnsiText(mietobjekt), { x: 50 * MM, y: curY, size: 9, font: fontRegular });
+  curY -= 5 * MM;
+
+  page1.drawText("Gebühren:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
+  page1.drawText(`Mietgebühr: CHF ${formatSwissChf(mietbetrag)}`, {
+    x: 50 * MM,
+    y: curY,
+    size: 9,
+    font: fontBold,
+  });
+  curY -= 7.5 * MM;
+
+  // Trennlinie
+  page1.drawLine({ start: { x: 20 * MM, y: curY }, end: { x: 190 * MM, y: curY }, thickness: 0.5, color: rgb(0.7, 0.7, 0.7) });
+  curY -= 5.5 * MM;
+
+  // Dynamischer Einleitungstext / Abschnittstitel aus Vorlage (über Ziffer 1)
+  const resolvedIntro = applyContractPlaceholders(templateIntro || "Benützungsordnung & Vereinbarungen:");
+  const introLines = resolvedIntro.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (introLines.length > 0) {
+    introLines.forEach((line, idx) => {
+      const isHeaderLine = (idx === 0);
+      page1.drawText(sanitizeWinAnsiText(line), {
+        x: 20 * MM,
+        y: curY,
+        size: isHeaderLine ? 9.5 : 8.5,
+        font: isHeaderLine ? fontBold : fontRegular,
+        color: isHeaderLine ? rgb(0.12, 0.23, 0.54) : rgb(0.25, 0.25, 0.25)
+      });
+      curY -= 4.5 * MM;
+    });
+    curY -= 1 * MM;
+  } else {
+    page1.drawText("Benützungsordnung & Vereinbarungen:", { x: 20 * MM, y: curY, size: 9.5, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
+    curY -= 5.5 * MM;
+  }
+
+  // HILFSFUNKTION FÜR MEHRSEITIGEN VERTRAGSFLUSS
+  function addNewContractPage(): any {
+    const newPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+    newPage.drawText(sanitizeWinAnsiText(`${CLUB_NAME} · Mietvertrag & Benützungsreglement ${bookingId} (Fortsetzung)`), {
+      x: 20 * MM,
+      y: 278 * MM,
+      size: 8.5,
+      font: fontRegular,
+      color: rgb(0.4, 0.45, 0.55),
+    });
+    newPage.drawLine({
+      start: { x: 20 * MM, y: 274 * MM },
+      end: { x: 190 * MM, y: 274 * MM },
+      thickness: 0.3,
+      color: rgb(0.7, 0.7, 0.7),
+    });
+    currentPage = newPage;
+    curY = 265 * MM;
+    return newPage;
+  }
+
+  // DYNAMISCHE KLAUSELN FLIESSEND RENDERN (zeilenweise, Bullets untereinander mit hängendem Einzug)
+  const CL_FONT = 8;
+  const CL_LINE = 3.8 * MM;
+  const CL_TEXT_X = 27 * MM;
+  const CL_MARKER_X = 23.5 * MM;
+  const CL_WIDTH = 190 * MM - CL_TEXT_X;
+
+  type ClauseRow = { marker: string; text: string };
+  const buildClauseRows = (raw: string): ClauseRow[] => {
+    const rows: ClauseRow[] = [];
+    applyContractPlaceholders(raw)
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0)
+      .forEach((line) => {
+        const bm = line.match(/^(?:[\u2022\u00B7*]|-(?=\s))\s*(.*)$/);
+        const nm = !bm ? line.match(/^(\d+\.)\s+(.*)$/) : null;
+        const marker = bm ? bulletChar : (nm ? nm[1] : "");
+        const body = bm ? bm[1] : (nm ? nm[2] : line);
+        wrapText(body, fontRegular, CL_FONT, CL_WIDTH).forEach((wl, i) => {
+          rows.push({ marker: i === 0 ? marker : "", text: wl });
+        });
+      });
+    return rows;
+  };
+
+  const drawContinuationHint = () => {
+    currentPage.drawText("Fortsetzung der Bestimmungen auf nächster Seite...", {
+      x: 20 * MM,
+      y: 14 * MM,
+      size: 7.5,
+      font: fontRegular,
+      color: rgb(0.45, 0.45, 0.45),
+    });
+  };
+
+  clauses.forEach((c, idx) => {
+    const num = c.clause_number || String(idx + 1);
+    const titleText = `${/^\d+$/.test(String(num)) ? num + ". " : num + ": "}${sanitizeWinAnsiText(c.clause_title)}:`;
+    const rows = buildClauseRows(c.clause_text || "");
+    const neededHeight = 4 * MM + rows.length * CL_LINE + 2.5 * MM;
+
+    // Ganze Klausel auf neue Seite, falls sie dort vollständig Platz hat
+    if (curY - neededHeight < 22 * MM) {
+      drawContinuationHint();
+      addNewContractPage();
+    }
+
+    currentPage.drawText(titleText, { x: 20 * MM, y: curY, size: 8.5, font: fontBold });
+    curY -= 4 * MM;
+    rows.forEach((r) => {
+      if (curY < 20 * MM) {
+        drawContinuationHint();
+        addNewContractPage();
+      }
+      if (r.marker) {
+        currentPage.drawText(r.marker, { x: CL_MARKER_X, y: curY, size: CL_FONT, font: fontRegular, color: rgb(0.2, 0.2, 0.2) });
+      }
+      currentPage.drawText(r.text, { x: CL_TEXT_X, y: curY, size: CL_FONT, font: fontRegular, color: rgb(0.2, 0.2, 0.2) });
+      curY -= CL_LINE;
+    });
+    curY -= 2.5 * MM;
+  });
+
+  // ============================================================================
+  // SEPARATE SCHLUSS-SEITE: ZAHLUNGSDETAILS & SCHWEIZER QR-EINZAHLUNGSSCHEIN
+  // Vereinskopf identisch zu Seite 1 positioniert
+  // ============================================================================
+  const qrPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+
+  let qrTextStartX = 15 * MM;
+  if (logoImage) {
+    const scaledLogo = logoImage.scaleToFit(32 * MM, 32 * MM);
+    qrPage.drawImage(logoImage, {
+      x: 15 * MM,
+      y: 291 * MM - scaledLogo.height,
+      width: scaledLogo.width,
+      height: scaledLogo.height,
+    });
+    qrTextStartX = 15 * MM + scaledLogo.width + 3.5 * MM;
+  }
+
+  qrPage.drawText(CLUB_NAME.toUpperCase(), {
+    x: qrTextStartX,
+    y: 281.5 * MM,
+    size: 14,
+    font: fontBold,
+    color: rgb(0.12, 0.23, 0.54),
+  });
+  qrPage.drawText("gegründet 1919 · Schiessanlage Rüteli, 5037 Muhen", {
+    x: qrTextStartX,
+    y: 275.5 * MM,
+    size: 9,
+    font: fontRegular,
+    color: rgb(0.4, 0.45, 0.55),
+  });
+
+  // Zahlungsdetail-Box (weiter unten, zwischen Vereinskopf und QR-Zahlteil)
+  const boxTopY = 212 * MM;
+  const boxHeight = 62 * MM;
+  qrPage.drawRectangle({
+    x: 20 * MM,
+    y: boxTopY - boxHeight,
+    width: 170 * MM,
+    height: boxHeight,
+    color: rgb(0.97, 0.98, 0.99),
+    borderColor: rgb(0.82, 0.85, 0.9),
+    borderWidth: 0.5,
+  });
+
+  let boxY = boxTopY - 8 * MM;
+  qrPage.drawText("Buchungs- & Zahlungsdetails:", { x: 25 * MM, y: boxY, size: 9, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
+  boxY -= 7 * MM;
+
+  qrPage.drawText("Vertrags-/Rechnungs-Nr.:", { x: 25 * MM, y: boxY, size: 8.5, font: fontBold });
+  qrPage.drawText(sanitizeWinAnsiText(bookingId), { x: 75 * MM, y: boxY, size: 8.5, font: fontRegular });
+  boxY -= 5 * MM;
+
+  qrPage.drawText("Mieter / Rechnungsempfänger:", { x: 25 * MM, y: boxY, size: 8.5, font: fontBold });
+  qrPage.drawText(sanitizeWinAnsiText(mieterName), { x: 75 * MM, y: boxY, size: 8.5, font: fontRegular });
+  boxY -= 5 * MM;
+
+  qrPage.drawText("Adresse:", { x: 25 * MM, y: boxY, size: 8.5, font: fontBold });
+  qrPage.drawText(sanitizeWinAnsiText(`${recipient.strasse || "–"}, ${recipient.plz || ""} ${recipient.ort || ""}`), { x: 75 * MM, y: boxY, size: 8.5, font: fontRegular });
+  boxY -= 5 * MM;
+
+  qrPage.drawText("Mietdatum / Anlass:", { x: 25 * MM, y: boxY, size: 8.5, font: fontBold });
+  qrPage.drawText(sanitizeWinAnsiText(`${mietdatum} (Festbeginn: ${festbeginn || "Nach Vereinbarung"})`), { x: 75 * MM, y: boxY, size: 8.5, font: fontRegular });
+  boxY -= 5 * MM;
+
+  qrPage.drawText("Mietgebühr Schützenstube:", { x: 25 * MM, y: boxY, size: 8.5, font: fontBold });
+  qrPage.drawText(`CHF ${formatSwissChf(mietbetrag)}`, { x: 75 * MM, y: boxY, size: 8.5, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
+  boxY -= 6 * MM;
+
+  qrPage.drawText("Zahlungsziel:", { x: 25 * MM, y: boxY, size: 8.5, font: fontBold });
+  qrPage.drawText(`Innert ${dueDays} Tagen nach Erhalt des Mietvertrags`, { x: 75 * MM, y: boxY, size: 8.5, font: fontRegular });
+  boxY -= 6.5 * MM;
+
+  // Prominente Hinweiskarte innerhalb der Box (Akzentuiert mit Hintergrund und Rahmen)
+  const noticeCardY = boxY - 14 * MM;
+  qrPage.drawRectangle({
+    x: 23 * MM,
+    y: noticeCardY,
+    width: 164 * MM,
+    height: 15 * MM,
+    color: rgb(0.93, 0.96, 1.0), // Frisches Hellblau für hohe Aufmerksamkeit
+    borderColor: rgb(0.12, 0.35, 0.65), // Prägnanter Kontrastrand
+    borderWidth: 0.8,
+  });
+
+  qrPage.drawText("WICHTIGER HINWEIS:", {
+    x: 26 * MM,
+    y: noticeCardY + 9.5 * MM,
+    size: 8,
+    font: fontBold,
+    color: rgb(0.1, 0.25, 0.55),
+  });
+  qrPage.drawText("Bitte verwenden Sie fuer die Zahlung ausschliesslich den untenstehenden QR-Einzahlungsschein.", {
+    x: 58 * MM,
+    y: noticeCardY + 9.5 * MM,
+    size: 7.8,
+    font: fontRegular,
+    color: rgb(0.1, 0.2, 0.3),
+  });
+
+  qrPage.drawText("RESERVATIONSABSCHLUSS:", {
+    x: 26 * MM,
+    y: noticeCardY + 4 * MM,
+    size: 8,
+    font: fontBold,
+    color: rgb(0.1, 0.25, 0.55),
+  });
+  qrPage.drawText("Mit fristgerechter Bezahlung gilt die Reservation als definitiv abgeschlossen.", {
+    x: 70 * MM,
+    y: noticeCardY + 4 * MM,
+    size: 7.8,
+    font: fontBold,
+    color: rgb(0.08, 0.18, 0.35),
+  });
+
+  // Schweizer QR-Zahlteil auf der letzten Seite (105mm am unteren Rand)
+  drawSwissQrBillSection(qrPage, fontRegular, fontBold, bookingId, mietbetrag, recipient, curYear, "Mietvertrag Schützenstube");
+
+  // ============================================================================
+  // SEITENNUMMERIERUNG ÜBER ALLE SEITEN (2-PASS)
+  // ============================================================================
+  const allDocPages = pdfDoc.getPages();
+  const totalPagesCount = allDocPages.length;
+  for (let i = 0; i < totalPagesCount; i++) {
+    const p = allDocPages[i];
+    const isFinalQrPage = (i === totalPagesCount - 1);
+    const pageNumY = isFinalQrPage ? 108.5 * MM : 12 * MM;
+    p.drawText(`Seite ${i + 1} von ${totalPagesCount}`, {
+      x: 175 * MM,
+      y: pageNumY,
+      size: 7.5,
+      font: fontRegular,
+      color: rgb(0.45, 0.45, 0.45),
+    });
+  }
+
+  return await pdfDoc.save();
+}
+
+// Erstellt die mehrseitige Einladungsbroschüre zur Generalversammlung inkl. Traktanden und Jahresprogramm
+async function generateGVInvitationPdf(
+  year: number,
+  gvData: any,
+  supabaseClient?: any
+): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.create();
+  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  const A4_WIDTH = 595.28;
+  const A4_HEIGHT = 841.89;
+
+  // 1. Logo laden
+  const logoBytes = await getOrLoadLogoBytes(supabaseClient);
+  let logoImage: any = null;
+  if (logoBytes) {
+    try {
+      logoImage = await pdfDoc.embedPng(logoBytes);
+    } catch (_) {}
+  }
+
+  // 2. Daten aus Supabase laden (Template, Traktanden/Klauseln, Termine)
+  const gvNummerStr = String(gvData.gvNummer || gvData.number || "100");
+  const rawDatum = gvData.datum || "";
+  let formattedDatum = rawDatum;
+  if (rawDatum && rawDatum.includes("-")) {
+    const dp = rawDatum.split("-");
+    if (dp.length === 3) {
+      const months = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+      const mIdx = parseInt(dp[1], 10) - 1;
+      if (mIdx >= 0 && mIdx < 12) {
+        formattedDatum = `${parseInt(dp[2], 10)}. ${months[mIdx]} ${dp[0]}`;
+      }
+    }
+  }
+  if (!formattedDatum) formattedDatum = `im März ${year}`;
+
+  const gvZeitClean = gvData.zeit ? (gvData.zeit.includes("Uhr") ? gvData.zeit : `${gvData.zeit} Uhr`) : "19:30 Uhr";
+  const gvOrtClean = gvData.ort || "Schützenstube Hard, Muhen";
+  const praesiName = gvData.praesidentName || gvData.praesident_name || "Andrea Rossi";
+  const vorjahrDatum = gvData.datumVorjahr || gvData.datum_vorjahr || `${year - 1}`;
+  let vorjahrDatumFormatted = String(vorjahrDatum);
+  let vorjahrYear = String(year - 1);
+
+  if (String(vorjahrDatum).includes("-")) {
+    const p = String(vorjahrDatum).split("-");
+    if (p.length === 3) {
+      const months = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+      const mIdx = parseInt(p[1], 10) - 1;
+      if (mIdx >= 0 && mIdx < 12) {
+        vorjahrDatumFormatted = `${parseInt(p[2], 10)}. ${months[mIdx]} ${p[0]}`;
+        vorjahrYear = p[0];
+      }
+    }
+  } else if (String(vorjahrDatum).includes(".")) {
+    const p = String(vorjahrDatum).split(".");
+    if (p.length === 3 && p[2].length === 4) {
+      vorjahrYear = p[2];
+      vorjahrDatumFormatted = String(vorjahrDatum);
+    }
+  }
+
+  const gvNummerVorjahrStr = String(Math.max(1, parseInt(gvNummerStr, 10) - 1));
+  const amtsdauerText = gvData.amtsdauer_text || `Amtsdauer ${year}–${year + 2}`;
+
+  const vorname = gvData.vorname || gvData.first_name || "";
+  const nachname = gvData.nachname || gvData.last_name || "";
+  const anrede = gvData.anrede || (vorname ? `Lieber ${vorname}` : "Liebe Schützinnen und Schützen");
+
+  const replacePlaceholders = (text: string) => {
+    if (!text) return "";
+    return text
+      .replace(/{jahr}/gi, String(year))
+      .replace(/{{jahr}}/gi, String(year))
+      .replace(/{gv_jahr}/gi, String(year))
+      .replace(/{{gv_jahr}}/gi, String(year))
+      .replace(/{jahr_vorjahr}/gi, vorjahrYear)
+      .replace(/{{jahr_vorjahr}}/gi, vorjahrYear)
+      .replace(/{rechnungsjahr}/gi, vorjahrYear)
+      .replace(/{{rechnungsjahr}}/gi, vorjahrYear)
+      .replace(/{gv_nummer}/gi, gvNummerStr)
+      .replace(/{{gv_nummer}}/gi, gvNummerStr)
+      .replace(/{gv_nummer_vorjahr}/gi, gvNummerVorjahrStr)
+      .replace(/{{gv_nummer_vorjahr}}/gi, gvNummerVorjahrStr)
+      .replace(/{gv_datum}/gi, formattedDatum)
+      .replace(/{{gv_datum}}/gi, formattedDatum)
+      .replace(/{gv_zeit}/gi, gvZeitClean)
+      .replace(/{{gv_zeit}}/gi, gvZeitClean)
+      .replace(/{gv_ort}/gi, gvOrtClean)
+      .replace(/{{gv_ort}}/gi, gvOrtClean)
+      .replace(/{praesident_name}/gi, praesiName)
+      .replace(/{{praesident_name}}/gi, praesiName)
+      .replace(/{vorname}/gi, vorname)
+      .replace(/{{vorname}}/gi, vorname)
+      .replace(/{nachname}/gi, nachname)
+      .replace(/{{nachname}}/gi, nachname)
+      .replace(/{anrede}/gi, anrede)
+      .replace(/{{anrede}}/gi, anrede)
+      .replace(/{amtsdauer}/gi, amtsdauerText)
+      .replace(/{{amtsdauer}}/gi, amtsdauerText)
+      .replace(/{{Datum_Vorjahr}}/gi, vorjahrDatumFormatted)
+      .replace(/{{datum_vorjahr}}/gi, vorjahrDatumFormatted)
+      .replace(/{datum_vorjahr}/gi, vorjahrDatumFormatted);
+  };
+
+  let templateTitle = `Einladung zur ${gvNummerStr}. ordentlichen Generalversammlung`;
+  let templateIntro = `Liebe Schützinnen, liebe Schützen, geschätzte Ehren- und Freimitglieder\n\nWir laden euch herzlich zu unserer ordentlichen Generalversammlung ein.`;
+  let templateNotice = "Der Vorstand freut sich über eine zahlreiche und pünktliche Teilnahme!";
+  let clauses: any[] = [];
+  let termine: any[] = [];
+  let instData: any = null;
+
+  if (supabaseClient) {
+    try {
+      // 2a. Daten direkt aus public.gv_instances für dieses GV-Jahr laden (kein document_templates Umweg)
+      const gvInstanceId = gvData.gvId || `gv_${year}`;
+      const { data: dbInst } = await supabaseClient
+        .from("gv_instances")
+        .select("*")
+        .or(`id.eq.${gvInstanceId},year.eq.${year}`)
+        .maybeSingle();
+
+      if (dbInst) {
+        instData = dbInst;
+        if (instData.einladung_titel) templateTitle = replacePlaceholders(instData.einladung_titel);
+        if (instData.einladung_intro) templateIntro = replacePlaceholders(instData.einladung_intro);
+        if (instData.antragsfrist_hinweis) templateNotice = replacePlaceholders(instData.antragsfrist_hinweis);
+      }
+
+      // Direkte Übergabe in gvData hat höchste Priorität (z. B. bei Live-Vorschau aus dem Editor)
+      if (gvData.einladung_titel || gvData.title) templateTitle = replacePlaceholders(gvData.einladung_titel || gvData.title);
+      if (gvData.einladung_intro || gvData.intro) templateIntro = replacePlaceholders(gvData.einladung_intro || gvData.intro);
+      if (gvData.antragsfrist_hinweis || gvData.notice) templateNotice = replacePlaceholders(gvData.antragsfrist_hinweis || gvData.notice);
+
+      // 2b. Traktanden laden: Falls direkt im Payload übergeben (Live-Editor), sofort verwenden
+      let rawTraktanden: any[] = [];
+      if (Array.isArray(gvData.traktanden) && gvData.traktanden.length > 0) {
+        rawTraktanden = gvData.traktanden;
+      } else {
+        // Sonst primär aus public.gv_traktanden für das spezifische GV-Jahr
+        const instIdToQuery = instData?.id || gvInstanceId;
+        const { data: trData } = await supabaseClient
+          .from("gv_traktanden")
+          .select("*")
+          .or(`gv_id.eq.${instIdToQuery},gv_id.eq.gv_${year}`)
+          .order("sort_order", { ascending: true });
+
+        if (trData && trData.length > 0) {
+          rawTraktanden = trData;
+        }
+      }
+
+      // Traktanden filtern: Nur aktive Traktanden (is_in_pool !== true) berücksichtigen
+      const activeTraktanden = (rawTraktanden || []).filter((t: any) => !t.is_in_pool);
+
+      if (activeTraktanden && activeTraktanden.length > 0) {
+        const mainItems = activeTraktanden
+          .filter((t: any) => !t.parent_id)
+          .sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0));
+
+        const hierarchicalList: any[] = [];
+        mainItems.forEach((main: any, mIdx: number) => {
+          const mainNum = String(mIdx + 1);
+          hierarchicalList.push({
+            id: main.id,
+            clause_number: mainNum,
+            clause_title: replacePlaceholders(main.titel),
+            clause_text: replacePlaceholders(main.beschreibung || ""),
+            is_sub: false
+          });
+
+          const subs = activeTraktanden
+            .filter((t: any) => t.parent_id === main.id)
+            .sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0));
+
+          subs.forEach((sub: any, sIdx: number) => {
+            hierarchicalList.push({
+              id: sub.id,
+              clause_number: `${mainNum}.${sIdx + 1}`,
+              clause_title: replacePlaceholders(sub.titel),
+              clause_text: replacePlaceholders(sub.beschreibung || ""),
+              is_sub: true
+            });
+          });
+        });
+        clauses = hierarchicalList;
+      }
+
+      // 2c. Termine aus public.termine für das GV-Jahr laden
+      const { data: termData } = await supabaseClient
+        .from("termine")
+        .select("*")
+        .gte("datum", `${year}-01-01`)
+        .lte("datum", `${year}-12-31`)
+        .order("datum", { ascending: true });
+
+      if (termData && termData.length > 0) {
+        termine = termData;
+      }
+    } catch (err) {
+      console.warn("⚠️ [PDF-Engine] GV Datenabfrage Warnung:", err);
+    }
+  }
+
+  // Fallback-Traktanden falls in DB noch nicht angelegt
+  if (!clauses || clauses.length === 0) {
+    clauses = [
+      { clause_number: "1", clause_title: "Begrüssung und Appell", clause_text: "" },
+      { clause_number: "2", clause_title: "Wahl der Stimmenzähler", clause_text: "" },
+      { clause_number: "3", clause_title: "Genehmigung des Protokolls der letzten GV", clause_text: "" },
+      { clause_number: "4", clause_title: "Jahresberichte (Präsident, Schützenmeister, Jungschützen)", clause_text: "" },
+      { clause_number: "5", clause_title: "Kassa- und Revisorenbericht, Entlastung des Vorstands", clause_text: "" },
+      { clause_number: "6", clause_title: "Mutationen (Aufnahmen, Austritte, Ehrungen)", clause_text: "" },
+      { clause_number: "7", clause_title: "Wahlen (Vorstand, Rechnungsrevisoren)", clause_text: "" },
+      { clause_number: "8", clause_title: `Festsetzung Jahresprogramm ${year}`, clause_text: "" },
+      { clause_number: "9", clause_title: `Budget ${year} und Festsetzung der Jahresbeiträge`, clause_text: "" },
+      { clause_number: "10", clause_title: "Anträge von Mitgliedern", clause_text: "Schriftlich einzureichen gemäss Statuten" },
+      { clause_number: "11", clause_title: "Ehrungen und Auszeichnungen", clause_text: "" },
+      { clause_number: "12", clause_title: "Verschiedenes und Umfrage", clause_text: "" },
+    ];
+  }
+
+  // ============================================================================
+  // SEITE 1: EINLADUNG, ORT/ZEIT, BEGLEITTEXT & TRAKTANDEN
+  // ============================================================================
+  const page1 = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+
+  // Briefkopf
+  let textStartX = 15 * MM;
+  if (logoImage) {
+    const scaledLogo = logoImage.scaleToFit(32 * MM, 32 * MM);
+    page1.drawImage(logoImage, {
+      x: 15 * MM,
+      y: 291 * MM - scaledLogo.height,
+      width: scaledLogo.width,
+      height: scaledLogo.height,
+    });
+    textStartX = 15 * MM + scaledLogo.width + 3.5 * MM;
+  }
+
+  page1.drawText(CLUB_NAME.toUpperCase(), {
+    x: textStartX,
+    y: 281.5 * MM,
+    size: 14,
+    font: fontBold,
+    color: rgb(0.12, 0.23, 0.54),
+  });
+  page1.drawText("gegründet 1919 · Schiessanlage Hard · 5037 Muhen", {
+    x: textStartX,
+    y: 275.5 * MM,
+    size: 9,
+    font: fontRegular,
+    color: rgb(0.4, 0.45, 0.55),
+  });
+
+  // Titel
+  page1.drawText(sanitizeWinAnsiText(templateTitle), {
+    x: 20 * MM,
+    y: 254 * MM,
+    size: 14,
+    font: fontBold,
+    color: rgb(0.1, 0.15, 0.3),
+  });
+
+  // Datum / Zeit / Ort - Banner
+  page1.drawRectangle({
+    x: 20 * MM,
+    y: 236 * MM,
+    width: 170 * MM,
+    height: 14 * MM,
+    color: rgb(0.94, 0.96, 0.99),
+  });
+
+  const gvDatum = formattedDatum;
+  const gvZeit = gvZeitClean;
+  const gvOrt = gvOrtClean;
+
+  page1.drawText(`Datum & Zeit:  ${sanitizeWinAnsiText(gvDatum)}, ${sanitizeWinAnsiText(gvZeit)}`, {
+    x: 24 * MM,
+    y: 244 * MM,
+    size: 9.5,
+    font: fontBold,
+    color: rgb(0.12, 0.23, 0.54),
+  });
+  page1.drawText(`Ort:                 ${sanitizeWinAnsiText(gvOrt)}`, {
+    x: 24 * MM,
+    y: 239 * MM,
+    size: 9,
+    font: fontRegular,
+    color: rgb(0.2, 0.2, 0.2),
+  });
+
+  let curY = 227 * MM;
+
+  // Einleitungstext mit Unterstützung für **fett** / <b>...</b>
+  curY = drawFormattedLines(
+    page1,
+    templateIntro,
+    20 * MM,
+    curY,
+    fontRegular,
+    fontBold,
+    8.5,
+    3.8 * MM,
+    170 * MM,
+    rgb(0.2, 0.2, 0.2)
+  );
+
+  curY -= 2 * MM;
+
+  // Traktandenliste
+  page1.drawText("TRAKTANDENLISTE:", {
+    x: 20 * MM,
+    y: curY,
+    size: 10,
+    font: fontBold,
+    color: rgb(0.1, 0.15, 0.3),
+  });
+  curY -= 5 * MM;
+
+  clauses.forEach((c, idx) => {
+    const isSub = Boolean(c.is_sub);
+    const num = c.clause_number || String(idx + 1);
+
+    if (isSub) {
+      // Untertraktandum: sauber eingerückt, einheitliche 8.5pt Regular-Schrift in Dunkelgrau
+      const subX = 28 * MM;
+      const subTitleX = 37 * MM;
+      if (num) {
+        page1.drawText(`${num}`, { x: subX, y: curY, size: 8.5, font: fontRegular, color: rgb(0.2, 0.2, 0.2) });
+      }
+      page1.drawText(sanitizeWinAnsiText(c.clause_title || ""), { x: subTitleX, y: curY, size: 8.5, font: fontRegular, color: rgb(0.2, 0.2, 0.2) });
+
+      if (c.clause_text && c.clause_text.trim()) {
+        curY -= 3.2 * MM;
+        page1.drawText(sanitizeWinAnsiText(c.clause_text.trim()), {
+          x: subTitleX,
+          y: curY,
+          size: 7.2,
+          font: fontRegular,
+          color: rgb(0.45, 0.45, 0.45),
+        });
+        curY -= 3.8 * MM;
+      } else {
+        curY -= 3.8 * MM;
+      }
+    } else {
+      // Haupttraktandum: fett
+      page1.drawText(`${num}.`, { x: 20 * MM, y: curY, size: 8.5, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
+      page1.drawText(sanitizeWinAnsiText(c.clause_title || ""), { x: 28 * MM, y: curY, size: 8.5, font: fontBold, color: rgb(0.1, 0.1, 0.1) });
+
+      if (c.clause_text && c.clause_text.trim()) {
+        curY -= 3.5 * MM;
+        page1.drawText(sanitizeWinAnsiText(c.clause_text.trim()), {
+          x: 28 * MM,
+          y: curY,
+          size: 7.5,
+          font: fontRegular,
+          color: rgb(0.4, 0.4, 0.4),
+        });
+        curY -= 4.5 * MM;
+      } else {
+        curY -= 4.2 * MM;
+      }
+    }
+  });
+
+  curY -= 2 * MM;
+
+  // Gruss & Schluss
+  if (templateNotice) {
+    curY = drawFormattedLines(
+      page1,
+      templateNotice,
+      20 * MM,
+      curY,
+      fontRegular,
+      fontBold,
+      8.5,
+      3.8 * MM,
+      170 * MM,
+      rgb(0.3, 0.3, 0.3)
+    );
+    curY -= 2 * MM;
+  }
+
+  const grussLines = (gvData.grussformel || (instData as any)?.grussformel || "Freundliche Schützengrüsse\nDer Vorstand der Sportschützen Muhen")
+    .split("\n")
+    .map((l: string) => l.trim())
+    .filter((l: string) => l.length > 0);
+
+  grussLines.forEach((gl: string, gIdx: number) => {
+    const isLast = (gIdx === grussLines.length - 1);
+    const replaced = replacePlaceholders(gl);
+    page1.drawText(sanitizeWinAnsiText(replaced), {
+      x: 20 * MM,
+      y: curY,
+      size: isLast ? 9 : 8.5,
+      font: isLast ? fontBold : fontRegular,
+      color: isLast ? rgb(0.12, 0.23, 0.54) : rgb(0.2, 0.2, 0.2),
+    });
+    curY -= 4 * MM;
+  });
+
+  // ============================================================================
+  // SEITE 2+: JAHRESPROGRAMM & SCHIESSTERMINE (EXAKT GEMÄSS PRINTSCREEN-LAYOUT)
+  // ============================================================================
+  const formatSwissFullDate = (dateStr?: string): string => {
+    if (!dateStr) return "Datum folgt später";
+    const p = String(dateStr).split("-");
+    if (p.length !== 3) return dateStr;
+    const d = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+    if (isNaN(d.getTime())) return dateStr;
+    const days = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
+    const months = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+    return `${days[d.getDay()]}, ${d.getDate()}. ${months[d.getMonth()]} ${d.getFullYear()}`;
+  };
+
+  const formatZeitStr = (start?: string, end?: string, title?: string): string => {
+    const cleanTime = (t?: string): string => {
+      if (!t) return "";
+      const p = t.trim().split(":");
+      if (p.length >= 2) {
+        return `${p[0].padStart(2, "0")}:${p[1].padStart(2, "0")}`;
+      }
+      return t.trim();
+    };
+    const s = cleanTime(start);
+    const e = cleanTime(end);
+    if (title && title.toLowerCase().includes("training")) {
+      return s ? `${s} Uhr` : "";
+    }
+    if (s && e && s !== e) return `${s} bis ${e} Uhr`;
+    if (s) return `${s} Uhr`;
+    return "";
+  };
+
+  const drawPageHeader = (p: any, title: string) => {
+    if (logoImage) {
+      const scaledLogo = logoImage.scaleToFit(26 * MM, 26 * MM);
+      p.drawImage(logoImage, {
+        x: 20 * MM,
+        y: 285 * MM - scaledLogo.height,
+        width: scaledLogo.width,
+        height: scaledLogo.height,
+      });
+    }
+
+    p.drawText("Sportschützen Muhen", {
+      x: 50 * MM,
+      y: 268 * MM,
+      size: 24,
+      font: fontBold,
+      color: rgb(0.08, 0.08, 0.08),
+    });
+
+    if (title) {
+      p.drawText(title, {
+        x: 20 * MM,
+        y: 236 * MM,
+        size: 17,
+        font: fontBold,
+        color: rgb(0.08, 0.08, 0.08),
+      });
+      return 218 * MM;
+    }
+    return 246 * MM;
+  };
+
+  if (termine && termine.length > 0) {
+    // --------------------------------------------------------------------------
+    // 1. BLOCK: JAHRESPROGRAMM (Exakt gemäss Screenshot Seite 19)
+    // --------------------------------------------------------------------------
+    const progItems = termine.filter((t: any) => {
+      const kat = (t.kategorie || "").toLowerCase();
+      const tit = (t.anlasstitel || t.titel || "").toLowerCase();
+      if (tit.includes("ausserordentliche") || tit.includes("bundesprogramm 300m") || tit.includes("infoabend")) return false;
+      if (kat === "jahresprogramm") return true;
+      if (tit.includes("endschiessen")) return true;
+      if (tit.includes("arbeitstag")) return true;
+      if (tit.includes("jugendtag")) return true;
+      return false;
+    });
+
+    if (progItems.length > 0) {
+      const progGroups: Array<{ title: string; items: any[] }> = [];
+      progItems.forEach((term: any) => {
+        let rawTitle = (term.anlasstitel || term.titel || "Anlass").trim();
+        let ort = (term.ort || "").trim();
+        if (ort.toLowerCase().replace(/[\s\/-]+/g, "") === "domatems") ort = "Domat/Ems";
+        let displayTitle = rawTitle;
+        if (ort && !displayTitle.toLowerCase().includes(ort.toLowerCase()) && !displayTitle.toLowerCase().includes("domat/ems")) {
+          displayTitle = `${displayTitle} in ${ort}`;
+        }
+        let grp = progGroups.find((g) => g.title.toLowerCase() === displayTitle.toLowerCase());
+        if (!grp) {
+          grp = { title: displayTitle, items: [] };
+          progGroups.push(grp);
+        }
+        grp.items.push(term);
+      });
+
+      // Sortierung Jahresprogramm exakt gemäss Screenshot Seite 19:
+      const getProgOrder = (title: string): number => {
+        const t = title.toLowerCase();
+        if (t.includes("generalversammlung")) return 1;
+        if (t.includes("1. training") || t.includes("training")) return 2;
+        if (t.includes("verbandsschiessen")) return 3;
+        if (t.includes("vereinswettschiessen")) return 4;
+        if (t.includes("eidgenössisches") && !t.includes("empfang")) return 5;
+        if (t.includes("empfang")) return 6;
+        if (t.includes("jugendtag")) return 7;
+        if (t.includes("arbeitstag")) return 8;
+        if (t.includes("endschiessen")) return 9;
+        return 50;
+      };
+
+      progGroups.sort((a, b) => getProgOrder(a.title) - getProgOrder(b.title));
+      progGroups.forEach((grp) => {
+        grp.items.sort((a, b) => (a.datum || "").localeCompare(b.datum || ""));
+      });
+
+      let progPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+      let progY = drawPageHeader(progPage, "Jahresprogramm");
+
+      progGroups.forEach((grp) => {
+        const titleLines = wrapText(grp.title, fontBold, 10, 115 * MM);
+        const dateRowsCount = grp.items.length;
+        const requiredHeight = (titleLines.length + dateRowsCount) * 4.4 * MM + 6 * MM;
+
+        if (progY - requiredHeight < 20 * MM) {
+          progPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+          progY = drawPageHeader(progPage, "");
+        }
+
+        const startBlockY = progY;
+
+        // Zeile 1: Titel links
+        let tY = startBlockY;
+        titleLines.forEach((tLine) => {
+          progPage.drawText(sanitizeWinAnsiText(tLine), {
+            x: 20 * MM,
+            y: tY,
+            size: 10,
+            font: fontBold,
+            color: rgb(0.08, 0.08, 0.08),
+          });
+          tY -= 4.2 * MM;
+        });
+
+        // "Zeit" Header rechtsbündig auf Höhe der ersten Titelzeile
+        const zeitHdr = "Zeit";
+        const zhWidth = fontBold.widthOfTextAtSize(zeitHdr, 10);
+        progPage.drawText(zeitHdr, {
+          x: 190 * MM - zhWidth,
+          y: startBlockY,
+          size: 10,
+          font: fontBold,
+          color: rgb(0.08, 0.08, 0.08),
+        });
+
+        // Termindaten unterhalb des Titels
+        let itemY = Math.min(tY, startBlockY - 4.2 * MM);
+
+        grp.items.forEach((item) => {
+          const isProvisorisch = (item.status === "provisorisch" || !item.datum || (item.anlasstitel?.toLowerCase().includes("endschiessen") && !item.fix));
+          const dText = (isProvisorisch || !item.datum) ? "Datum folgt später" : formatSwissFullDate(item.datum);
+          const zText = isProvisorisch ? "" : formatZeitStr(item.startzeit, item.endzeit, item.anlasstitel);
+
+          progPage.drawText(sanitizeWinAnsiText(dText), {
+            x: 20 * MM,
+            y: itemY,
+            size: 9.5,
+            font: fontRegular,
+            color: rgb(0.12, 0.12, 0.12),
+          });
+
+          if (zText) {
+            const zWidth = fontRegular.widthOfTextAtSize(zText, 9.5);
+            progPage.drawText(sanitizeWinAnsiText(zText), {
+              x: 190 * MM - zWidth,
+              y: itemY,
+              size: 9.5,
+              font: fontRegular,
+              color: rgb(0.12, 0.12, 0.12),
+            });
+          }
+
+          itemY -= 4.2 * MM;
+        });
+
+        progY = itemY - 5.5 * MM;
+      });
+    }
+
+    // --------------------------------------------------------------------------
+    // 2. BLOCK: SCHIESSTERMINE (Exakt gemäss Screenshot Seite 20 & 21)
+    // --------------------------------------------------------------------------
+    const schiessItems = termine.filter((t: any) => {
+      const kat = (t.kategorie || "").toLowerCase();
+      const tit = (t.anlasstitel || t.titel || "").toLowerCase();
+      if (kat === "schiesstermine") {
+        if (tit.includes("endschiessen")) return false; // Endschiessen ist im Jahresprogramm
+        if (tit.includes("kader training")) return false;
+        if (tit.includes("grenzland-cup")) return false;
+        return true;
+      }
+      if (tit.includes("meisterschaft")) return true;
+      return false;
+    });
+
+    if (schiessItems.length > 0) {
+      const schiessGroups: Array<{ title: string; items: any[] }> = [];
+      schiessItems.forEach((term: any) => {
+        let rawTitle = (term.anlasstitel || term.titel || "Schiessen").trim();
+        let ort = (term.ort || "").trim();
+        let displayTitle = rawTitle;
+        if (ort && !displayTitle.toLowerCase().includes(` in ${ort.toLowerCase()}`)) {
+          displayTitle = `${displayTitle} in ${ort}`;
+        }
+        let grp = schiessGroups.find((g) => g.title.toLowerCase() === displayTitle.toLowerCase());
+        if (!grp) {
+          grp = { title: displayTitle, items: [] };
+          schiessGroups.push(grp);
+        }
+        grp.items.push(term);
+      });
+
+      // Sortierung Schiesstermine exakt gemäss Screenshot Seite 20 & 21:
+      const getSchiessOrder = (title: string): number => {
+        const t = title.toLowerCase();
+        if (t.includes("freundschaft")) return 1;
+        if (t.includes("ssv") && t.includes("gruppenmeisterschaft") && !t.includes("final")) return 2;
+        if (t.includes("agsv") && t.includes("gruppenmeisterschaft") && !t.includes("final")) return 3;
+        if (t.includes("final") && t.includes("ssv") && t.includes("elite")) return 4;
+        if (t.includes("final") && t.includes("ssv") && (t.includes("junior") || t.includes("nachwuchs"))) return 5;
+        if (t.includes("jugendtag")) return 6;
+        if (t.includes("final") && t.includes("agsv")) return 7;
+        if (t.includes("mannschaft")) return 99; // Mannschaftsmeisterschaft auf eigener Folgeseite (Seite 21)
+        return 50;
+      };
+
+      schiessGroups.sort((a, b) => getSchiessOrder(a.title) - getSchiessOrder(b.title));
+      schiessGroups.forEach((grp) => {
+        grp.items.sort((a, b) => (a.datum || "").localeCompare(b.datum || ""));
+      });
+
+      let schiessPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+      let schiessY = drawPageHeader(schiessPage, "Schiesstermine");
+
+      schiessGroups.forEach((grp) => {
+        const isMultiRound = grp.items.length > 1;
+        const isMannschaft = grp.title.toLowerCase().includes("mannschaft");
+        // Titelumbruch bei 69mm für exakten Umbruch wie im Screenshot (Thun auf neuer Zeile, Gretzenbach in Muhen auf neuer Zeile)
+        const titleLines = wrapText(grp.title, fontBold, 10, 69 * MM);
+        const requiredRows = isMultiRound ? (1 + grp.items.length) : Math.max(2, titleLines.length);
+        const requiredHeight = requiredRows * 4.4 * MM + 6 * MM;
+
+        if (schiessY - requiredHeight < 24 * MM) {
+          schiessPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+          schiessY = drawPageHeader(schiessPage, ""); // Folgeseite ohne Zwischentitel falls Seitenumbruch nötig
+        }
+
+        const startBlockY = schiessY;
+
+        // "Schiesstag" Header immer rechtsbündig auf Start-Höhe
+        const stHdr = "Schiesstag";
+        const stWidth = fontBold.widthOfTextAtSize(stHdr, 10);
+        schiessPage.drawText(stHdr, {
+          x: 190 * MM - stWidth,
+          y: startBlockY,
+          size: 10,
+          font: fontBold,
+          color: rgb(0.08, 0.08, 0.08),
+        });
+
+        if (isMultiRound) {
+          // Multi-Runden (z.B. SSV GM, AGSV GM, Mannschaftsmeisterschaft)
+          // Zeile 1: Titel
+          schiessPage.drawText(sanitizeWinAnsiText(grp.title), {
+            x: 20 * MM,
+            y: startBlockY,
+            size: 10,
+            font: fontBold,
+            color: rgb(0.08, 0.08, 0.08),
+          });
+
+          // Ab Zeile 2: Runden links, Datum rechts
+          let roundY = startBlockY - 4.2 * MM;
+          grp.items.forEach((item, rIdx) => {
+            const roundLabel = `${rIdx + 1}. Runde`;
+            schiessPage.drawText(roundLabel, {
+              x: 20 * MM,
+              y: roundY,
+              size: 9.5,
+              font: fontRegular,
+              color: rgb(0.12, 0.12, 0.12),
+            });
+
+            const dText = formatSwissFullDate(item.datum);
+            const dWidth = fontRegular.widthOfTextAtSize(dText, 9.5);
+            schiessPage.drawText(sanitizeWinAnsiText(dText), {
+              x: 190 * MM - dWidth,
+              y: roundY,
+              size: 9.5,
+              font: fontRegular,
+              color: rgb(0.12, 0.12, 0.12),
+            });
+
+            roundY -= 4.2 * MM;
+          });
+
+          schiessY = roundY - 5.5 * MM;
+        } else {
+          // Einzel-Anlass (z.B. Freundschaftsschiessen, Finale SSV, Finale AGSV, Jugendtag)
+          const singleItem = grp.items[0];
+          const dText = formatSwissFullDate(singleItem.datum);
+          const dWidth = fontRegular.widthOfTextAtSize(dText, 9.5);
+
+          // Zeile 1: Titel (Teil 1)
+          schiessPage.drawText(sanitizeWinAnsiText(titleLines[0]), {
+            x: 20 * MM,
+            y: startBlockY,
+            size: 10,
+            font: fontBold,
+            color: rgb(0.08, 0.08, 0.08),
+          });
+
+          // Zeile 2: Falls Titel umbricht (Teil 2) links, Datum immer rechts
+          const line2Y = startBlockY - 4.2 * MM;
+          if (titleLines.length > 1) {
+            schiessPage.drawText(sanitizeWinAnsiText(titleLines[1]), {
+              x: 20 * MM,
+              y: line2Y,
+              size: 10,
+              font: fontBold,
+              color: rgb(0.08, 0.08, 0.08),
+            });
+          }
+
+          schiessPage.drawText(sanitizeWinAnsiText(dText), {
+            x: 190 * MM - dWidth,
+            y: line2Y,
+            size: 9.5,
+            font: fontRegular,
+            color: rgb(0.12, 0.12, 0.12),
+          });
+
+          schiessY = line2Y - 5.5 * MM;
+        }
+      });
+    }
+  }
+
+  return await pdfDoc.save();
+}
+
+// ==============================================================================
+// TYP 2: OFFIZIELLER VORSTANDSBRIEF (DIN 5008 FENSTER RECHTS)
+// ==============================================================================
+async function generateLetterPdf(
+  docId: string,
+  recipient: RecipientData,
+  sender: SenderData,
+  layout: LayoutData,
+  subject: string,
+  content: string,
+  signers?: Array<{ name: string; role: string }>,
+  letterDate?: string,
+  supabaseClient?: any
+): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.create();
+  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  const A4_WIDTH = 595.28;
+  const A4_HEIGHT = 841.89;
+
+  // 1. Logo laden
+  const logoBytes = await getOrLoadLogoBytes(supabaseClient);
+  let logoImage: any = null;
+  if (logoBytes) {
+    try {
+      logoImage = await pdfDoc.embedPng(logoBytes);
+    } catch (_) {}
+  }
+
+  // 2. Datum
+  const dateStr = letterDate || new Date().toLocaleDateString("de-CH", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+  // 3. Betreff & Bereinigung
+  const docSubject = subject || layout.title || "Mitteilung";
+
+  // Hilfsfunktion: Folgeseiten-Header mit Dokument-Metadaten
+  const renderFollowUpHeader = (p: any, pageNum: number) => {
+    p.drawLine({
+      start: { x: 20 * MM, y: 278 * MM },
+      end: { x: 190 * MM, y: 278 * MM },
+      thickness: 0.3,
+      color: rgb(0.75, 0.75, 0.75),
+    });
+
+    p.drawText(`${CLUB_NAME} · ${sanitizeWinAnsiText(docSubject)}`, {
+      x: 20 * MM,
+      y: 280.5 * MM,
+      size: 7.5,
+      font: fontRegular,
+      color: rgb(0.45, 0.45, 0.55),
+    });
+
+    return 265 * MM;
+  };
+
+  // Hilfsfunktion: Juristischer Vereins-Footer ganz unten
+  const drawClubLegalFooter = (p: any) => {
+    p.drawLine({
+      start: { x: 20 * MM, y: 15 * MM },
+      end: { x: 190 * MM, y: 15 * MM },
+      thickness: 0.3,
+      color: rgb(0.75, 0.75, 0.75),
+    });
+    const footerStr = "Sportschützen Muhen (gegründet 1919) · Schiessanlage Rüteli, 5037 Muhen · www.sportschuetzen-muhen.ch · info@sportschuetzen-muhen.ch";
+    const strW = fontRegular.widthOfTextAtSize(footerStr, 6.8);
+    p.drawText(footerStr, {
+      x: (A4_WIDTH - strW) / 2,
+      y: 11.5 * MM,
+      size: 6.8,
+      font: fontRegular,
+      color: rgb(0.45, 0.45, 0.45),
+    });
+  };
+
+  // ============================================================================
+  // SEITE 1: KOPFBEREICH & ADRESSEN (DIN 5008)
+  // ============================================================================
+  const normRecipient = normalizeRecipient(recipient);
+  let currentPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+  let pageCount = 1;
+
+  // Logo freistehend oben links + zweizeiliger Vereinskopf daneben (harmonisiert)
+  let textStartX = 15 * MM;
+  if (logoImage) {
+    const scaledLogo = logoImage.scaleToFit(32 * MM, 32 * MM);
+    currentPage.drawImage(logoImage, {
+      x: 15 * MM,
+      y: 291 * MM - scaledLogo.height,
+      width: scaledLogo.width,
+      height: scaledLogo.height,
+    });
+    textStartX = 15 * MM + scaledLogo.width + 3.5 * MM;
+  }
+
+  currentPage.drawText(CLUB_NAME.toUpperCase(), {
+    x: textStartX,
+    y: 281.5 * MM,
+    size: 14,
+    font: fontBold,
+    color: rgb(0.12, 0.23, 0.54),
+  });
+  currentPage.drawText("gegründet 1919 · Schiessanlage Rüteli", {
+    x: textStartX,
+    y: 275.5 * MM,
+    size: 9,
+    font: fontRegular,
+    color: rgb(0.4, 0.45, 0.55),
+  });
+
+  // Absenderblock links unter dem Logo (ab ca. 246 mm)
+  let sendY = 246 * MM;
+  const clubSubTitle = sender.bereich
+    ? `${CLUB_NAME} ${sender.bereich}`
+    : (sender.funktion ? `${CLUB_NAME} ${sender.funktion}` : CLUB_NAME);
+  currentPage.drawText(sanitizeWinAnsiText(clubSubTitle), { x: 20 * MM, y: sendY, size: 9.5, font: fontBold });
+  sendY -= 4.2 * MM;
+
+  const senderNameStr = [sender.vorname, sender.nachname].filter(Boolean).join(" ");
+  if (senderNameStr) {
+    currentPage.drawText(sanitizeWinAnsiText(senderNameStr), { x: 20 * MM, y: sendY, size: 9, font: fontRegular });
+    sendY -= 4.0 * MM;
+  }
+  if (sender.strasse) {
+    currentPage.drawText(sanitizeWinAnsiText(sender.strasse), { x: 20 * MM, y: sendY, size: 9, font: fontRegular });
+    sendY -= 4.0 * MM;
+  }
+  const senderPlzOrt = `${sender.plz || ""} ${sender.ort || ""}`.trim();
+  if (senderPlzOrt) {
+    currentPage.drawText(sanitizeWinAnsiText(senderPlzOrt), { x: 20 * MM, y: sendY, size: 9, font: fontRegular });
+    sendY -= 4.0 * MM;
+  }
+  if (sender.mobil) {
+    currentPage.drawText(sanitizeWinAnsiText(`Mobil ${sender.mobil}`), { x: 20 * MM, y: sendY, size: 9, font: fontRegular });
+    sendY -= 4.0 * MM;
+  }
+  if (sender.email) {
+    currentPage.drawText(sanitizeWinAnsiText(sender.email), {
+      x: 20 * MM,
+      y: sendY,
+      size: 9,
+      font: fontRegular,
+      color: rgb(0.08, 0.35, 0.75),
+    });
+    sendY -= 4.0 * MM;
+  }
+
+  // Empfänger-Adresse (DIN 5008 Fenster rechts ab 125 mm, Höhe 246 mm) mit separater Anredezeile
+  let addrY = 246 * MM;
+  const isLetterCompany = Boolean(normRecipient.firma && normRecipient.typ !== "privat" && normRecipient.typ !== "mitglied");
+  const fullRecName = [normRecipient.vorname, normRecipient.nachname].filter(Boolean).join(" ").trim() || (normRecipient.name || "");
+
+  if (isLetterCompany) {
+    currentPage.drawText(sanitizeWinAnsiText(normRecipient.firma!), {
+      x: 125 * MM,
+      y: addrY,
+      size: 9.5,
+      font: fontBold,
+    });
+    addrY -= 4.2 * MM;
+
+    if (normRecipient.abteilung) {
+      currentPage.drawText(sanitizeWinAnsiText(normRecipient.abteilung), {
+        x: 125 * MM,
+        y: addrY,
+        size: 9.5,
+        font: fontRegular,
+      });
+      addrY -= 4.2 * MM;
+    }
+
+    const contactPerson = [normRecipient.anrede, normRecipient.vorname, normRecipient.nachname].filter(Boolean).join(" ").trim();
+    if (contactPerson && contactPerson.toLowerCase() !== normRecipient.firma!.toLowerCase()) {
+      currentPage.drawText(sanitizeWinAnsiText(contactPerson), {
+        x: 125 * MM,
+        y: addrY,
+        size: 9.5,
+        font: fontRegular,
+      });
+      addrY -= 4.2 * MM;
+    }
+
+    if (normRecipient.adresszusatz && normRecipient.adresszusatz !== normRecipient.abteilung) {
+      currentPage.drawText(sanitizeWinAnsiText(normRecipient.adresszusatz), {
+        x: 125 * MM,
+        y: addrY,
+        size: 9.5,
+        font: fontRegular,
+      });
+      addrY -= 4.2 * MM;
+    }
+  } else {
+    if (normRecipient.anrede) {
+      currentPage.drawText(sanitizeWinAnsiText(normRecipient.anrede), {
+        x: 125 * MM,
+        y: addrY,
+        size: 9.5,
+        font: fontRegular,
+      });
+      addrY -= 4.2 * MM;
+    }
+    if (fullRecName) {
+      currentPage.drawText(sanitizeWinAnsiText(fullRecName), {
+        x: 125 * MM,
+        y: addrY,
+        size: 9.5,
+        font: fontRegular,
+      });
+      addrY -= 4.2 * MM;
+    }
+    if (normRecipient.abteilung || normRecipient.adresszusatz) {
+      currentPage.drawText(sanitizeWinAnsiText((normRecipient.abteilung || normRecipient.adresszusatz)!), {
+        x: 125 * MM,
+        y: addrY,
+        size: 9.5,
+        font: fontRegular,
+      });
+      addrY -= 4.2 * MM;
+    }
+  }
+  if (normRecipient.strasse) {
+    currentPage.drawText(sanitizeWinAnsiText(normRecipient.strasse), {
+      x: 125 * MM,
+      y: addrY,
+      size: 9.5,
+      font: fontRegular,
+    });
+    addrY -= 4.2 * MM;
+  }
+  const recPlzOrt = `${normRecipient.plz || ""} ${normRecipient.ort || ""}`.trim();
+  if (recPlzOrt) {
+    currentPage.drawText(sanitizeWinAnsiText(recPlzOrt), {
+      x: 125 * MM,
+      y: addrY,
+      size: 9.5,
+      font: fontRegular,
+    });
+    addrY -= 4.2 * MM;
+  }
+  if (normRecipient.land && normRecipient.land !== "CH" && normRecipient.land !== "Schweiz") {
+    currentPage.drawText(sanitizeWinAnsiText(normRecipient.land), {
+      x: 125 * MM,
+      y: addrY,
+      size: 9.5,
+      font: fontRegular,
+    });
+    addrY -= 4.2 * MM;
+  }
+
+  // Ort & Datum (Höhe 195 mm)
+  const fullDateText = `Muhen, ${dateStr}`;
+  currentPage.drawText(sanitizeWinAnsiText(fullDateText), {
+    x: 125 * MM,
+    y: 195 * MM,
+    size: 9,
+    font: fontRegular,
+    color: rgb(0.2, 0.2, 0.2),
+  });
+
+  // Betreff (H1)
+  let curY = 180 * MM;
+  currentPage.drawText(sanitizeWinAnsiText(docSubject), {
+    x: 20 * MM,
+    y: curY,
+    size: 14,
+    font: fontBold,
+    color: rgb(0.1, 0.15, 0.3),
+  });
+  curY -= 9 * MM;
+
+  // Anrede
+  let anredeText = "";
+  if (recipient.vorname) {
+    anredeText = `Guten Tag ${recipient.vorname} ${recipient.nachname || ""}`.trim() + ",";
+  } else if (recipient.name) {
+    anredeText = `Guten Tag ${recipient.name},`;
+  } else {
+    anredeText = "Sehr geehrte Damen und Herren, liebe Schützenkameradinnen und Schützenkameraden,";
+  }
+
+  // Textzusammensetzung: intro, content, outro
+  const fullText = [layout.intro, content, layout.outro].filter(Boolean).join("\n\n").trim();
+  if (fullText.startsWith("Liebe") || fullText.startsWith("Sehr geehrte") || fullText.startsWith("Guten Tag") || fullText.startsWith("Hallo")) {
+    // Anrede ist bereits im Text enthalten
+  } else {
+    currentPage.drawText(sanitizeWinAnsiText(anredeText), {
+      x: 20 * MM,
+      y: curY,
+      size: 10,
+      font: fontRegular,
+    });
+    curY -= 7 * MM;
+  }
+
+  // Fliesstext in Absätze aufteilen
+  const paragraphs = (fullText || "Wir bedanken uns für Ihre geschätzte Aufmerksamkeit.").split(/\n\n+/);
+  const maxTextWidth = 170 * MM;
+  const lineSpacing = 4.8 * MM; // ca. 13.6 pt
+
+  for (const para of paragraphs) {
+    const rawLines = para.split("\n");
+    for (const rawLine of rawLines) {
+      const isBullet = rawLine.trim().startsWith("- ") || rawLine.trim().startsWith("• ") || rawLine.trim().startsWith("* ");
+      const isNumbered = /^\d+[\.\)]\s/.test(rawLine.trim());
+      const indentX = (isBullet || isNumbered) ? 25 * MM : 20 * MM;
+      const effectiveMaxWidth = (isBullet || isNumbered) ? maxTextWidth - 5 * MM : maxTextWidth;
+
+      const wrapped = wrapText(rawLine.trim(), fontRegular, 9.5, effectiveMaxWidth);
+
+      for (let wIdx = 0; wIdx < wrapped.length; wIdx++) {
+        if (curY < 38 * MM) {
+          drawClubLegalFooter(currentPage);
+          currentPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+          pageCount++;
+          curY = renderFollowUpHeader(currentPage, pageCount);
+        }
+
+        const lineToDraw = wrapped[wIdx];
+        currentPage.drawText(sanitizeWinAnsiText(lineToDraw), {
+          x: indentX,
+          y: curY,
+          size: 9.5,
+          font: fontRegular,
+          color: rgb(0.12, 0.16, 0.2),
+        });
+        curY -= lineSpacing;
+      }
+    }
+    curY -= 3.0 * MM; // Absatzabstand
+  }
+
+  // ============================================================================
+  // UNTERSCHRIFTENBLOCK (Zweispaltig)
+  // ============================================================================
+  if (curY < 45 * MM) {
+    drawClubLegalFooter(currentPage);
+    currentPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+    pageCount++;
+    curY = renderFollowUpHeader(currentPage, pageCount);
+  }
+
+  curY -= 4 * MM;
+  currentPage.drawText("Mit freundlichen Grüssen", { x: 20 * MM, y: curY, size: 9.5, font: fontRegular });
+  curY -= 5 * MM;
+  currentPage.drawText(CLUB_NAME, { x: 20 * MM, y: curY, size: 10, font: fontBold });
+  curY -= 15 * MM; // Freiraum für handschriftliche Signatur
+
+  // Signer 1 (links)
+  const signer1Name = (signers && signers[0]?.name) || senderNameStr || CLUB_NAME;
+  const signer1Role = (signers && signers[0]?.role) || sender.funktion || sender.bereich || "Präsident";
+
+  // Signer 2 (rechts)
+  const signer2Name = (signers && signers[1]?.name) || "";
+  const signer2Role = (signers && signers[1]?.role) || (signer2Name ? "Vorstand" : "");
+
+  // Unterschriftenlinie links
+  currentPage.drawLine({
+    start: { x: 20 * MM, y: curY + 3 * MM },
+    end: { x: 85 * MM, y: curY + 3 * MM },
+    thickness: 0.5,
+    color: rgb(0.6, 0.6, 0.6),
+  });
+  currentPage.drawText(sanitizeWinAnsiText(signer1Name), { x: 20 * MM, y: curY - 1 * MM, size: 9, font: fontBold });
+  currentPage.drawText(sanitizeWinAnsiText(signer1Role), { x: 20 * MM, y: curY - 5 * MM, size: 8.5, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
+
+  // Unterschriftenlinie rechts
+  if (signer2Name || signer2Role) {
+    currentPage.drawLine({
+      start: { x: 115 * MM, y: curY + 3 * MM },
+      end: { x: 180 * MM, y: curY + 3 * MM },
+      thickness: 0.5,
+      color: rgb(0.6, 0.6, 0.6),
+    });
+    currentPage.drawText(sanitizeWinAnsiText(signer2Name), { x: 115 * MM, y: curY - 1 * MM, size: 9, font: fontBold });
+    currentPage.drawText(sanitizeWinAnsiText(signer2Role), { x: 115 * MM, y: curY - 5 * MM, size: 8.5, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
+  }
+
+  // Footer auf letzter Seite
+  drawClubLegalFooter(currentPage);
+
+  // ============================================================================
+  // 2-PASS SEITENNUMMERIERUNG ("Seite X von Y")
+  // ============================================================================
+  const totalPages = pdfDoc.getPageCount();
+  if (totalPages > 1) {
+    const allPages = pdfDoc.getPages();
+    allPages.forEach((p, idx) => {
+      const pageStr = `Seite ${idx + 1} von ${totalPages}`;
+      const pageStrW = fontRegular.widthOfTextAtSize(pageStr, 7.5);
+      const centerX = (A4_WIDTH - pageStrW) / 2;
+      p.drawText(pageStr, {
+        x: centerX,
+        y: 8 * MM,
+        size: 7.5,
+        font: fontRegular,
+        color: rgb(0.45, 0.45, 0.45),
+      });
+    });
+  }
+
+  return await pdfDoc.save();
+}
+
+// ==============================================================================
+// GENERATOR: ENDSCHIESSEN-FESTFÜHRER & EINLADUNG (TYP 4)
+// ==============================================================================
+async function generateEndschiessenPdf(
+  year: number,
+  data: any,
+  supabaseClient?: any
+): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.create();
+  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const fontItalic = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+
+  // Logo laden
+  let logoImage: any = null;
+  const logoBytes = await getOrLoadLogoBytes(supabaseClient);
+  if (logoBytes) {
+    try {
+      logoImage = await pdfDoc.embedPng(logoBytes);
+    } catch (_) {
+      try {
+        logoImage = await pdfDoc.embedJpg(logoBytes);
+      } catch (_) {}
+    }
+  }
+
+  // Seite 1 anlegen
+  const page = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+
+  // Kopfzeile & Logo
+  // Links: Vereinsabsender
+  page.drawText(CLUB_NAME, {
+    x: 20 * MM,
+    y: A4_HEIGHT - 20 * MM,
+    size: 11,
+    font: fontBold,
+    color: rgb(0.1, 0.15, 0.3),
+  });
+  page.drawText(`${CLUB_STREET} · ${CLUB_ZIP} ${CLUB_CITY}`, {
+    x: 20 * MM,
+    y: A4_HEIGHT - 24 * MM,
+    size: 8.5,
+    font: fontRegular,
+    color: rgb(0.4, 0.4, 0.4),
+  });
+  page.drawText(`${CLUB_WEBSITE} · ${CLUB_EMAIL}`, {
+    x: 20 * MM,
+    y: A4_HEIGHT - 28 * MM,
+    size: 8.5,
+    font: fontRegular,
+    color: rgb(0.4, 0.4, 0.4),
+  });
+
+  // Rechts: Logo
+  if (logoImage) {
+    const logoDims = logoImage.scaleToFit(32 * MM, 22 * MM);
+    page.drawImage(logoImage, {
+      x: A4_WIDTH - 20 * MM - logoDims.width,
+      y: A4_HEIGHT - 30 * MM,
+      width: logoDims.width,
+      height: logoDims.height,
+    });
+  }
+
+  // Trennlinie oben
+  page.drawLine({
+    start: { x: 20 * MM, y: A4_HEIGHT - 32 * MM },
+    end: { x: A4_WIDTH - 20 * MM, y: A4_HEIGHT - 32 * MM },
+    thickness: 1.0,
+    color: rgb(0.1, 0.25, 0.5), // Schützenblau
+  });
+
+  // H1 Haupttitel
+  let curY = A4_HEIGHT - 43 * MM;
+  const mainTitle = data.title || `Endschiessen & Absenden ${year}`;
+  page.drawText(sanitizeWinAnsiText(mainTitle), {
+    x: 20 * MM,
+    y: curY,
+    size: 17,
+    font: fontBold,
+    color: rgb(0.08, 0.15, 0.35),
+  });
+
+  curY -= 5.5 * MM;
+  const subtitle = data.subtitle || "Offizieller Festführer, Schiessplan & Menü-Einladung";
+  page.drawText(sanitizeWinAnsiText(subtitle), {
+    x: 20 * MM,
+    y: curY,
+    size: 10,
+    font: fontItalic,
+    color: rgb(0.3, 0.3, 0.4),
+  });
+
+  // Begrüssung / Einleitungstext
+  curY -= 7.5 * MM;
+  const defaultIntro = data.intro || `Liebe Schützinnen, liebe Schützen, geschätzte Ehren- und Passivmitglieder\n\nZum traditionellen Saisonabschluss laden die Sportschützen Muhen herzlich zum Endschiessen ${year} in die Schiessanlage Rüteli ein. Neben dem sportlichen Wettkampf steht die Kameradschaft und das gemütliche Beisammensein beim gemeinsamen Absenden im Mittelpunkt.`;
+  
+  const introParas = defaultIntro.split("\n\n");
+  for (const para of introParas) {
+    const wrapped = wrapText(para, fontRegular, 9, 170 * MM);
+    for (const line of wrapped) {
+      page.drawText(sanitizeWinAnsiText(line), {
+        x: 20 * MM,
+        y: curY,
+        size: 9,
+        font: fontRegular,
+        color: rgb(0.12, 0.15, 0.2),
+      });
+      curY -= 4.0 * MM;
+    }
+    curY -= 1.8 * MM;
+  }
+
+  curY -= 2 * MM;
+
+  // ----------------------------------------------------------------------------
+  // SEKTION 1: SCHIESSTAGE & SCHIESSZEITEN (2-Spalten-Boxen)
+  // ----------------------------------------------------------------------------
+  page.drawText("1. Schiesstage & Schiesszeiten", {
+    x: 20 * MM,
+    y: curY,
+    size: 11,
+    font: fontBold,
+    color: rgb(0.1, 0.2, 0.4),
+  });
+  curY -= 4.5 * MM;
+
+  const shootingDays = data.shootingDays || [
+    { day: "Freitag", date: data.dateFriday || `Herbst ${year}`, time: "16:30 – 19:15 Uhr", note: "Standblattausgabe bis 18:45 Uhr" },
+    { day: "Samstag", date: data.dateSaturday || `Herbst ${year}`, time: "09:00 – 11:45 Uhr / 13:30 – 17:00 Uhr", note: "Standblattausgabe bis 16:30 Uhr" },
+  ];
+
+  // Box-Layout für Schiesstage
+  const boxWidth = 82 * MM;
+  const boxHeight = 20 * MM;
+  shootingDays.forEach((sd: any, idx: number) => {
+    const boxX = (idx % 2 === 0) ? 20 * MM : 108 * MM;
+    const boxY = curY - boxHeight;
+
+    // Hintergrund
+    page.drawRectangle({
+      x: boxX,
+      y: boxY,
+      width: boxWidth,
+      height: boxHeight,
+      color: rgb(0.95, 0.97, 1.0),
+      borderColor: rgb(0.75, 0.82, 0.92),
+      borderWidth: 0.8,
+    });
+
+    page.drawText(sanitizeWinAnsiText(`${sd.day}, ${sd.date}`), {
+      x: boxX + 4 * MM,
+      y: boxY + boxHeight - 5.5 * MM,
+      size: 9,
+      font: fontBold,
+      color: rgb(0.1, 0.2, 0.4),
+    });
+
+    page.drawText(sanitizeWinAnsiText(`Schiesszeit: ${sd.time}`), {
+      x: boxX + 4 * MM,
+      y: boxY + boxHeight - 10.5 * MM,
+      size: 8,
+      font: fontRegular,
+      color: rgb(0.15, 0.15, 0.15),
+    });
+
+    page.drawText(sanitizeWinAnsiText(sd.note), {
+      x: boxX + 4 * MM,
+      y: boxY + boxHeight - 15.5 * MM,
+      size: 7.5,
+      font: fontItalic,
+      color: rgb(0.4, 0.4, 0.4),
+    });
+  });
+
+  curY -= (boxHeight + 7 * MM);
+
+  // ----------------------------------------------------------------------------
+  // SEKTION 2: WETTKAMPFPROGRAMM & STICHE (Tabelle)
+  // ----------------------------------------------------------------------------
+  page.drawText("2. Stichprogramm & Scheibenwertung (300m)", {
+    x: 20 * MM,
+    y: curY,
+    size: 11,
+    font: fontBold,
+    color: rgb(0.1, 0.2, 0.4),
+  });
+  curY -= 5.5 * MM;
+
+  // Tabellenkopf
+  const colX = [20 * MM, 75 * MM, 125 * MM, 160 * MM]; // Stich | Programm / Scheibe | Auszeichnung | Einsatz
+  page.drawRectangle({
+    x: 20 * MM,
+    y: curY - 5 * MM,
+    width: 170 * MM,
+    height: 5.5 * MM,
+    color: rgb(0.1, 0.2, 0.4),
+  });
+  page.drawText("Stich / Wettbewerb", { x: colX[0] + 2 * MM, y: curY - 3.8 * MM, size: 7.5, font: fontBold, color: rgb(1, 1, 1) });
+  page.drawText("Programm / Scheibe", { x: colX[1] + 2 * MM, y: curY - 3.8 * MM, size: 7.5, font: fontBold, color: rgb(1, 1, 1) });
+  page.drawText("Wertung / Zählung", { x: colX[2] + 2 * MM, y: curY - 3.8 * MM, size: 7.5, font: fontBold, color: rgb(1, 1, 1) });
+  page.drawText("Einsatz", { x: colX[3] + 2 * MM, y: curY - 3.8 * MM, size: 7.5, font: fontBold, color: rgb(1, 1, 1) });
+  curY -= 6.0 * MM;
+
+  const stiche = data.stiche || [
+    { name: "Vereinsstich (Hauptstich)", prog: "2 Probe, 10 Einzel (Scheibe A10)", val: "Zählt zur Jahresmeisterschaft", fee: "CHF 15.00" },
+    { name: "Gabenstich", prog: "5 Schuss Einzel (Scheibe A100)", val: "Gabentempel (bester Schuss)", fee: "CHF 18.00" },
+    { name: "Glücksstich / Differenzler", prog: "3 Schuss Einzel (Scheibe A10)", val: "Zielvorgabe / Tiefschuss", fee: "CHF 8.00" },
+    { name: "Nachdoppel", prog: "Serien à 5 Schuss (A100)", val: "Unbeschränkt nachlösbar", fee: "CHF 6.00 / Serie" },
+    { name: "Junioren / Nachwuchs", prog: "Hauptstich (reduziert)", val: "U17 / U21 Spezialpreis", fee: "CHF 8.00" },
+  ];
+
+  stiche.forEach((st: any, sIdx: number) => {
+    const isEven = sIdx % 2 === 0;
+    const rowH = 5.8 * MM;
+    if (isEven) {
+      page.drawRectangle({
+        x: 20 * MM,
+        y: curY - 4.5 * MM,
+        width: 170 * MM,
+        height: rowH,
+        color: rgb(0.96, 0.97, 0.98),
+      });
+    }
+
+    page.drawText(sanitizeWinAnsiText(st.name), { x: colX[0] + 2 * MM, y: curY - 3 * MM, size: 7.5, font: fontBold, color: rgb(0.1, 0.15, 0.25) });
+    page.drawText(sanitizeWinAnsiText(st.prog), { x: colX[1] + 2 * MM, y: curY - 3 * MM, size: 7.0, font: fontRegular, color: rgb(0.2, 0.2, 0.2) });
+    page.drawText(sanitizeWinAnsiText(st.val), { x: colX[2] + 2 * MM, y: curY - 3 * MM, size: 7.0, font: fontRegular, color: rgb(0.25, 0.25, 0.25) });
+    page.drawText(sanitizeWinAnsiText(st.fee), { x: colX[3] + 2 * MM, y: curY - 3 * MM, size: 7.5, font: fontBold, color: rgb(0.1, 0.25, 0.4) });
+
+    curY -= rowH;
+  });
+
+  // Munitionshinweis
+  curY -= 1.5 * MM;
+  page.drawText("Munition: GP90 & GP11 zum Vereinstarif an der Standblattausgabe erhältlich. Sportgeräte nach SSV-Reglement.", {
+    x: 20 * MM,
+    y: curY,
+    size: 7.0,
+    font: fontItalic,
+    color: rgb(0.4, 0.4, 0.4),
+  });
+
+  curY -= 7 * MM;
+
+  // ----------------------------------------------------------------------------
+  // SEKTION 3: ABSENDEN & GEMEINSAMES NACHTESSEN (Festwirtschaft)
+  // ----------------------------------------------------------------------------
+  page.drawText("3. Absenden, Rangverkündigung & Nachtessen", {
+    x: 20 * MM,
+    y: curY,
+    size: 11,
+    font: fontBold,
+    color: rgb(0.1, 0.2, 0.4),
+  });
+  curY -= 4.5 * MM;
+
+  const dinnerDate = data.dinnerDate || `Samstagabend nach Schiessende (ab 18:30 Uhr)`;
+  const dinnerLoc = data.dinnerLocation || "Schützenstube Rüteli, Muhen";
+  const dinnerMenu = data.dinnerMenu || "Herbstliches Nachtessen vom Schützenwirt mit Salat & Dessert";
+  const dinnerDeadline = data.dinnerDeadline || "Anmeldung bis 3 Tage vor dem Anlass erbeten";
+
+  // Box für Absenden
+  page.drawRectangle({
+    x: 20 * MM,
+    y: curY - 22 * MM,
+    width: 170 * MM,
+    height: 22 * MM,
+    color: rgb(0.98, 0.97, 0.93), // Warm beige
+    borderColor: rgb(0.85, 0.78, 0.65),
+    borderWidth: 0.8,
+  });
+
+  page.drawText(`Festakt & Zeit: ${dinnerDate} · Ort: ${dinnerLoc}`, {
+    x: 24 * MM,
+    y: curY - 5.5 * MM,
+    size: 8.5,
+    font: fontBold,
+    color: rgb(0.4, 0.2, 0.05),
+  });
+
+  page.drawText(`Menü: ${dinnerMenu}`, {
+    x: 24 * MM,
+    y: curY - 10.5 * MM,
+    size: 8.0,
+    font: fontRegular,
+    color: rgb(0.2, 0.2, 0.2),
+  });
+
+  page.drawText(`Rangverkündigung: Jeder Schütze erhält einen Preis vom reich bestückten Gabentempel!`, {
+    x: 24 * MM,
+    y: curY - 15.0 * MM,
+    size: 8.0,
+    font: fontBold,
+    color: rgb(0.1, 0.35, 0.15),
+  });
+
+  page.drawText(`Anmeldung Nachtessen: ${dinnerDeadline} via Portal oder an Schützenmeister / Wirt.`, {
+    x: 24 * MM,
+    y: curY - 19.5 * MM,
+    size: 7.5,
+    font: fontItalic,
+    color: rgb(0.45, 0.3, 0.1),
+  });
+
+  curY -= (22 * MM + 6 * MM);
+
+  // ----------------------------------------------------------------------------
+  // SEKTION 4: VORSCHRIFTEN & UNTERSCHRIFT
+  // ----------------------------------------------------------------------------
+  page.drawText("4. Allgemeine Bestimmungen & Schiessvorschriften", {
+    x: 20 * MM,
+    y: curY,
+    size: 9.5,
+    font: fontBold,
+    color: rgb(0.1, 0.2, 0.4),
+  });
+  curY -= 4 * MM;
+
+  const rulesText = "Es gelten die aktuellen Sicherheitsbestimmungen des SSV und des AGSV. Die Laufkontrolle vor dem Verlassen des Standes ist obligatorisch. Verschlüsse bleiben ausserhalb des Schützenstandes stets geöffnet. Wir freuen uns auf eine hohe Beteiligung und faire Wettkämpfe!";
+  const wrappedRules = wrapText(rulesText, fontRegular, 7.5, 170 * MM);
+  for (const rLine of wrappedRules) {
+    page.drawText(sanitizeWinAnsiText(rLine), {
+      x: 20 * MM,
+      y: curY,
+      size: 7.5,
+      font: fontRegular,
+      color: rgb(0.3, 0.3, 0.3),
+    });
+    curY -= 3.3 * MM;
+  }
+
+  curY -= 3.5 * MM;
+
+  // Unterschriftenzeile Schützenmeister & Vorstand
+  page.drawText("Sportschützen Muhen", { x: 20 * MM, y: curY, size: 8.5, font: fontBold });
+  page.drawText("Die Schützenmeister & der Vorstand", { x: 20 * MM, y: curY - 3.8 * MM, size: 7.5, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
+
+  // Footer
+  page.drawLine({
+    start: { x: 20 * MM, y: 15 * MM },
+    end: { x: 190 * MM, y: 15 * MM },
+    thickness: 0.3,
+    color: rgb(0.75, 0.75, 0.75),
+  });
+  page.drawText("Sportschützen Muhen (gegründet 1919) · Schiessanlage Rüteli, 5037 Muhen · www.sportschuetzen-muhen.ch · info@sportschuetzen-muhen.ch", {
+    x: 20 * MM,
+    y: 11.5 * MM,
+    size: 6.8,
+    font: fontRegular,
+    color: rgb(0.45, 0.45, 0.45),
+  });
+
+  // Seitenzahl
+  const pageStr = "Seite 1 von 1";
+  const pageStrW = fontRegular.widthOfTextAtSize(pageStr, 7.5);
+  page.drawText(pageStr, {
+    x: (A4_WIDTH - pageStrW) / 2,
+    y: 8 * MM,
+    size: 7.5,
+    font: fontRegular,
+    color: rgb(0.45, 0.45, 0.45),
+  });
+
+  return await pdfDoc.save();
+}
+
+// ==============================================================================
+// MODULARER GV-DOSSIER-COMPILER (PDF-ASSEMBLER & CORPORATE STEMPEL)
+// ==============================================================================
+async function compileGvDossierPdf(
+  campaignId: string,
+  year: number,
+  gvData: any,
+  supabaseClient: any
+): Promise<{ pdfBytes: Uint8Array; pageCount: number; attachmentsCompiled: number }> {
+  const masterDoc = await PDFDocument.create();
+  const fontRegular = await masterDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await masterDoc.embedFont(StandardFonts.HelveticaBold);
+
+  // 1. DYNAMISCHE BASIS-SEITEN GENERIEREN (Einladung S.1 + Jahresprogramm S.2ff)
+  const baseBytes = await generateGVInvitationPdf(year, gvData, supabaseClient);
+  const baseDoc = await PDFDocument.load(baseBytes);
+  const totalBasePages = baseDoc.getPageCount();
+
+  // Seite 0 von baseDoc ist immer Einladung & Traktandenliste (bleibt fix auf Platz 1)
+  const copiedInvitePages = await masterDoc.copyPages(baseDoc, [0]);
+  masterDoc.addPage(copiedInvitePages[0]);
+
+  // Seiten 1..end von baseDoc enthalten Jahresprogramm & Schiesstermine
+  let copiedCalendarPages: any[] = [];
+  if (totalBasePages > 1) {
+    const calIndices: number[] = [];
+    for (let i = 1; i < totalBasePages; i++) calIndices.push(i);
+    copiedCalendarPages = await masterDoc.copyPages(baseDoc, calIndices);
+  }
+
+  // 2. BEILAGEN AUS campaign_attachments LADEN
+  let attachmentsCompiled = 0;
+  let attachments: any[] = [];
+  if (campaignId && supabaseClient) {
+    const { data: attList, error: attErr } = await supabaseClient
+      .from("campaign_attachments")
+      .select("*")
+      .eq("campaign_id", campaignId)
+      .order("sort_order", { ascending: true });
+
+    if (!attErr && attList) {
+      attachments = attList;
+    }
+  }
+
+  // Ermitteln der Reihenfolge (entweder aus gvData.attachment_order oder default)
+  const attachmentOrder: string[] = gvData.attachment_order || [];
+  let calendarAdded = false;
+
+  const addCalendarPages = () => {
+    if (calendarAdded || gvData.include_calendar === false) return;
+    copiedCalendarPages.forEach((p) => masterDoc.addPage(p));
+    calendarAdded = true;
+  };
+
+  const processAttachment = async (att: any) => {
+    if (!att || !att.storage_path) return;
+    try {
+      let fileBytes: Uint8Array | null = null;
+      const bucketCandidates = ["campaign-assets", "operatives-storage"];
+      for (const b of bucketCandidates) {
+        const { data: fileBlob } = await supabaseClient.storage.from(b).download(att.storage_path);
+        if (fileBlob) {
+          fileBytes = new Uint8Array(await fileBlob.arrayBuffer());
+          break;
+        }
+      }
+
+      if (fileBytes) {
+        const extDoc = await PDFDocument.load(fileBytes);
+        const extPageIndices = extDoc.getPageIndices();
+        const copiedExtPages = await masterDoc.copyPages(extDoc, extPageIndices);
+        copiedExtPages.forEach((p) => masterDoc.addPage(p));
+
+        if (supabaseClient) {
+          await supabaseClient
+            .from("campaign_attachments")
+            .update({
+              page_count: extDoc.getPageCount(),
+              status: "compiled",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", att.id);
+        }
+
+        attachmentsCompiled++;
+      }
+    } catch (attLoadErr) {
+      console.warn(`⚠️ [GV-Compiler] Fehler beim Laden von Beilage ${att.title}:`, attLoadErr);
+    }
+  };
+
+  if (attachmentOrder && attachmentOrder.length > 0) {
+    for (const itemId of attachmentOrder) {
+      if (itemId === "system_jahresprogramm" || itemId === "jahresprogramm") {
+        addCalendarPages();
+      } else {
+        const matchingAtt = attachments.find((a: any) => a.id === itemId);
+        if (matchingAtt) {
+          await processAttachment(matchingAtt);
+        }
+      }
+    }
+  } else {
+    // Default-Reihenfolge: Jahresprogramm an Position 2, dann alle Attachments nach sort_order
+    addCalendarPages();
+    for (const att of attachments) {
+      await processAttachment(att);
+    }
+  }
+
+  // Falls das Jahresprogramm noch nicht hinzugefügt wurde (z.B. nicht in attachmentOrder gelistet)
+  if (!calendarAdded && gvData.include_calendar !== false) {
+    addCalendarPages();
+  }
+
+  // 3. CORPORATE STEMPEL (2-Pass über ALLE Seiten des Master-Dossiers)
+  const totalPages = masterDoc.getPageCount();
+  const allPages = masterDoc.getPages();
+
+  // Logo für Stempel
+  let stampLogoImage: any = null;
+  const logoBytes = await getOrLoadLogoBytes(supabaseClient);
+  if (logoBytes) {
+    try {
+      stampLogoImage = await masterDoc.embedPng(logoBytes);
+    } catch (_) {
+      try {
+        stampLogoImage = await masterDoc.embedJpg(logoBytes);
+      } catch (_) {}
+    }
+  }
+
+  allPages.forEach((p, idx) => {
+    const pageNum = idx + 1;
+    const { width, height } = p.getSize();
+
+    // Dezente Kopfzeile mit Wappen/Logo auf externen Beilage-Seiten
+    if (pageNum > totalBasePages) {
+      let topTextX = 20 * MM;
+      if (stampLogoImage) {
+        const scaled = stampLogoImage.scaleToFit(14 * MM, 14 * MM);
+        p.drawImage(stampLogoImage, {
+          x: 20 * MM,
+          y: height - 16 * MM,
+          width: scaled.width,
+          height: scaled.height,
+        });
+        topTextX = 20 * MM + scaled.width + 3 * MM;
+      }
+
+      p.drawText("SPORTSCHÜTZEN MUHEN", {
+        x: topTextX,
+        y: height - 10 * MM,
+        size: 9.5,
+        font: fontBold,
+        color: rgb(0.12, 0.23, 0.54),
+      });
+
+      p.drawText(`Generalversammlung ${year} · Dossier-Beilage`, {
+        x: topTextX,
+        y: height - 14.5 * MM,
+        size: 7.5,
+        font: fontRegular,
+        color: rgb(0.4, 0.45, 0.55),
+      });
+
+      p.drawLine({
+        start: { x: 20 * MM, y: height - 17.5 * MM },
+        end: { x: width - 20 * MM, y: height - 17.5 * MM },
+        thickness: 0.3,
+        color: rgb(0.8, 0.82, 0.88),
+      });
+    }
+
+    // Fortlaufende Seitennummerierung unten auf ALLEN Seiten (Seite 1 von 10, Seite 2 von 10 ...)
+    const pageStr = `Seite ${pageNum} von ${totalPages}`;
+    const pageStrW = fontRegular.widthOfTextAtSize(pageStr, 7.5);
+    const centerX = (width - pageStrW) / 2;
+
+    p.drawLine({
+      start: { x: 20 * MM, y: 15 * MM },
+      end: { x: width - 20 * MM, y: 15 * MM },
+      thickness: 0.3,
+      color: rgb(0.82, 0.82, 0.85),
+    });
+
+    p.drawText(pageStr, {
+      x: centerX,
+      y: 11 * MM,
+      size: 7.5,
+      font: fontRegular,
+      color: rgb(0.35, 0.35, 0.4),
+    });
+  });
+
+  const finalPdfBytes = await masterDoc.save();
+  return {
+    pdfBytes: finalPdfBytes,
+    pageCount: totalPages,
+    attachmentsCompiled: attachmentsCompiled,
+  };
+}
+
+// ==============================================================================
+// GENERATOR: DRUCKFERTIGE GV-PRÄSENZLISTE (MIT UNTERSCHRIFTEN & AUSZÄHLUNGSBOX)
+// ==============================================================================
+async function generateGvPraesenzlistePdf(
+  year: number,
+  gvData: any,
+  participants: any[],
+  supabaseClient?: any
+): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.create();
+  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  const A4_WIDTH = 595.28;
+  const A4_HEIGHT = 841.89;
+
+  // 1. Logo laden
+  let logoImage: any = null;
+  const logoBytes = await getOrLoadLogoBytes(supabaseClient);
+  if (logoBytes) {
+    try {
+      logoImage = await pdfDoc.embedPng(logoBytes);
+    } catch (_) {
+      try {
+        logoImage = await pdfDoc.embedJpg(logoBytes);
+      } catch (_) {}
+    }
+  }
+
+  // Teilnehmerliste filtern: Nur angemeldete Mitglieder abbilden
+  const registeredOnly = (participants || []).filter(
+    (p: any) => p.status === "ja" || p.anwesend === true || p.attending === true || p.anmeldung_status === "ja"
+  );
+
+  let list = (registeredOnly.length > 0 ? registeredOnly : (participants || [])).slice().sort((a: any, b: any) => {
+    const na = (a.last_name || a.nachname || "").localeCompare(b.last_name || b.nachname || "");
+    if (na !== 0) return na;
+    return (a.first_name || a.vorname || "").localeCompare(b.first_name || b.vorname || "");
+  });
+
+  if (list.length === 0 && supabaseClient) {
+    try {
+      const { data: mems } = await supabaseClient
+        .from("members")
+        .select("person_number, first_name, last_name")
+        .eq("is_active", true)
+        .eq("deceased", false)
+        .is("club_exit_date", null)
+        .order("last_name", { ascending: true });
+      if (mems && mems.length > 0) {
+        list = mems;
+      }
+    } catch (_) {}
+  }
+
+  // 15 Leerzeilen für manuelle Ergänzungen am Abend
+  for (let i = 0; i < 15; i++) {
+    list.push({ isBlank: true });
+  }
+
+  const gvNummer = gvData.gvNummer || gvData.number || 100;
+  const rawD = gvData.datum || "";
+  let formattedD = rawD;
+  if (rawD && rawD.includes("-")) {
+    const dp = rawD.split("-");
+    if (dp.length === 3) {
+      const months = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+      const mIdx = parseInt(dp[1], 10) - 1;
+      if (mIdx >= 0 && mIdx < 12) {
+        formattedD = `${parseInt(dp[2], 10)}. ${months[mIdx]} ${dp[0]}`;
+      }
+    }
+  }
+  if (!formattedD) formattedD = `März ${year}`;
+
+  const renderPraesenzHeader = (page: any, isFirst: boolean) => {
+    let curY = A4_HEIGHT - 16 * MM;
+    const titleSize = 18;
+    const headerTopY = curY + 4.8 * MM; // Oberkante des 18pt Titels
+
+    // Logo oben links: Oberkante bündig mit oberem Rand des Titels "Präsenzliste"
+    if (logoImage) {
+      const dims = logoImage.scaleToFit(26 * MM, 26 * MM);
+      page.drawImage(logoImage, {
+        x: 18 * MM,
+        y: headerTopY - dims.height,
+        width: dims.width,
+        height: dims.height,
+      });
+    }
+
+    // Titel oben rechts
+    page.drawText("Präsenzliste", {
+      x: A4_WIDTH - 85 * MM,
+      y: curY,
+      size: titleSize,
+      font: fontBold,
+      color: rgb(0.08, 0.15, 0.35),
+    });
+    page.drawText(sanitizeWinAnsiText(`${gvNummer}. Generalversammlung ${year}`), {
+      x: A4_WIDTH - 85 * MM,
+      y: curY - 5.5 * MM,
+      size: 9.5,
+      font: fontBold,
+      color: rgb(0.2, 0.2, 0.2),
+    });
+    page.drawText(sanitizeWinAnsiText(`Sportschützen Muhen · ${formattedD}`), {
+      x: A4_WIDTH - 85 * MM,
+      y: curY - 9.5 * MM,
+      size: 8.5,
+      font: fontRegular,
+      color: rgb(0.4, 0.4, 0.4),
+    });
+
+    curY -= 14 * MM;
+
+    // Nur auf Seite 1: Auszählung / Beschlussfähigkeits-Box
+    if (isFirst) {
+      curY -= 2 * MM;
+      const boxW = 125 * MM;
+      const boxH = 16 * MM;
+      page.drawRectangle({
+        x: 18 * MM,
+        y: curY - boxH,
+        width: boxW,
+        height: boxH,
+        color: rgb(0.97, 0.98, 0.99),
+        borderColor: rgb(0.7, 0.75, 0.82),
+        borderWidth: 0.8,
+      });
+
+      page.drawText("Auszählung / Beschlussfähigkeit", {
+        x: 22 * MM,
+        y: curY - 4.5 * MM,
+        size: 8.5,
+        font: fontBold,
+        color: rgb(0.12, 0.2, 0.4),
+      });
+
+      page.drawText("Anwesende Stimmberechtigte (Total Kreuze):", {
+        x: 22 * MM,
+        y: curY - 9.5 * MM,
+        size: 8,
+        font: fontRegular,
+      });
+      page.drawLine({
+        start: { x: 92 * MM, y: curY - 10 * MM },
+        end: { x: 114 * MM, y: curY - 10 * MM },
+        thickness: 0.8,
+        color: rgb(0.2, 0.2, 0.2),
+      });
+      page.drawText("Pers.", { x: 116 * MM, y: curY - 9.5 * MM, size: 8, font: fontRegular });
+
+      page.drawText("Absolutes Mehr (Hälfte + 1):", {
+        x: 22 * MM,
+        y: curY - 14 * MM,
+        size: 8,
+        font: fontRegular,
+      });
+      page.drawLine({
+        start: { x: 92 * MM, y: curY - 14.5 * MM },
+        end: { x: 114 * MM, y: curY - 14.5 * MM },
+        thickness: 0.8,
+        color: rgb(0.2, 0.2, 0.2),
+      });
+      page.drawText("Stimmen", { x: 116 * MM, y: curY - 14 * MM, size: 8, font: fontRegular });
+
+      curY -= (boxH + 4 * MM);
+    }
+
+    // Tabellen-Header
+    const tableHeaderY = curY - 5.5 * MM;
+    page.drawRectangle({
+      x: 18 * MM,
+      y: tableHeaderY,
+      width: 174 * MM,
+      height: 6 * MM,
+      color: rgb(0.1, 0.18, 0.35),
+    });
+
+    page.drawText("Nr.", { x: 20 * MM, y: tableHeaderY + 1.8 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+    page.drawText("Anw.", { x: 27.5 * MM, y: tableHeaderY + 1.8 * MM, size: 7.5, font: fontBold, color: rgb(1, 1, 1) });
+    page.drawText("Nachname", { x: 38 * MM, y: tableHeaderY + 1.8 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+    page.drawText("Vorname", { x: 82 * MM, y: tableHeaderY + 1.8 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+    page.drawText("Unterschrift (bei Anwesenheit)", { x: 126 * MM, y: tableHeaderY + 1.8 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+
+    return tableHeaderY;
+  };
+
+  let page = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+  let curY = renderPraesenzHeader(page, true);
+
+  const rowHeight = 6.4 * MM;
+  list.forEach((m: any, idx: number) => {
+    if (curY < 20 * MM) {
+      page = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+      curY = renderPraesenzHeader(page, false);
+    }
+
+    const isEven = idx % 2 === 0;
+    if (isEven) {
+      page.drawRectangle({
+        x: 18 * MM,
+        y: curY - rowHeight,
+        width: 174 * MM,
+        height: rowHeight,
+        color: rgb(0.98, 0.98, 0.99),
+      });
+    }
+
+    // Zeilen-Umrandung
+    page.drawRectangle({
+      x: 18 * MM,
+      y: curY - rowHeight,
+      width: 174 * MM,
+      height: rowHeight,
+      borderColor: rgb(0.85, 0.88, 0.92),
+      borderWidth: 0.5,
+    });
+
+    // Anwesenheits-Kästchen
+    page.drawRectangle({
+      x: 28.5 * MM,
+      y: curY - rowHeight + 1.5 * MM,
+      width: 3.4 * MM,
+      height: 3.4 * MM,
+      borderColor: rgb(0.55, 0.6, 0.7),
+      borderWidth: 0.8,
+    });
+
+    const nrStr = String(idx + 1);
+    page.drawText(nrStr, {
+      x: 20 * MM,
+      y: curY - rowHeight + 2 * MM,
+      size: 7.5,
+      font: fontRegular,
+      color: rgb(0.45, 0.45, 0.45),
+    });
+
+    if (!m.isBlank) {
+      const lName = m.last_name || m.nachname || "";
+      const fName = m.first_name || m.vorname || "";
+      page.drawText(sanitizeWinAnsiText(lName), {
+        x: 38 * MM,
+        y: curY - rowHeight + 2 * MM,
+        size: 8.5,
+        font: fontBold,
+        color: rgb(0.12, 0.15, 0.2),
+      });
+      page.drawText(sanitizeWinAnsiText(fName), {
+        x: 82 * MM,
+        y: curY - rowHeight + 2 * MM,
+        size: 8.5,
+        font: fontRegular,
+        color: rgb(0.2, 0.2, 0.2),
+      });
+    }
+
+    curY -= rowHeight;
+  });
+
+  // 2-Pass Seitennummerierung
+  const totalPages = pdfDoc.getPageCount();
+  const allPages = pdfDoc.getPages();
+  allPages.forEach((p, idx) => {
+    const pageStr = `Seite ${idx + 1} von ${totalPages}`;
+    const pageStrW = fontRegular.widthOfTextAtSize(pageStr, 7.5);
+    const centerX = (A4_WIDTH - pageStrW) / 2;
+    p.drawText(pageStr, {
+      x: centerX,
+      y: 7 * MM,
+      size: 7.5,
+      font: fontRegular,
+      color: rgb(0.45, 0.45, 0.45),
+    });
+    p.drawText(`Sportschützen Muhen · Generalversammlung ${year} · Präsenzliste`, {
+      x: 18 * MM,
+      y: 7 * MM,
+      size: 7.0,
+      font: fontRegular,
+      color: rgb(0.5, 0.5, 0.5),
+    });
+  });
+
+  return await pdfDoc.save();
+}
+
+// Optionaler Paperless-NGX REST-Upload
+async function syncToPaperlessNgx(
+  pdfBytes: Uint8Array,
+  filename: string,
+  title: string,
+  correspondentName: string,
+  tags: string[]
+): Promise<{ success: boolean; documentId?: number; error?: string }> {
+  const paperlessUrl = Deno.env.get("PAPERLESS_API_URL");
+  const paperlessToken = Deno.env.get("PAPERLESS_API_TOKEN");
+
+  if (!paperlessUrl || !paperlessToken) {
+    return { success: false, error: "PAPERLESS_API_URL oder PAPERLESS_API_TOKEN nicht konfiguriert." };
+  }
+
+  try {
+    const formData = new FormData();
+    const pdfBlob = new Blob([pdfBytes], { type: "application/pdf" });
+    formData.append("document", pdfBlob, filename);
+    formData.append("title", title);
+    formData.append("created", new Date().toISOString().split("T")[0]);
+
+    const cleanBaseUrl = paperlessUrl.replace(/\/+$/, "");
+    const targetEndpoint = `${cleanBaseUrl}/api/documents/post_document/`;
+
+    const resp = await fetch(targetEndpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Token ${paperlessToken}`,
+      },
+      body: formData,
+    });
+
+    if (resp.ok || resp.status === 200 || resp.status === 202) {
+      const text = await resp.text();
+      let docId: number | undefined = undefined;
+      try {
+        const json = JSON.parse(text);
+        docId = json.task_id || json.id || undefined;
+      } catch (_) {}
+      return { success: true, documentId: docId };
+    } else {
+      const errText = await resp.text();
+      return { success: false, error: `Paperless HTTP ${resp.status}: ${errText}` };
+    }
+  } catch (err: any) {
+    return { success: false, error: `Paperless Verbindungsfehler: ${err.message}` };
+  }
+}
+
+// ==============================================================================
+// MAIN HTTP REQUEST HANDLER
+// ==============================================================================
+Deno.serve(async (req: Request) => {
+  // CORS Preflight
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed. Use POST." }), {
+      status: 405,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  let payload: GeneratePdfPayload;
+  try {
+    payload = await req.json();
+  } catch (err) {
+    return new Response(JSON.stringify({ error: "Ungültiges JSON-Format im Request-Body." }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // Supabase Client sauber mit Service-Role initialisieren (ohne global Authorization Override durch Caller-Token!)
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "https://supabase-muhen.danfamily.uk";
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY") || "";
+  const authHeader = req.headers.get("Authorization") || "";
+  const callerToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+  const isServiceRole = Boolean(callerToken && Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") && callerToken === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+    auth: { persistSession: false },
+  });
+
+  // Optional eingeloggten Benutzer aus Caller-JWT ermitteln (für Berechtigung & Absender-Profil)
+  let callerUser: any = null;
+  if (callerToken && !isServiceRole) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser(callerToken);
+      if (user?.id) callerUser = user;
+    } catch (_) {}
+  }
+
+  // DB-autoritative RBAC-Auflösung (konsistent mit Migration 143 / SP-2026-002: kein admin_profiles-Fallback, gesperrte Admins haben 0 Rechte)
+  let callerRbac = { isDeactivated: false, isAdmin: false, perms: new Set<string>() };
+  if (!isServiceRole && callerUser?.id) {
+    try {
+      const { data: adminRows } = await supabase
+        .from("admin_profiles")
+        .select("is_active")
+        .eq("auth_user_id", callerUser.id);
+      const hasInactive = (adminRows || []).some((r: any) => r.is_active === false);
+      const hasActive = (adminRows || []).some((r: any) => r.is_active === true);
+      if (hasInactive && !hasActive) {
+        callerRbac.isDeactivated = true;
+      } else {
+        const { data: userRoles } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", callerUser.id);
+        const roleList = (userRoles || []).map((r: any) => String(r.role || "").toLowerCase()).filter(Boolean);
+        if (roleList.includes("admin")) {
+          callerRbac.isAdmin = true;
+          callerRbac.perms.add("*");
+        } else if (roleList.length > 0) {
+          const { data: rolePerms } = await supabase
+            .from("role_permissions")
+            .select("permission")
+            .in("role", roleList);
+          for (const p of rolePerms || []) {
+            const val = String((p as any).permission || "").trim();
+            if (val) callerRbac.perms.add(val);
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  const hasPerm = (allowed: string[]): boolean => {
+    if (isServiceRole) return true;
+    if (callerRbac.isDeactivated) return false;
+    if (callerRbac.isAdmin || callerRbac.perms.has("*")) return true;
+    return allowed.some((p) => callerRbac.perms.has(p));
+  };
+
+  const action = payload.action || "generate-invoice";
+  const isPublicRentalContractAction = (action === "generate-contract" || action === "generateRentalContractPDF");
+  const isAuthorizedContractManager = hasPerm(["vermietung.manage", "rechnungen.manage"]);
+
+  if (!isServiceRole && !callerUser && !isPublicRentalContractAction) {
+    return new Response(JSON.stringify({ success: false, error: "Authentifizierung erforderlich." }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // Aktionsspezifische RBAC-Prüfung (SP-2026-002 / SEC-014)
+  if (!isServiceRole && !isPublicRentalContractAction) {
+    let requiredPerms: string[] = [];
+    if (action === "generate-invoice" || action === "generateInvoicePDF") {
+      requiredPerms = ["rechnungen.manage", "jahresbeitrag.manage", "buchhaltung.manage", "vermietung.manage", "inventar.manage"];
+    } else if (
+      action === "generate-gv-invitation" || action === "generateGVInvitationPDF" ||
+      action === "compile-gv-dossier" || action === "compileGVDossier" ||
+      action === "generate-gv-praesenzliste" || action === "generateGVPraesenzlistePDF"
+    ) {
+      requiredPerms = ["gv.manage", "mail.manage"];
+    } else if (action === "generate-letter" || action === "generateLetterPDF") {
+      requiredPerms = ["mail.manage", "dokumente.manage"];
+    } else if (action === "generate-endschiessen" || action === "generateEndschiessenPDF") {
+      requiredPerms = ["endschiessen.manage"];
+    }
+
+    if (requiredPerms.length === 0 || !hasPerm(requiredPerms)) {
+      return new Response(JSON.stringify({ success: false, error: "Keine Berechtigung für diese PDF-Generierung." }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  }
+  const curYear = payload.year ? String(payload.year) : new Date().getFullYear().toString();
+
+  try {
+    let pdfBytes: Uint8Array;
+    let fileName = "";
+    let storageSubDir = "";
+    let recordId = "";
+    let docTitle = "";
+
+    // --------------------------------------------------------------------------
+    // FALL 1: RECHNUNGS-PDF GENERIEREN
+    // --------------------------------------------------------------------------
+    if (action === "generate-invoice" || action === "generateInvoicePDF") {
+      const invId = payload.invoiceId || "";
+      if (!invId) throw new Error("Rechnungs-ID (invoiceId) ist zwingend erforderlich.");
+      recordId = invId;
+
+      // Daten aus DB nachladen falls unvollständig
+      let invRow: any = null;
+      let positions = payload.positions || [];
+      if (!positions.length || !payload.totalAmount) {
+        const { data: invData } = await supabase.from("invoices").select("*").eq("id", invId).single();
+        if (invData) {
+          invRow = invData;
+          if (!payload.totalAmount) payload.totalAmount = invData.total_amount;
+          if (!payload.type) payload.type = invData.type;
+        }
+
+        const { data: posData } = await supabase
+          .from("invoice_positions")
+          .select("*")
+          .eq("invoice_id", invId)
+          .order("position_nr", { ascending: true });
+        if (posData && posData.length > 0) positions = posData;
+      }
+
+      const totalAmount = Number(payload.totalAmount || invRow?.total_amount || 0);
+      // Falls invRow noch nicht geladen ist, laden wir die Rechnung aus Supabase
+      if (!invRow && supabase) {
+        const { data: invData } = await supabase.from("invoices").select("*").eq("id", invId).maybeSingle();
+        if (invData) invRow = invData;
+      }
+
+      // Zusammenführung: Payload-Empfänger + gespeicherte DB-Adresse (invoices.recipient_address)
+      const mergedRec = {
+        ...(invRow?.recipient_address || {}),
+        ...(payload.recipient || {}),
+      };
+
+      let recipient = normalizeRecipient(mergedRec);
+
+      // Auto-Hydration der Empfänger-Adresse & Anrede aus members, falls strasse oder anrede noch fehlen
+      const pNr = mergedRec.person_number || mergedRec.personNumber || mergedRec.member_id || mergedRec.memberId || invRow?.person_number;
+      if (pNr) {
+        (recipient as any).person_number = String(pNr);
+      }
+      if ((!recipient.strasse || !recipient.anrede || !recipient.vorname) && pNr && supabase) {
+        try {
+          const { data: memberData } = await supabase
+            .from("members")
+            .select("salutation, first_name, last_name, street, post_code, city, primary_email")
+            .eq("person_number", pNr)
+            .maybeSingle();
+
+          if (memberData) {
+            recipient.firma = "";
+            recipient.typ = "privat";
+            recipient.anrede = recipient.anrede || memberData.salutation || "";
+            recipient.vorname = recipient.vorname || memberData.first_name || "";
+            recipient.nachname = recipient.nachname || memberData.last_name || "";
+            recipient.strasse = recipient.strasse || memberData.street || "";
+            recipient.plz = recipient.plz || String(memberData.post_code || "");
+            recipient.ort = recipient.ort || memberData.city || "";
+            recipient.email = recipient.email || memberData.primary_email || "";
+            recipient.name = recipient.name || [recipient.vorname, recipient.nachname].filter(Boolean).join(" ");
+          }
+        } catch (_) {}
+      }
+      let parsedSenderAddress: any = invRow?.sender_address;
+      if (typeof parsedSenderAddress === "string") {
+        try { parsedSenderAddress = JSON.parse(parsedSenderAddress); } catch (_) {}
+      }
+      const hasCustomSender = Boolean(payload.sender && (payload.sender.personNumber || payload.sender.vorname || payload.sender.email));
+      const sender = hasCustomSender
+        ? { ...(payload.sender || {}) }
+        : {
+            ...(parsedSenderAddress || {}),
+            ...(payload.sender || {}),
+          };
+      if (!sender.funktion) sender.funktion = payload.sender?.funktion || parsedSenderAddress?.funktion || "Kassier";
+      if (!sender.email) sender.email = payload.sender?.email || parsedSenderAddress?.email || CLUB_EMAIL;
+      if (!sender.verein) sender.verein = CLUB_NAME;
+      sender.name = sender.name || [sender.vorname, sender.nachname].filter(Boolean).join(" ");
+
+      // Automatisches Nachladen aus admin_profiles & members bei unvollständigem Absender
+      if ((!sender.vorname || !sender.strasse) && supabase && callerUser?.id) {
+        try {
+          const user = callerUser;
+          if (user?.id) {
+            const { data: prof } = await supabase
+              .from("admin_profiles")
+              .select("*, members(*)")
+              .eq("auth_user_id", user.id)
+              .maybeSingle();
+            if (prof) {
+              const m = prof.members || {};
+              sender.vorname = sender.vorname || prof.display_name?.split(" ")[0] || m.first_name || "";
+              sender.nachname = sender.nachname || prof.display_name?.split(" ").slice(1).join(" ") || m.last_name || "";
+              sender.funktion = sender.funktion || prof.role_external || "Vorstand";
+              sender.bereich = sender.bereich || prof.role_external || "";
+              sender.strasse = sender.strasse || prof.street || m.street || "";
+              sender.plz = sender.plz || prof.zip || String(m.post_code || "5037");
+              sender.ort = sender.ort || prof.city || m.city || "Muhen";
+              sender.mobil = sender.mobil || prof.phone || m.private_mobile_phone || m.business_mobile_phone || "";
+              sender.email = sender.email || prof.email || m.primary_email || CLUB_EMAIL;
+            }
+          }
+        } catch (_) {}
+      }
+
+      const layout = payload.layout || {};
+
+      pdfBytes = await generateInvoicePdf(
+        invId,
+        recipient,
+        sender,
+        layout,
+        positions,
+        totalAmount,
+        curYear,
+        payload.type || invRow?.type || "Rechnung",
+        supabase
+      );
+
+      const safeName = (recipient.nachname || recipient.firma || recipient.name || "Rechnung")
+        .replace(/[^a-zA-Z0-9_-]/g, "_");
+      const cleanId = invId.replace(/^RE[-_]?/i, "");
+      fileName = `Rechnung_${cleanId}_${safeName}.pdf`;
+      storageSubDir = `invoices/${curYear}`;
+      docTitle = `Rechnung ${invId} – ${recipient.name || recipient.firma || ""}`;
+    }
+
+    // --------------------------------------------------------------------------
+    // FALL 2: MIETVERTRAG GENERIEREN
+    // --------------------------------------------------------------------------
+    else if (action === "generate-contract" || action === "generateRentalContractPDF") {
+      const bookId = payload.bookingId || payload.invoiceId || "";
+      if (!bookId) throw new Error("Mietvertrags- oder Buchungs-ID ist zwingend erforderlich.");
+      recordId = bookId;
+
+      // Buchung serverseitig prüfen (verhindert unbefugte Vertragsgenerierung, Re-Download & Betragsmanipulation durch anon)
+      const isUuidBookId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bookId);
+      const { data: rentalRow } = await supabase
+        .from("rental_requests")
+        .select("id, booking_number, status, first_name, last_name, company, street, post_code, city, email, phone, start_date, festbeginn, total_amount_chf, contract_storage_path, contract_file_url")
+        .eq(isUuidBookId ? "id" : "booking_number", bookId)
+        .maybeSingle();
+
+      if (!isAuthorizedContractManager) {
+        payload.forceRecreate = false;
+        if (!rentalRow || rentalRow.status === "cancelled" || rentalRow.contract_storage_path || rentalRow.contract_file_url) {
+          return new Response(JSON.stringify({ success: false, error: "Für diese Buchungs-ID wurde bereits ein Mietvertrag erstellt oder die Buchung ist ungültig." }), {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+
+      const recipient = (!isAuthorizedContractManager && rentalRow)
+        ? {
+            ...(payload.recipient || {}),
+            vorname: rentalRow.first_name || payload.recipient?.vorname || "",
+            nachname: rentalRow.last_name || payload.recipient?.nachname || "",
+            name: [rentalRow.first_name, rentalRow.last_name].filter(Boolean).join(" ") || payload.recipient?.name || "Mieter",
+            firma: rentalRow.company || "",
+            strasse: rentalRow.street || payload.recipient?.strasse || "",
+            plz: String(rentalRow.post_code || payload.recipient?.plz || ""),
+            ort: rentalRow.city || payload.recipient?.ort || "",
+            email: rentalRow.email || payload.recipient?.email || "",
+            telefon: rentalRow.phone || payload.recipient?.telefon || "",
+          }
+        : (payload.recipient || { name: "Mieter" });
+      const sender = payload.sender || { vorname: "Vermietung", nachname: CLUB_NAME };
+      const mietdatum = (!isAuthorizedContractManager && rentalRow?.start_date)
+        ? new Date(rentalRow.start_date).toLocaleDateString("de-CH")
+        : (payload.mietdatum || new Date().toLocaleDateString("de-CH"));
+      const festbeginn = (!isAuthorizedContractManager && rentalRow?.festbeginn)
+        ? rentalRow.festbeginn
+        : (payload.festbeginn || "14:00 Uhr");
+      const mietbetrag = (!isAuthorizedContractManager && rentalRow?.total_amount_chf != null)
+        ? Number(rentalRow.total_amount_chf)
+        : Number(rentalRow?.total_amount_chf || payload.mietbetrag || payload.totalAmount || 300);
+      pdfBytes = await generateRentalContractPdf(
+        bookId,
+        recipient,
+        mietdatum,
+        festbeginn,
+        mietbetrag,
+        sender,
+        supabase,
+        payload.layout,
+        (payload as any).templateId
+      );
+
+      const safeName = (recipient.nachname || recipient.firma || recipient.name || "Mieter")
+        .replace(/[^a-zA-Z0-9_-]/g, "_");
+      fileName = `Mietvertrag_${bookId}_${safeName}.pdf`;
+      storageSubDir = `contracts/${curYear}`;
+      docTitle = `Mietvertrag ${bookId} – ${recipient.name || ""}`;
+    }
+
+    // --------------------------------------------------------------------------
+    // FALL 3: GENERALVERSAMMLUNGS-EINLADUNG & TERMINLISTE GENERIEREN
+    // --------------------------------------------------------------------------
+    else if (action === "generate-gv-invitation" || action === "generateGVInvitationPDF") {
+      const year = Number(payload.year || curYear);
+      const gvData = (payload as any).gvData || {};
+      recordId = `GV-${year}`;
+
+      pdfBytes = await generateGVInvitationPdf(
+        year,
+        gvData,
+        supabase
+      );
+
+      fileName = `GV_Einladung_${year}.pdf`;
+      storageSubDir = `gv/${curYear}`;
+      docTitle = `Einladung zur ${gvData.gvNummer || ''}. Generalversammlung ${year}`;
+    }
+
+    // --------------------------------------------------------------------------
+    // FALL 4: VOLLSTÄNDIGES GV-DOSSIER ASSEMBLIEREN & STEMPELN
+    // --------------------------------------------------------------------------
+    else if (action === "compile-gv-dossier" || action === "compileGVDossier") {
+      const year = Number(payload.year || curYear);
+      const campId = payload.campaignId || "";
+      const gvData = (payload as any).gvData || {};
+      recordId = campId || `GV-DOSSIER-${year}`;
+
+      const res = await compileGvDossierPdf(
+        campId,
+        year,
+        gvData,
+        supabase
+      );
+
+      pdfBytes = res.pdfBytes;
+      fileName = `GV_Dossier_${year}_Gesamt.pdf`;
+      storageSubDir = `gv-dossiers/${year}`;
+      docTitle = `GV-Dossier ${year} Gesamt (${res.pageCount} Seiten)`;
+    }
+
+    // --------------------------------------------------------------------------
+    // FALL 4b: GENERALVERSAMMLUNGS-PRÄSENZLISTE (DRUCKFERTIGES PDF)
+    // --------------------------------------------------------------------------
+    else if (action === "generate-gv-praesenzliste" || action === "generateGVPraesenzlistePDF") {
+      const year = Number(payload.year || curYear);
+      const gvData = (payload as any).gvData || {};
+      const participants = (payload as any).participants || [];
+      recordId = `GV-PRAESENZ-${year}`;
+
+      pdfBytes = await generateGvPraesenzlistePdf(
+        year,
+        gvData,
+        participants,
+        supabase
+      );
+
+      fileName = `GV_Praesenzliste_${year}.pdf`;
+      storageSubDir = `gv/${curYear}`;
+      docTitle = `Präsenzliste zur ${gvData.gvNummer || ''}. Generalversammlung ${year}`;
+    }
+
+    // --------------------------------------------------------------------------
+    // FALL 5: FREIER VORSTANDSBRIEF (DIN 5008 FENSTER RECHTS)
+    // --------------------------------------------------------------------------
+    else if (action === "generate-letter" || action === "generateLetterPDF") {
+      const letId = payload.letterId || `BRIEF-${curYear}-${Date.now().toString().slice(-4)}`;
+      recordId = letId;
+
+      const recipient = payload.recipient || {
+        name: "Mitglied",
+        vorname: "",
+        nachname: "Mitglied",
+        strasse: "",
+        plz: "5037",
+        ort: "Muhen",
+      };
+      const sender = payload.sender || {
+        vorname: "",
+        nachname: "",
+        funktion: "Vorstand",
+        verein: CLUB_NAME,
+        email: CLUB_EMAIL,
+      };
+
+      // Automatisches Nachladen aus admin_profiles & members bei unvollständigem Absender
+      if ((!sender.vorname || !sender.strasse) && supabase && callerUser?.id) {
+        try {
+          const user = callerUser;
+          if (user?.id) {
+            const { data: prof } = await supabase
+              .from("admin_profiles")
+              .select("*, members(*)")
+              .eq("auth_user_id", user.id)
+              .maybeSingle();
+            if (prof) {
+              const m = prof.members || {};
+              sender.vorname = sender.vorname || prof.display_name?.split(" ")[0] || m.first_name || "";
+              sender.nachname = sender.nachname || prof.display_name?.split(" ").slice(1).join(" ") || m.last_name || "";
+              sender.funktion = sender.funktion || prof.role_external || "Vorstand";
+              sender.bereich = sender.bereich || prof.role_external || "";
+              sender.strasse = sender.strasse || prof.street || m.street || "";
+              sender.plz = sender.plz || prof.zip || String(m.post_code || "5037");
+              sender.ort = sender.ort || prof.city || m.city || "Muhen";
+              sender.mobil = sender.mobil || prof.phone || m.private_mobile_phone || m.business_mobile_phone || "";
+              sender.email = sender.email || prof.email || m.primary_email || CLUB_EMAIL;
+            }
+          }
+        } catch (_) {}
+      }
+
+      const layout = payload.layout || {};
+      const subject = payload.subject || layout.title || "Mitteilung";
+      const bodyText = payload.bodyText || "";
+      const signers = payload.signers || [];
+      const letterDate = payload.letterDate || "";
+
+      pdfBytes = await generateLetterPdf(
+        letId,
+        recipient,
+        sender,
+        layout,
+        subject,
+        bodyText,
+        signers,
+        letterDate,
+        supabase
+      );
+
+      const safeName = (recipient.nachname || recipient.firma || recipient.name || "Brief")
+        .replace(/[^a-zA-Z0-9_-]/g, "_");
+      fileName = `Brief_${letId}_${safeName}.pdf`;
+      storageSubDir = `letters/${curYear}`;
+      docTitle = `Brief: ${subject} – ${recipient.name || recipient.firma || ""}`;
+    }
+
+    // --------------------------------------------------------------------------
+    // FALL 6: ENDSCHIESSEN-FESTFÜHRER & EINLADUNG (TYP 4)
+    // --------------------------------------------------------------------------
+    else if (action === "generate-endschiessen" || action === "generateEndschiessenPDF") {
+      const year = Number(payload.year || curYear);
+      const endschiessenData = (payload as any).endschiessenData || (payload as any).data || {};
+      recordId = `ENDSCHIESSEN-${year}`;
+
+      pdfBytes = await generateEndschiessenPdf(
+        year,
+        endschiessenData,
+        supabase
+      );
+
+      fileName = `Endschiessen_Festfuehrer_${year}.pdf`;
+      storageSubDir = `endschiessen/${year}`;
+      docTitle = `Endschiessen & Festführer ${year} – Sportschützen Muhen`;
+    } else {
+      throw new Error(`Unbekannte Aktion: ${action}`);
+    }
+
+    // --------------------------------------------------------------------------
+    // WORM-ARCHIVIERUNG (OR 957ff): Existierendes Archiv prüfen
+    // --------------------------------------------------------------------------
+    const storageBucket = "operatives-storage";
+    const archiveCategory = action.includes("contract") ? "contracts" : (action.includes("gv") ? "gv" : (action.includes("letter") ? "letters" : (action.includes("endschiessen") ? "endschiessen" : "invoices")));
+    const archivePath = `archive/${curYear}/${archiveCategory}/${recordId || "doc"}.pdf`;
+
+    const isTestRun = Boolean(
+      payload.saveToStorage === false ||
+      payload.forceRecreate ||
+      (recordId && (recordId.startsWith("TEST") || recordId.startsWith("RE-TEST") || recordId.startsWith("PREVIEW")))
+    );
+
+    if (!isTestRun && payload.saveToStorage !== false && !payload.forceRecreate && recordId && (!isPublicRentalContractAction || isAuthorizedContractManager)) {
+      try {
+        const { data: archBlob } = await supabase.storage.from(storageBucket).download(archivePath);
+        if (archBlob) {
+          const archBytes = new Uint8Array(await archBlob.arrayBuffer());
+          const { data: urlData } = supabase.storage.from(storageBucket).getPublicUrl(archivePath);
+          const externalDomain = Deno.env.get("API_EXTERNAL_URL") || "https://supabase-muhen.danfamily.uk";
+          const publicUrl = (urlData?.publicUrl || `${externalDomain}/storage/v1/object/public/${storageBucket}/${archivePath}`)
+            .replace(/^http:\/\/api-gw:8000/, externalDomain);
+
+          let pdfBase64 = "";
+          try {
+            let binary = "";
+            const len = archBytes.byteLength;
+            for (let i = 0; i < len; i++) {
+              binary += String.fromCharCode(archBytes[i]);
+            }
+            pdfBase64 = btoa(binary);
+          } catch (_) {}
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              isArchived: true,
+              recordId: recordId,
+              pdfUrl: publicUrl,
+              storagePath: archivePath,
+              storageBucket: storageBucket,
+              fileName: `${archiveCategory}_${recordId}.pdf`,
+              fileSizeBytes: archBytes.byteLength,
+              pdfBase64: pdfBase64 ? `data:application/pdf;base64,${pdfBase64}` : null,
+            }),
+            {
+              status: 200,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            }
+          );
+        }
+      } catch (_) {}
+    }
+
+    // --------------------------------------------------------------------------
+    // UPLOAD IN SUPABASE STORAGE (Bucket: 'operatives-storage')
+    // --------------------------------------------------------------------------
+    const storagePath = `${storageSubDir}/${fileName}`;
+    let publicUrl = "";
+
+    const { error: uploadErr } = await supabase.storage
+      .from(storageBucket)
+      .upload(storagePath, pdfBytes, {
+        contentType: "application/pdf",
+        upsert: true,
+      });
+
+    if (uploadErr) {
+      console.warn("⚠️ Storage-Upload Warnung:", uploadErr);
+    }
+
+    // WORM-Archivierung: Kopie im unveränderlichen Revisions-Archiv ablegen (bei forceRecreate überschreiben)
+    if (payload.saveToStorage !== false && recordId) {
+      try {
+        await supabase.storage
+          .from(storageBucket)
+          .upload(archivePath, pdfBytes, {
+            contentType: "application/pdf",
+            upsert: Boolean(payload.forceRecreate),
+          });
+      } catch (_) {}
+    }
+
+    // Signierte URL (7 Tage gültig) für privaten Bucket 'operatives-storage' abrufen
+    const externalDomain = Deno.env.get("API_EXTERNAL_URL") || "https://supabase-muhen.danfamily.uk";
+    const { data: signedData } = await supabase.storage.from(storageBucket).createSignedUrl(storagePath, 60 * 60 * 24 * 7);
+    if (signedData?.signedUrl) {
+      publicUrl = signedData.signedUrl.replace(/^http:\/\/api-gw:8000/, externalDomain);
+    } else {
+      const { data: urlData } = supabase.storage.from(storageBucket).getPublicUrl(storagePath);
+      publicUrl = (urlData?.publicUrl || `${externalDomain}/storage/v1/object/public/${storageBucket}/${storagePath}`)
+        .replace(/^http:\/\/api-gw:8000/, externalDomain);
+    }
+
+    // --------------------------------------------------------------------------
+    // OPTIONALE PAPERLESS-NGX INTEGRATION
+    // --------------------------------------------------------------------------
+    let paperlessStatus = "not_applicable";
+    let paperlessDocId: number | undefined = undefined;
+    let paperlessError: string | undefined = undefined;
+
+    if (payload.syncPaperless !== false && (Deno.env.get("PAPERLESS_API_URL") || Deno.env.get("PAPERLESS_API_TOKEN"))) {
+      const pRes = await syncToPaperlessNgx(
+        pdfBytes,
+        fileName,
+        docTitle,
+        CLUB_NAME,
+        [action.includes("contract") ? "Mietvertrag" : (action.includes("gv") ? "GV" : (action.includes("letter") ? "Brief" : (action.includes("endschiessen") ? "Endschiessen" : "Rechnung"))), curYear]
+      );
+      if (pRes.success) {
+        paperlessStatus = "archived";
+        paperlessDocId = pRes.documentId;
+      } else {
+        paperlessStatus = "error";
+        paperlessError = pRes.error;
+      }
+    }
+
+    // --------------------------------------------------------------------------
+    // DATENBANK-UPDATE & AUDIT-LOG
+    // --------------------------------------------------------------------------
+    if (action.includes("invoice") || action === "generateInvoicePDF") {
+      await supabase.rpc("update_invoice_pdf", {
+        p_invoice_id: recordId,
+        p_pdf_url: publicUrl,
+        p_storage_path: storagePath,
+        p_file_size: pdfBytes.byteLength,
+        p_paperless_status: paperlessStatus,
+        p_paperless_id: paperlessDocId || null,
+      });
+    } else if (action.includes("contract") || action === "generateRentalContractPDF") {
+      await supabase.rpc("update_rental_contract_pdf", {
+        p_booking_id: recordId,
+        p_pdf_url: publicUrl,
+        p_storage_path: storagePath,
+        p_file_size: pdfBytes.byteLength,
+        p_paperless_status: paperlessStatus,
+        p_paperless_id: paperlessDocId || null,
+      });
+
+      // Proforma-Rechnung für Rechnungsmodul & CAMT Bankabgleich sicherstellen
+      try {
+        await supabase.rpc("ensure_rental_proforma_invoice", {
+          p_booking_number: recordId,
+        });
+      } catch (invRpcErr) {
+        console.warn("⚠️ ensure_rental_proforma_invoice RPC Warnung:", invRpcErr);
+      }
+    } else if (action === "compile-gv-dossier" || action === "compileGVDossier") {
+      try {
+        if (payload.campaignId) {
+          await supabase
+            .from("communication_campaigns")
+            .update({
+              dossier_pdf_url: publicUrl,
+              dossier_storage_path: storagePath,
+              status: "ready",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", payload.campaignId);
+        }
+        await supabase
+          .from("gv_instances")
+          .update({ doc_anhaenge_url: publicUrl, updated_at: new Date().toISOString() })
+          .eq("year", Number(curYear));
+      } catch (_) {}
+    } else if (action.includes("gv") || action === "generate-gv-invitation") {
+      try {
+        await supabase
+          .from("gv_instances")
+          .update({ doc_einladung_url: publicUrl, updated_at: new Date().toISOString() })
+          .eq("year", Number(curYear));
+      } catch (_) {}
+    } else if (action.includes("letter") || action === "generate-letter" || action === "generateLetterPDF") {
+      try {
+        if (payload.campaignRecipientId) {
+          await supabase
+            .from("campaign_recipients")
+            .update({ pdf_storage_path: storagePath, updated_at: new Date().toISOString() })
+            .eq("id", payload.campaignRecipientId);
+        }
+      } catch (_) {}
+    }
+
+    // Base64 für direkte Browser-Vorschau erzeugen
+    let pdfBase64 = "";
+    try {
+      let binary = "";
+      const len = pdfBytes.byteLength;
+      for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(pdfBytes[i]);
+      }
+      pdfBase64 = btoa(binary);
+    } catch (_) {}
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        recordId: recordId,
+        pdfUrl: publicUrl,
+        storagePath: storagePath,
+        storageBucket: storageBucket,
+        fileName: fileName,
+        fileSizeBytes: pdfBytes.byteLength,
+        paperlessStatus: paperlessStatus,
+        paperlessDocId: paperlessDocId,
+        paperlessError: paperlessError,
+        pdfBase64: pdfBase64 ? `data:application/pdf;base64,${pdfBase64}` : null,
+      }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
+  } catch (err: any) {
+    console.error("❌ PDF-Generierungsfehler:", err);
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: err.message || String(err),
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
+  }
+});

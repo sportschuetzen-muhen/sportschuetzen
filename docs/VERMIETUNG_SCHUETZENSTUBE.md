@@ -1,0 +1,166 @@
+# Fachdokumentation: Vermietung Schützenstube Rüteli
+
+> **Status:** PRODUKTIV (Supabase Single Source of Truth)  
+> **Stand:** Oktober 2026  
+> **Komponenten:** `public.rental_requests`, `rental_pricing`, `rental_settings`, `rental_status_logs`, `rental_cancellation_feedbacks`  
+> **Frontend:** [`vorstand/js/vermietung/`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/vermietung/) + Website ([`schuetzenhaus_vermietung.html`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/sportschuetzen-website/frontend/schuetzenhaus_vermietung.html))
+
+---
+
+## 1. Übersicht & Systemgrenzen
+
+Das Modul Vermietung steuert den gesamten Lebenszyklus der Vermietung der vereinsinternen Schützenstube «Rüteli» an Privatpersonen, Vereine und Firmen – von der Online-Buchungsanfrage über die Vertragserstellung und Rechnungsstellung bis hin zur Schlüsselrückgabe.
+
+* **Führendes System:** Supabase PostgreSQL (`public.rental_requests`).
+* **Kalender & Belegung:** Google Calendar wird zur Belegungsanzeige auf der Website genutzt. Die direkte Blockierung von Mietterminen (`Vermietet an XX`) und Reinigungspuffern (`Gesperrt für Reinigung`) sowie deren Freigabe bei Stornierung erfolgt über das verifizierte Google Cloud Service Account Dienstkonto (`vermietung-bot@kalender-api-zugriff.iam.gserviceaccount.com`) mit vollen Lese-, Schreib- und Löschrechten auf den Vereinskalender `sportschuetzen.muhen@gmail.com`.
+* **Entkopplung:** Sämtliche früheren Google Docs Template-Ersetzungen, Google Drive Ablagen und manuellen GAS-Trigger wurden vollständig durch Supabase Edge Functions (`generate-pdf`, `send-email`), Supabase Storage und native API-Aufrufe abgelöst.
+
+---
+
+## 2. Kern-Architektur & Das «Warum» hinter den Designentscheidungen
+
+### 2.1 Warum Supabase als alleiniger Daten- & Finanz-Master?
+* **Problem im Altsystem:** Mietanträge wurden in Google Sheets gespeichert, Verträge per Google Docs generiert und Termine im Google Kalender eingetragen. Lief ein Script auf einen Fehler, existierte ein Kalendereintrag ohne Mietvertrag oder ein Vertrag ohne Buchungszeile.
+* **Lösung & Warum:** Supabase ist die unangefochtene Single Source of Truth für alle Kunden-, Datums-, Preis- und Vertragsdaten.
+* **Google Calendar Rolle:** Dient als Anzeige-Proxy für den Belegungskalender auf der Website (`FreeBusy`-Status) und wird automatisiert synchronisiert, besitzt aber keinerlei Hoheit über Kundendaten oder Zahlungen.
+
+### 2.2 Warum ein lückenloser Status-Workflow mit Audit-Log?
+* **Die Status-Maschine:**
+  1. `inquiry`: Kunde reicht unverbindliche Anfrage über das Webformular ein.
+  2. `approved`: Vermieter prüft und gibt die Buchung frei.
+  3. `contract_sent`: Mietvertrag mit integrierter Schweizer QR-Rechnung wird automatisch generiert und per SMTP versandt.
+  4. `reminded`: Automatische Zahlungserinnerung bei Fälligkeit.
+  5. `paid`: Miete und Kaution sind eingegangen (Abgleich via FiBu oder Bank).
+  6. `keys_issued`: Übergabe der Schlüssel & Übergabeprotokoll.
+  7. `completed`: Abnahme erfolgt, Kaution rückerstattet, Beleg revisionssicher archiviert.
+  8. `cancelled`: Stornierung (mit Dokumentation des Stornogrunds und Kalender-Freigabe).
+* **Audit-Trail (`rental_status_logs`):** Jeder Statuswechsel wird mit Zeitstempel, vorigem Status, neuem Status und ausführendem Benutzer historisiert.
+
+### 2.3 Warum Anbindung an `RechnungsCore` und Vorlagen-Pool?
+* **Keine Insel-Lösung:** Statt eigene Rechnungsnummern zu vergeben, erzeugt das Vermietungsmodul (`ensureRentalInvoice`) eine standardisierte `InvoiceOrder` im zentralen [`RechnungsCore`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/rechnungen/rechnungen-core.js).
+* **Dynamische Rüteli-Klauseln (Phase 27):** Die 8 nummerierten Vertragsklauseln (Benützungsreglement, Nachtruhe ab 22:00 Uhr, Reinigungsgebühren, Kaution, Parkplatzordnung) werden zur Laufzeit aus `public.document_template_clauses` geladen.
+* **Vorteil:** Wenn der Vorstand eine Bestimmung oder Reinigungsgebühr anpasst, gilt diese sofort für alle neuen Verträge, ohne dass Entwickler den PDF-Code anfassen müssen.
+
+### 2.4 Warum Storno-Feedback mit Dringlichkeits-Alarm (`is_urgent`)?
+* **Sofortige Klärung bei erfolgter Zahlung:** Meldet ein Mieter nach einer automatischen Verzugs-Stornierung, dass er bereits bezahlt hat («Zahlung bereits getätigt / Datum behalten»), wird der Datensatz in `rental_cancellation_feedbacks` mit `is_urgent = true` markiert und ein Alarm-Mail (`vm_storno_alarm`) ausgelöst.
+* **Nutzen:** Der Vermieter erkennt Zahlungsüberschneidungen im Cockpit sofort am roten Badge (`⚠️ Dringend: Zahlung erfolgt`), während alle übrigen Stornogründe als reguläre, neutral dargestellte «Storno-Rückmeldung» verbucht werden.
+* **Serverseitige Bestimmung (Migration 100 & 137):** Der `BEFORE INSERT`-Trigger `rental_feedback_enrich` (`SECURITY DEFINER`) verknüpft jede Rückmeldung über die Buchungsnummer mit `rental_requests` (`rental_request_id`) und setzt `is_urgent = true` ausschliesslich bei Auswahl von «Zahlung bereits getätigt» (unabhängig vom Abstand zum Mietdatum).
+* **Feedback-Link & URL (Migration 100):** Die Seite liegt auf Cloudflare Pages unter `https://sps-b55.pages.dev/sportschuetzen-website/frontend/storno_feedback` (gepflegt in `rental_settings.feedback_base_url`, `{feedback_url}` = Basis-URL + `?vnr=<Buchungsnummer>`). Es gibt keinen hartcodierten Fallback mehr: Fehlt die Einstellung, brechen Frontend (`sendRentalWorkflowEmail`) und Edge Function (`renderRentalMail`) bei Vorlagen mit `{feedback_url}` mit einem klaren Konfigurationsfehler ab. Das Formular sendet mit `Prefer: return=minimal`, da `anon` nur INSERT- und kein SELECT-Recht hat.
+* **Feedback-Button statt Roh-URL (Migration 101):** In `vm_storno` und `vm_storno_verzug` ist der Link als geräteübergreifender «Bulletproof»-Button («Rückmeldung geben») hinterlegt: reine Tabelle mit `bgcolor` und Padding auf der Zelle, ohne VML-/MSO-Kommentare und DIV-Wrapper, damit Outlook Desktop, Webmail, Mobile und Dark Mode identisch rendern und der Vorlagen-Editor (`ClubWysiwyg.cleanHtml`) nichts entfernt. Link-Scanner der Mailprovider (Safe Links, Prefetch) sind unkritisch, da ein GET nur das Formular anzeigt und erst das aktive Absenden schreibt.
+
+### 2.5 Modernes Vorstands-Cockpit (TableKit Standard & 4-Register-Struktur)
+* **4-Register-Struktur:** Das Cockpit bündelt alle Fachaspekte in vier Reitern: `Reservationen`, `Stornorückmeldungen`, `Tarife & Einstellungen` sowie **`Bank-Automation`** (mit Schreibschutz-Schloss bei reinem Lesezugriff).
+* **Bank-Automation Register:** Bietet einen Ein-/Ausschalter für den automatischen `pg_cron`-Hintergrundscan, ein variables Intervall (Standard: `03:00, 04:00, 05:00 & 14:00` Uhr MEZ), einen Sofort-Scan-Button («Jetzt Postfach scannen») sowie eine Live-Übersicht der Infomaniak-IMAP-Verbindung zu `info@sportschuetzen-muhen.ch` und der Historie aller verarbeiteten Gutschriften aus `public.bank_mail_ingest_logs`.
+* **TableKit Spalten-Steuerung:** Die Reservationstabelle ist an den globalen Vereinsstandard `TableKit.setupColumnToggle` angebunden. Spalten (Datum, Mieter Name, Vertrags-Nr., Festbeginn, Kontakt, Mietbetrag, Status, Aktionen) lassen sich beliebig ein-/ausblenden und werden persistent im `localStorage` (`tk_cols_vermietung`) gesichert.
+* **Zentralisierte Tarife:** Mietpreise (`rental_pricing`) und Konfigurationswerte (`rental_settings`) werden in einer einheitlichen Maske gepflegt und atomar synchronisiert.
+
+### 2.6 Mehrseitiger Mietvertrag & dynamische Gebühren (Phase 42 & 43)
+* **Dynamische Gebühren, Zahlungsfrist & Vermieterkopf:** Ziffer 6 (Zuständigkeit Vermietung) und die Gebühren für Zusatz-Cheminéeholz (`wood_fee`), Kehrichtsäcke (`garbage_bag_fee`), Nachreinigung (`cleaning_fee_per_hour`), Stornierung (`storno_fee`) sowie Glasbruch (`glass_fee`), Teller (`plate_fee`) und die **Zahlungsfrist** (`payment_due_days`, Standard: 14 Tage) werden direkt im Modul *Vermietung Schützenstube* konfiguriert, in `public.rental_settings` persistiert und über Platzhalter `{zahlungsfrist_tage}` nahtlos in Vertrag und QR-Rechnung eingesetzt. Das **Mietobjekt (Bezeichnung Vertrag)** wird im Modul *Dokumente* direkt in der Vorlage verwaltet, sodass Vertragswortlaut und Berechnungs-Variablen sauber getrennt sind.
+* **Platzhalter im Klausel-Editor:** Das Bearbeiten-Modal für Benützungsordnungs-Klauseln bietet eine direkte Klick-Leiste aller Vertrags- und Vermieter-Variablen, welche direkt an der Cursor-Position in Klauseltext und -titel eingefügt werden.
+* **Entfall von Übergabeprotokoll & Unterschriften:** Gemäss Ziffer 7 gilt der Vertrag mit fristgerechter Bezahlung des QR-Einzahlungsscheins als abgeschlossen; manuelle Unterschriftszeilen und das Übergabeprotokoll wurden entfernt. Aufzählungszeichen (Bullets) fliessen zeilenweise mit hängendem Einzug sauber untereinander.
+* **Dedizierte Schlussseite für QR-Rechnung:** Die Schlussseite positioniert den Vereinskopf oben bündig (analog Seite 1) und platziert die Buchungs- & Zahlungsdetails in einer übersichtlichen Box direkt über dem Schweizer QR-Zahlteil (SIX SPC 0200 1 Standard, 105 mm).
+
+### 2.7 Vorlagen-Zentrale & Live-Vorschau der 11 Vermietungs-Mails (Phase 39, 40 & MSO-Harmonisierung)
+* **Entkopplung der E-Mail-Texte:** Sämtliche 11 Vermietungs-Mails (`vm_vertrag`, `vm_anfrage`, `vm_anfrage_intern`, `vm_mahnung`, `vm_bestaetigung`, `vm_schluessel`, `vm_storno`, `vm_storno_verzug`, `vm_storno_alarm`, `vm_info_wirtschaft`, `vm_bank_report`) sind vollständig in `public.document_templates` überführt und im Modul *Dokumente-Vorlagen* in einer eigenen hervorgehobenen Zeile («Fachbereich Vermietung Schützenstube») editierbar.
+* **Live-Mail-Vorschau für Rechnungen:** Im Vorlagen-Pool werden bei Rechnungen & Mahnwesen keine Klauseln mehr angezeigt, sondern eine responsive E-Mail-Vorschau mit dynamischen Rechnungsmustern.
+* **Sonderfall Vorab-Terminanfrage (`vm_anfrage` & `vm_anfrage_intern`):** Bei unverbindlichen Anfragen über das Webformular (Puffertage, parallele Aktivitäten) erhält der Interessent automatisch eine freundliche Eingangsbestätigung (`vm_anfrage`), während der Verein intern über `vm_anfrage_intern` im einheitlichen Portal-Layout zur Terminprüfung benachrichtigt wird. Auch dringende Rückmeldungen auf `storno_feedback.html` nutzen die editierbare Systemvorlage `vm_storno_alarm` statt hartcodiertem HTML.
+* **Internes Info-Mail an Wirtschaftsverantwortliche (`vm_info_wirtschaft`):** Wird erst ausgelöst, wenn die Miete **definitiv bezahlt** ist (`status = 'paid'`), damit das Wirtschaftsteam den Termin für Schlüsselübergabe und Getränke fix einplanen kann. Die Empfängeradresse wird dynamisch aus dem Modul *System-Mails* (`public.system_mail_configs`, Schlüssel `Info_Mail_an_Wirtschaftsverantwortliche`) via Edge Function aufgelöst.
+* **Storno-Differenzierung (`vm_storno_verzug` vs. `vm_storno`):** Bei Stornierungen nach erfolgloser Mahnung wird automatisch die Verzugsvorlage verwendet; für mieterseitige Absagen die allgemeine Stornobestätigung.
+* **Harmonisiertes Platzhaltersystem & Grussformel:** Variablen sind rollenbasiert gegliedert (`{mieter_...}`, `{vermieter_...}`, `{wirtschaft_...}`). Die Grussformel speist sich konsistent aus den Vermieter-Kontaktdaten der `rental_settings`. Das System unterstützt sowohl Ein- als auch Zweifach-Klammern (`{var}` und `{{var}}`). Das Modul *Dokumente-Vorlagen* lädt die dynamischen `rental_settings` atomar beim Initialisieren, sodass Live-Vorschau und Test-Mails exakt den im Vermietungs-Cockpit gepflegten Wirtschafts- (`{wirtschaft_name}`, `{wirtschaft_phone}`) und Gebührendaten entsprechen. Die PDF-Engine (`generate-pdf`) sowie das Buchungsformular beziehen den Standard-Mietbetrag dynamisch aus `public.rental_pricing` und mappen alle Schlüsselkontakt- und Fristvariablen.
+* **Natives HTML-Template-Handling & Sanitization:** Im Vorlagen-Editor erstellte HTML-Texte werden beim Versand nativ als HTML übergeben und nicht versehentlich via `escapeHtml()` maskiert. Der integrierte Sanitizer (`ClubWysiwyg.cleanHtml`) bereinigt automatisiert Third-Party-Browsererweiterungs-Artefakte (`data-noir*`, `data-darkreader*`, Inline-Styles) und verhindert doppelte Maskierungen.
+* **Live-HTML-Vorschau:** E-Mail-Texte werden beim Tippen in Echtzeit im offiziellen Corporate-Design der Sportschützen Muhen (Header-Banner, Paragraphen, Footer) mit echten Konfigurationswerten gerendert.
+* **Striktes Fallback-Verbot & Betriebssicherheit (`is_system = true`):** Das System führt keine stillen Code-Fallbacks mehr aus. Fehlende Vorlagen führen zu klaren Fehlermeldungen. Ein PostgreSQL-Trigger verhindert das versehentliche Löschen von System-Vorlagen.
+* **Zusatzrechnung Wirtschaft/Vermietung:** Für nachgelagerte Aufwände (Nachreinigung, Mehrholz, Konsumationen) existiert im Rechnungsmodul die separate Vorlage `Zusatzrechnung Wirtschaft/Vermietung`.
+
+### 2.8 Vollautomation bei Online-Reservation & Google-Kalender-Blockierung
+* **Vollautomatischer Buchungsfluss:** Bei Absenden einer verbindlichen Reservation auf der Website wird unmittelbar das mehrseitige Mietvertrags-PDF inklusive Schweizer QR-Zahlteil via Edge Function `generate-pdf` generiert und in `rental_requests.contract_file_url` verlinkt. Der Mieter erhält das Dokument sofort per E-Mail (`vm_vertrag`) mit 14 Tagen Zahlungsfrist.
+* **Google-Kalender-Blockierung & API-Integration:** Zeitgleich wird der Miettag im offiziellen Google Kalender ganztägig als `Vermietet an XX` (Initialen) und der Folgetag als `Gesperrt für Reinigung` geblockt. Dies erfolgt über das autorisierte Google Cloud Service Account Dienstkonto (`vermietung-bot@kalender-api-zugriff.iam.gserviceaccount.com`), das über volle Lese-, Schreib- und Löschrechte auf `sportschuetzen.muhen@gmail.com` verfügt.
+* **Überwachungs- & Freigabe-Cockpit des Vorstands:** Das Cockpit dient der Überwachung der Fristen und der Freigabe offener Vorab-Anfragen (*«Anfrage annehmen & Vertrag senden»*: wechselt auf `contract_sent`, blockiert Google Calendar, erstellt PDF/Proforma-Rechnung und sendet `vm_vertrag`). Bei manueller Neuerfassung werden optional direkt Kalenderblockierung und Vertrags-E-Mail mitausgelöst. Bei Zahlungseingang wird mit *«Info-Mail Bank vermerken»* der Status auf `paid` gesetzt, die Zahlung im `RechnungsCore` verbucht, dem Mieter die Bestätigung (`vm_bestaetigung`) zugestellt und das Wirtschaftsteam (`vm_info_wirtschaft`) benachrichtigt.
+* **Zielgenaue Kalender-Freigabe bei Stornierung:** Bei einer Stornierung löscht die Edge Function `sync-calendar` ausschliesslich die zur konkreten Buchung gehörenden Termine (Miettag & Reinigungspuffer am Folgetag). Die Identifikation erfolgt primär über die Buchungsnummer (`bookingId` in `extendedProperties` bzw. Beschreibungstext), sodass sowohl reguläre Supabase-Buchungen (`Reinigungspuffer nach Miete ...`) als auch übernommene Notfall-Buchungen (`Reinigung nach Buchung ...`) und ungetaggte Reinigungspuffer am Folgetag freigegeben werden, solange keine fremde Buchungsnummer hinterlegt ist. Das Suchzeitfenster ist auf die exakten zwei Buchungstage begrenzt, sodass reguläre Vereinstermine (z. B. Standreinigungen, Sperrungen) oder angrenzende Drittmieten unberührt bleiben; das Cockpit-Kalender-Iframe nutzt zusätzlich Cache-Busting (`&_cb=`).
+* **Modernes Web- & Mobile-Kalender-UI (Oktober 2026):** Der interaktive Buchungskalender auf `schuetzenhaus_vermietung.html` nutzt ein reduziertes, an Airbnb angelehntes Design mit mind. 44×44px Touch-Targets ohne überfrachtete Text-Badges. Der Status wird über dezente Farb-Dots (Bernstein für Vorab-Prüfung/Puffer, Durchstreichung für Belegt) visualisiert. Mehrere gestapelte Warnbanner wurden durch eine einzige, reaktive «Buchungs-Statuskarte» ersetzt, die sich auf Mobilgeräten nahtlos anpasst und starre Richtungsangaben («rechts/links») eliminiert.
+* **Harmonisierung Vorlagen & Kautions-Bereinigung:** Zur Vermeidung von 404-Fehlern liegen statische PDF-Downloads (`Mustermietvertrag.pdf`, `Fotos_Innenbereich.pdf`) direkt im Auslieferungsverzeichnis `frontend/`. Sämtliche veralteten Kautions- und Schlüsseldepot-Hinweise in FAQs, Formularen und Merkblättern wurden entfernt, da Kautionen im Mietwesen fachlich vollständig entfallen sind (`deposit_amount = 0`). Die Back-to-Back-Folgetagsprüfung formuliert die Schlüsselrückgabe flexibel («rechtzeitig» statt fixer Zeitangabe).
+
+### 2.9 Proforma-Rechnung, CAMT-Bankabgleich & Zwei-stufiger Zahlungsvermerk (Phase 41)
+* **Automatische Proforma-Rechnung:** Bei der Erstellung des Mietvertrags wird über die RPC-Funktion `ensure_rental_proforma_invoice` sofort ein korrespondierender Proforma-Rechnungsdatensatz (`invoices`, Präfix `VM-YY-NNNN`) mit Ertragskonto 3400 (Ertrag Vermietung Schützenhaus) angelegt und atomar in `rental_requests.invoice_id` hinterlegt.
+* **CAMT-Bankabgleich (Buchhaltung):** Beim Einlesen von Bankauszügen (CAMT.053 / CAMT.054) im Buchhaltungsmodul matcht das System den Zahlungseingang anhand der Buchungsnummer (z. B. `V-2026-0105`) oder der Rechnungsnummer und bucht den Zahlungssatz automatisch ins Journal (Soll 1020 Bank, Haben 3400 Miete).
+* **Zwei-stufiger Zahlungsvermerk:**
+  * **Stufe 1 («Info-Mail Bank»):** Wird manuell im Vermietungs-Cockpit über *«Info-Mail Bank vermerken»* oder **vollautomatisch täglich um 03:00, 04:00, 05:00 und 14:00 Uhr MEZ** (`0 2,3,4,13 * * *` UTC) durch die Supabase Edge Function `process-bank-mails` via `pg_cron` gesetzt (`status_raiffeisen = 'bank_notified'`). Die Edge Function scannt per TLS-IMAP (`mail.infomaniak.com:993`) das Postfach `info@sportschuetzen-muhen.ch` (Ordner `Raiffeisen` komplett sowie `INBOX` nach Gutschriftsmails von `noreply@ebanking.raiffeisen.ch`), parst die Buchungsnummer (`V-YYYY-NNNN`) sowie den Betrag, setzt atomar via RPC `confirm_rental_payment` im Vermietungsmodul direkt `status = 'keys_issued'` (Stufe 4 mit `datum_schluessel`), versendet die Zahlungsbestätigung inkl. Schlüsselübergabe-Hinweis (`vm_bestaetigung`) an den Mieter, informiert das Wirtschaftsteam (`vm_info_wirtschaft`), erstattet Rapport an den Verteiler `Info_Mail_Bank_Eingang` (`vm_bank_report`) und verschiebt das Mail per `UID MOVE` nach `Raiffeisen/Verarbeitet` bzw. `Raiffeisen/Fehler`. Die Rechnungs- und FiBu-Verbuchung erfolgt bewusst erst beim Upload des CAMT-Belegs im Modul Buchhaltung. Visuelle Kennzeichnung im Cockpit und in der Tabelle: **hellgrün** (`#dcfce7`, Text `#15803d`, Rand `#86efac`).
+  * **Stufe 2 («FIBU gebucht»):** Wird vollautomatisch durch den CAMT-Bankabgleich bei der Buchung im FIBU-Journal gesetzt (`status_raiffeisen = 'fibu_gebucht'`, `datum_raiffeisen = bookingDate`); ein bereits erreichter Schlüssel-Status (`keys_issued` / `completed`) bleibt dabei erhalten. Visuelle Kennzeichnung: **dunkelgrün** (`#166534`, Text weiss).
+* **Vertrags- & Betrags-Matching für Bank-Gutschriften:**
+  * **Matching nach Buchungsnummer & Betrag:** Die Edge Function `process-bank-mails` sucht im Mailtext nach `V-YYYY-NNNN`, `V-YYYY-N###` (Notfall-Kreis) oder `##YYYY-NNN##` sowie dem Zahlungsbetrag. Existiert die Buchungsnummer in `rental_requests` und erreicht der Betrag den Sollbetrag (`total_amount_chf`), wird die Zahlung im Vermietungsmodul bestätigt (auch wenn eine Drittperson einzahlt).
+  * **Sicherheitsnetz bei Abweichung:** Fehlt die Vertragsnummer, ist der Vertrag unbekannt/storniert oder der Betrag zu niedrig (`underpaid`), wird **keine** Freigabe ausgelöst. Das System verschiebt das Mail im Infomaniak-Postfach nach `Raiffeisen/Fehler`, erfasst den Vorfall in `public.bank_mail_ingest_logs` und sendet einen detaillierten Rapport (`vm_bank_report`) an den konfigurierten Admin-Verteiler (`Info_Mail_Bank_Eingang`), damit der Vermieter den Fall manuell prüfen kann.
+* **Empfänger- und CC-Verteiler:** Sämtliche Vermietungs-Mails (Mietvertrag, Anfrage, Bestätigung, Mahnung, Schlüsselübergabe, Storno) nutzen den zentralen E-Mail-Verteiler `rental_settings.rental_cc_emails` (standardmässig inklusive `sportschuetzen.muhen@gmail.com`), sodass der Verein und das zuständige Team ausnahmslos bei jedem Vorgang eine automatische Kopie erhalten.
+
+### 2.10 Notfall-Ausfallschutz via Cloudflare Worker Proxy & Google Apps Script (Migration 96)
+
+* **Disaster Recovery bei Server-Ausfall (Zero-Lost-Leads):** Fällt der primäre Heimserver (Proxmox CT 117 / Supabase `https://supabase-muhen.danfamily.uk`) vorübergehend aus (Netzwerkausfall, Wartung oder Timeout > 4 Sekunden), schaltet das Buchungsformular auf [`schuetzenhaus_vermietung.html`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/sportschuetzen-website/frontend/schuetzenhaus_vermietung.html) nahtlos und für den Kunden transparent auf den Notfall-Ausfallschutz um.
+* **Striktes Auslöse-Scoping & Datumsprüfung (Fix November 2026):** `getDayAnalysis(dateObj)` akzeptiert sowohl lokale `Date`-Objekte als auch ISO-Datumsstrings (`YYYY-MM-DD`), sodass die lokale Vorab-Verfügbarkeitsprüfung vor dem RPC-Aufruf keinen `TypeError` mehr auslöst. Zudem wird `executeNotfallFallback` über das Flag `isSupabaseReachabilityAttempt` strikt auf echte Netzwerkfehler, Timeouts (> 4 s) oder HTTP-`5xx`-Fehler des `submit_public_rental_request`-Aufrufs begrenzt; fachliche `4xx`-Ablehnungen und lokale Verarbeitungsfehler lösen keinen Notfall-Fallback aus.
+* **Sicherer Cloudflare-Worker-Proxy (`github-dropdown-refresh`):** 
+  * Zur Wahrung der Systemsicherheit und zum Schutz vor Spam/Scraping wird die Google-Apps-Script-URL **niemals öffentlich im Frontend exponiert**, sondern liegt geschützt im Cloudflare Worker [`WORKER/worker_github-dropdown-refresh.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/WORKER/worker_github-dropdown-refresh.js) (`https://github-dropdown-refresh.dan-hunziker73.workers.dev`).
+  * Drei dedizierte Endpunkte steuern den Notfallbetrieb und die Re-Synchronisation:
+    1. `POST ?action=notfallVermietung`: Leitet Buchungs- und Terminanfrage-Payloads serverseitig an das Notfall-GAS weiter.
+    2. `GET ?action=getUnsyncedRentals`: Liest alle noch nicht synchronisierten Notfall-Buchungen für das Vorstandsportal aus.
+    3. `POST ?action=markSyncedRentals`: Quittiert erfolgreich übernommene Buchungen im Google Sheet.
+* **Autonomer Notfall-Ablauf (Google Apps Script `Code.js`):**
+  * **Doppelbuchungs-Schutz & Google Kalender:** Blockiert sofort den Miettag (`Vermietet an XX`) und den Folgetag (`Gesperrt für Reinigung`) im Vereinskalender.
+  * **Nummernkreis:** Vergibt autarke Notfall-Buchungsnummern mit Präfix `N` (z. B. `V-2026-N001` für Mieten, `A-2026-N001` für Vorab-Anfragen), wodurch Kollisionen mit der regulären Supabase-Sequenz (`V-YYYY-####`) ausgeschlossen sind.
+  * **PDF-Mietvertrag & SIX Swiss QR-Rechnung:** Generiert das Dokument via Google Drive Vorlage und platziert den Schweizer QR-Zahlteil nach SIX SPC 0200 1 Standard mit dynamischer Referenz und IBAN.
+  * **E-Mail-Zustellung & Alarmierung:** Versendet das PDF an den Mieter und stellt sofort eine Notfall-Alarm-Mail (`⚠️ NOTFALL-SYSTEM AKTIV`) an den zentralen E-Mail-Verteiler zu.
+* **Struktur des Notfall-Google-Sheets:**
+  * **Arbeitsmappe (Google Drive):** `Schützenstube_Vermietungen_Notfall` (separat und unabhängig von der alten Homepage/Alt-GAS).
+  * **Tabellenblatt 1 (`Notfall_Reservationen`):** Auto-Erstellung mit Spalten A–R:
+    `Zeitstempel` (A), `Status` (B), `Buchungsnummer` (C), `Mietdatum` (D), `Festbeginn` (E), `Anrede` (F), `Vorname` (G), `Nachname` (H), `E-Mail` (I), `Telefon` (J), `Strasse` (K), `PLZ` (L), `Wohnort` (M), `Betrag CHF` (N), `Typ` (O), `Bemerkung` (P), `PDF_Link` (Q), `Supabase_Sync_Status` (R).
+  * **Tabellenblatt 2 (`Einstellungen`):** Key-Value-Tabelle als sekundäres Fallback-Netz für Tarife, Fristen und Bankverbindung.
+* **Wöchentlicher Re-Sync in Supabase (Single Source of Truth):**
+  * Über den Button **«Notfall-Sync»** im Vorstands-Cockpit ([`vorstand/js/vermietung/vermietung-ui.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/vermietung/vermietung-ui.js)) ruft der Vermieter die Funktion `syncNotfallBuchungen()` auf.
+  * Gefundene Notfall-Buchungen werden mit `source = 'google_fallback'` in `public.rental_requests` importiert. `syncNotfallBuchungen()` konvertiert von Google Sheets gelieferte `Date`-/ISO-Zeitstempel (`YYYY-MM-DDTHH:mm:ss.sssZ`) zeitzonensicher in `Europe/Zurich` nach `YYYY-MM-DD`, normalisiert numerische Sheet-Zellen (Telefonnummern inkl. führender Null, PLZ, Festbeginn) in Strings und setzt `deposit_amount_chf = 0`.
+  * Fehlgeschlagene Einzelimporte werden nicht still übersprungen, sondern detailliert via `UIConfirmKit.alert` gemeldet.
+  * Über die RPC `ensure_rental_proforma_invoice` wird atomar die Proforma-Rechnung im `RechnungsCore` (`invoices`) angelegt.
+  * Nach erfolgreichem Import setzt das System den Status im Google Sheet atomar auf `synchronisiert (dd.MM.yyyy HH:mm)`.
+* **Zentraler E-Mail-Verteiler (`rental_settings.rental_cc_emails`):**
+  * Einstellbar im Vorstands-Cockpit unter *Tarife & Einstellungen* (Register 3).
+  * Steuert einheitlich alle E-Mail-Kopien (Vertrag, Anfrage, Bestätigung, Mahnung, Schlüsselübergabe, Storno, Notfall-Alarm) an den Verein (`sportschuetzen.muhen@gmail.com`) und das Wirtschaftsteam.
+  * Die Supabase Edge Function `send-email` filtert die Vereinsadresse im CC niemals heraus, solange sie nicht bereits der direkte Hauptempfänger (`to`) ist.
+  * **Atomarer Batch-Speichervorgang & Trigger (Migration 102):** Speichern erfolgt via `UIButtonKit.withLoading` als ein einziger atomarer Batch-Upsert aller Einstellungen inklusive Fehlerprüfung bei `rental_pricing`. Ein DB-Trigger (`trg_rental_settings_updated_at`) aktualisiert `updated_at` bei jedem Schreibvorgang automatisch. Leere Verteiler-Eingaben werden nicht mehr still mit `club_email` überschrieben.
+
+---
+
+## 3. Datenmodell (Kern-Tabellen)
+
+| Tabelle | Primärschlüssel | Zweck & Invarianten |
+| :--- | :--- | :--- |
+| `public.rental_requests` | `id` (UUID) | Alle Mietbuchungen (Mieter, Adresse, Mietdatum, Personenzahl, Tarif, Rechnungs-Link, Status). |
+| `public.rental_pricing` | `id` (UUID) | Tarifordnung (Standard-Tag, Wochenend-Tarif, Mitglieder-Rabatt, Halbtag). |
+| `public.rental_settings` | `key` (TEXT) | Dynamische Einstellungen (Standard-Mietzeiten, Kautionstarif, Bankverbindung). |
+| `public.rental_status_logs` | `id` (UUID) | Revisionssicherer Audit-Trail aller Statusänderungen. |
+| `public.rental_cancellation_feedbacks` | `id` (UUID) | Stornierungsgründe und Mieter-Feedback. |
+| `public.bank_mail_ingest_logs` | `id` (UUID) | Revisionssicherer Audit-Trail aller eingegangenen Raiffeisen-Mails (Gmail-ID, Betrag, Mietername, Mietdatum, Match-Methode, Verbuchungs-Ergebnis). |
+
+---
+
+## 4. Berechtigungen, RLS & Edge-Function-Schutz (Migration 126)
+
+* **PII-freier Website-Kalender & Buchungs-RPC (Public / `anon`):** Anonyme Webseitenbesucher haben keinen direkten Lese- oder Schreibzugriff (`SELECT`/`INSERT`) mehr auf die PII-Tabellenspalten von `public.rental_requests`. Stattdessen liefert `public.get_public_rental_calendar()` ausschliesslich Kalender-Belegungsdaten ohne Personendaten, und `public.submit_public_rental_request()` übernimmt validierte Buchungen inklusive serverseitigem Doppelbuchungs- und Tarif-Check (`standard_tag`).
+* **Edge-Function-Härtung:** `sync-calendar` (`release` nur mit Benutzer-JWT, anonyme Blockierung nur gegen existierende offene Buchung), `send-email` (anonymer Versand nur für Kontaktformular `Info_Mail_Kontakt_Website` bzw. verifizierte Vermietungsempfänger; Storage-Anhänge für anonyme Website-Aufrufe strikt auf den in `rental_requests.contract_storage_path` zur Buchung hinterlegten Vertrag beschränkt; automatische IMAP-`APPEND`-Ablage gesendeter Mails in `Sent` bei Infomaniak) und `generate-pdf` (ohne Überschreiben des `service_role`-Keys durch den `Authorization`-Header des Aufrufers) schützen vor Missbrauch.
+* **Audit-Log-Integrität via `SECURITY DEFINER`:** Die Triggerfunktion `public.log_rental_status_change()` ist als `SECURITY DEFINER` deklariert und schreibt Statusübergänge einmalig pro Statuswechsel (keine doppelten manuellen Log-Einträge mehr), während `rental_status_logs` selbst durch RLS (`vermietung.view` / `vermietung.manage`) geschützt bleibt.
+* **Storno-Feedback (Public / `anon`):** Mieter dürfen über `storno_feedback.html` Stornorückmeldungen ohne vorherigen Login einreichen (`rental_cancellation_feedbacks` INSERT-Policy für `anon`).
+* **Verwalten («View & Manage» Modell):** Einsicht (`vermietung.view`) und Bearbeitung/Freigabe (`vermietung.manage`) sind für autorisierte Rollen (`vermieter`, `vorstand`, `admin`) reserviert.
+
+---
+
+## 5. E-Mail-Layout, MSO-Kompatibilität & Vorlagen (Oktober/November 2026)
+
+* **Einheitliches Outlook-/MSO-Tabellen-Layout (Variante A):** Sämtliche 11 Vermietungs-Mails (`vm_*`) nutzen eine gemeinsame linksbündige Wrapper-Struktur auf weissem Hintergrund (`<!DOCTYPE html>`, `<body bgcolor="#ffffff">`, `<!--[if mso]>`-800px-Fixtabelle linksbündig, `width:100%; max-width:800px` für automatische iPhone-/Mobil-Skalierung, `#ffffff`-Karte, Hex-Farben statt `rgba()`, einheitliche Logo-URL aus `rental_settings.logo_url`, kompakter statischer Banner-Titel statt langer umgebrochener Betreffs, standardisierter Vereins-Footer). Sowohl die Edge Function (`_shared/rental-mail.ts`), das Vorstands-Cockpit (`vermietung-manager.js`), die Vorlagen-Vorschau (`templates-ui.js`) als auch die öffentlichen Formulare (`rental-mail-layout.js`) verwenden identisches Rendering.
+* **Automatische Body-Normalisierung für Word-Engine:** Beim Versand und in der Vorschau werden alle `<p>`, `<ul>`/`<ol>`, `.vm-info-table`-Tabellen (kompakte Zellen-Zeilenhöhe & Outlook-Abstands-Wrapper statt ignoriertem `margin`), `.club-banner-callout`-Boxen (Konvertierung in `<table>` mit echtem 4px-Farb-`<td>`, weil Outlook `div`-Border/Padding kollabieren lässt) und `.club-cta-container`-Buttons in Outlook-sicheres Tabellen- und Inline-CSS überführt. So können Vorlagen weiterhin frei im `ClubWysiwyg`-Editor bearbeitet werden, ohne im Outlook-Desktop in Times New Roman oder zerfallene Callouts zu fallen.
+* **RFC 2047 Display-Name Encoding:** Der Absender-Header wird standardkonform kodiert (`=?UTF-8?B?...?=`), womit Sonderzeichen in `Sportschützen Muhen` in Microsoft Outlook ohne Zeichensatzfehler (`Ã¼`) dargestellt werden.
+* **Signatur-Hierarchie:** In allen Vorlagen steht der Vereinsname **«Sportschützen Muhen»** in der Signatur konsistent oben, direkt gefolgt von Name und Kontaktdaten des Vermieters (`{vermieter_name}`) mit kompakten Zeilenumbrüchen (`<br>`).
+
+---
+
+## 6. UI-Harmonisierung & Toolkits (Oktober 2026)
+
+* **Asynchroner Dialog-Standard (`UIConfirmKit`):** Alle Status-Mutationen, Mahnungs- und Vertragsworkflows, Notfall-Sync-Abgleiche und Stornierungen im Vermietungscockpit nutzen `UIConfirmKit.confirm` und `UIConfirmKit.alert` mit strikter Du-Form («Möchtest du wirklich eine erneute Mahnung senden?»). Stornierungen sind als `danger`, Mehrfachversand als `warning` und Bestätigungen als `primary` semantisch kodiert.
+* **Double-Submit-Schutz & Formatierung (`UIButtonKit`, `UIFormatKit`):** Die Schnellerfassung neuer Mieten (`#btn-save-new-reservation`), Notfall-Importe und Einstellungsdialoge sind gegen Mehrfachklicks via `UIButtonKit.withLoading` abgesichert. Mietbeträge und Jahreserträge werden zentral über `UIFormatKit.formatCurrency` formatiert.
+* **Excel-Export (`UIExportKit`):** Im Tabellen-Toolbar von `#vermietung-table` steht ein direkter Excel-Export (`UIExportKit.exportTableToExcel`) zur Verfügung.
+
+

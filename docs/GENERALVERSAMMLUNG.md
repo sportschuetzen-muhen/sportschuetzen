@@ -1,0 +1,255 @@
+# Fachdokumentation: Generalversammlung (GV-Cockpit, Traktanden, Dossier-Compiler & Präsenz)
+
+> **Status:** PRODUKTIV / ENTKOPPELT  
+> **Stand:** Oktober 2026  
+> **Führendes System:** Supabase PostgreSQL (Sportschützen Muhen)  
+> **Komponenten:** `public.gv_instances`, `public.gv_traktanden`, `public.campaign_attachments`, `public.communication_campaigns`, `public.poll_events`, `public.poll_responses`, `public.gv_praesenz`, `public.system_mail_configs`  
+> **Edge Functions:** `generate-pdf` (`compile-gv-dossier`, `generate-gv-invitation`, `generate-gv-praesenzliste`), `send-email`  
+> **Frontend:** Vorstandsportal (`vorstand/js/gv-dossier.js`, `vorstand/js/pdf-engine.js`, `vorstand/js/mail-engine.js`) & Mobile PWA (`index.html`, `app.js`)  
+> **Berechtigungen:** `gv.view` (Einsehen) / `gv.manage` (Verwalten)
+
+---
+
+## 1. Übersicht & Systemgrenzen
+
+Die **Generalversammlung (GV)** ist das oberste statutarisches Organ der Sportschützen Muhen. Das Modul **Generalversammlung** vereint die gesamte organisatorische und administrative Vorbereitung, Durchführung und Nachbereitung des Anlasses in einem eigenständigen Vorstands-Cockpit.
+
+### 1.1 Kernfunktionen des Moduls
+1. **Traktanden-Management mit Hierarchie & Wahlen:** Strukturierte Erfassung von Haupt- und Untertraktanden (`parent_id`), Drag & Drop Sortierung (SortableJS), Vorjahres-Kopierfunktion und dynamische Wahljahr-Steuerung.
+2. **Dossier-Compiler & Beilagen-Assembler:** Automatisches Zusammenfügen von dynamisch generierter Einladung & Jahresprogramm mit extern hochgeladenen PDF-Vorstandsberichten (Präsident, Jungschützen, Protokoll Vorjahr, Revisoren) zu einem druckfertigen Master-Heft inklusive einheitlichem «Corporate Stempel» (`pdf-lib`).
+3. **Kampagnen-Steuerung & Massenversand:** Idempotenter Versand personalisierter Einladungs-Mails via `send-email` Edge Function mit schlankem PDF-Anhang (< 1 MB) und geschütztem Download-Link für das Gesamtdossier (Bounce-Schutz).
+4. **Live-RSVP & Menübestellung für den Wirt:** Echtzeit-Synchronisation der An-/Abmeldungen mit `public.poll_responses`, automatische Menüzählung (Fleisch vs. Vegi, Allergien) und 1-Klick-Export für das Gastroteam der Schützenstube.
+5. **Vor-Ort-Präsenzkontrolle & Stimmquorum:** 1-Klick-Toggle am GV-Abend in `public.gv_praesenz`, automatische Berechnung des absoluten Mehrs (Stimmquorum) und automatischer Versand der druckfertigen DIN A4 Präsenzliste an den Aktuar.
+
+### 1.2 Systemgrenzen & Leitprinzipien
+* **Single Source of Truth:** Alle Stammdaten, Traktanden, Beschlüsse, Beilagen und Teilnehmerrückmeldungen liegen direkt in Supabase PostgreSQL.
+* **Keine stillen Fallbacks:** Vollständige Entkopplung von Google Drive-Verlinkungen, Google Sheets oder Google Apps Script (GAS).
+* **Eigenständiges Fachmodul:** Vollständige Entflechtung aus dem Modul *«Anlässe & Umfragen»* (wo GV früher als Tab 4 geführt wurde) sowie aus der *«Dokumenten-Vorlagen-Zentrale»*. Die Generalversammlung besitzt eine eigene Sidebar-Navigation und eine eigene Kachel im Dashboard.
+
+---
+
+## 2. Datenbank-Architektur & Single Source of Truth
+
+Das Modul stützt sich auf folgende relationale Tabellen in Supabase PostgreSQL:
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ public.gv_instances (Stammdaten & Fristen)                                             │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ id: VARCHAR(50) PRIMARY KEY (z.B. 'gv_2026')                                           │
+│ year: INTEGER NOT NULL UNIQUE (z.B. 2026)                                              │
+│ number: INTEGER NOT NULL DEFAULT 100 (z.B. 100 für die 100. GV)                        │
+│ datum: DATE (Durchführungsdatum)                                                       │
+│ zeit: VARCHAR(10) DEFAULT '19:30'                                                      │
+│ ort: VARCHAR(150) DEFAULT 'Schützenhaus Muhen'                                         │
+│ datum_vorjahr: DATE                                                                    │
+│ abmelde_datum: DATE (Frist für Rückmeldungen)                                          │
+│ mahn_datum: DATE (Mahn- / Erinnerungsfrist)                                            │
+│ is_election_year: BOOLEAN NOT NULL DEFAULT false (Wahljahr-Flag)                       │
+│ linked_event_id: VARCHAR(100) (Verknüpfung zu public.poll_events.id)                   │
+│ praesident_wort: TEXT (Persönliches Grusswort des Präsidenten)                         │
+│ budget_text: TEXT (Kommentar zum Jahresbudget)                                         │
+│ custom_placeholders: JSONB NOT NULL DEFAULT '{}'::jsonb                                │
+│ created_at / updated_at: TIMESTAMPTZ                                                   │
+└──────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                       │
+         ┌─────────────────────────────┼─────────────────────────────┐
+         │ 1:n                         │ 1:n                         │ 1:n
+         ▼                             ▼                             ▼
+┌──────────────────────────────┐┌──────────────────────────────┐┌──────────────────────────────┐
+│ public.gv_traktanden         ││ public.gv_praesenz           ││ public.campaign_attachments  │
+├──────────────────────────────┤├──────────────────────────────┤├──────────────────────────────┤
+│ id: VARCHAR(50) PRIMARY KEY  ││ id: VARCHAR(100) PRIMARY KEY ││ id: UUID PRIMARY KEY         │
+│ gv_id: VARCHAR(50) FK        ││ gv_id: VARCHAR(50) FK        ││ campaign_id: UUID FK         │
+│ parent_id: VARCHAR(50) FK    ││ person_number: VARCHAR(50)   ││ title: VARCHAR(255)          │
+│ sort_order: INTEGER          ││ name: VARCHAR(150)           ││ attachment_type: VARCHAR(50) │
+│ nummer: VARCHAR(10)          ││ lizenz: VARCHAR(20)          ││ sort_order: INTEGER          │
+│ titel: VARCHAR(255) NOT NULL ││ mitglied_status: VARCHAR(50) ││ storage_path: TEXT           │
+│ beschreibung: TEXT           ││ stimmberechtigt: BOOLEAN     ││ file_url: TEXT               │
+│ referent: VARCHAR(100)       ││ anmeldung_status: VARCHAR(20)││ page_count: INTEGER          │
+│ beschluss: TEXT              ││ anwesend: BOOLEAN            ││ created_at: TIMESTAMPTZ      │
+│ ja / nein / enthaltungen: INT││ essen: INTEGER (Fleisch)     │└──────────────────────────────┘
+│ status: VARCHAR(50)          ││ vegi: INTEGER (Vegetarisch)  │
+│ created_at / updated_at      ││ grund: TEXT                  │
+└──────────────────────────────┘│ notizen: TEXT                │
+                                │ created_at / updated_at      │
+                                └──────────────────────────────┘
+```
+
+### 2.1 Traktanden-Hierarchie (`parent_id`), Pool (`is_in_pool`) & automatische Nummerierung
+* **Hierarchie:** Haupttraktanden (`parent_id IS NULL`) und Untertraktanden (`parent_id = '<parent_id>'`). Kaskadierendes Löschen bei Entfernen von Hauptpunkten.
+* **Traktanden-Pool (`is_in_pool = true`):** Vorratskammer für wiederverwendbare Anträge, Muster-Vorlagen und Wahltraktanden. Punkte können per Drag & Drop oder Klick («Zur GV übernehmen» / «In Pool ablegen») nahtlos zwischen aktiver GV und Pool transferiert werden.
+* **Dynamische fortlaufende Nummerierung:** Nummern werden in UI und PDF nicht mehr manuell gepflegt, sondern durch die Engine (`gvDossierSyncActiveNumbering` / Edge Function `generate-pdf`) positionsbasiert fortlaufend (1, 2, 3... und 1.1, 1.2...) synchronisiert.
+* **Wahljahr-Schalter:** Schaltet das Wahljahr in `gv_instances` um. Beim Aktivieren werden Wahltraktanden aus dem Pool nach oben geholt (oder Standardwahlen generiert); beim Deaktivieren werden sie zurück in den Pool verschoben, ohne gelöscht zu werden.
+
+### 2.2 Storage-Infrastruktur
+* **Bucket `campaign-assets`:** Dient als Upload-Ziel für Berichte (PDFs der Vorstandsmitglieder) sowie als Zwischenspeicher für assembliertes Gesamt-Dossier (`gv-dossiers/{year}/GV_Dossier_{year}_Gesamt.pdf`).
+* **Bucket `operatives-storage`:** Revisionssichere Langzeitarchivierung (`gv/{year}/...`).
+
+---
+
+## 3. Berechtigungsmodell (RBAC & RLS Kontrakt)
+
+Gemäss **Projekt-Richtlinie 7** (`AGENTS.md`) gilt für das Modul das symmetrische 2-Stufen-Modell:
+
+### 3.1 Berechtigungsschlüssel
+* `gv.view` (👁️ Einsehen - Read-Only):
+  * Freischaltung der Kachel im Dashboard und des Menüpunkts in der linken Navigation.
+  * Vollständige Einsicht in Traktanden, Stammdaten, Beilagen, E-Mail-Vorschau, RSVPs und Menüauswertungen.
+* `gv.manage` (✏️ Verwalten - Schreiben):
+  * Bearbeiten von GV-Stammdaten, Traktanden (inkl. Drag & Drop und Wahljahr-Trigger).
+  * Upload und Löschen von Beilagen, Starten der Dossier-Kompilierung.
+  * Starten des Massenversands und Senden von Test-Mails.
+  * Erfassen von Vor-Ort-Präsenzen und manuellen RSVP-Mutationen.
+  * Auslösen des E-Mail-Versands an Aktuar und Vorstand.
+* **System-Rolle `admin`:** Besitzt als Superuser automatisch Vollzugriff (`*`).
+
+### 3.2 Row Level Security (RLS)
+* `public.gv_instances`, `public.gv_traktanden`, `public.gv_praesenz`:
+  * `SELECT`: Berechtigung `gv.view` oder `gv.manage`.
+  * `INSERT / UPDATE / DELETE`: Berechtigung `gv.manage`.
+* `public.poll_responses`:
+  * Mitglieder dürfen über die PWA ihre eigene Zeile mutieren (`lizenz = current_user_license`).
+  * Vorstandsmitglieder mit `gv.manage` dürfen im GV-Cockpit manuelle Nachmeldungen vornehmen.
+
+---
+
+## 4. Die 5 Kernbereiche des GV-Cockpits (Left Panel)
+
+Das UI des Moduls (`vorstand/js/gv-dossier.js`) ist als übersichtlicher 2-Spalten-Workspace konzipiert:
+
+### Reiter 1: Traktanden-Manager
+* **Hierarchische Gliederung:** Hauptpunkte mit fortlaufender Nummerierung und optisch eingerückte Unterpunkte.
+* **SortableJS Drag & Drop:** Intuitive Neuanordnung von Haupttraktanden (`.gv-main-drag-handle`) und Untertraktanden (`.gv-sub-drag-handle`) mit sofortiger Persistierung der `sort_order` in Supabase.
+* **Wahljahr-Automation (`gvDossierToggleWahljahr`):** Aktiviert oder deaktiviert mit 1 Klick das Traktandum «Wahlen» samt den 4 statutarischen Unterpunkten (Präsident, Vorstand, Revisoren, Fähnrich).
+* **Vorjahres-Übernahme (`gvDossierCopyPreviousYearTraktanden`):** Kopiert auf Knopfdruck alle Traktanden des Vorjahres inklusive Unterstrukturen, sodass keine manuelle Neuerfassung nötig ist.
+
+### Reiter 2: GV-Stammdaten & Fristen
+* Steuerung von GV-Nummer, Datum, Uhrzeit, Durchführungsort, Abmeldefrist und Mahndatum.
+* Verknüpfung zum Umfrage-Event in `public.poll_events`.
+* **Globaler SaveButtonKit Dirty Tracker:** Änderungen werden überwacht. Der Speichern-Button zeigt die Anzahl ungespeicherter Mutationen (`Speichern (N)`). Entwürfe bleiben beim Wechsel zwischen den Reitern verlustfrei erhalten.
+
+### Reiter 3: Dossier-Beilagen & Assembler
+* **Dateiuploads nach `campaign-assets`:** Upload von Vorstandsberichten, Protokollen und Kassenberichten als PDF.
+* **SortableJS Beilagen-Sortierung:** Festlegung der genauen Reihenfolge der Dokumente im fertigen Heft.
+* **Button «Gesamtes GV-Dossier jetzt kompilieren & stempeln»:**
+  * Ruft die Edge Function `generate-pdf` mit Action `compile-gv-dossier` auf.
+  * Erzeugt dynamisch Seite 1 (Einladung & Traktanden mit harmonisierten Untertraktanden) sowie Folgeseiten für **Jahresprogramm** (`kategorie = 'Jahresprogramm'`) und **Schiesstermine** (`kategorie = 'Schiesstermine'`) aus `public.termine` (`anlasstitel`, `startzeit`, `endzeit`, `ort`).
+  * Textinhalte ausserhalb der Traktanden (Titel, Intro, Antragsfristen, Outro) stammen aus `public.document_templates` (`gv_normal` / `gv_wahljahr`) und können direkt im GV-Cockpit («Stammdaten & Fristen») oder unter «Dokumenten-Vorlagen» bearbeitet werden.
+  * Hängt alle hochgeladenen PDF-Beilagen nahtlos an (`copyPages`).
+  * Prägt den einheitlichen **Corporate Stempel** (Vereinskopf oben, fortlaufende Seitennummerierung `Seite X von Y` unten) über das gesamte Dokument.
+
+### Reiter 4: E-Mail-Text & Kampagne
+* Konfiguration von E-Mail-Betreff und Begleittext über den globalen Vereins-Editor `ClubWysiwyg` mit formatierungsreicher Toolbar, Alert-Bannern, Call-to-Actions und dynamischen Platzhaltern (`{{mitglied.vorname}}`, `{{mitglied.nachname}}`, `{{event.datum_formatiert}}`, `{{dossier.download_url}}`).
+* **Sicherheits-Features:**
+  * Button «Test-Mail an mich senden»: Sendet ein reales Test-PDF direkt an die Adresse des eingeloggten Benutzers.
+  * Massenversand mit Fortschrittsanzeige und Idempotenz (kein versehentlicher Doppelversand).
+  * **Bounce-Schutz:** Versand eines schlanken Einladungs-PDFs als Mailanhang (< 1 MB) und Einbettung eines geschützten Download-Links für das grosse Gesamt-Dossier.
+
+### Reiter 5: Anmeldungen & Vor-Ort-Präsenzkontrolle
+* **Live-Status:** Übersicht über Zusagen, Absagen, Offene Rückmeldungen sowie Menüwünsche (Fleisch vs. Vegi).
+* **1-Klick-Präsenzkontrolle (`gvDossierToggleAnwesend`):** Schnelle Erfassung der Anwesenheit am GV-Abend mit automatischer Ermittlung der stimmberechtigten Mitglieder und Berechnung des **absoluten Mehrs** (Stimmquorum).
+* **Manuelle Nachmeldungen:** Erfassung von Gästen oder telefonischen Nachmeldungen direkt über das Modal `gvDossierOpenRSVPModal`.
+
+---
+
+## 5. Live-Monitor, Vorschau & Gastronomie (Rechtes Panel)
+
+Das rechte Panel synchronisiert sich live mit den Eingaben im linken Bereich:
+
+### Ansicht 1: `[ 📄 PDF-Vorschau ]`
+* Wahlweise Anzeige des dynamischen Einladungs-PDFs oder des kompilierten Gesamt-Dossiers im interaktiven Vorschau-Frame.
+
+### Ansicht 2: `[ ✉️ E-Mail-Vorschau ]`
+* Echtzeit-Vorschau des E-Mail-Inhalts mit realen Mitgliedsdaten aus einem Empfänger-Dropdown.
+
+### Ansicht 3: `[ 🍽️ Gastronomie & Wirt ]`
+* Spezifisch für die Vorbereitung der Bewirtung:
+  * Gesamtzahl der Essen.
+  * Aufteilung in Normalmenü (Fleisch) und Vegetarisch.
+  * Liste der angemeldeten Mitglieder mit individuellen Bemerkungen (Allergien, Unverträglichkeiten).
+  * **1-Klick-Aktion «In Zwischenablage kopieren»:** Formatiert die Menü-Bestellung sofort als Textnachricht für WhatsApp oder E-Mail an den Schützenstuben-Wirt.
+
+---
+
+## 6. Automatisierte Schnittstellen & System-Mails
+
+### 6.1 Automatische Erkennung des Umfrage-Events
+Beim Laden oder Neuanlegen einer GV sucht das System in `public.poll_events` nach einem Event, dessen Titel das Schlüsselwort **«Generalversammlung»** (Case-Insensitive) und das aktuelle Jahreskürzel enthält (z. B. `100. Generalversammlung 2026`). Wird ein Treffer gefunden, wird `linked_event_id` automatisch gesetzt.
+
+### 6.2 Druckfertige DIN A4 Präsenzliste & Mail an Aktuar
+* **Edge Function `generate-gv-praesenzliste`:** Generiert ein druckfertiges DIN A4 Dokument mit bündig am oberen Rand ausgerichtetem Vereinswappen, Quorum-Box, Stimmberechtigten-Tabelle (`Nr.`, `Nachname`, `Vorname`, `Unterschrift`) und Leerzeilen für spontane Nachmeldungen.
+* **Teilnehmerkreis:** Es werden ausschliesslich tatsächlich angemeldete Mitglieder (`status = 'ja'`) aufgeführt, ergänzt durch 15 nummerierte Leerzeilen für spontane Gäste und Nachmeldungen am Versammlungsabend.
+* **Automatischer Verteiler:** Versand als PDF-Anhang an den Aktuar über den Verteilerschlüssel `Info_Mail_Aktuar` in `public.system_mail_configs`.
+
+### 6.3 Zwischenstand-Mail an Vorstand
+* Auf Knopfdruck generierter Bericht über den aktuellen Anmeldestand (Zusagen/Absagen-Listen, Gastronomiesummen) an alle Vorstandsmitglieder via Verteilerschlüssel `Info_Mail_Vorstand`.
+
+---
+
+## 7. Entflechtung & Klare Abgrenzung zu «Dokumenten-Vorlagen»
+
+Historisch war das GV-Cockpit teilweise als Tab 1 in `vorstand/js/vorlagen/templates-ui.js` eingeklinkt und in `DOCUMENT_AND_MAIL_ENGINE_SPEC.md` integriert. Zur Vermeidung von Redundanzen und Architektur-Konflikten wurde die Trennung im Oktober 2026 radikal und vollständig vollzogen:
+* **Keine GV-Elemente mehr im Dokumente-Modul:** Sämtliche GV-Vorlagen (`gv_normal`, `gv_wahljahr`), Kategorien, Filter und Modale wurden restlos aus `vorstand/js/vorlagen/templates-ui.js` und dem Vorlagen-Pool entfernt.
+* **Autonomer PDF-Editor in der GV:** Die Generalversammlung besitzt in Tab 3 («📄 Einladung (PDF)») einen komplett eigenständigen Text- und Vorlageneditor direkt im Modul (`gv_instances`).
+
+| Bereich | Modul Generalversammlung (`gv-dossier`) | Modul Dokumenten-Vorlagen (`dokument-vorlagen`) |
+| :--- | :--- | :--- |
+| **Zweck** | Statutarische Durchführung, Traktanden, Beilagen-Assembler, RSVPs & Präsenz | Zentraler Vorlagen- & Klauselpool für Rechnungen, Verträge & Briefe |
+| **Datenbasis** | `gv_instances`, `gv_traktanden`, `campaign_attachments`, `gv_praesenz` | `document_templates`, `document_template_clauses` |
+| **Navigation** | Eigene Navigations-Kachel `🏛️ Generalversammlung` & eigener Sidebar-Link | Kachel `📄 Dokumenten-Vorlagen` & eigener Sidebar-Link |
+| **Berechtigung** | `gv.view` / `gv.manage` | `dokumente.view` / `dokumente.manage` |
+| **Fokus** | Operatives Event-, Traktanden- und Dossier-Management | Textvorlagen, Klauseln und Standardtexte für das Gesamtsystem |
+
+---
+
+## 8. PDF-Rendering, E-Mail-Harmonisierung & RSVP-Matching (Oktober 2026)
+* **Vollvektorielle PDF-Generierung:** Das Rendering der Einladung (`generate-gv-invitation`) greift primär direkt auf `public.gv_traktanden` des aktuellen Durchführungsjahres zu. Die Variablenauflösung (`{gv_datum}`, `{gv_zeit}`, `{gv_ort}`) ist auf Funktionsebene entkoppelt und WinAnsi-sicher (inklusive `generate-gv-praesenzliste` mit `Anw.` statt Unicode-Sonderzeichen).
+* **ClubWysiwyg E-Mail-Editor:** Der E-Mail-Versand nutzt das zentrale Vereinsmodell `ClubWysiwyg` mit dynamischen Platzhalter-Pills (`{{mitglied.vorname}}`, `{{mitglied.nachname}}`, `{{event.datum_formatiert}}`, `{{dossier.download_url}}`), sauberem HTML-Sanitizing (`getCleanHtml()`) und WYSIWYG-Livevorschau im rechten Monitor.
+* **SSV-Adress- und Lizenznummer-Matching:** `loadGVParticipantsData` lädt zusätzlich `address_number` aus `public.members`. Rückmeldungen aus `public.poll_responses` werden redundant über Personennummer, 6-stellige SSV-Adressnummer und führende Nullen abgeglichen. Spontane Nachmeldungen oder Statusänderungen im RSVP-Modal synchronisieren bidirektional mit `poll_responses` und `gv_praesenz`.
+
+---
+
+## 9. Layout-Harmonisierung nach offiziellen Printscreens (Oktober 2026)
+* **Exaktes Printscreen-Layout (Broschüre Seiten 19–21):**
+  * **Seite 19 (Jahresprogramm):** Wappen linksbündig (26x26mm) mit Titel `Sportschützen Muhen` (24pt) auf gleicher Höhe. Sektionstitel `Jahresprogramm` (17pt). Einträge linksbündig mit Anlass und Ort (`in Muhen`), rechtsbündig Spaltentitel `Zeit` (10pt) und Zeitangaben im Format `HH:mm bis HH:mm Uhr` (bzw. `HH:mm Uhr` für Einzeltrainings und `Datum folgt später` für provisorische Einträge wie Arbeitstag/Endschiessen).
+  * **Seite 20 (Schiesstermine):** Wappen & Vereinstitel, Sektionstitel `Schiesstermine`. Spaltentitel `Schiesstag` rechtsbündig. Mehrteilige Anlässe (SSV GM, AGSV GM, Freundschaftsschiessen, Finals SSV/AGSV, Jugendtag) mit zweizeiligem Zeilenumbruch bei 69mm für exakten Wortumbruch (`Freundschaftsschiessen Muhen - / Gretzenbach in Muhen`, `Final SSV ... Elite in / Thun`).
+  * **Seite 21 (Mannschaftsmeisterschaft):** Automatischer Seitenumbruch für die Mannschaftsmeisterschaft (7 Runden). Header wiederholt Wappen und `Sportschützen Muhen` ohne Zwischentitel, Runden `1. Runde` bis `7. Runde` linksbündig, Sonntags-Termine rechtsbündig unter `Schiesstag`.
+* **Dynamische Wahlen statt Template-Duplikate:** Wahlen werden nicht mehr über separate Vorlagensätze (`gv_wahljahr`) gesteuert, sondern durch feldbasierte Attribute:
+  * `is_election: true` und `candidate_names` pro Traktandum in `public.gv_traktanden`.
+  * `amtsdauer_text` (z. B. `Amtsdauer 2026–2028`) in `public.gv_instances`.
+
+---
+
+## 10. Dossier-Assembler, Corporate Stempel & PDF-Typografie (Update Oktober 2026)
+
+* **Echtzeit-Synchronisation der Traktandenliste:** Die PDF-Generierung (`generate-gv-invitation` & `compile-gv-dossier`) bezieht Traktanden direkt aus dem Live-Zustand des Frontend-Editors bzw. aus `public.gv_traktanden`. Veraltete statische Vorlagenklauseln werden nicht mehr verwendet.
+* **Typografie & Formatierungsunterstützung im PDF:**
+  * Eingabefelder im PDF-Bereich (Einleitung, Antragsfristen, Grussformel etc.) unterstützen Inline-Formatierungen wie `**fett**`, `<b>...</b>` und `<strong>...</strong>`. Die Edge Function parst diese Tokens und zeichnet formatierte Textsegmente mit `fontBold` bzw. `fontRegular`.
+  * Dynamische Platzhalter wie `{vorname}`, `{nachname}`, `{anrede}` sowie `{praesident_name}` stehen jetzt auch im PDF-Bereich vollständig zur Verfügung. Bei Auswahl eines Mitglieds im Vorschau-Dropdown aktualisiert sich die PDF-Vorschau unmittelbar.
+* **Erweiterter Dossier-Assembler & sortierbares Jahresprogramm:**
+  * Im Beilagen-Tab verbleibt ausschliesslich Seite 1 («Einladung & Traktandenliste») fix auf Position 1.
+  * Das Jahresprogramm (`system_jahresprogramm`) ist vollwertig in die Drag-and-Drop-Sortierliste integriert und kann beliebig nach unten verschoben werden (`custom_settings.attachment_order`).
+  * Schiesstermine und Mannschaftsmeisterschaft werden bei ausreichendem Platz kompakt auf derselben Seite gedruckt; ein Seitenumbruch erfolgt nur, wenn der vertikale Platz nicht ausreicht.
+* **Einheitlicher Corporate Stempel:**
+  * Alle hochgeladenen Dokumente erhalten beim Kompilieren den einheitlichen Vereins-Kopfbalken mit Wappen, `SPORTSCHÜTZEN MUHEN` in Vereinsblau (`rgb(0.12, 0.23, 0.54)`), Subtitel und Trennlinie.
+  * Über das gesamte Dossier hinweg wird eine globale, zentrierte Seitennummerierung (`Seite X von Y`) mit Trennlinie auf jeder Einzelseite eingeprägt.
+* **Wahljahr-Schalter im Traktanden-Header:** Der Toggle für das Wahljahr befindet sich direkt in der Toolbar des Traktanden-Reiters und erzeugt/entfernt die 4 Wahl-Untertraktanden unmittelbar in der Datenbank. Doppelte Unterzeichner- und Präsidentenfelder im PDF-Tab wurden bereinigt.
+
+---
+
+## 11. Automatische Ableitung von Jahreszahlen & Datumsbezügen in Traktanden (Update Oktober 2026)
+
+* **Dynamische Platzhalter:** In Traktandentiteln und -beschreibungen werden Datums- und Jahresbezüge nicht mehr statisch hardcodiert, sondern dynamisch und kontextsensitiv aufgelöst:
+  * `{{datum_vorjahr}}` / `{datum_vorjahr}`: Vollständiges formatiertes Schweizer Datum des Vorjahres (z. B. `19. März 2025` statt unformatiertem ISO-String `2025-03-19`).
+  * `{{jahr_vorjahr}}` / `{jahr_vorjahr}` / `{{rechnungsjahr}}`: Rechnungsjahr, abgeleitet direkt aus `datum_vorjahr` bzw. `year - 1` (z. B. für `Jahresrechnung {{jahr_vorjahr}} und Revisorenbericht`).
+  * `{{jahr}}` / `{jahr}` / `{{gv_jahr}}`: Aktuelles GV-Durchführungsjahr (z. B. für `Budget {{jahr}} und Festsetzung der Jahresbeiträge` sowie `Jahresprogramm {{jahr}}`).
+  * `{{gv_nummer_vorjahr}}`: Für dynamische Protokolltitel (z. B. `Protokoll der {{gv_nummer_vorjahr}}. Generalversammlung`).
+* **Live-Vorschau & UI-Unterstützung:**
+  * Im Traktanden-Manager (Tab 1), im Traktanden-Pool sowie in den Modals werden Platzhalter live und sauber formatiert dargestellt (`gvDossierResolveTraktandumText`).
+  * Das Modal zum Hinzufügen/Bearbeiten von Traktanden bietet 1-Klick-Pills zum schnellen Einfügen der Variablen sowie eine Live-Vorschau (`#trModalPreview`).
+  * Die Standard-Vorgabe (`gvDossierSeedDefaultTraktanden`) hinterlegt die Standardpunkte automatisch mit diesen Platzhaltern.
+  * Bei der Vorjahresübernahme (`gvDossierCopyPreviousYearTraktanden`) bleiben Platzhalter erhalten oder feste Vorjahreszahlen werden nahtlos in die dynamischen Variablen überführt.
+* **Synchronisation mit der PDF-Engine:** Die Edge Function `generate-pdf` (`replacePlaceholders`) löst diese Variablen für Titel und Beschreibung vollvektoriell, mit echtem Schweizer Monatsnamen und WinAnsi-sicher bei der Generierung der Einladung und beim Dossier-Assembler auf.
+
+

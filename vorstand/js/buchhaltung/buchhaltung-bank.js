@@ -1,0 +1,5744 @@
+// vorstand/js/buchhaltung/buchhaltung-bank.js
+// =====================================================================
+// MODUL: BUCHHALTUNG - BANKABGLEICH & AUTOMATISCHE BUCHUNGSSÄTZE (CAMT.053)
+// =====================================================================
+
+window._bhBankTransactions = window._bhBankTransactions || [];
+window._bhBankMatchResults = window._bhBankMatchResults || [];
+window._bhBankActiveFilter = window._bhBankActiveFilter || 'offen';
+
+// Synchroner / Asynchroner Abruf der Bank-Regeln (Server-Sync + LocalStorage Fallback)
+window.getBhBankRules = function() {
+  try {
+    let rules = [];
+    if (window._bhBankServerRules && Array.isArray(window._bhBankServerRules)) {
+      rules = window._bhBankServerRules;
+    } else {
+      const stored = localStorage.getItem('bh_bank_rules');
+      rules = stored ? JSON.parse(stored) : [];
+    }
+
+    // Saubere Typisierung und Absicherung aller Felder
+    return rules.map(r => {
+      let updated = {
+        ...r,
+        label: String(r.label || ''),
+        pattern_party: String(r.pattern_party !== undefined && r.pattern_party !== null ? r.pattern_party : ''),
+        pattern_text: String(r.pattern_text !== undefined && r.pattern_text !== null ? r.pattern_text : ''),
+        pattern: String(r.pattern !== undefined && r.pattern !== null ? r.pattern : ''),
+        prefix: String(r.prefix || r.label || ''),
+        soll: String(r.soll || '').split('|')[0].trim(),
+        haben: String(r.haben || '').split('|')[0].trim(),
+        scope: String(r.scope || 'all'),
+        amount_mode: String(r.amount_mode || 'any'),
+        amount_min: (r.amount_min !== undefined && r.amount_min !== null && r.amount_min !== '') ? Number(r.amount_min) : '',
+        amount_max: (r.amount_max !== undefined && r.amount_max !== null && r.amount_max !== '') ? Number(r.amount_max) : ''
+      };
+      // Fallback/Migration: Falls neue getrennte Felder noch fehlen, aber altes pattern existiert
+      if (!updated.pattern_party && !updated.pattern_text && updated.pattern) {
+        if (updated.scope === 'party') {
+          updated.pattern_party = updated.pattern;
+        } else if (updated.scope === 'text') {
+          updated.pattern_text = updated.pattern;
+        } else {
+          updated.pattern_party = updated.pattern;
+        }
+      }
+      return updated;
+    });
+  } catch (e) {
+    return [];
+  }
+};
+
+window.saveBhBankRules = async function(rules) {
+  if (window.bhCanWrite && !window.bhCanWrite()) {
+    throw new Error('Keine Schreibberechtigung für Bankregeln.');
+  }
+
+  window._bhBankServerRules = rules;
+  try {
+    localStorage.setItem('bh_bank_rules', JSON.stringify(rules));
+  } catch (e) {
+    console.error('Fehler beim lokalen Speichern der Bank-Regeln:', e);
+  }
+
+  // 1. Supabase Persistence
+  const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
+  if (!sb) {
+    throw new Error('Keine Datenbankverbindung verfügbar.');
+  }
+
+  const isUuid = id => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  const ruleRows = rules.map((r, i) => {
+    const row = {
+      label: String(r.label || ''),
+      pattern_party: String(r.pattern_party !== undefined && r.pattern_party !== null ? r.pattern_party : ''),
+      pattern_text: String(r.pattern_text !== undefined && r.pattern_text !== null ? r.pattern_text : ''),
+      pattern: String(r.pattern !== undefined && r.pattern !== null ? r.pattern : ''),
+      prefix: String(r.prefix || r.label || ''),
+      soll: String(r.soll || '').split('|')[0].trim(),
+      haben: String(r.haben || '').split('|')[0].trim(),
+      scope: String(r.scope || 'all'),
+      amount_mode: String(r.amount_mode || 'any'),
+      amount_min: (r.amount_min !== undefined && r.amount_min !== null && r.amount_min !== '') ? Number(r.amount_min) : null,
+      amount_max: (r.amount_max !== undefined && r.amount_max !== null && r.amount_max !== '') ? Number(r.amount_max) : null,
+      sort_order: i,
+      updated_at: new Date().toISOString()
+    };
+    if (isUuid(r.id)) {
+      row.id = r.id;
+    }
+    return row;
+  });
+
+  if (ruleRows.length === 0) return true;
+
+  const { data: savedRows, error } = await sb.from('accounting_bank_rules').upsert(ruleRows, { onConflict: 'id' }).select();
+  if (error) {
+    console.warn('[Buchhaltung Supabase] Error saving bank rules:', error);
+    throw new Error(error.message || 'Fehler beim Speichern der Bankregeln in Supabase.');
+  }
+  if (Array.isArray(savedRows) && savedRows.length === rules.length) {
+    savedRows.forEach((sr, idx) => {
+      if (sr && sr.id && rules[idx] && !rules[idx].id) {
+        rules[idx].id = sr.id;
+      }
+    });
+    try { localStorage.setItem('bh_bank_rules', JSON.stringify(rules)); } catch (_) {}
+  }
+  return true;
+};
+
+// Beim Modulstart zentrale Regeln aus Supabase abrufen
+window.fetchBhBankServerRules = async function() {
+  const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
+  if (sb) {
+    try {
+      const { data: sbRules, error } = await sb.from('accounting_bank_rules').select('*').order('sort_order', { ascending: true });
+      if (!error && Array.isArray(sbRules) && sbRules.length > 0) {
+        const mapped = sbRules.map(r => ({
+          ...r,
+          id: r.id,
+          label: r.label || '',
+          pattern_party: r.pattern_party || '',
+          pattern_text: r.pattern_text || '',
+          pattern: r.pattern || '',
+          prefix: r.prefix || '',
+          soll: r.soll || '',
+          haben: r.haben || '',
+          scope: r.scope || 'all',
+          amount_mode: r.amount_mode || 'any',
+          amount_min: r.amount_min,
+          amount_max: r.amount_max
+        }));
+        window._bhBankServerRules = mapped;
+        localStorage.setItem('bh_bank_rules', JSON.stringify(mapped));
+        console.log(`✅ ${mapped.length} Bank-Regeln aus Supabase geladen.`);
+        if (window._bhBankTransactions && window._bhBankTransactions.length > 0) {
+          window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);
+          bhBankRenderResults(window._bhBankActiveFilter);
+        }
+        return;
+      }
+    } catch (sbErr) {
+      console.warn('[Buchhaltung Supabase] Rules query failed:', sbErr);
+    }
+  }
+};
+
+function getBhDefaultRules() {
+  return [];
+}
+
+// ---------------------------------------------------------------------
+// Hauptansicht: Tab "Bankabgleich (CAMT.053)"
+// ---------------------------------------------------------------------
+window.renderTabBankabgleich = function(container) {
+  if (!container) return;
+
+  if (typeof window.fetchBhBankServerRules === 'function') {
+    window.fetchBhBankServerRules();
+  }
+
+  // Sicherstellen, dass Journal, Kontenrahmen, Rechnungsdaten und Beitragsdaten geladen sind
+  const needsBhData = (!window._bhJournal || window._bhJournal.length === 0 || !window._bhKontenrahmen || window._bhKontenrahmen.length === 0);
+  if (needsBhData && typeof window.loadBuchhaltungData === 'function') {
+    window.loadBuchhaltungData(true).then(() => {
+      if (window._bhBankTransactions && window._bhBankTransactions.length > 0) {
+        window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);
+        bhBankRenderResults(window._bhBankActiveFilter);
+      }
+    }).catch(() => {});
+  } else if (!window._bhKontenrahmen || window._bhKontenrahmen.length === 0) {
+    try {
+      const cached = localStorage.getItem('bh_kontenrahmen');
+      if (cached) window._bhKontenrahmen = JSON.parse(cached);
+    } catch(_) {}
+  }
+
+  if ((!window._invoices || window._invoices.length === 0) && typeof window.loadRechnungenData === 'function') {
+    window.loadRechnungenData(true).then(() => {
+      if (window._bhBankTransactions && window._bhBankTransactions.length > 0) {
+        window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);
+        bhBankRenderResults(window._bhBankActiveFilter);
+      }
+    }).catch(() => {});
+  }
+
+  if ((!window._jbAllBeitraege || window._jbAllBeitraege.length === 0 || !window._jbAllPositions || window._jbAllPositions.length === 0 || !window._jbGebuehren || window._jbGebuehren.length === 0) && typeof window.loadJahresbeitragData === 'function') {
+    window.loadJahresbeitragData(true, false).then(() => {
+      if (window._bhBankTransactions && window._bhBankTransactions.length > 0) {
+        window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);
+        bhBankRenderResults(window._bhBankActiveFilter);
+      }
+    }).catch(() => {});
+  }
+
+  const hasResults = window._bhBankMatchResults && window._bhBankMatchResults.length > 0;
+  const results = window._bhBankMatchResults || [];
+  const canEdit = window.bhCanWrite ? window.bhCanWrite() : false;
+
+  const jbCount = results.filter(r => r.isJahresbeitrag || r.isInvoice).length;
+  const ruleCount = results.filter(r => !r.isJahresbeitrag && !r.isInvoice && (r.matchType === 'rule' || r.matchType === 'journal' || r.matchType === 'heuristic')).length;
+  const unklarCount = results.filter(r => !r.isJahresbeitrag && !r.isInvoice && !r.isSplit && r.matchType !== 'rule' && r.matchType !== 'journal' && r.matchType !== 'heuristic' && r.matchType !== 'payment_order' && !r.alreadyBooked).length;
+
+  const ibanFilterChecked = window._bhBankIbanFilterOff ? '' : 'checked';
+
+  container.innerHTML = `
+    <div class="card border-0 shadow-sm p-4 bg-white rounded-4 mb-4">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+        <div>
+          <h4 class="mb-1 text-primary fw-bold">
+            <i class="fas fa-university me-2 text-primary"></i>Bankabgleich & Buchungszentrale
+          </h4>
+          <p class="text-muted small mb-0">
+            CAMT.053 Kontoauszug hochladen. Das System erkennt <strong>Jahresbeiträge</strong> zum Haken im Beitragswesen sowie 
+            <strong>Buchungssätze</strong> für alle Kontoaktivitäten.
+          </p>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <button class="btn btn-sm btn-outline-primary fw-bold shadow-sm" onclick="bhOpenPaymentOrdersModal()" title="Erfasste Zahlungsaufträge einsehen / verwalten">
+            <i class="fas fa-file-export me-1"></i> Zahlungsaufträge (pain.001)
+          </button>
+          ${(hasResults && canEdit) ? `
+            <button class="btn btn-sm btn-outline-danger" onclick="bhBankClearTransactions()" title="Aktuell geladene Transaktionen verwerfen und Auszug neu hochladen">
+              <i class="fas fa-trash-alt me-1"></i> Auszug leeren
+            </button>
+          ` : ''}
+          <button class="btn btn-sm btn-outline-secondary" onclick="bhBankManageRulesModal()">
+            <i class="fas fa-cog me-1"></i> ${canEdit ? 'Buchungsregeln verwalten' : 'Buchungsregeln ansehen'}
+          </button>
+        </div>
+      </div>
+
+      <!-- Drag & Drop Upload Zone -->
+      <div class="card bg-light border-0 my-3" style="border: 2px dashed #0d6efd !important; border-radius: 14px; cursor: pointer; transition: all 0.2s;"
+           onclick="document.getElementById('bhBankXmlInput').click()"
+           ondragover="event.preventDefault(); this.style.background='#e7f1ff';"
+           ondragleave="this.style.background='';"
+           ondrop="event.preventDefault(); this.style.background=''; bhBankHandleFiles(event.dataTransfer.files);">
+        <div class="p-4 text-center">
+          <input type="file" id="bhBankXmlInput" class="d-none" accept=".xml" multiple onchange="bhBankHandleFiles(this.files)">
+          <i class="fas fa-file-code fa-3x mb-2 text-primary" style="opacity:0.8;"></i>
+          <h6 class="text-primary fw-bold mb-1">CAMT.053 XML-Kontoauszüge hier ablegen oder klicken</h6>
+          <div class="text-muted small">Mehrfachauswahl möglich · Unterstützt: Raiffeisen, PostFinance, UBS, ZKB, etc.</div>
+        </div>
+      </div>
+
+      <!-- Multi-Account & Info Bar -->
+      <div class="d-flex align-items-center gap-3 mb-3 px-1 flex-wrap" style="font-size:12px;">
+        <div class="d-flex align-items-center gap-2 bg-light border rounded-3 px-3 py-1.5">
+          <i class="fas fa-university text-primary"></i>
+          <span class="text-muted">Konto-Erkennung:</span>
+          <span class="fw-semibold text-dark" id="bhBankDetectedAccountsInfo">
+            ${hasResults ? bhBankGetAccountsInfoHTML() : 'Automatisch nach XML-Upload'}
+          </span>
+        </div>
+        <div class="text-muted ms-auto">
+          <i class="fas fa-layer-group me-1"></i>Kombiniert mehrere Bankkonten & geschützt gegen Duplikate
+        </div>
+      </div>
+
+      <!-- Statistik-Banner -->
+      <div id="bhBankStatsBanner">
+        ${hasResults ? bhBankStatsBannerHTML() : ''}
+      </div>
+
+      <!-- Filter- & Action-Bar -->
+      <div id="bhBankFilterBar" class="${hasResults ? 'd-flex gap-2 mb-3 flex-wrap align-items-center' : 'd-none'}">
+        <button class="btn btn-sm btn-outline-primary active" id="bhBankFilterOffen" onclick="bhBankFilter('offen')">
+          <i class="fas fa-hourglass-half me-1"></i>Offen (${results.filter(r => !r.alreadyBooked).length})
+        </button>
+        <button class="btn btn-sm btn-outline-secondary" id="bhBankFilterBooked" onclick="bhBankFilter('booked')">
+          <i class="fas fa-check-double me-1"></i>Bereits gebucht (${results.filter(r => r.alreadyBooked).length})
+        </button>
+        <button class="btn btn-sm btn-outline-dark" id="bhBankFilterAll" onclick="bhBankFilter('all')">
+          Alle (${results.length})
+        </button>
+        <button class="btn btn-sm btn-outline-success" id="bhBankFilterJb" onclick="bhBankFilter('jb')">
+          <i class="fas fa-file-invoice-dollar me-1"></i>Beiträge & Rechnungen (${jbCount})
+        </button>
+        <button class="btn btn-sm btn-outline-info text-dark" id="bhBankFilterRules" onclick="bhBankFilter('rules')">
+          <i class="fas fa-magic me-1"></i>Erkannte Regeln (${ruleCount})
+        </button>
+        <button class="btn btn-sm btn-outline-warning text-dark" id="bhBankFilterUnklar" onclick="bhBankFilter('unklar')">
+          <i class="fas fa-question-circle me-1"></i>Unklar (${unklarCount})
+        </button>
+        
+        <div class="ms-auto d-flex gap-2 align-items-center flex-wrap justify-content-end">
+          <div id="bh-bank-column-toggle" class="d-inline-block"></div>
+          <div class="text-muted small d-none d-md-flex align-items-center bg-light border rounded-3 px-2.5 py-1" style="font-size: 11.5px;" title="Garantiert saubere Belegnummern und Datumschronologie">
+            <i class="fas fa-info-circle text-primary me-1.5"></i>
+            <span>Buchungen werden in einem Schritt chronologisch nach Datum sortiert verbucht.</span>
+          </div>
+          ${canEdit ? `
+            <button class="btn btn-sm btn-success fw-bold shadow-sm px-3 py-1.5" id="bhBtnBookAll" onclick="bhBankBookAll()" title="Alle offenen Bank-Buchungen chronologisch nach Datum sortiert ins Journal buchen">
+              <i class="fas fa-bolt me-1"></i>Alle Buchungen ausführen
+            </button>
+          ` : ''}
+        </div>
+      </div>
+
+      <!-- Ergebnistabelle Container -->
+      <div id="bhBankResultsContainer">
+        ${hasResults ? '' : `
+          <div class="text-center text-muted py-5">
+            <i class="fas fa-file-invoice fa-3x mb-3" style="opacity:0.2;"></i>
+            <h6>Noch keine Bankdatei geladen</h6>
+            <p class="small text-muted">Lade eine CAMT.053 XML-Datei hoch, um Transaktionen abzugleichen und zu buchen.</p>
+          </div>
+        `}
+      </div>
+    </div>
+  `;
+
+  if (hasResults) {
+    bhBankRenderResults(window._bhBankActiveFilter);
+  }
+};
+
+// ---------------------------------------------------------------------
+// Stats-Banner HTML
+// ---------------------------------------------------------------------
+function bhBankStatsBannerHTML() {
+  const results = window._bhBankMatchResults || [];
+  const jbRows = results.filter(r => r.isJahresbeitrag || r.isInvoice);
+  const ruleRows = results.filter(r => !r.isJahresbeitrag && !r.isInvoice && (r.matchType === 'rule' || r.matchType === 'journal' || r.matchType === 'heuristic'));
+  const unklarRows = results.filter(r => !r.isJahresbeitrag && !r.isInvoice && !r.isSplit && r.matchType !== 'rule' && r.matchType !== 'journal' && r.matchType !== 'heuristic' && r.matchType !== 'payment_order' && !r.alreadyBooked);
+  const bookedRows = results.filter(r => r.alreadyBooked);
+  const openRows = results.filter(r => !r.alreadyBooked);
+
+  const totalIn  = results.filter(r => r.isCredit).reduce((s, r) => s + r.amount, 0);
+  const totalOut = results.filter(r => !r.isCredit).reduce((s, r) => s + r.amount, 0);
+
+  return `
+    <div class="row g-3 mb-3">
+      <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm p-3 border-start border-4 border-success bg-light">
+          <div class="small text-muted">Gutschriften / Eingänge</div>
+          <div class="fs-5 fw-bold text-success">+ CHF ${totalIn.toFixed(2)}</div>
+          <div class="text-muted small">${results.filter(r => r.isCredit).length} Transaktionen</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm p-3 border-start border-4 border-danger bg-light">
+          <div class="small text-muted">Belastungen / Ausgänge</div>
+          <div class="fs-5 fw-bold text-danger">- CHF ${totalOut.toFixed(2)}</div>
+          <div class="text-muted small">${results.filter(r => !r.isCredit).length} Transaktionen</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm p-3 border-start border-4 border-primary bg-light">
+          <div class="small text-muted">Beiträge, Rechnungen & Regeln</div>
+          <div class="fs-5 fw-bold text-primary">${jbRows.length + ruleRows.length}</div>
+          <div class="text-muted small">${jbRows.length} Rechnungen/Beiträge · ${ruleRows.length} Regeln</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm p-3 border-start border-4 border-warning bg-light">
+          <div class="small text-muted">Offen im Kassabuch</div>
+          <div class="fs-5 fw-bold text-dark">${openRows.length} offen</div>
+          <div class="text-muted small">${bookedRows.length} gebucht · <span class="text-warning fw-semibold">${unklarRows.length} noch unklar</span></div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------------
+// Render Results Table
+// ---------------------------------------------------------------------
+window._bhBankSortCol = window._bhBankSortCol || 'date';
+window._bhBankSortAsc = window._bhBankSortAsc !== undefined ? window._bhBankSortAsc : false; // Default: absteigend (neueste oben)
+
+window.bhBankSortTable = function(col) {
+  if (window._bhBankSortCol === col) {
+    window._bhBankSortAsc = !window._bhBankSortAsc;
+  } else {
+    window._bhBankSortCol = col;
+    window._bhBankSortAsc = true;
+  }
+  bhBankRenderResults(window._bhBankActiveFilter);
+};
+
+function formatSwissDate(val) {
+  if (!val) return '';
+  const s = String(val).trim();
+  if (s.includes('T')) {
+    const dt = new Date(s);
+    if (!isNaN(dt.getTime())) {
+      const d = String(dt.getDate()).padStart(2, '0');
+      const m = String(dt.getMonth() + 1).padStart(2, '0');
+      const y = dt.getFullYear();
+      return `${d}.${m}.${y}`;
+    }
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const [y, m, d] = s.split('T')[0].split('-');
+    return `${d}.${m}.${y}`;
+  }
+  return s;
+}
+
+function normalizeString(s) {
+  return String(s || '')
+    .replace(/├╝/g, 'ü')
+    .replace(/├ñ/g, 'ä')
+    .replace(/├╢/g, 'ö')
+    .replace(/├£/g, 'Ü')
+    .replace(/├ä/g, 'Ä')
+    .replace(/├Ц/g, 'Ö')
+    .replace(/├й/g, 'é')
+    .replace(/├и/g, 'è')
+    .replace(/├а/g, 'à')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function toNormalizedIsoDate(val) {
+  if (!val) return '';
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return '';
+    const y = val.getFullYear();
+    const m = String(val.getMonth() + 1).padStart(2, '0');
+    const d = String(val.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const s = String(val).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.split('T')[0];
+  if (/^\d{1,2}\.\d{1,2}\.\d{4}$/.test(s)) {
+    const [d, m, y] = s.split('.');
+    return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+  }
+  if (/^\d{1,2}\.\d{1,2}\.\d{2}$/.test(s)) {
+    const [d, m, y] = s.split('.');
+    const fullY = Number(y) < 50 ? `20${y}` : `19${y}`;
+    return `${fullY}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+  }
+  if (s.includes('T')) {
+    const dt = new Date(s);
+    if (!isNaN(dt.getTime())) {
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, '0');
+      const d = String(dt.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+  }
+  return s;
+}
+
+function bhBankDaysDiff(d1, d2) {
+  const iso1 = toNormalizedIsoDate(d1);
+  const iso2 = toNormalizedIsoDate(d2);
+  if (!iso1 || !iso2) return 999;
+  const dt1 = new Date(iso1);
+  const dt2 = new Date(iso2);
+  if (isNaN(dt1.getTime()) || isNaN(dt2.getTime())) return 999;
+  return Math.round(Math.abs((dt1 - dt2) / (1000 * 60 * 60 * 24)));
+}
+
+// Gruppiert Journalbuchungen nach Basis-Belegnummer (für Split- und Sammelbuchungen wie Jahresbeiträge)
+function bhBankBuildJournalGroups(journalHistory) {
+  const groups = new Map();
+
+  (journalHistory || []).forEach(j => {
+    const beleg = String(j.beleg_nr || '').trim();
+    if (!beleg) return;
+    const baseBeleg = beleg.replace(/[a-z]$/i, '');
+    const jahr = Number(j.jahr || new Date().getFullYear());
+    const datum = j.datum || '';
+    const id = j.id || Math.random();
+
+    const groupKey = `${jahr}_${baseBeleg}`;
+    if (!groups.has(groupKey)) {
+      groups.set(groupKey, {
+        groupKey,
+        belegNr: baseBeleg,
+        jahr,
+        datum,
+        entries: [],
+        allDescriptions: '',
+        entryIds: new Set()
+      });
+    }
+    const grp = groups.get(groupKey);
+    grp.entries.push(j);
+    grp.entryIds.add(id);
+    grp.allDescriptions += ' ' + (j.beschreibung || '');
+  });
+
+  return groups;
+}
+
+// Berechnet den Netto-Fluss auf dem Bankkonto einer Journal-Split-Gruppe
+function getGroupNetBankAmount(grp, isCredit, targetBankKonto = null) {
+  let net = 0;
+  grp.entries.forEach(j => {
+    const amt = Number(j.betrag || 0);
+    const sollMatches = targetBankKonto ? (String(j.konto_soll || '').trim() === String(targetBankKonto).trim()) : isBankKontoCode(j.konto_soll);
+    const habenMatches = targetBankKonto ? (String(j.konto_haben || '').trim() === String(targetBankKonto).trim()) : isBankKontoCode(j.konto_haben);
+    if (isCredit) {
+      if (sollMatches) net += amt;
+      else if (habenMatches) net -= amt;
+    } else {
+      if (habenMatches) net += amt;
+      else if (sollMatches) net -= amt;
+    }
+  });
+  return Math.round(net * 100) / 100;
+}
+
+// Intelligenter Textabgleich (unempfindlich gegen Nachname/Vorname-Invertierung & QR-Details)
+function bhBankMatchText(journalDesc, partyName, remittanceInfo, creditorReference, memberObj, invoiceObj) {
+  if (!journalDesc) return false;
+  const cleanJ = normalizeString(journalDesc);
+
+  // 1. Mitgliedsabgleich (Vorname & Nachname in beliebiger Reihenfolge)
+  if (memberObj) {
+    const fn = normalizeString(memberObj.FirstName || '');
+    const ln = normalizeString(memberObj.LastName || '');
+    const pn = String(memberObj.PersonNumber || '').trim().replace(/^0+/, '');
+    if (fn && ln && cleanJ.includes(fn) && cleanJ.includes(ln)) return true;
+    if (ln && ln.length >= 4 && cleanJ.includes(ln)) {
+      if (cleanJ.includes('jahresbeitrag') || cleanJ.includes('beitrag') || cleanJ.includes('mitglied')) return true;
+    }
+    if (pn && pn.length >= 2 && cleanJ.includes(pn)) return true;
+  }
+
+  // 2. Rechnungs-ID (z. B. RE-26-7K4M oder 7K4M)
+  if (invoiceObj && invoiceObj.id) {
+    const invIdClean = String(invoiceObj.id).toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cleanJNoSpace = cleanJ.replace(/[^a-z0-9]/g, '');
+    if (invIdClean && cleanJNoSpace.includes(invIdClean)) return true;
+    const parts = String(invoiceObj.id).split('-');
+    const suffix = parts.length > 1 ? parts[parts.length - 1].toLowerCase().trim() : '';
+    if (suffix && suffix.length >= 3 && !/^20\d{2}$/.test(suffix) && cleanJ.includes(suffix)) return true;
+  }
+
+  // 2b. Widersprüchliche Vertrags- / Buchungscodes (z.B. V-2026-0025 vs. LL2026-003LL) dürfen nicht über Kreuz matchen
+  if (remittanceInfo) {
+    const contractPattern = /\b(?:v-\d{4}-\d{3,4}|ll\d{4}-[a-z0-9]+)\b/gi;
+    const rContractCodes = [...new Set((String(remittanceInfo).match(contractPattern) || []).map(c => c.toLowerCase().replace(/[^a-z0-9]/g, '')))];
+    const jContractCodes = [...new Set((String(journalDesc).match(contractPattern) || []).map(c => c.toLowerCase().replace(/[^a-z0-9]/g, '')))];
+    if (rContractCodes.length > 0 && jContractCodes.length > 0 && !rContractCodes.some(c => jContractCodes.includes(c))) {
+      return false;
+    }
+  }
+
+  // 3. Name des Absenders / Empfängers (Wort-für-Wort, toleriert Invertierung "Muster Hans" vs "Hans Muster")
+  if (partyName) {
+    const pWords = normalizeString(partyName).split(' ').filter(w => w.length >= 3 && !['herr','frau','dr','die','der','das','und','gmbh','ag','schuetzen','sportschuetzen','sportschützen','muhen'].includes(w));
+    if (pWords.length >= 2) {
+      const matchCount = pWords.filter(w => cleanJ.includes(w)).length;
+      if (matchCount >= Math.min(2, pWords.length)) return true;
+      // Auch 1 Treffer genügt, wenn das gematchte Wort mindestens 5 Zeichen lang ist (z.B. Villmergen, Mettau, Burkhalter)
+      if (matchCount >= 1 && pWords.some(w => w.length >= 5 && cleanJ.includes(w))) return true;
+    } else if (pWords.length === 1 && pWords[0].length >= 4) {
+      if (cleanJ.includes(pWords[0])) return true;
+    }
+  }
+
+  // 4. Referenznummer (z. B. QR-Referenz)
+  if (creditorReference) {
+    const numRef = String(creditorReference).replace(/[^0-9]/g, '');
+    if (numRef.length >= 6) {
+      const cleanJNums = cleanJ.replace(/[^0-9]/g, '');
+      if (cleanJNums.includes(numRef) || (numRef.length >= 10 && cleanJNums.includes(numRef.slice(-8)))) return true;
+    }
+  }
+
+  // 5. Spezifische Buchungs- / Vertrags- / Rechnungs-Codes im Verwendungszweck (z. B. V-2026-0041, LL2026-003LL oder Referenzen mit Ziffern >= 5 Zeichen)
+  if (remittanceInfo) {
+    const specificCodes = String(remittanceInfo).match(/\b(?:v-\d{4}-\d{3,4}|ll\d{4}-\w+|re-\w+|\d{5,})\b/gi);
+    if (specificCodes && specificCodes.length > 0) {
+      const cleanJNoSpace = cleanJ.replace(/[^a-z0-9]/g, '');
+      for (const code of specificCodes) {
+        const cleanCode = code.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (cleanCode.length >= 5 && cleanJNoSpace.includes(cleanCode)) {
+          return true;
+        }
+      }
+    }
+
+    // Spezifische Textwörter aus dem Verwendungszweck (dedupliziert; ohne reine Zahlen/Jahreszahlen & Standard-Stoppwörter)
+    const rWords = [...new Set(
+      normalizeString(remittanceInfo).split(' ').filter(w =>
+        w.length >= 4 &&
+        !/^\d+$/.test(w) &&
+        !/^(?:ll|v|re)?20\d{2}$/.test(w) &&
+        !['zahlung','gutschrift','ueberweisung','rechnung','danke','spesen','abrechnung','muhen','vermietung','schuetzenhaus','schutzenhaus','miete','depot','schiessen','gruppendoppel'].includes(w)
+      )
+    )];
+    if (rWords.length >= 2) {
+      const rMatchCount = rWords.filter(w => cleanJ.includes(w)).length;
+      if (rMatchCount >= 2) return true;
+    } else if (rWords.length === 1 && rWords[0].length >= 5) {
+      if (cleanJ.includes(rWords[0])) return true;
+    }
+  }
+
+  return false;
+}
+
+// ---------------------------------------------------------------------
+// Hilfsfunktion: Sucht im Kontenrahmen nach passenden Sachkonten (Nummer, Name, Wörter)
+// ---------------------------------------------------------------------
+function bhFindMatchingKonten(query) {
+  if (!query) return [];
+  const q = String(query).toLowerCase().trim();
+  const konten = window._bhKontenrahmen || [];
+  
+  // 1. Exakte Kontonummer (z.B. "6701" oder "1020")
+  const exactCode = konten.find(k => String(k.konto).trim() === q);
+  if (exactCode) return [exactCode];
+
+  // Hilfsfunktion: Bereinigte Bezeichnung ohne rohe IBAN (z.B. ohne CH06 8080...)
+  function getCleanName(k) {
+    if (window.TableKit && typeof window.TableKit.cleanKontoDisplay === 'function') {
+      return window.TableKit.cleanKontoDisplay(k.konto, k.bezeichnung).bezeichnung.toLowerCase();
+    }
+    return String(k.bezeichnung || '').replace(/\s*\bCH\d{2}[\s0-9A-Z]{12,}\b/gi, '').trim().toLowerCase();
+  }
+
+  // 2. Kontonummer beginnt mit q (z.B. "67" -> 6700, 6701...)
+  const codeStarts = konten.filter(k => String(k.konto).trim().startsWith(q));
+  
+  // 3. Bezeichnung beginnt mit q (z.B. "gesc" -> Geschenke...)
+  const nameStarts = konten.filter(k => getCleanName(k).startsWith(q));
+  
+  // 4. Wort in Bezeichnung beginnt mit q (z.B. "helfer" -> ... & Helfer-Essen)
+  const wordStarts = konten.filter(k => {
+    if (nameStarts.includes(k)) return false;
+    const words = getCleanName(k).split(/[\s,./\-&]+/);
+    return words.some(w => w.startsWith(q));
+  });
+
+  // 5. Bezeichnung enthält q (ohne den IBAN-Teil zu durchsuchen)
+  const nameContains = konten.filter(k => 
+    !nameStarts.includes(k) && !wordStarts.includes(k) && getCleanName(k).includes(q)
+  );
+  
+  // 6. Code enthält q
+  const codeContains = konten.filter(k => 
+    !codeStarts.includes(k) && String(k.konto).includes(q)
+  );
+
+  return [...codeStarts, ...nameStarts, ...wordStarts, ...nameContains, ...codeContains];
+}
+
+// Tastatur-Erfassung (Power-User UX): [Enter] & [Tab] übernehmen automatisch den Treffer
+if (typeof window !== 'undefined' && !window._bhKontoInputListenersAttached) {
+  window._bhKontoInputListenersAttached = true;
+
+  // 1. Tastatur-Erkennung: Markieren nur bei Tastatur-Navigation (Tab/Enter), NIE beim Mausklick/Scrollen
+  let _isKeyboardNav = false;
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Tab' || e.key === 'Enter') {
+      _isKeyboardNav = true;
+    }
+  }, true);
+  document.addEventListener('mousedown', function() {
+    _isKeyboardNav = false;
+  }, true);
+
+  document.addEventListener('focusin', function(e) {
+    if (e.target && e.target.classList && e.target.classList.contains('bh-konto-input')) {
+      if (_isKeyboardNav) {
+        setTimeout(() => {
+          try { e.target.select(); } catch (_) {}
+        }, 30);
+      }
+    }
+  });
+
+  // 2. Während des Tippens: Stabiles visuelles Feedback OHNE Layout-Verschiebung / ohne is-valid-Icon
+  document.addEventListener('input', function(e) {
+    if (e.target && e.target.classList && e.target.classList.contains('bh-konto-input')) {
+      const input = e.target;
+      const val = input.value.trim();
+      if (!val || val.includes('|')) {
+        input.style.borderColor = '';
+        input.style.boxShadow = '';
+        return;
+      }
+      const matches = bhFindMatchingKonten(val);
+      if (matches.length === 1) {
+        input.style.borderColor = '#198754';
+        input.style.boxShadow = '0 0 0 0.2rem rgba(25, 135, 84, 0.25)';
+        input.title = `💡 1 Treffer: ${matches[0].konto} | ${matches[0].bezeichnung} (Drücke [Enter] oder [Tab] zum Übernehmen)`;
+      } else {
+        input.style.borderColor = '';
+        input.style.boxShadow = '';
+        input.title = 'Tippe Suchbegriff und drücke [Enter] oder [Tab] zum automatischen Übernehmen';
+      }
+    }
+  });
+
+  // 3. Tastaturbedienung: Enter & Tab übernehmen automatisch den besten/letzten Treffer und springen weiter
+  document.addEventListener('keydown', function(e) {
+    if (!e.target || !e.target.classList || !e.target.classList.contains('bh-konto-input')) return;
+    const input = e.target;
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const val = input.value.trim();
+      const matches = bhFindMatchingKonten(val);
+      if (matches.length > 0) {
+        input.value = `${matches[0].konto} | ${matches[0].bezeichnung}`;
+        input.style.borderColor = '';
+        input.style.boxShadow = '';
+        input.dispatchEvent(new Event('change'));
+      }
+
+      // Smarter Fokus-Sprung für blitzschnelles Arbeiten ohne Maus:
+      // Vom Soll-Konto direkt ins Haben-Konto
+      if (input.id && input.id.startsWith('bh-soll-')) {
+        const realI = input.id.replace('bh-soll-', '');
+        const habenInput = document.getElementById('bh-haben-' + realI);
+        if (habenInput) {
+          habenInput.focus({ preventScroll: true });
+          try { habenInput.select(); } catch (_) {}
+        }
+      } 
+      // Vom Haben-Konto direkt ins Soll-Konto der nächsten Zeile
+      else if (input.id && input.id.startsWith('bh-haben-')) {
+        const tr = input.closest('tr');
+        const nextTr = tr ? tr.nextElementSibling : null;
+        const nextSoll = nextTr ? nextTr.querySelector('input[id^="bh-soll-"]') : null;
+        if (nextSoll) {
+          nextSoll.focus({ preventScroll: true });
+          try { nextSoll.select(); } catch (_) {}
+        }
+      }
+    } else if (e.key === 'Tab' && !e.shiftKey) {
+      const val = input.value.trim();
+      if (val && !val.includes('|')) {
+        const matches = bhFindMatchingKonten(val);
+        if (matches.length > 0) {
+          input.value = `${matches[0].konto} | ${matches[0].bezeichnung}`;
+          input.style.borderColor = '';
+          input.style.boxShadow = '';
+          input.dispatchEvent(new Event('change'));
+        }
+      }
+    }
+  });
+
+  // 4. Verlassen des Feldes (Blur): Unvollständige Eingabe (z.B. "gesc") automatisch auflösen
+  document.addEventListener('focusout', function(e) {
+    if (e.target && e.target.classList && e.target.classList.contains('bh-konto-input')) {
+      const input = e.target;
+      const val = input.value.trim();
+      if (val && !val.includes('|')) {
+        const matches = bhFindMatchingKonten(val);
+        if (matches.length > 0) {
+          input.value = `${matches[0].konto} | ${matches[0].bezeichnung}`;
+          input.style.borderColor = '';
+          input.style.boxShadow = '';
+          input.dispatchEvent(new Event('change'));
+        }
+      }
+    }
+  });
+}
+
+window._bhUpdateTxRemittance = function(idx, val) {
+  const rows = window._bhBankMatchResults || [];
+  const tx = rows[idx];
+  if (!tx) return;
+  tx.remittanceInfo = val;
+  tx._customRemittance = val;
+  const isEdited = !!(tx._originalRemittanceInfo && val.trim() !== tx._originalRemittanceInfo.trim());
+  tx._customRemittanceEdited = isEdited;
+
+  if (window._bhBankTransactions && window._bhBankTransactions[idx]) {
+    window._bhBankTransactions[idx].remittanceInfo = val;
+    window._bhBankTransactions[idx]._customRemittance = val;
+    window._bhBankTransactions[idx]._customRemittanceEdited = isEdited;
+  }
+
+  const origEl = document.getElementById(`bh-rmt-orig-${idx}`);
+  if (origEl) {
+    if (isEdited) {
+      origEl.innerHTML = `<i class="fas fa-info-circle me-1 opacity-75"></i>Original: ${escHtml(tx._originalRemittanceInfo)}`;
+      origEl.classList.remove('d-none');
+    } else {
+      origEl.innerHTML = '';
+      origEl.classList.add('d-none');
+    }
+  }
+};
+
+window._bhUpdateTxKonto = function(idx, type, val) {
+  const rows = window._bhBankMatchResults || [];
+  const tx = rows[idx];
+  if (!tx) return;
+
+  function resolveCode(v) {
+    if (!v) return '';
+    const s = String(v).trim();
+    if (s.includes('|')) return s.split('|')[0].trim();
+    if (/^\d{4}$/.test(s)) return s;
+    const matches = typeof bhFindMatchingKonten === 'function' ? bhFindMatchingKonten(s) : [];
+    return matches.length > 0 ? String(matches[0].konto).trim() : s;
+  }
+
+  let code = resolveCode(val);
+  const isGegenkonto = (tx.isCredit && type === 'haben') || (!tx.isCredit && type === 'soll');
+  const isInternalLiquid = (code === '1000' || code === '1020' || code === '1021' || code === '1022');
+
+  if (code === '1000' || (isGegenkonto && isInternalLiquid)) {
+    const isBankTransfer = (code !== '1000');
+    code = '1099';
+    if (typeof showToast === 'function') {
+      const msg = isBankTransfer
+        ? '💡 Für Überträge zwischen eigenen Bankkonten (Zahlungs-, Wirtschafts-, Sparkonto) wird Konto 1099 Geldtransit verwendet, damit beide Bankauszüge (B_Zahl_ und B_Wirt_) ihre eigene, lückenlose Belegnummer erhalten.'
+        : '💡 Für Geldtransfers zwischen Bank und Kasse wird Konto 1099 Geldtransit verwendet, um Kassen- und Bankbelege getrennt zu halten.';
+      showToast(msg, 'info', 'bottom-end', 5000);
+    }
+    const inputEl = document.getElementById(type === 'soll' ? `bh-soll-${idx}` : `bh-haben-${idx}`);
+    if (inputEl) {
+      inputEl.value = '1099 | Geldtransit (Transferkonto liquide Mittel)';
+      inputEl.classList.remove('bh-konto-empty');
+    }
+  }
+  if (type === 'soll') {
+    tx.suggestedSoll = code;
+    tx._customSollEdited = true;
+  } else if (type === 'haben') {
+    tx.suggestedHaben = code;
+    tx._customHabenEdited = true;
+  }
+
+  if (window._bhBankTransactions && window._bhBankTransactions[idx]) {
+    if (type === 'soll') {
+      window._bhBankTransactions[idx].suggestedSoll = code;
+      window._bhBankTransactions[idx]._customSollEdited = true;
+    } else if (type === 'haben') {
+      window._bhBankTransactions[idx].suggestedHaben = code;
+      window._bhBankTransactions[idx]._customHabenEdited = true;
+    }
+  }
+
+  // Status-Badge der Zeile dynamisch und reaktiv aktualisieren
+  const badgeEl = document.getElementById(`bh-status-badge-${idx}`);
+  if (badgeEl && !tx.alreadyBooked && !tx.isWrongYear) {
+    if (tx.suggestedSoll && tx.suggestedHaben) {
+      badgeEl.className = 'badge px-2 py-1.5 fw-semibold';
+      badgeEl.style.cssText = 'background-color: rgba(25, 135, 84, 0.12); color: #0f5132; border: 1px solid rgba(25, 135, 84, 0.25);';
+      badgeEl.innerHTML = '<i class="fas fa-check me-1"></i>Bereit';
+      badgeEl.title = 'Vollständig kontiert und bereit zur Ausführung';
+    } else {
+      badgeEl.className = 'badge px-2 py-1.5 fw-semibold';
+      badgeEl.style.cssText = 'background-color: rgba(255, 193, 7, 0.15); color: #664d03; border: 1px solid rgba(255, 193, 7, 0.35);';
+      badgeEl.innerHTML = '<i class="fas fa-exclamation-circle text-warning me-1"></i>Konto fehlt';
+      badgeEl.title = 'Gegenkonto fehlt noch. Kann manuell ergänzt werden oder wird als unvollständig gebucht.';
+    }
+  }
+};
+
+function bhBankRenderResults(filter) {
+  const container = document.getElementById('bhBankResultsContainer');
+  if (!container) return;
+
+  const rows = window._bhBankMatchResults || [];
+  if (!rows.length) return;
+
+  const activeFilter = filter || window._bhBankActiveFilter || 'offen';
+  window._bhBankActiveFilter = activeFilter;
+
+  let filtered = [...rows];
+  if (activeFilter === 'offen')  filtered = rows.filter(r => !r.alreadyBooked);
+  if (activeFilter === 'booked') filtered = rows.filter(r => r.alreadyBooked);
+  if (activeFilter === 'jb')     filtered = rows.filter(r => r.isJahresbeitrag || r.isInvoice);
+  if (activeFilter === 'rules')  filtered = rows.filter(r => !r.isJahresbeitrag && !r.isInvoice && (r.matchType === 'rule' || r.matchType === 'journal' || r.matchType === 'heuristic'));
+  if (activeFilter === 'unklar') filtered = rows.filter(r => !r.isJahresbeitrag && !r.isInvoice && !r.isSplit && r.matchType !== 'rule' && r.matchType !== 'journal' && r.matchType !== 'heuristic' && r.matchType !== 'payment_order' && !r.alreadyBooked);
+
+  // Live-Aktualisierung des Statistik-Banners & Filter-Counts ohne DOM-Zerstörung
+  const statsEl = document.getElementById('bhBankStatsBanner');
+  if (statsEl && typeof bhBankStatsBannerHTML === 'function') {
+    statsEl.innerHTML = bhBankStatsBannerHTML();
+  }
+
+  const jbCount = rows.filter(r => r.isJahresbeitrag || r.isInvoice).length;
+  const ruleCount = rows.filter(r => !r.isJahresbeitrag && !r.isInvoice && (r.matchType === 'rule' || r.matchType === 'journal' || r.matchType === 'heuristic')).length;
+  const unklarCount = rows.filter(r => !r.isJahresbeitrag && !r.isInvoice && !r.isSplit && r.matchType !== 'rule' && r.matchType !== 'journal' && r.matchType !== 'heuristic' && r.matchType !== 'payment_order' && !r.alreadyBooked).length;
+  const offenCount = rows.filter(r => !r.alreadyBooked).length;
+  const bookedCount = rows.filter(r => r.alreadyBooked).length;
+
+  const btnOffen = document.getElementById('bhBankFilterOffen');
+  if (btnOffen) btnOffen.innerHTML = `<i class="fas fa-hourglass-half me-1"></i>Offen (${offenCount})`;
+  const btnBooked = document.getElementById('bhBankFilterBooked');
+  if (btnBooked) btnBooked.innerHTML = `<i class="fas fa-check-double me-1"></i>Bereits gebucht (${bookedCount})`;
+  const btnAll = document.getElementById('bhBankFilterAll');
+  if (btnAll) btnAll.innerHTML = `Alle (${rows.length})`;
+  const btnJb = document.getElementById('bhBankFilterJb');
+  if (btnJb) btnJb.innerHTML = `<i class="fas fa-file-invoice-dollar me-1"></i>Beiträge & Rechnungen (${jbCount})`;
+  const btnRules = document.getElementById('bhBankFilterRules');
+  if (btnRules) btnRules.innerHTML = `<i class="fas fa-magic me-1"></i>Erkannte Regeln (${ruleCount})`;
+  const btnUnklar = document.getElementById('bhBankFilterUnklar');
+  if (btnUnklar) btnUnklar.innerHTML = `<i class="fas fa-question-circle me-1"></i>Unklar (${unklarCount})`;
+
+  // Buttons "Alle sicheren Buchungen ausführen" und "Ausgewählte Buchungen verbuchen" aktualisieren
+  if (typeof bhBankUpdateSafeBookingsBtn === 'function') {
+    bhBankUpdateSafeBookingsBtn();
+  }
+  if (typeof bhBankUpdateSelectedBtn === 'function') {
+    bhBankUpdateSelectedBtn();
+  }
+
+  // Belegnummern-Vorschau chronologisch von oben nach unten ermitteln
+  bhCalculateProjectedBankBelegNrs(rows, window._bhYear);
+
+  // Sortierung auf alle Spalten anwenden
+  const col = window._bhBankSortCol || 'date';
+  const asc = window._bhBankSortAsc;
+
+  filtered.sort((a, b) => {
+    let res = 0;
+    if (col === 'date') {
+      res = new Date(a.bookingDate || 0) - new Date(b.bookingDate || 0);
+      if (res === 0) {
+        const idxA = a._camtOrderIndex !== undefined ? a._camtOrderIndex : 0;
+        const idxB = b._camtOrderIndex !== undefined ? b._camtOrderIndex : 0;
+        res = idxA - idxB;
+      }
+    } else if (col === 'party') {
+      res = (a.partyName || '').localeCompare(b.partyName || '', 'de');
+    } else if (col === 'amount') {
+      res = (a.amount || 0) - (b.amount || 0);
+    } else if (col === 'remittance') {
+      res = (a.remittanceInfo || '').localeCompare(b.remittanceInfo || '', 'de');
+    } else if (col === 'status') {
+      const scoreA = a.alreadyBooked ? -2 : ((a.alreadyPaidJb || a.alreadyPaidInvoice) ? -1 : ((a.isJahresbeitrag || a.isInvoice) ? 2 : (a.matchScore || 0)));
+      const scoreB = b.alreadyBooked ? -2 : ((b.alreadyPaidJb || b.alreadyPaidInvoice) ? -1 : ((b.isJahresbeitrag || b.isInvoice) ? 2 : (b.matchScore || 0)));
+      res = scoreA - scoreB;
+    } else if (col === 'type') {
+      res = (a.matchLabel || '').localeCompare(b.matchLabel || '', 'de');
+    } else if (col === 'soll') {
+      res = (a.suggestedSoll || '').localeCompare(b.suggestedSoll || '');
+    } else if (col === 'haben') {
+      res = (a.suggestedHaben || '').localeCompare(b.suggestedHaben || '');
+    }
+    return asc ? res : -res;
+  });
+
+  const canEdit = window.bhCanWrite ? window.bhCanWrite() : false;
+  const kontenrahmen = window._bhKontenrahmen || [];
+
+  function makeKontoSelectHTML(id, selectedVal, type, isLocked = false) {
+    const cleanCode = String(selectedVal || '').split('|')[0].trim();
+    const matchedKonto = kontenrahmen.find(k => String(k.konto).trim() === cleanCode);
+    const cleanObj = matchedKonto
+      ? (window.TableKit && typeof window.TableKit.cleanKontoDisplay === 'function'
+          ? window.TableKit.cleanKontoDisplay(matchedKonto.konto, matchedKonto.bezeichnung)
+          : { konto: matchedKonto.konto, bezeichnung: String(matchedKonto.bezeichnung || '').replace(/\s*\bCH\d{2}[\s0-9A-Z]{12,}\b/gi, '').trim(), display: `${matchedKonto.konto} | ${String(matchedKonto.bezeichnung || '').replace(/\s*\bCH\d{2}[\s0-9A-Z]{12,}\b/gi, '').trim()}` })
+      : null;
+    const displayVal = cleanObj ? cleanObj.display : (selectedVal ? String(selectedVal) : '');
+
+    if (isLocked) {
+      return `<div class="font-monospace small px-2 py-1 rounded bg-light border text-truncate text-secondary" style="max-width:180px;" title="${escHtml(displayVal || '–')}">${escHtml(displayVal || '–')}</div>`;
+    }
+
+    const realIdx = id.startsWith('bh-soll-') ? id.replace('bh-soll-', '') : id.replace('bh-haben-', '');
+    const isEmpty = !cleanCode;
+    const highlightStyle = isEmpty 
+      ? 'background-color: #fff9db !important; border: 1.5px dashed #f59f00 !important; color: #495057;' 
+      : '';
+    const placeholderText = isEmpty ? '⚠️ Gegenkonto wählen...' : 'Ziffern/Name...';
+
+    return `<input type="text" id="${id}" list="bh-konten-datalist" class="form-control form-control-sm bh-konto-input ${isEmpty ? 'bh-konto-empty' : ''}" placeholder="${placeholderText}" value="${escHtml(displayVal)}" style="font-size:12px; width:100%; min-width:0; ${highlightStyle}" autocomplete="off" oninput="window._bhUpdateTxKonto(${realIdx}, '${type}', this.value)" onchange="window._bhUpdateTxKonto(${realIdx}, '${type}', this.value)" title="${escHtml(displayVal || 'Kein Gegenkonto zugeordnet (kann leer gebucht oder manuell gewählt werden)')}">`;
+  }
+
+  const realIdxMap = filtered.map(r => rows.indexOf(r));
+
+  const rowsHTML = filtered.map((r, idx) => {
+    const realI = realIdxMap[idx];
+    const isCredit = r.isCredit;
+
+    let statusBadge = '';
+    const isRowEditable = canEdit && !r.alreadyBooked && !r.isWrongYear;
+    const assignAttr = isRowEditable ? `role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;"` : '';
+    const editIcon = isRowEditable ? ' <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i>' : '';
+    const linkIcon = isRowEditable ? ' <i class="fas fa-link ms-1 opacity-75" style="font-size:9px;"></i>' : '';
+
+    if (r.isWrongYear) {
+      statusBadge = `<span class="badge bg-secondary opacity-75" title="🔒 FALSCHES BUCHUNGSJAHR: Diese Transaktion stammt aus ${r.txYear}, oben ist Buchhaltungsjahr ${window._bhYear} gewählt. Bitte oben Jahr umschalten!"><i class="fas fa-calendar-times me-1"></i>Jahr ${r.txYear}</span>`;
+    } else if (r.alreadyBooked) {
+      statusBadge = `<span class="badge bg-light text-secondary border" title="🔒 Transaktion wurde am ${escHtml(r.bookedDate || 'früher')} im Kassabuch erfasst."><i class="fas fa-check-double text-success me-1"></i>Gebucht</span>`;
+    } else if (r.alreadyPaidInvoice) {
+      statusBadge = `<span class="badge bg-secondary opacity-75" ${assignAttr} title="🔒 Rechnung ${escHtml(r.matchedInvoice?.id || '')} ist im Rechnungsmodul bereits als BEZAHLT markiert."><i class="fas fa-info-circle me-1"></i>Bezahlt${editIcon}</span>`;
+    } else if (r.alreadyPaidJb) {
+      statusBadge = `<span class="badge bg-secondary opacity-75" ${assignAttr} title="🔒 Jahresbeitrag von ${escHtml(r.matchedMember?.FirstName || '')} ${escHtml(r.matchedMember?.LastName || '')} ist bereits als BEZAHLT markiert."><i class="fas fa-info-circle me-1"></i>Bezahlt${editIcon}</span>`;
+    } else if (r.isInvoice) {
+      statusBadge = `<span class="badge bg-success" ${assignAttr} title="✅ RECHNUNGS-TREFFER: ${escHtml(r.matchedInvoice?.id || '')} (${escHtml(r.matchedInvoice?.name || '')})."><i class="fas fa-file-invoice me-1"></i>Rechnung${editIcon}</span>`;
+    } else if (r.isJahresbeitrag) {
+      statusBadge = `<span class="badge bg-success" ${assignAttr} title="✅ JAHRESBEITRAG: Mitglied und offener Beitrag erkannt."><i class="fas fa-check-circle me-1"></i>Jahresbeitrag${editIcon}</span>`;
+    } else if (r.matchType === 'payment_order') {
+      statusBadge = `<span class="badge bg-primary text-white" ${assignAttr} title="📤 ZAHLUNGSAUFTRAG: ${escHtml(r.matchLabel)}."><i class="fas fa-file-export me-1"></i>Auszahlung${editIcon}</span>`;
+    } else if (r.matchType === 'rule') {
+      statusBadge = `<span class="badge bg-info text-dark" ${assignAttr} title="⚡ REGEL-TREFFER: ${escHtml(r.matchRuleName)}."><i class="fas fa-magic me-1"></i>Regel${editIcon}</span>`;
+    } else if (r.matchType === 'journal') {
+      statusBadge = `<span class="badge bg-primary text-white" ${assignAttr} title="💡 HISTORIE-TREFFER: Noch NICHT gebucht!"><i class="fas fa-history me-1"></i>Historie${editIcon}</span>`;
+    } else if (r.matchType === 'heuristic') {
+      statusBadge = `<span class="badge bg-light text-dark border" ${assignAttr} title="💡 SMART VORSCHLAG: Noch NICHT gebucht."><i class="fas fa-lightbulb me-1"></i>Vorschlag${editIcon}</span>`;
+    } else if (r.matchType === 'transit' || (!r.isSplit && (String(r.suggestedSoll).trim() === '1090' || String(r.suggestedHaben).trim() === '1090'))) {
+      statusBadge = `<span class="badge bg-info text-dark" ${assignAttr} title="⏳ KLÄRUNG 1090: Wird über Klärungskonto 1090 (Transit) gebucht, damit Belegnummern aufsteigend bleiben."><i class="fas fa-clock me-1"></i>Transit 1090${linkIcon}</span>`;
+    } else {
+      statusBadge = `<span class="badge bg-warning text-dark" ${assignAttr} title="❓ OFFEN: Keine automatische Zuordnung."><i class="fas fa-question-circle me-1"></i>Offen${linkIcon}</span>`;
+    }
+
+    if (r.isVerbandsschiessen && !r.alreadyBooked && !r.isWrongYear) {
+      statusBadge += `<br><span class="badge bg-warning text-dark mt-1" style="font-size:10px;" title="${escHtml(r.splitHint)}"><i class="fas fa-exclamation-triangle me-1"></i>Wettschiessen / Split</span>`;
+    }
+
+    let matchContent = '';
+    if (r.isInvoice && r.matchedInvoice) {
+      const inv = r.matchedInvoice;
+      matchContent = `<div class="fw-semibold text-success" style="font-size:12px;">
+        <i class="fas fa-file-invoice me-1"></i>${escHtml(inv.id)}: ${escHtml(inv.name)}
+      </div>
+      <div class="text-muted" style="font-size:10px;">Typ: ${escHtml(inv.type || 'Rechnung')} · Soll: CHF ${Number(inv.total_amount || 0).toFixed(2)}</div>`;
+    } else if (r.isJahresbeitrag && r.matchedMember) {
+      const m = r.matchedMember;
+      matchContent = `<div class="fw-semibold text-primary" style="font-size:12px;">
+        <i class="fas fa-user me-1"></i>${escHtml(m.FirstName)} ${escHtml(m.LastName)}
+      </div>
+      <div class="text-muted" style="font-size:10px;">Mitglieds-Nr: ${m.PersonNumber || '–'}</div>`;
+    } else if (r.matchType === 'payment_order' && r.matchedPaymentOrder) {
+      const po = r.matchedPaymentOrder;
+      matchContent = `<div class="fw-semibold text-primary" style="font-size:12px;">
+        <i class="fas fa-file-export me-1"></i>${escHtml(po.order_nr)}: ${escHtml(po.recipient_name)}
+      </div>
+      <div class="text-muted" style="font-size:10px;">${escHtml(po.beschreibung || 'Auszahlung')} · CHF ${Number(po.betrag || 0).toFixed(2)}</div>`;
+    } else {
+      matchContent = `<div class="text-muted" style="font-size:11px;">${escHtml(r.matchLabel || 'Manuelle Buchung')}</div>`;
+    }
+
+    let matchInfo = '';
+    if (!isRowEditable) {
+      matchInfo = matchContent;
+    } else {
+      matchInfo = `
+        <div class="d-flex align-items-center justify-content-between gap-1" style="min-width: 0;">
+          <div class="text-truncate" style="min-width: 0; flex: 1 1 auto;">${matchContent}</div>
+          <div class="dropdown flex-shrink-0">
+            <button class="btn btn-xs btn-outline-secondary py-0 px-1 dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-boundary="viewport" aria-expanded="false" title="Status & Zuordnung ändern">
+              <i class="fas fa-pen small"></i>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end shadow-sm" style="font-size: 12px; z-index: 1055;">
+              ${(r.isJahresbeitrag || r.isInvoice) ? `
+                <li><a class="dropdown-item text-danger fw-semibold" href="javascript:void(0)" onclick="bhBankRemoveJbAssignment(${realI})"><i class="fas fa-times-circle me-2"></i>Status Jahresbeitrag entfernen (Manuell)</a></li>
+                <li><hr class="dropdown-divider my-1"></li>
+              ` : ''}
+              <li><a class="dropdown-item ${r.isJahresbeitrag ? '' : 'text-success fw-semibold'}" href="javascript:void(0)" onclick="bhBankOpenAssignModal(${realI}, 'member')"><i class="fas fa-id-card me-2"></i>${r.isJahresbeitrag ? 'Anderes Mitglied zuordnen...' : 'Als Jahresbeitrag zuordnen...'}</a></li>
+              <li><a class="dropdown-item" href="javascript:void(0)" onclick="bhBankOpenAssignModal(${realI}, 'invoice')"><i class="fas fa-file-invoice me-2"></i>Rechnung zuordnen...</a></li>
+              <li><hr class="dropdown-divider my-1"></li>
+              <li><a class="dropdown-item text-secondary" href="javascript:void(0)" onclick="bhBankOpenAssignModal(${realI})"><i class="fas fa-sliders-h me-2"></i>Status &amp; Zuordnung anpassen...</a></li>
+            </ul>
+          </div>
+        </div>
+      `;
+    }
+
+    const sollSelectId = `bh-soll-${realI}`;
+    const habenSelectId = `bh-haben-${realI}`;
+
+    let actionButtons = '';
+    if (r.isWrongYear) {
+      actionButtons = `<span id="bh-status-badge-${realI}" class="badge bg-light text-danger border px-2 py-1.5" title="🔒 Transaktion aus ${r.txYear} kann nicht im Buchhaltungsjahr ${window._bhYear} gebucht werden. Bitte oben Jahr umschalten!"><i class="fas fa-ban me-1"></i>Jahr ${r.txYear}</span>`;
+    } else if (canEdit && !r.alreadyBooked) {
+      const isSplitConfigured = Boolean(r.isSplit && Array.isArray(r.splitRows) && r.splitRows.length > 0);
+      const splitBtnClass = isSplitConfigured 
+        ? 'btn-primary text-white fw-bold shadow-sm' 
+        : (r.isVerbandsschiessen ? 'btn-warning text-dark fw-bold' : 'btn-outline-secondary');
+      const splitBtnLabel = isSplitConfigured
+        ? `<i class="fas fa-columns me-1"></i>Split (${r.splitRows.length})`
+        : `<i class="fas fa-columns me-1"></i>Split`;
+
+      const isComplete = isSplitConfigured ? true : Boolean(r.suggestedSoll && r.suggestedHaben);
+      const isTransitKlaerung = !isSplitConfigured && (String(r.suggestedSoll).trim() === '1090' || String(r.suggestedHaben).trim() === '1090');
+      let statusBadge = '';
+      if (isSplitConfigured) {
+        statusBadge = `<span id="bh-status-badge-${realI}" class="badge px-2 py-1.5 fw-semibold" style="background-color: rgba(25, 135, 84, 0.12); color: #0f5132; border: 1px solid rgba(25, 135, 84, 0.25);" title="Splitbuchung (${r.splitRows.length} Positionen) vorkontiert und bereit zur Ausführung"><i class="fas fa-columns text-primary me-1"></i>Bereit (Split ${r.splitRows.length})</span>`;
+      } else if (isTransitKlaerung) {
+        statusBadge = `<span id="bh-status-badge-${realI}" class="badge px-2 py-1.5 fw-semibold" style="background-color: rgba(13, 202, 240, 0.15); color: #055160; border: 1px solid rgba(13, 202, 240, 0.35);" title="Noch unklar. Wird automatisch über das Klärungskonto 1090 (Transit) verbucht, damit die Belegnummern synchron und lückenlos bleiben. Kann im Journal später umkontiert werden."><i class="fas fa-clock text-info me-1"></i>1090 Transit</span>`;
+      } else if (isComplete) {
+        statusBadge = `<span id="bh-status-badge-${realI}" class="badge px-2 py-1.5 fw-semibold" style="background-color: rgba(25, 135, 84, 0.12); color: #0f5132; border: 1px solid rgba(25, 135, 84, 0.25);" title="Vollständig kontiert und bereit zur Ausführung"><i class="fas fa-check me-1"></i>Bereit</span>`;
+      } else {
+        statusBadge = `<span id="bh-status-badge-${realI}" class="badge px-2 py-1.5 fw-semibold" style="background-color: rgba(255, 193, 7, 0.15); color: #664d03; border: 1px solid rgba(255, 193, 7, 0.35);" title="Gegenkonto fehlt noch. Kann manuell ergänzt werden oder wird als unvollständig gebucht."><i class="fas fa-exclamation-circle text-warning me-1"></i>Konto fehlt</span>`;
+      }
+
+      actionButtons = `
+        ${statusBadge}
+        <button class="btn btn-sm ${splitBtnClass} py-1 px-2" onclick="bhBankOpenSplitModal(${realI})" title="${isSplitConfigured ? 'Split-Aufteilung ansehen oder anpassen' : 'Betrag in mehrere Zeilen aufteilen (z.B. Splitbuchung)'}">
+          ${splitBtnLabel}
+        </button>
+        <button class="btn btn-sm btn-outline-secondary py-1 px-2" onclick="bhBankSaveRuleModal(${realI})" title="Dauerhafte automatische Regel für diesen Absender/Text merken">
+          <i class="fas fa-plus-circle"></i>
+        </button>
+        <button class="btn btn-sm btn-outline-secondary py-1 px-2" onclick="bhBankOpenAssignModal(${realI})" title="Status & Zuordnung anpassen (Jahresbeitrag / Rechnung / Manuell)">
+          <i class="fas fa-tag"></i>
+        </button>
+      `;
+    } else if (r.alreadyBooked) {
+      let printBtn = '';
+      const jEntry = r.matchedJournalEntry || (window._bhJournal || []).find(j => {
+        if (r.bookingDate && j.datum !== r.bookingDate) return false;
+        const jAmt = Math.abs(Number(j.betrag) || 0);
+        const rAmt = Math.abs(Number(r.amount) || 0);
+        return Math.abs(jAmt - rAmt) < 0.01;
+      });
+      if (jEntry && jEntry.id) {
+        printBtn = `<button type="button" class="btn btn-sm btn-outline-primary py-1 px-2" onclick="bhPrintJournalBeleg(${jEntry.id})" title="Buchungsbeleg drucken / als PDF ablegen"><i class="fas fa-print"></i></button>`;
+      }
+      actionButtons = `
+        <span id="bh-status-badge-${realI}" class="badge bg-light text-secondary border px-2 py-1.5" title="🔒 Bereits im Journal erfasst. Doppelbuchung geschützt."><i class="fas fa-lock me-1"></i>Gebucht</span>
+        ${printBtn}
+      `;
+    }
+
+    const amountClass = isCredit ? 'text-success' : 'text-danger';
+    const amountSign  = isCredit ? '+' : '-';
+    const rowBg = (r.alreadyBooked || r.isWrongYear) 
+      ? 'table-secondary text-muted' 
+      : ((r.isJahresbeitrag || r.isInvoice) ? 'table-light' : '');
+
+    return `
+      <tr id="bh-bank-row-${realI}" data-tx-idx="${realI}" class="${rowBg}" ${(r.alreadyBooked || r.isWrongYear) ? 'style="opacity:0.65;"' : ''}>
+        <td data-col-id="date" class="small tk-col-date" style="white-space:nowrap;">
+          <span class="fw-bold">${formatSwissDate(r.bookingDate)}</span>
+          ${r.accountIban ? `<br><span class="badge bg-light text-muted border" style="font-size:9px;" title="Konto: ${escHtml(r.accountIban)}">${escHtml(r.accountIban.slice(-8))}</span>` : ''}
+          ${r.alreadyBooked ? `
+            <div class="mt-1"><span class="badge bg-success-subtle text-success border border-success-subtle font-monospace" style="font-size:10px;" title="Verbuchte Belegnummer im Journal"><i class="fas fa-check-circle me-1"></i>${escHtml(r.matchedJournalEntry?.beleg_nr || 'Gebucht')}</span></div>
+          ` : (r._projectedBelegNr ? `
+            <div class="mt-1"><span class="badge bg-light text-secondary border font-monospace" style="font-size:10px;" title="Voraussichtliche Belegnummer (chronologisch von oben nach unten)"><i class="fas fa-receipt me-1 opacity-50"></i>${escHtml(r._projectedBelegNr)}</span></div>
+          ` : '')}
+        </td>
+        <td data-col-id="party" class="tk-col-party">
+          <span class="fw-bold">${escHtml(r.partyName || '–')}</span>
+          ${r.partyCity ? `<br><small class="text-muted">${escHtml(r.partyPLZ)} ${escHtml(r.partyCity)}</small>` : ''}
+        </td>
+        <td data-col-id="amount" class="text-end fw-bold ${amountClass} tk-col-amount" style="white-space:nowrap;">
+          ${amountSign} CHF ${Number(r.amount || 0).toFixed(2)}
+        </td>
+        <td data-col-id="remittance" class="tk-col-remittance">
+          ${(!isRowEditable) ? `
+            <div class="small text-muted" style="white-space: normal; word-break: break-word;" title="${escHtml(r.remittanceInfo || '–')}">
+              ${escHtml(r.remittanceInfo || '–')}
+            </div>
+          ` : `
+            <input type="text" id="bh-rmt-${realI}" class="form-control form-control-sm bh-rmt-input"
+              value="${escHtml(r.remittanceInfo || '')}"
+              placeholder="Verwendungszweck / Buchungstext..."
+              title="${escHtml(r.remittanceInfo || 'Klicken zum Anpassen')}"
+              style="font-size: 12px; width: 100%; min-width: 0;"
+              oninput="window._bhUpdateTxRemittance(${realI}, this.value)">
+            <div id="bh-rmt-orig-${realI}" class="text-muted mt-1 ${r._customRemittanceEdited && r._originalRemittanceInfo && r.remittanceInfo.trim() !== r._originalRemittanceInfo.trim() ? '' : 'd-none'}"
+                 style="font-size: 10px; line-height: 1.25; white-space: normal; word-break: break-word;"
+                 title="Originaler Bankauszug-Text: ${escHtml(r._originalRemittanceInfo || '')}">
+              ${(r._customRemittanceEdited && r._originalRemittanceInfo && r.remittanceInfo.trim() !== r._originalRemittanceInfo.trim()) ? `<i class="fas fa-info-circle me-1 opacity-75"></i>Original: ${escHtml(r._originalRemittanceInfo)}` : ''}
+            </div>
+          `}
+        </td>
+        <td data-col-id="status" class="tk-col-status">${statusBadge}</td>
+        <td data-col-id="type" class="tk-col-type">${matchInfo}</td>
+        <td data-col-id="soll" class="tk-col-soll">
+          ${(r.isSplit && !isCredit && Array.isArray(r.splitRows) && r.splitRows.length > 0 && !r.alreadyBooked && !r.isWrongYear) ? `
+            <div class="badge bg-primary-subtle text-primary border border-primary-subtle p-1.5 w-100 text-start d-block" style="font-size:11px; ${isRowEditable ? 'cursor:pointer;' : ''} max-width:100%; overflow:hidden;" ${isRowEditable ? `onclick="bhBankOpenSplitModal(${realI})" title="Split-Positionen (Soll): Klicken zum Ansehen/Bearbeiten"` : ''}>
+              <div class="fw-bold text-truncate"><i class="fas fa-layer-group me-1"></i>Split (${r.splitRows.length} Posten)</div>
+              <div class="text-muted text-truncate font-monospace" style="font-size:9.5px;">${r.splitRows.map(s => {
+                const isAbzug = isBankKontoCode(s.kontoSoll) && !isBankKontoCode(s.kontoHaben);
+                const kCode = isAbzug ? (s.kontoHaben || '?') : (s.kontoSoll || '?');
+                const sign = isAbzug ? '-' : '';
+                return `${kCode}: ${sign}${Number(s.betrag).toFixed(2)}`;
+              }).join(' · ')}</div>
+            </div>
+          ` : makeKontoSelectHTML(sollSelectId, r.suggestedSoll, 'soll', !isRowEditable)}
+        </td>
+        <td data-col-id="haben" class="tk-col-haben">
+          ${(r.isSplit && isCredit && Array.isArray(r.splitRows) && r.splitRows.length > 0 && !r.alreadyBooked && !r.isWrongYear) ? `
+            <div class="badge bg-primary-subtle text-primary border border-primary-subtle p-1.5 w-100 text-start d-block" style="font-size:11px; ${isRowEditable ? 'cursor:pointer;' : ''} max-width:100%; overflow:hidden;" ${isRowEditable ? `onclick="bhBankOpenSplitModal(${realI})" title="Split-Positionen (Haben): Klicken zum Ansehen/Bearbeiten"` : ''}>
+              <div class="fw-bold text-truncate"><i class="fas fa-layer-group me-1"></i>Split (${r.splitRows.length} Posten)</div>
+              <div class="text-muted text-truncate font-monospace" style="font-size:9.5px;">${r.splitRows.map(s => {
+                const isAbzug = isBankKontoCode(s.kontoHaben) && !isBankKontoCode(s.kontoSoll);
+                const kCode = isAbzug ? (s.kontoSoll || '?') : (s.kontoHaben || '?');
+                const sign = isAbzug ? '-' : '';
+                return `${kCode}: ${sign}${Number(s.betrag).toFixed(2)}`;
+              }).join(' · ')}</div>
+            </div>
+          ` : makeKontoSelectHTML(habenSelectId, r.suggestedHaben, 'haben', !isRowEditable)}
+        </td>
+        ${canEdit ? `<td data-col-id="actions" class="bh-col-sticky-action text-center tk-col-actions"><div class="d-flex align-items-center justify-content-center gap-1">${actionButtons}</div></td>` : ''}
+      </tr>
+    `;
+  }).join('');
+
+  function sortHeaderHTML(colKey, label, alignRight = false) {
+    const isCurrent = window._bhBankSortCol === colKey;
+    const icon = isCurrent ? (window._bhBankSortAsc ? ' <i class="fas fa-sort-up text-primary"></i>' : ' <i class="fas fa-sort-down text-primary"></i>') : ' <i class="fas fa-sort opacity-25"></i>';
+    const alignClass = alignRight ? 'text-end' : '';
+    return `<th data-col-id="${colKey}" class="${alignClass} tk-col-${colKey}" style="cursor:pointer; user-select:none; position:relative;" onclick="bhBankSortTable('${colKey}')" title="Klicken zum Sortieren / Rand ziehen zum Anpassen der Breite">${label}${icon}</th>`;
+  }
+
+  let datalistOptions = kontenrahmen.map(k => {
+    const clean = window.TableKit && typeof window.TableKit.cleanKontoDisplay === 'function'
+      ? window.TableKit.cleanKontoDisplay(k.konto, k.bezeichnung)
+      : { konto: String(k.konto).trim(), bezeichnung: String(k.bezeichnung || '').replace(/\s*\bCH\d{2}[\s0-9A-Z]{12,}\b/gi, '').trim() };
+    return `<option value="${clean.konto} | ${escHtml(clean.bezeichnung)}"></option>`;
+  }).join('');
+
+  // Aktiven Fokus, Position und Eingabewert merken
+  const prevScrollY = window.scrollY;
+  const oldTableContainer = container.querySelector('.table-responsive');
+  const prevScrollLeft = oldTableContainer ? oldTableContainer.scrollLeft : 0;
+
+  const activeEl = document.activeElement;
+  let focusedInputId = null;
+  let focusedInputVal = null;
+  let selStart = null;
+  let selEnd = null;
+  if (activeEl && activeEl.id && activeEl.classList && (activeEl.classList.contains('bh-konto-input') || activeEl.classList.contains('bh-rmt-input'))) {
+    focusedInputId = activeEl.id;
+    focusedInputVal = activeEl.value;
+    try {
+      selStart = activeEl.selectionStart;
+      selEnd = activeEl.selectionEnd;
+    } catch (_) {}
+  }
+
+  container.innerHTML = `
+    <datalist id="bh-konten-datalist">
+      ${datalistOptions}
+    </datalist>
+    <div class="table-responsive" style="overflow-x: auto; width: 100%;">
+      <table id="bhBankTable" class="table table-hover table-sm align-middle mb-0" style="font-size: 13px;">
+        <thead class="table-dark sticky-top">
+          <tr>
+            ${sortHeaderHTML('date', 'Datum')}
+            ${sortHeaderHTML('party', 'Zahler / Empfänger')}
+            ${sortHeaderHTML('amount', 'Betrag', true)}
+            ${sortHeaderHTML('remittance', 'Verwendungszweck')}
+            ${sortHeaderHTML('status', 'Status')}
+            ${sortHeaderHTML('type', 'Zuordnung / Typ')}
+            ${sortHeaderHTML('soll', 'Soll-Konto')}
+            ${sortHeaderHTML('haben', 'Haben-Konto')}
+            ${canEdit ? '<th data-col-id="actions" class="bh-col-sticky-action text-center tk-col-actions" style="min-width: 145px;">Aktion</th>' : ''}
+          </tr>
+        </thead>
+        <tbody>${rowsHTML}</tbody>
+      </table>
+    </div>
+    <div class="text-muted small mt-2 px-1">${filtered.length} von ${rows.length} Buchungen angezeigt</div>
+  `;
+
+  // Scrollposition sofort stabilisieren
+  if (window.scrollY !== prevScrollY) {
+    window.scrollTo({ top: prevScrollY, behavior: 'instant' });
+  }
+  const newTableContainer = container.querySelector('.table-responsive');
+  if (newTableContainer && prevScrollLeft) {
+    newTableContainer.scrollLeft = prevScrollLeft;
+  }
+
+  setTimeout(() => {
+    if (window.TableKit && typeof window.TableKit.initTable === 'function') {
+      window._bhBankTableCtrl = window.TableKit.initTable('#bhBankTable', {
+        id: 'bh_bank',
+        resizable: {
+          minWidth: 45,
+          columns: {
+            date: { minWidth: 50, defaultWidth: 95 },
+            party: { minWidth: 50, defaultWidth: 160 },
+            amount: { minWidth: 55, defaultWidth: 110 },
+            remittance: { minWidth: 50, defaultWidth: 220 },
+            status: { minWidth: 45, defaultWidth: 90 },
+            type: { minWidth: 50, defaultWidth: 130 },
+            soll: { minWidth: 50, defaultWidth: 130 },
+            haben: { minWidth: 50, defaultWidth: 130 },
+            actions: { minWidth: 135, defaultWidth: 155, resizable: false }
+          }
+        },
+        reorderable: {
+          lockedColumns: ['actions']
+        },
+        columnToggle: {
+          container: document.getElementById('bh-bank-column-toggle')
+        }
+      });
+    } else {
+      bhMakeTableResizable(document.getElementById('bhBankTable'));
+      if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
+        window.TableKit.setupColumnToggle('#bhBankTable', {
+          container: document.getElementById('bh-bank-column-toggle'),
+          storageKey: 'tk_cols_bh_bank'
+        });
+      }
+    }
+    
+    // 1. Falls der Nutzer vor dem Re-Render in einem Feld war: Fokus und Cursor nahtlos wiederherstellen OHNE Scroll-Sprung!
+    if (focusedInputId) {
+      const restored = document.getElementById(focusedInputId);
+      if (restored) {
+        if (focusedInputVal !== null && focusedInputVal !== restored.value) {
+          restored.value = focusedInputVal;
+        }
+        restored.focus({ preventScroll: true });
+        try {
+          if (selStart !== null && selEnd !== null) {
+            restored.setSelectionRange(selStart, selEnd);
+          }
+        } catch (_) {}
+        return; // Priorität für aktive Nutzereingabe
+      }
+    }
+
+    // 2. Automatischer Sprung zur nächsten offenen Zeile nach erfolgreichem Buchen (sanft ohne Schlingern)
+    if (window._bhFocusNextAfterBooking !== undefined) {
+      const nextIdx = window._bhFocusNextAfterBooking;
+      window._bhFocusNextAfterBooking = undefined;
+      const target = document.getElementById('bh-soll-' + nextIdx);
+      if (target) {
+        target.focus({ preventScroll: true });
+      }
+    }
+  }, 60);
+}
+
+// ---------------------------------------------------------------------
+// Spaltenbreiten ziehbar/anpassbar machen (Column Resizing)
+// ---------------------------------------------------------------------
+function bhMakeTableResizable(table) {
+  if (!table) return;
+  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
+    return window.TableKit.makeResizable(table, {
+      storageKey: 'tk_widths_bh_bank',
+      minWidth: 45
+    });
+  }
+}
+
+// ---------------------------------------------------------------------
+// Prüft, ob ein Konto ein Bank-/Geldkonto ist (10xx, z.B. 1020, 1021, 1022, 1000)
+// ---------------------------------------------------------------------
+function isBankKontoCode(code) {
+  const c = String(code || '').trim();
+  return c.startsWith('102') || c === '1000' || c === '1010';
+}
+
+// ---------------------------------------------------------------------
+// Ermittelt das Buchhaltungskonto (z.B. 1020, 1021, 1022) anhand der IBAN aus der XML-Datei
+// ---------------------------------------------------------------------
+function bhBankGetAccountForIban(iban, fallbackKonto = '1020') {
+  if (!iban) return fallbackKonto;
+  const cleanIban = String(iban).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  if (!cleanIban) return fallbackKonto;
+
+  const kontenrahmen = window._bhKontenrahmen || [];
+
+  // 1. Suche im geladenen Kontenrahmen nach der IBAN in der Kontobezeichnung
+  for (const acc of kontenrahmen) {
+    const kCode = String(acc.konto).trim();
+    if (!kCode.startsWith('10')) continue; // Nur liquide Konten (10xx)
+
+    const cleanBezeichnung = String(acc.bezeichnung || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    if (cleanBezeichnung.includes(cleanIban)) {
+      return kCode;
+    }
+    // Auch Teilvergleich (ohne CH-Ländercode) prüfen
+    if (cleanIban.length >= 12 && cleanBezeichnung.includes(cleanIban.slice(4))) {
+      return kCode;
+    }
+  }
+
+  // 2. Bekannte Vereins-Bankkonten als stabiler Fallback
+  // CH28 8080 8005 3321 8786 1 -> 1021 Wirtschaftskonto
+  if (cleanIban.includes('533218786') || cleanIban.startsWith('CH28')) {
+    return '1021';
+  }
+  // CH06 8080 8003 6331 3189 2 -> 1020 Zahlungskonto / Vereinskonto
+  if (cleanIban.includes('36331') || cleanIban.startsWith('CH06')) {
+    return '1020';
+  }
+  // CH81 8080 8003 0788 5129 9 -> 1022 Sparkonto
+  if (cleanIban.includes('07885129') || cleanIban.startsWith('CH81')) {
+    return '1022';
+  }
+
+  return fallbackKonto;
+}
+
+// ---------------------------------------------------------------------
+// CAMT.053 File Handler & Parser
+function bhBankGetAccountsInfoHTML() {
+  const txs = window._bhBankTransactions || [];
+  if (!txs.length) return 'Keine Datei geladen';
+
+  const accounts = [...new Set(txs.map(t => t.accountIban).filter(Boolean))];
+  if (!accounts.length) return '1 Konto erkannt';
+
+  return accounts.map(iban => {
+    const kCode = bhBankGetAccountForIban(iban);
+    const acc = (window._bhKontenrahmen || []).find(a => String(a.konto).trim() === String(kCode).trim());
+    const accName = acc ? acc.bezeichnung : '';
+    return `<span class="badge bg-white text-dark border px-2 py-1 me-1 shadow-sm" title="${escHtml(accName)}"><i class="fas fa-university text-primary me-1"></i><strong>${escHtml(kCode)}</strong> (${escHtml(iban)})</span>`;
+  }).join(' ');
+}
+
+// ---------------------------------------------------------------------
+// Multi-File XML Handler
+// ---------------------------------------------------------------------
+window.bhBankHandleFiles = async function(files) {
+  if (!files || !files.length) return;
+
+  const fileList = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.xml'));
+  if (!fileList.length) {
+    if (window.bhAlert) {
+      await window.bhAlert('Ungültiges Dateiformat', 'Bitte wähle mindestens eine gültige XML-Datei (CAMT.053) aus.', 'warning');
+    }
+    return;
+  }
+
+  let allParsedTransactions = [];
+  let processedFilesCount = 0;
+  const failedFiles = [];
+
+  for (const file of fileList) {
+    try {
+      const xmlText = await file.text();
+      const txs = bhBankParseCAMT053(xmlText);
+
+      // Message-ID für Duplikatskontrolle festhalten
+      const firstMsgId = txs.length > 0 ? txs[0].fileMsgId : '';
+      if (firstMsgId) {
+        try {
+          const processedMsgIds = JSON.parse(localStorage.getItem('bh_processed_camt_msgids') || '[]');
+          if (!processedMsgIds.includes(firstMsgId)) {
+            processedMsgIds.push(firstMsgId);
+            localStorage.setItem('bh_processed_camt_msgids', JSON.stringify(processedMsgIds.slice(-50)));
+          }
+        } catch(_) {}
+      }
+
+      allParsedTransactions.push(...txs);
+      processedFilesCount++;
+    } catch(err) {
+      console.error(`Fehler beim Lesen von ${file.name}:`, err);
+      failedFiles.push({ name: file.name, error: err?.message || String(err) });
+    }
+  }
+
+  if (failedFiles.length > 0) {
+    const errList = failedFiles.map(f => `• ${f.name}: ${f.error}`).join('\n');
+    if (window.bhAlert) {
+      await window.bhAlert('Fehler beim XML-Import', `Folgende XML-Datei(en) konnten nicht eingelesen werden:\n\n${errList}`, 'danger');
+    } else if (typeof showError === 'function') {
+      showError(`Fehler beim XML-Import (${failedFiles.length} Datei(en) fehlgeschlagen).`);
+    }
+    if (processedFilesCount === 0) {
+      const inp = document.getElementById('bhBankXmlInput');
+      if (inp) inp.value = '';
+      return;
+    }
+  }
+
+  // Kombinieren & Deduplizieren neuer Transaktionen
+  const existing = window._bhBankTransactions || [];
+  const combined = [...existing, ...allParsedTransactions];
+
+  // Exakte Transaktions-Deduplizierung innerhalb des Arbeits-Speichers (inkl. Konto-IBAN, Richtung & Dateivorkommen-Sequenz)
+  const uniqueTxs = [];
+  const seenKeys = new Set();
+
+  combined.forEach((t, idx) => {
+    const baseKey = `${t.accountIban || ''}_${t.isCredit ? 'C' : 'D'}_${t.bookingDate}_${t.amount}_${(t.partyName||'').toLowerCase()}_${(t.remittanceInfo||'').substring(0,40).toLowerCase()}`;
+    const key = `${baseKey}_${t._dupSeq !== undefined ? t._dupSeq : 0}`;
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      if (t._camtOrderIndex === undefined) t._camtOrderIndex = idx;
+      uniqueTxs.push(t);
+    }
+  });
+
+  // Sicherstellen, dass Journal, Kontenrahmen und Beitragsdaten vor Matching & Rendering verfügbar sind
+  const needsDataBeforeMatch = (!window._bhJournal || window._bhJournal.length === 0 || !window._bhKontenrahmen || window._bhKontenrahmen.length === 0);
+  if (needsDataBeforeMatch && typeof window.loadBuchhaltungData === 'function') {
+    try {
+      await window.loadBuchhaltungData(true);
+    } catch(_) {}
+  }
+  if (!window._bhKontenrahmen || window._bhKontenrahmen.length === 0) {
+    try {
+      const cached = localStorage.getItem('bh_kontenrahmen');
+      if (cached) window._bhKontenrahmen = JSON.parse(cached);
+    } catch(_) {}
+  }
+  if ((!window._jbAllBeitraege || window._jbAllBeitraege.length === 0 || !window._jbAllPositions || window._jbAllPositions.length === 0 || !window._jbGebuehren || window._jbGebuehren.length === 0) && typeof window.loadJahresbeitragData === 'function') {
+    try {
+      await window.loadJahresbeitragData(true, false);
+    } catch(_) {}
+  }
+
+  try {
+    window._bhBankTransactions = uniqueTxs;
+    window._bhBankMatchResults = bhBankMatchAll(uniqueTxs);
+    window._bhBankSortCol = 'date';
+    window._bhBankSortAsc = false; // Neueste Buchungen sofort oben anzeigen
+    window._bhBankActiveFilter = (window._bhBankMatchResults.some(t => !t.alreadyBooked)) ? 'offen' : 'all';
+
+    renderTabBankabgleich(document.getElementById('bh-tab-content-container'));
+    showToast(`✅ ${processedFilesCount} Datei(en) eingelesen! Insges. ${uniqueTxs.length} Transaktionen analysiert.`, 'success');
+  } catch (err) {
+    console.error('[Bankabgleich] Fehler beim Verarbeiten der CAMT-Datei:', err);
+    if (window.bhAlert) {
+      await window.bhAlert('Fehler beim CAMT-Import', `Die Datei konnte nicht verarbeitet werden: ${err.message || err}`, 'danger');
+    }
+  } finally {
+    const inp = document.getElementById('bhBankXmlInput');
+    if (inp) inp.value = '';
+  }
+};
+
+window.bhBankClearTransactions = async function() {
+  if (window.bhCanWrite && !window.bhCanWrite()) {
+    if (window.bhAlert) await window.bhAlert('Keine Berechtigung', 'Du hast keine Berechtigung zum Leeren des Bankauszugs.', 'warning');
+    return;
+  }
+  const ok = window.bhConfirm
+    ? await window.bhConfirm('Bankauszug leeren', 'Möchtest du die aktuell geladenen Kontoauszugs-Transaktionen wirklich leeren, um den Auszug frisch einzulesen?', { type: 'warning', confirmText: 'Auszug leeren', cancelText: 'Abbrechen' })
+    : false;
+  if (!ok) return;
+  window._bhBankTransactions = [];
+  window._bhBankMatchResults = [];
+  try {
+    localStorage.removeItem('bh_processed_camt_msgids');
+  } catch(_) {}
+  const container = document.getElementById('bh-tab-content-container');
+  if (container) {
+    renderTabBankabgleich(container);
+  }
+  showToast('Bankauszug geleert. Du kannst die CAMT-Datei nun neu einlesen.', 'info');
+};
+
+function bhBankParseCAMT053(xmlText) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlText, 'application/xml');
+  const parseErr = doc.querySelector('parsererror');
+  if (parseErr) {
+    throw new Error('Ungültige XML-Struktur (Parserfehler in CAMT.053-Datei).');
+  }
+
+  function getTagText(el, tagName) {
+    if (!el) return '';
+    const nodes = el.getElementsByTagNameNS('*', tagName);
+    return nodes.length > 0 ? (nodes[0].textContent || '').trim() : '';
+  }
+
+  function getFirstChild(el, tagName) {
+    if (!el) return null;
+    const nodes = el.getElementsByTagNameNS('*', tagName);
+    return nodes.length > 0 ? nodes[0] : null;
+  }
+
+  const msgIdNode = doc.getElementsByTagNameNS('*', 'MsgId');
+  const fileMsgId = msgIdNode.length > 0 ? (msgIdNode[0].textContent || '').trim() : '';
+
+  // Stammkonto-IBAN & Bankname aus XML auslesen
+  const stmtNode = getFirstChild(doc, 'Stmt');
+  const acctNode = getFirstChild(stmtNode, 'Acct');
+  const accountIban = getTagText(getFirstChild(acctNode, 'Id'), 'IBAN') || getTagText(getFirstChild(acctNode, 'Id'), 'Othr');
+  const accountName = getTagText(acctNode, 'Nm') || getTagText(acctNode, 'Ownr');
+
+  const transactions = [];
+  const entries = doc.getElementsByTagNameNS('*', 'Ntry');
+  const fileOccCounts = new Map();
+
+  for (let i = 0; i < entries.length; i++) {
+    const ntry = entries[i];
+
+    const cdtDbtInd = getTagText(ntry, 'CdtDbtInd'); // 'CRDT' (Eingang) oder 'DBIT' (Ausgang)
+    const isCredit = cdtDbtInd === 'CRDT';
+
+    const amount      = parseFloat(getTagText(ntry, 'Amt') || '0');
+    
+    // Buchungsdatum (BookgDt) & Valutadatum (ValDt) auslesen
+    const bookgDtNode = getFirstChild(ntry, 'BookgDt');
+    const valDtNode   = getFirstChild(ntry, 'ValDt');
+    const rawBookgDt  = getTagText(bookgDtNode, 'Dt') || getTagText(bookgDtNode, 'DtTm');
+    const rawValDt    = getTagText(valDtNode, 'Dt') || getTagText(valDtNode, 'DtTm');
+    const bookingDate = (rawBookgDt || rawValDt || '').split('T')[0];
+    const valutaDate  = (rawValDt || '').split('T')[0];
+
+    const addtlInfo   = getTagText(ntry, 'AddtlNtryInf');
+
+    const txDtls = getFirstChild(ntry, 'TxDtls');
+
+    // Debtor (Zahler) oder Creditor (Empfänger)
+    const partyNode = isCredit
+      ? (getFirstChild(getFirstChild(txDtls, 'UltmtDbtr'), 'Pty') || getFirstChild(getFirstChild(txDtls, 'Dbtr'), 'Pty') || getFirstChild(txDtls, 'UltmtDbtr') || getFirstChild(txDtls, 'Dbtr'))
+      : (getFirstChild(getFirstChild(txDtls, 'UltmtCdtr'), 'Pty') || getFirstChild(getFirstChild(txDtls, 'Cdtr'), 'Pty') || getFirstChild(txDtls, 'UltmtCdtr') || getFirstChild(txDtls, 'Cdtr'));
+
+    const partyAcctNode = isCredit
+      ? getFirstChild(txDtls, 'DbtrAcct')
+      : getFirstChild(txDtls, 'CdtrAcct');
+    const partyIban = getTagText(getFirstChild(partyAcctNode, 'Id'), 'IBAN') || getTagText(getFirstChild(partyAcctNode, 'Id'), 'Othr');
+
+    const refsNode    = getFirstChild(txDtls, 'Refs');
+    const endToEndId  = getTagText(refsNode, 'EndToEndId') || getTagText(refsNode, 'InstrId') || getTagText(refsNode, 'PmtInfId');
+
+    const partyName     = getTagText(partyNode, 'Nm');
+    const pstlAdr       = getFirstChild(partyNode, 'PstlAdr');
+    let partyPLZ        = getTagText(pstlAdr, 'PstCd');
+    const partyCity     = getTagText(pstlAdr, 'TwnNm');
+    const adrLine       = getTagText(pstlAdr, 'AdrLine');
+    if (!partyPLZ) {
+      const matchPlz = ((adrLine || '') + ' ' + (partyCity || '')).match(/\b([1-9]\d{3})\b/);
+      if (matchPlz) partyPLZ = matchPlz[1];
+    }
+
+    const strd       = getFirstChild(getFirstChild(txDtls, 'RmtInf'), 'Strd');
+    const ustrd      = getTagText(getFirstChild(txDtls, 'RmtInf'), 'Ustrd');
+    const addtlRmt   = getTagText(strd, 'AddtlRmtInf');
+    const remittanceInfo = addtlRmt || ustrd || addtlInfo || '';
+
+    const cdtrRefInf = getFirstChild(strd, 'CdtrRefInf');
+    const creditorReference = getTagText(cdtrRefInf, 'Ref');
+
+    const occKey = `${accountIban || ''}_${isCredit ? 'C' : 'D'}_${bookingDate}_${amount}_${(partyName || '').toLowerCase()}_${(remittanceInfo || '').substring(0, 40).toLowerCase()}`;
+    const dupSeq = fileOccCounts.get(occKey) || 0;
+    fileOccCounts.set(occKey, dupSeq + 1);
+
+    transactions.push({
+      _camtOrderIndex: i,
+      _dupSeq: dupSeq,
+      isCredit,
+      amount,
+      bookingDate,
+      valutaDate,
+      partyName,
+      partyIban,
+      partyPLZ,
+      partyCity: partyCity || (adrLine ? adrLine.split(' ').slice(-1)[0] : ''),
+      remittanceInfo,
+      _originalRemittanceInfo: remittanceInfo,
+      ustrd,
+      creditorReference,
+      endToEndId,
+      fileMsgId,
+      accountIban,
+      accountName,
+      alreadyBooked: false
+    });
+  }
+
+  return transactions;
+}
+
+// ---------------------------------------------------------------------
+// Automatische Verknüpfung von Rechnungspositionen & Gegenkonten (Split / Einzel)
+// ---------------------------------------------------------------------
+function bhBankApplyInvoicePositionsToTx(tx, inv, positions) {
+  if (!tx || !inv) return;
+  const invId = String(inv.id || '').trim();
+  positions = positions || inv.positions || (window._invoicePositionsCache && window._invoicePositionsCache[invId]) || [];
+  if (!Array.isArray(positions) || positions.length === 0) return;
+
+  // Im Objekt und Cache hinterlegen
+  inv.positions = positions;
+  window._invoicePositionsCache = window._invoicePositionsCache || {};
+  window._invoicePositionsCache[invId] = positions;
+
+  const isCredit = Boolean(tx.isCredit);
+  const txBankKonto = isBankKontoCode(tx.suggestedSoll) ? tx.suggestedSoll : bhBankGetAccountForIban(tx.accountIban, '1020');
+  
+  // Relevante Positionen mit Betrag != 0 filtern
+  const validPositions = positions.filter(p => Math.abs(Number(p.amount !== undefined ? p.amount : (p.betrag !== undefined ? p.betrag : 0))) >= 0.01);
+  if (validPositions.length === 0) return;
+
+  if (validPositions.length === 1 && !tx._customHabenEdited && !tx._customSollEdited) {
+    // Einzelposition: Exaktes Gegenkonto der Position zuweisen
+    const singlePos = validPositions[0];
+    const posKonto = bhBankCleanKonto(singlePos.konto);
+    if (posKonto) {
+      if (isCredit) {
+        tx.suggestedHaben = posKonto;
+        tx.suggestedSoll = txBankKonto;
+      } else {
+        tx.suggestedSoll = posKonto;
+        tx.suggestedHaben = txBankKonto;
+      }
+    }
+    tx.isSplit = false;
+    tx.splitRows = null;
+    return;
+  }
+
+  // Mehrere Positionen -> Automatische Split-Konfiguration (sofern nicht manuell vom Nutzer editiert)
+  if (validPositions.length > 1 && !tx._customSplitEdited && (!Array.isArray(tx.splitRows) || tx.splitRows.length === 0)) {
+    let netSum = 0;
+    const splitRows = validPositions.map((p, idx) => {
+      const pAmt = Number(p.amount !== undefined ? p.amount : (p.betrag !== undefined ? p.betrag : 0));
+      const posDesc = (p.description || p.beschreibung || `Position ${idx + 1}`).trim();
+      const posKonto = bhBankCleanKonto(p.konto) || (isCredit ? '3800' : '6000');
+      const absAmt = Math.abs(pAmt);
+
+      let rowSoll = '';
+      let rowHaben = '';
+
+      if (isCredit) {
+        if (pAmt >= 0) {
+          rowSoll = txBankKonto;
+          rowHaben = posKonto;
+          netSum += pAmt;
+        } else {
+          // Rabatt / Abzug / Gutschrift
+          rowSoll = posKonto;
+          rowHaben = txBankKonto;
+          netSum -= absAmt;
+        }
+      } else {
+        if (pAmt >= 0) {
+          rowSoll = posKonto;
+          rowHaben = txBankKonto;
+          netSum += pAmt;
+        } else {
+          rowSoll = txBankKonto;
+          rowHaben = posKonto;
+          netSum -= absAmt;
+        }
+      }
+
+      return {
+        beschreibung: `Zahlungseingang ${inv.id} (${inv.name || ''}): ${posDesc}`,
+        betrag: Math.round(absAmt * 100) / 100,
+        kontoSoll: rowSoll,
+        kontoHaben: rowHaben,
+        position_nr: p.position_nr || (idx + 1)
+      };
+    });
+
+    // Prüfen auf allfällige Überzahlung (z. B. Spende / Aufrundung durch Einzahler)
+    const txTotal = Math.abs(Number(tx.amount || 0));
+    const diff = Math.round((txTotal - netSum) * 100) / 100;
+    if (diff > 0.05) {
+      splitRows.push({
+        beschreibung: `Überzahlung / Spende zu Rechnung ${inv.id} (${inv.name || ''})`,
+        betrag: diff,
+        kontoSoll: isCredit ? txBankKonto : '3800',
+        kontoHaben: isCredit ? '3800' : txBankKonto
+      });
+    }
+
+    tx.isSplit = true;
+    tx.splitRows = splitRows;
+    if (isCredit) {
+      tx.suggestedSoll = txBankKonto;
+      tx.suggestedHaben = '';
+    } else {
+      tx.suggestedHaben = txBankKonto;
+      tx.suggestedSoll = '';
+    }
+  }
+}
+window.bhBankApplyInvoicePositionsToTx = bhBankApplyInvoicePositionsToTx;
+
+// ---------------------------------------------------------------------
+// Ermittelt den passendsten Beitrags-Header für ein Mitglied (inkl. Vorjahres-Erkennung)
+// ---------------------------------------------------------------------
+function bhBankFindBestBeitragForMember(personNumber, txAmount, remittanceText, activeYear) {
+  if (!personNumber) return null;
+  const pn = String(personNumber).trim();
+  const allBeitraege = (window._jbAllBeitraege || []).filter(x => String(x.PersonNumber).trim() === pn);
+  if (allBeitraege.length === 0) return null;
+
+  const targetYear = Number(activeYear || window._bhYear || new Date().getFullYear());
+  const rmt = String(remittanceText || '');
+  const amt = Number(txAmount || 0);
+
+  // 1. Explizite Jahresangabe im Verwendungszweck (z. B. "Jahresbeitrag 2025")
+  const explicitJbMatch = rmt.match(/(?:jahresbeitrag|mitgliederbeitrag|vereinsbeitrag|beitrag|\bjb\b)\s*(20\d{2})/i) || rmt.match(/\b(20\d{2})\b/);
+  if (explicitJbMatch) {
+    const expYr = Number(explicitJbMatch[1]);
+    const expBeitrag = allBeitraege.find(b => Number(b.year) === expYr);
+    if (expBeitrag) return expBeitrag;
+  }
+
+  // 2. Exakter Betragstreffer bei offenem Beitrag (aktuelles Jahr hat bei Gleichstand Vorrang vor Vorjahr)
+  const currentYearBeitrag = allBeitraege.find(b => Number(b.year) === targetYear) || null;
+  if (currentYearBeitrag && Math.abs(Number(currentYearBeitrag.Gesamt || 0) - amt) < 0.05) {
+    return currentYearBeitrag;
+  }
+
+  const exactOpenOther = allBeitraege
+    .filter(b => b.status !== 'bezahlt' && Math.abs(Number(b.Gesamt || 0) - amt) < 0.05)
+    .sort((a, b) => Number(b.year || 0) - Number(a.year || 0));
+  if (exactOpenOther.length > 0) {
+    return exactOpenOther[0];
+  }
+
+  const exactAnyOther = allBeitraege
+    .filter(b => Math.abs(Number(b.Gesamt || 0) - amt) < 0.05)
+    .sort((a, b) => Number(b.year || 0) - Number(a.year || 0));
+  if (exactAnyOther.length > 0) {
+    return exactAnyOther[0];
+  }
+
+  // 3. Fallback: Aktuelles Buchungsjahr oder neuester vorhandener Eintrag
+  if (currentYearBeitrag) return currentYearBeitrag;
+  return [...allBeitraege].sort((a, b) => Number(b.year || 0) - Number(a.year || 0))[0];
+}
+window.bhBankFindBestBeitragForMember = bhBankFindBestBeitragForMember;
+
+// ---------------------------------------------------------------------
+// Überträgt die Jahresbeitrags-Positionen direkt in tx.splitRows / tx.isSplit
+// ---------------------------------------------------------------------
+function bhBankApplyJbPositionsToTx(tx) {
+  if (!tx || tx._customSplitEdited) return;
+  const isJb = Boolean(tx.isJahresbeitrag || (tx.matchedInvoice && String(tx.matchedInvoice.type || '').toLowerCase().includes('jahresbeitrag')));
+  if (!isJb || typeof window.jbGetSplitBookings !== 'function') return;
+
+  // Falls bereits über eine verknüpfte Rechnung Split-Positionen geladen wurden, diese behalten
+  if (tx.isSplit && Array.isArray(tx.splitRows) && tx.splitRows.length > 0) return;
+
+  const activeYear = Number(window._bhYear || new Date().getFullYear());
+  const txBankKonto = isBankKontoCode(tx.suggestedSoll) ? tx.suggestedSoll : bhBankGetAccountForIban(tx.accountIban, '1020');
+
+  if (!tx.matchedBeitrag && (tx.matchedMember?.PersonNumber || tx.matchedInvoice?.PersonNumber)) {
+    const pn = tx.matchedMember?.PersonNumber || tx.matchedInvoice?.PersonNumber;
+    tx.matchedBeitrag = bhBankFindBestBeitragForMember(pn, tx.amount, tx.remittanceInfo, activeYear);
+  }
+
+  const hId = tx.matchedBeitrag ? tx.matchedBeitrag.id : (tx.matchedInvoice ? tx.matchedInvoice.id : null);
+  const beitragYear = tx.matchedBeitrag && tx.matchedBeitrag.year
+    ? Number(tx.matchedBeitrag.year)
+    : (tx.matchedInvoice && tx.matchedInvoice.year ? Number(tx.matchedInvoice.year) : activeYear);
+  const mObj = tx.matchedMember || (tx.matchedInvoice ? { FirstName: tx.matchedInvoice.name, LastName: '', PersonNumber: tx.matchedInvoice.PersonNumber } : {});
+
+  const splits = window.jbGetSplitBookings({
+    headerId: hId,
+    member: mObj,
+    paidAmount: Number(tx.amount || 0),
+    bookingDate: tx.bookingDate || new Date().toISOString().split('T')[0],
+    bankAccount: txBankKonto,
+    year: activeYear,
+    beitragYear: beitragYear
+  });
+
+  if (!Array.isArray(splits) || splits.length === 0) return;
+
+  if (splits.length === 1) {
+    tx.isSplit = false;
+    tx.splitRows = null;
+    if (!tx._customSollEdited) tx.suggestedSoll = String(splits[0].konto_soll || txBankKonto).trim();
+    if (!tx._customHabenEdited) tx.suggestedHaben = String(splits[0].konto_haben || '3410').trim();
+    return;
+  }
+
+  tx.isSplit = true;
+  tx.splitRows = splits.map((s, idx) => ({
+    beschreibung: (s.beschreibung || `Jahresbeitrag ${beitragYear} (Position ${idx + 1})`).trim(),
+    betrag: Math.round(Math.abs(Number(s.betrag || 0)) * 100) / 100,
+    kontoSoll: bhBankCleanKonto(s.konto_soll) || String(s.konto_soll || '').trim(),
+    kontoHaben: bhBankCleanKonto(s.konto_haben) || String(s.konto_haben || '').trim(),
+    position_nr: idx + 1
+  }));
+  tx.suggestedSoll = txBankKonto;
+  tx.suggestedHaben = '';
+}
+window.bhBankApplyJbPositionsToTx = bhBankApplyJbPositionsToTx;
+
+// ---------------------------------------------------------------------
+// Matching Engine (Jahresbeiträge + Rules + Journal History + Duplikats-Schutz)
+// ---------------------------------------------------------------------
+function bhBankMatchAll(transactions) {
+  const members = window._jbMembers || [];
+  const beitraege = (window._jbAllBeitraege || []).filter(h => Number(h.year) === Number(window._bhYear || new Date().getFullYear()));
+  const invoices = window._invoices || window._jbAllInvoices || [];
+  const userRules = window.getBhBankRules();
+  const journalHistory = window._bhJournal || [];
+
+  // Split-Gruppen im Journal für Sammel- und Splitbuchungs-Abgleich vorbereiten
+  const journalGroups = bhBankBuildJournalGroups(journalHistory);
+  const usedJournalIds = new Set();
+  const usedGroupKeys = new Set();
+
+  const results = transactions.map(tx => {
+    const cleanRemittance = (tx.remittanceInfo || '').toLowerCase();
+    const cleanParty      = (tx.partyName || '').toLowerCase();
+    const cleanRef        = (tx.creditorReference || '').toLowerCase();
+
+    let alreadyBooked = Boolean(tx.alreadyBooked);
+    let bookedDate = tx.bookedDate || '';
+    let matchedJournalEntry = tx.matchedJournalEntry || null;
+
+    let isInvoice = false;
+    let matchedInvoice = null;
+    let alreadyPaidInvoice = false;
+    let isJahresbeitrag = false;
+    let matchScore = 0;
+    let matchedMember = null;
+    let matchedBeitrag = null;
+    let alreadyPaidJb = false;
+    let matchedPaymentOrder = tx.matchedPaymentOrder || null;
+    let matchType = 'unknown'; // 'invoice' | 'jb' | 'rule' | 'journal' | 'heuristic' | 'unknown'
+    let matchRuleName = '';
+    let matchRulePrefix = '';
+
+    // Bank-Konto dynamisch anhand der erkannten XML-IBAN ermitteln (z.B. 1021 für Wirtschaftskonto, 1020 für Vereinskonto, 1022 für Sparkonto)
+    const txBankKonto = bhBankGetAccountForIban(tx.accountIban, '1020');
+
+    let suggestedSoll = tx._customSollEdited ? tx.suggestedSoll : (tx.isCredit ? txBankKonto : '');
+    let suggestedHaben = tx._customHabenEdited ? tx.suggestedHaben : (tx.isCredit ? '' : txBankKonto);
+    let matchLabel = 'Manuelle Buchung';
+
+    // 0b. STUFE: Prüfung auf manuelle Benutzer-Übersteuerung (Status / Zuordnung manuell geändert)
+    let hasCustomOverride = false;
+    if (tx._customMatchOverride === 'manual') {
+      hasCustomOverride = true;
+      isInvoice = false;
+      matchedInvoice = null;
+      alreadyPaidInvoice = false;
+      isJahresbeitrag = false;
+      matchedMember = null;
+      matchedBeitrag = null;
+      alreadyPaidJb = false;
+      matchType = (tx.alreadyBooked || alreadyBooked) ? 'journal' : 'unknown';
+      matchLabel = 'Manuelle Buchung';
+      matchScore = 0;
+      if (!tx._customSollEdited) suggestedSoll = tx.isCredit ? txBankKonto : '';
+      if (!tx._customHabenEdited) suggestedHaben = tx.isCredit ? '' : txBankKonto;
+    } else if (tx._customMatchOverride === 'jahresbeitrag') {
+      hasCustomOverride = true;
+      isJahresbeitrag = true;
+      matchedMember = tx.matchedMember;
+      matchedBeitrag = tx.matchedBeitrag;
+      alreadyPaidJb = tx.alreadyPaidJb || (tx.matchedBeitrag && tx.matchedBeitrag.status === 'bezahlt');
+      if (alreadyPaidJb) alreadyBooked = true;
+      matchType = (tx.alreadyBooked || alreadyBooked) ? 'journal' : 'jb';
+      matchLabel = tx.matchLabel || (tx.matchedMember ? `Jahresbeitrag (${tx.matchedMember.FirstName} ${tx.matchedMember.LastName})` : 'Jahresbeitrag Mitglied');
+      matchScore = 2;
+      if (!tx._customSollEdited) suggestedSoll = txBankKonto;
+      if (!tx._customHabenEdited) suggestedHaben = '3410';
+    } else if (tx._customMatchOverride === 'invoice') {
+      hasCustomOverride = true;
+      isInvoice = true;
+      matchedInvoice = tx.matchedInvoice;
+      alreadyPaidInvoice = tx.alreadyPaidInvoice || (tx.matchedInvoice && tx.matchedInvoice.status === 'bezahlt');
+      isJahresbeitrag = tx.isJahresbeitrag;
+      matchedMember = tx.matchedMember;
+      matchedBeitrag = tx.matchedBeitrag;
+      alreadyPaidJb = tx.alreadyPaidJb;
+      if (alreadyPaidInvoice || alreadyPaidJb) alreadyBooked = true;
+      matchType = (tx.alreadyBooked || alreadyBooked) ? 'journal' : 'invoice';
+      matchLabel = tx.matchLabel || (tx.matchedInvoice ? `Rechnung ${tx.matchedInvoice.id}` : 'Rechnung');
+      matchScore = 2;
+      if (!tx._customSollEdited) suggestedSoll = txBankKonto;
+      if (!tx._customHabenEdited) suggestedHaben = tx.suggestedHaben || '3650';
+    }
+
+    if (!hasCustomOverride) {
+      // 1. STUFE: Rechnungs- & Beitrags-Matching (nur bei Gutschriften)
+      if (tx.isCredit) {
+        const bankName = normalizeString(tx.partyName || '');
+        const txAmt = tx.amount;
+
+        // A. Rechnungs-Matching aus Modul Rechnungen (_invoices)
+        let bestInv = null;
+        let bestInvScore = 0;
+
+        // Hilfsfunktion: Empfängerdaten der Rechnung (Nachname & PLZ) ermitteln
+        function getInvoiceRecipient(inv) {
+          if (!inv) return { nachname: '', vorname: '', plz: '' };
+          if (typeof window.rnGetRecipientForInvoice === 'function') {
+            try {
+              const r = window.rnGetRecipientForInvoice(inv);
+              if (r && (r.nachname || r.firma || r.plz)) {
+                return {
+                  nachname: r.nachname || r.firma || r.name || '',
+                  vorname: r.vorname || '',
+                  plz: String(r.plz || '').trim()
+                };
+              }
+            } catch (_) {}
+          }
+          if (inv.PersonNumber && Array.isArray(window._jbMembers)) {
+            const m = window._jbMembers.find(x => String(x.PersonNumber) === String(inv.PersonNumber));
+            if (m) {
+              return {
+                nachname: m.LastName || '',
+                vorname: m.FirstName || '',
+                plz: String(m.PostCode || m.ZipCode || m.PLZ || inv.plz || '').trim()
+              };
+            }
+          }
+          const rawName = String(inv.name || '').trim();
+          const parts = rawName.split(/\s+/).filter(Boolean);
+          return {
+            nachname: parts.length > 1 ? parts[parts.length - 1] : rawName,
+            nachnameAlt: parts.length > 1 ? parts[0] : rawName,
+            vorname: parts.length > 1 ? parts[0] : '',
+            plz: String(inv.plz || '').trim()
+          };
+        }
+
+        for (const inv of invoices) {
+          const invIdRaw = String(inv.id || '').trim();
+          const invIdClean = invIdRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const invTotal = Number(inv.total_amount || 0);
+          const sameAmount = Math.abs(invTotal - txAmt) < 0.05;
+
+          // 1. Extrahiere 4-stelligen Code aus der Rechnungsnummer (z.B. "7K4M" aus "RE-26-7K4M", "3SMD" aus "DP-26-3SMD", "0042" aus "RE-JB-2026-0042")
+          const idParts = invIdRaw.split('-');
+          const invSuffix = idParts.length > 1 ? idParts[idParts.length - 1].trim() : invIdRaw;
+          const cleanSuffix = invSuffix.toLowerCase();
+
+          // Abgleich mit <Ustrd> und Verwendungszweck (cleanRemittance / cleanRef)
+          const cleanUstrd = String(tx.ustrd || '').toLowerCase();
+          const cleanRmtNoSpace = cleanRemittance.replace(/[^a-z0-9]/g, '');
+          const cleanRefNoSpace = cleanRef.replace(/[^a-z0-9]/g, '');
+
+          let hasCodeMatch = false;
+          if (cleanSuffix && cleanSuffix.length >= 3 && !/^20\d{2}$/.test(cleanSuffix)) {
+            const suffixRegex = new RegExp(`(?:^|[^a-z0-9])${cleanSuffix}(?:[^a-z0-9]|$)`, 'i');
+            if (suffixRegex.test(cleanUstrd) || suffixRegex.test(cleanRemittance) || cleanRefNoSpace.includes(cleanSuffix)) {
+              hasCodeMatch = true;
+            }
+          }
+          const hasFullIdMatch = invIdClean && (cleanRmtNoSpace.includes(invIdClean) || cleanRefNoSpace.includes(invIdClean));
+
+          // Auch Quell-Referenz (z.B. Vermietungs-Buchungsnr "V-2026-0105" oder Endziffern) abgleichen
+          const invSourceIdRaw = String(inv.source_id || inv.booking_number || '').trim();
+          const invSourceIdClean = invSourceIdRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const sourceParts = invSourceIdRaw.split('-');
+          const sourceSuffix = sourceParts.length > 1 ? sourceParts[sourceParts.length - 1].trim().toLowerCase() : '';
+          let hasSourceMatch = false;
+          if (invSourceIdClean && (cleanRmtNoSpace.includes(invSourceIdClean) || cleanRefNoSpace.includes(invSourceIdClean))) {
+            hasSourceMatch = true;
+          } else if (sourceSuffix && sourceSuffix.length >= 3 && !/^20\d{2}$/.test(sourceSuffix)) {
+            const srcRegex = new RegExp(`(?:^|[^a-z0-9])${sourceSuffix}(?:[^a-z0-9]|$)`, 'i');
+            if (srcRegex.test(cleanUstrd) || srcRegex.test(cleanRemittance) || cleanRefNoSpace.includes(sourceSuffix)) {
+              hasSourceMatch = true;
+            }
+          }
+
+          const hasInvoiceNumber = hasCodeMatch || hasFullIdMatch || hasSourceMatch;
+
+          // 2. Abgleich Nachname & PLZ (Vorname bewusst weglassen)
+          const rec = getInvoiceRecipient(inv);
+          const recNachname = normalizeString(rec.nachname || '');
+          const recNachnameAlt = normalizeString(rec.nachnameAlt || '');
+          const recPlz = String(rec.plz || '').trim().replace(/[^0-9]/g, '');
+          const txPlz = String(tx.partyPLZ || '').trim().replace(/[^0-9]/g, '');
+
+          let hasNachnameMatch = false;
+          const candidates = [recNachname, recNachnameAlt].filter(n => n && n.length >= 3);
+          for (const cand of candidates) {
+            const nachnameRegex = new RegExp(`(?:^|\\s)${cand}(?:\\s|$)`, 'i');
+            if (nachnameRegex.test(bankName) || bankName.includes(cand)) {
+              hasNachnameMatch = true;
+              break;
+            }
+          }
+
+          let hasPlzMatch = false;
+          if (recPlz && txPlz && recPlz.length === 4 && txPlz.length === 4) {
+            hasPlzMatch = (recPlz === txPlz);
+          }
+
+          let score = 0;
+
+          // Prioritäten-Hierarchie:
+          if (hasInvoiceNumber) {
+            if (sameAmount) {
+              score = 5.0; // Prio 1: Rechnungsnummer (4-stellig oder voll) & Gesamtbetrag stimmen 1:1!
+            } else {
+              score = 3.5; // Prio 2: Rechnungsnummer erkannt, aber Betrag weicht ab (Teilzahlung/Skonto/Überzahlung)
+            }
+          } else if (hasNachnameMatch && hasPlzMatch) {
+            if (sameAmount) {
+              score = 3.2; // Prio 3: Nachname + PLZ stimmen & Gesamtbetrag stimmt überein
+            } else {
+              score = 1.8; // Nachname + PLZ stimmen, aber Betrag weicht ab -> unterhalb Schwelle (2.5) für automatische Zuweisung
+            }
+          }
+
+          // Feiner Tie-Breaker für gleichwertige Treffer
+          if (score > 0) {
+            if (inv.status !== 'bezahlt') score += 0.2;
+            if (sameAmount && !hasInvoiceNumber) score += 0.1;
+          }
+
+          if (score > bestInvScore) {
+            bestInvScore = score;
+            bestInv = inv;
+          }
+        }
+
+        if (bestInv && bestInvScore >= 2.5) {
+          isInvoice = true;
+          matchedInvoice = bestInv;
+          alreadyPaidInvoice = (bestInv.status === 'bezahlt');
+          matchType = 'invoice';
+          if (!tx._customSollEdited) suggestedSoll = txBankKonto;
+          
+          // Habenkonto nach Rechnungstyp auflösen
+          if (!tx._customHabenEdited) {
+            const invType = String(bestInv.type || '').toLowerCase();
+            const invIdUpper = String(bestInv.id || '').toUpperCase();
+            if (invType.includes('jahresbeitrag') || invIdUpper.startsWith('JB-') || invIdUpper.startsWith('RE-JB-')) {
+              suggestedHaben = '3410'; // Mitgliederbeiträge Aktive
+              isJahresbeitrag = true;
+              matchedBeitrag = bhBankFindBestBeitragForMember(bestInv.PersonNumber, tx.amount, cleanRemittance, Number(bestInv.year || window._bhYear || new Date().getFullYear()))
+                || beitraege.find(b => String(b.PersonNumber) === String(bestInv.PersonNumber) || String(b.id) === String(bestInv.id)) || null;
+              matchedMember = members.find(m => String(m.PersonNumber) === String(bestInv.PersonNumber)) || null;
+              alreadyPaidJb = alreadyPaidInvoice || (matchedBeitrag && matchedBeitrag.status === 'bezahlt');
+            } else if (invType.includes('vermietung') || invType.includes('miete') || invIdUpper.startsWith('VT-') || invIdUpper.startsWith('V-')) {
+              suggestedHaben = '3650'; // Mieterträge Schützenhaus
+            } else if (invType.includes('schulsport')) {
+              suggestedHaben = '3420'; // Nachwuchsförderung
+            } else if (invType.includes('sponsor') || invType.includes('gönner')) {
+              suggestedHaben = '3800'; // Sponsoring / Spenden
+            } else if (invType.includes('depot') || invType.includes('pfand') || invType.includes('kaution') || invIdUpper.startsWith('DP-')) {
+              const posKonto = (bestInv.positions || []).find(p => p.konto)?.konto;
+              suggestedHaben = posKonto || localStorage.getItem('inventar_preferred_haben_konto_depot') || '2030'; // Kaution / Depots
+            } else if (invIdUpper.startsWith('MV-') || invType.includes('material')) {
+              const posKonto = (bestInv.positions || []).find(p => p.konto)?.konto;
+              suggestedHaben = posKonto || localStorage.getItem('inventar_preferred_haben_konto_verkauf') || '8121'; // Materialverkauf Inventar
+            } else if (invType.includes('munition')) {
+              const posKonto = (bestInv.positions || []).find(p => p.konto)?.konto;
+              suggestedHaben = posKonto || '3800'; // Munitionsverkauf / Übriger Ertrag
+            } else {
+              suggestedHaben = '3650';
+            }
+          }
+
+          matchScore = bestInvScore >= 3.5 ? 2 : 1;
+          matchLabel = `Rechnung ${bestInv.id} (${bestInv.type || 'Diverse'}): ${bestInv.name}`;
+        }
+
+        // B. Falls keine Rechnung direkt gefunden, prüfe Jahresbeiträge über Mitgliederstamm
+        if (!isInvoice) {
+          const jbKeywords = [/jahresbeitra/i, /mitgliederbeitra/i, /vereinsbeitra/i, /\bjb\b/i, /beitra\s*g/i];
+          const textHasJb = jbKeywords.some(r => r.test(cleanRemittance));
+
+          let bestScore = 0;
+          let bestMem = null;
+          let bestBeit = null;
+
+          for (const m of members) {
+            const b = bhBankFindBestBeitragForMember(m.PersonNumber, tx.amount, cleanRemittance, Number(window._bhYear || new Date().getFullYear()));
+            const mLast  = normalizeString(m.LastName  || '');
+            const mFirst = normalizeString(m.FirstName || '');
+            const mGesamt = b ? Number(b.Gesamt || 0) : (m._istPassiv ? 20 : 0);
+
+            let score = 0;
+            if (Math.abs(mGesamt - tx.amount) < 0.01) score += 1;
+            if (bankName.includes(mLast) && mLast.length > 1) score += 1;
+            if (bankName.includes(mFirst) && mFirst.length > 1) score += 0.5;
+
+            const cleanMpn = String(m.PersonNumber || '').trim().replace(/^0+/, '');
+            if (cleanRef && cleanMpn && cleanRef.replace(/[^0-9]/g, '').endsWith(cleanMpn)) {
+              score += 2;
+            }
+
+            if (score > bestScore) {
+              bestScore = score;
+              bestMem = m;
+              bestBeit = b;
+            }
+          }
+
+          const hasMemberMatch = (bestScore >= 2) || (textHasJb && bestMem && bestScore >= 1) || (cleanRef && bestScore >= 2);
+          if (hasMemberMatch && bestMem) {
+            isJahresbeitrag = true;
+            matchScore = bestScore >= 2 ? 2 : 1;
+            matchedMember = bestMem;
+            matchedBeitrag = bestBeit;
+            alreadyPaidJb = bestBeit ? (bestBeit.status === 'bezahlt') : false;
+            matchType = 'jb';
+            if (!tx._customSollEdited) suggestedSoll = txBankKonto; // Bank
+            if (!tx._customHabenEdited) suggestedHaben = '3410'; // Mitgliederbeiträge Aktive
+            const jbYr = bestBeit && bestBeit.year ? bestBeit.year : Number(window._bhYear || new Date().getFullYear());
+            matchLabel = `Jahresbeitrag ${jbYr} (${bestMem.FirstName} ${bestMem.LastName})`;
+
+            // Falls eine Rechnung im Rechnungsmodul für diesen Beitrag existiert:
+            if (bestMem) {
+              const relInv = invoices.find(inv =>
+                String(inv.PersonNumber) === String(bestMem.PersonNumber) &&
+                String(inv.type || '').toLowerCase().includes('jahresbeitrag') &&
+                (!bestBeit || !bestBeit.year || !inv.year || Number(inv.year) === Number(bestBeit.year))
+              );
+              if (relInv) {
+                matchedInvoice = relInv;
+                isInvoice = true;
+                alreadyPaidInvoice = (relInv.status === 'bezahlt');
+              }
+            }
+          }
+        }
+      }
+
+    // 2. STUFE: Benutzer-Regeln aus Supabase (accounting_bank_rules)
+    // Mieterträge, RaiseNow, Lieferanten- und Standardregeln werden hier zentral und dynamisch abgeglichen
+    matchRulePrefix = '';
+    if (!isJahresbeitrag && !isInvoice && matchType === 'unknown') {
+      const sortedRules = [...userRules].sort((a, b) => {
+        let aSpec = 0;
+        const aParty = String(a.pattern_party || (a.scope === 'party' ? a.pattern : '') || '').trim();
+        const aText  = String(a.pattern_text  || (a.scope === 'text'  ? a.pattern : '') || '').trim();
+        if (aParty) aSpec += 1;
+        if (aText) aSpec += 1;
+        if (a.amount_mode && a.amount_mode !== 'any') aSpec += 2;
+
+        let bSpec = 0;
+        const bParty = String(b.pattern_party || (b.scope === 'party' ? b.pattern : '') || '').trim();
+        const bText  = String(b.pattern_text  || (b.scope === 'text'  ? b.pattern : '') || '').trim();
+        if (bParty) bSpec += 1;
+        if (bText) bSpec += 1;
+        if (b.amount_mode && b.amount_mode !== 'any') bSpec += 2;
+
+        return bSpec - aSpec;
+      });
+
+      for (const r of sortedRules) {
+        const rawParty = (r.pattern_party !== undefined && r.pattern_party !== null && String(r.pattern_party).trim() !== '')
+          ? r.pattern_party
+          : (r.scope === 'party' ? r.pattern : '');
+        const rawText  = (r.pattern_text !== undefined && r.pattern_text !== null && String(r.pattern_text).trim() !== '')
+          ? r.pattern_text
+          : (r.scope === 'text' ? r.pattern : '');
+        const rawLegacy = r.pattern || '';
+
+        const pParty = String(rawParty || '').toLowerCase().trim();
+        const pText  = String(rawText || '').toLowerCase().trim();
+        const legacyP = String(rawLegacy || '').toLowerCase().trim();
+
+        let isMatch = false;
+
+        if (pParty || pText) {
+          const matchParty = !pParty || cleanParty.includes(pParty);
+          const matchText  = !pText  || cleanRemittance.includes(pText);
+          // Wenn beide Kriterien gesetzt sind, müssen beide matchen. Wenn nur eines gesetzt ist, reicht dieses eine.
+          isMatch = matchParty && matchText;
+        } else if (legacyP) {
+          const scope = String(r.scope || 'all');
+          if (scope === 'party') {
+            isMatch = cleanParty.includes(legacyP);
+          } else if (scope === 'text') {
+            isMatch = cleanRemittance.includes(legacyP);
+          } else {
+            isMatch = cleanRemittance.includes(legacyP) || cleanParty.includes(legacyP);
+          }
+        }
+
+        // Betragsprüfung (optional: exakt, grösser als, kleiner als, von ... bis)
+        const amtMode = r.amount_mode || 'any';
+        if (isMatch && amtMode && amtMode !== 'any') {
+          const txAmt = Math.abs(Number(tx.amount) || 0);
+          const minAmt = Number(r.amount_min || 0);
+          const maxAmt = Number(r.amount_max || 0);
+          let amtMatches = true;
+
+          if (amtMode === 'exact') {
+            amtMatches = Math.abs(txAmt - minAmt) < 0.01;
+          } else if (amtMode === 'gt') {
+            amtMatches = txAmt > minAmt;
+          } else if (amtMode === 'lt') {
+            const limit = (r.amount_max !== undefined && r.amount_max !== null && r.amount_max !== '') ? maxAmt : minAmt;
+            amtMatches = txAmt < limit;
+          } else if (amtMode === 'range') {
+            amtMatches = txAmt >= minAmt && txAmt <= maxAmt;
+          }
+
+          if (!amtMatches) {
+            isMatch = false;
+          }
+        }
+
+        if (isMatch) {
+          matchType = 'rule';
+          matchRuleName = r.label;
+          matchRulePrefix = r.prefix || r.label;
+          
+          // Eindeutige Ermittlung des Gegenkontos:
+          // Unabhängig davon, wie die Regel erfasst wurde (ob Soll oder Haben das Bankkonto war):
+          // Bei Gutschrift (Geldeingang): Soll = Bank (txBankKonto), Haben = Gegenkonto
+          // Bei Belastung (Geldausgang): Soll = Gegenkonto, Haben = Bank (txBankKonto)
+          const rBankInSoll = isBankKontoCode(r.soll);
+          const rBankInHaben = isBankKontoCode(r.haben);
+          const gegenKonto = rBankInSoll ? r.haben : (rBankInHaben ? r.soll : (tx.isCredit ? r.haben : r.soll));
+
+          if (tx.isCredit) {
+            suggestedSoll = txBankKonto;
+            suggestedHaben = gegenKonto;
+          } else {
+            suggestedSoll = gegenKonto;
+            suggestedHaben = txBankKonto;
+          }
+
+          matchLabel = `Regel: ${r.label}`;
+          matchScore = 2;
+          break;
+        }
+      }
+    }
+
+    // 2b. STUFE: Abgleich gegen offene Zahlungsaufträge (pain.001) bei Ausgangstransaktionen
+    if (!tx.isCredit && !isJahresbeitrag && !isInvoice && matchType === 'unknown' && Array.isArray(window._bhPaymentOrders) && window._bhPaymentOrders.length > 0) {
+      const openOrders = window._bhPaymentOrders.filter(o => o.status === 'pendent' || o.status === 'exportiert');
+      
+      const foundOrder = openOrders.find(o => {
+        // 1. Match über explizite Auftragsnummer (EndToEndId, z.B. ZA-2026-001)
+        if (o.order_nr) {
+          const cleanOrder = String(o.order_nr).toLowerCase().replace(/[^a-z0-9]/g, '');
+          const allText = `${tx.endToEndId || ''} ${tx.remittanceInfo || ''} ${tx.ustrd || ''} ${tx.creditorReference || ''}`.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (cleanOrder.length >= 4 && allText.includes(cleanOrder)) return true;
+        }
+
+        // 2. Match über Betrag + Empfänger (Name oder IBAN)
+        const amtDiff = Math.abs(Number(o.betrag || 0) - tx.amount);
+        if (amtDiff < 0.05) {
+          // IBAN-Match
+          if (o.recipient_iban && tx.partyIban) {
+            const cleanIban = String(o.recipient_iban).replace(/\s+/g, '').toUpperCase();
+            const txPartyIban = String(tx.partyIban || '').replace(/\s+/g, '').toUpperCase();
+            if (cleanIban && txPartyIban && cleanIban === txPartyIban) return true;
+          }
+
+          // Name-Match
+          if (o.recipient_name && cleanParty) {
+            const oName = String(o.recipient_name).toLowerCase().trim();
+            if (cleanParty.includes(oName) || oName.includes(cleanParty)) return true;
+            const parts = oName.split(/\s+/).filter(p => p.length >= 3);
+            if (parts.length >= 2 && parts.every(p => cleanParty.includes(p))) return true;
+          }
+        }
+        return false;
+      });
+
+      if (foundOrder) {
+        matchedPaymentOrder = foundOrder;
+        matchType = 'payment_order';
+        matchScore = 3;
+        matchLabel = `Zahlungsauftrag ${foundOrder.order_nr} (${foundOrder.recipient_name})`;
+        if (!tx._customSollEdited) suggestedSoll = foundOrder.konto_soll;
+        if (!tx._customHabenEdited) suggestedHaben = foundOrder.konto_haben || txBankKonto;
+
+        if (Array.isArray(foundOrder.positions) && foundOrder.positions.length > 1 && !tx._customSplitEdited) {
+          tx.isSplit = true;
+          tx.splitRows = foundOrder.positions.map(p => ({
+            beschreibung: p.text || foundOrder.beschreibung,
+            kontoSoll: p.soll,
+            kontoHaben: p.haben || txBankKonto,
+            betrag: p.betrag
+          }));
+        }
+      }
+    }
+
+    // 2c. STUFE: FALLBACK FÜR EIGENE KONTOÜBERTRÄGE / GELDTRANSIT (1099)
+    // Greift nur als Sicherheitsnetz, falls keine spezifischere Benutzerregel in Stufe 2 gematcht hat
+    if (!isJahresbeitrag && !isInvoice && matchType === 'unknown') {
+      const cleanPartyIban = String(tx.partyIban || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      const isOwnPartyIban = Boolean(
+        cleanPartyIban && (
+          cleanPartyIban.includes('533218786') || cleanPartyIban.startsWith('CH28') || // 1021 Wirtschaftskonto
+          cleanPartyIban.includes('36331')     || cleanPartyIban.startsWith('CH06') || // 1020 Zahlungskonto
+          cleanPartyIban.includes('07885129')  || cleanPartyIban.startsWith('CH81')    // 1022 Sparkonto
+        )
+      );
+
+      // Eigenname des Vereins als Zahler/Empfänger bedeutet immer interner Eigenübertrag!
+      const isOwnClubParty = (
+        cleanParty.includes('sportschützen muhen') ||
+        cleanParty.includes('sportschuetzen muhen') ||
+        cleanParty.includes('sg muhen') ||
+        cleanParty.includes('schützen muhen') ||
+        cleanParty.includes('schuetzen muhen')
+      );
+
+      // Buchungstext mit Übertrag / Umbuchung / Kontoübertrag / Bancomat
+      const isTransferText = (
+        /konto[uü]bertrag/i.test(cleanRemittance) || /konto[uü]bertrag/i.test(cleanParty) ||
+        /[uü]bertrag/i.test(cleanRemittance) || /[uü]bertrag/i.test(cleanParty) ||
+        /umbuchung/i.test(cleanRemittance) || /umbuchung/i.test(cleanParty) ||
+        /bancomat/i.test(cleanRemittance) || /bancomat/i.test(cleanParty)
+      );
+
+      if (isOwnPartyIban || isOwnClubParty || isTransferText) {
+        matchType = 'rule';
+        matchRuleName = 'Geldtransit (Kontoübertrag)';
+        matchLabel = 'Geldtransit 1099 (Transferkonto)';
+        matchRulePrefix = 'Kontoübertrag';
+        matchScore = 3;
+
+        if (tx.isCredit) {
+          suggestedSoll = txBankKonto;
+          suggestedHaben = '1099';
+        } else {
+          suggestedSoll = '1099';
+          suggestedHaben = txBankKonto;
+        }
+      }
+    }
+
+    // 3. STUFE: Historisches Journal-Learning
+    // WICHTIGE SICHERHEIT: Ausgang (Belastung) gleicht NUR mit früheren Ausgängen ab!
+    // 3. STUFE: Historie-Matching (Journal der letzten 12 Monate)
+    if (!isJahresbeitrag && !isInvoice && matchType === 'unknown' && journalHistory.length > 0) {
+      // Passende Historien-Pools bilden:
+      const historyPool = journalHistory.filter(j => {
+        if (tx.isCredit) {
+          return isBankKontoCode(j.konto_soll); // Frühere Gutschriften (Bank war im Soll)
+        } else {
+          return isBankKontoCode(j.konto_haben); // Frühere Belastungen (Bank war im Haben)
+        }
+      });
+
+      // Von neu nach alt durchsuchen (neueste Buchungen haben Priorität)
+      const matchHist = [...historyPool].reverse().find(j => {
+        const desc = (j.beschreibung || '').toLowerCase().trim();
+        if (!desc || desc.length < 3) return false;
+
+        // Bevorzugt nach Empfänger/Zahler suchen
+        if (cleanParty && (desc.includes(cleanParty) || (cleanParty.length >= 4 && cleanParty.includes(desc)))) {
+          return true;
+        }
+        // Oder im Verwendungszweck (nur bei mindestens 4 Zeichen)
+        if (cleanRemittance && desc.length >= 4 && (cleanRemittance.includes(desc) || desc.includes(cleanRemittance))) {
+          return true;
+        }
+        return false;
+      });
+
+      if (matchHist) {
+        let histSoll = tx.isCredit ? txBankKonto : matchHist.konto_soll;
+        let histHaben = tx.isCredit ? matchHist.konto_haben : txBankKonto;
+
+        // Sicherheitsnetz: Wenn alte Journal-Einträge (z.B. aus Vorjahren) direkt Bank an Bank
+        // oder Bank an Kasse gebucht wurden (1000, 1020, 1021, 1022), niemals direkt buchen,
+        // sondern IMMER auf 1099 Geldtransit umleiten!
+        const gegenKonto = tx.isCredit ? histHaben : histSoll;
+        const isLiquidGegen = ['1000', '1020', '1021', '1022'].includes(String(gegenKonto || '').trim());
+
+        if (isLiquidGegen) {
+          if (tx.isCredit) {
+            suggestedSoll = txBankKonto;
+            suggestedHaben = '1099';
+          } else {
+            suggestedSoll = '1099';
+            suggestedHaben = txBankKonto;
+          }
+          matchType = 'rule';
+          matchLabel = 'Geldtransit 1099 (Transferkonto)';
+          matchScore = 2;
+        } else {
+          matchType = 'journal';
+          suggestedSoll = histSoll;
+          suggestedHaben = histHaben;
+          matchLabel = 'Aus Journal-Historie';
+          matchScore = 1;
+        }
+      }
+    }
+
+    // 4. STUFE: Smart Defaults nach Vorzeichen (ohne Standard 6000 / 3900)
+    // Wenn kein Gegenkonto ermittelt werden kann, bleibt es leer und wird im UI hervorgehoben!
+    if (!suggestedSoll || !suggestedHaben) {
+      if (tx.isCredit) {
+        suggestedSoll = suggestedSoll || txBankKonto; // Bank
+        suggestedHaben = suggestedHaben || ''; // Gegenkonto leer lassen statt 3900
+      } else {
+        suggestedSoll = suggestedSoll || ''; // Gegenkonto leer lassen statt 6000
+        suggestedHaben = suggestedHaben || txBankKonto; // Bank
+      }
+    }
+    } // Ende if (!hasCustomOverride)
+
+    // ===================================================================
+    // DUPLIKATS-PRÜFUNG GEGEN KASSABUCH-JOURNAL & BEZAHLT-STATUS
+    // ===================================================================
+    // 1. Modul-Status: Wenn Jahresbeitrag oder Rechnung bereits bezahlt ist -> 100% Doppelbuchungsschutz!
+    if (isJahresbeitrag && alreadyPaidJb) {
+      alreadyBooked = true;
+      bookedDate = bookedDate || formatSwissDate(matchedBeitrag?.payment_date || tx.bookingDate);
+      matchLabel = `Jahresbeitrag bezahlt (${matchedMember ? matchedMember.FirstName + ' ' + matchedMember.LastName : ''})`;
+    } else if (isInvoice && alreadyPaidInvoice) {
+      alreadyBooked = true;
+      bookedDate = bookedDate || formatSwissDate(matchedInvoice?.payment_date || tx.bookingDate);
+      matchLabel = `Rechnung ${matchedInvoice ? matchedInvoice.id : ''} bezahlt`;
+    }
+
+    // 2. Suche im Kassabuch-Journal (Split-Gruppen und Einzelzeilen)
+    if (journalHistory && journalHistory.length > 0) {
+      // A. Split-Gruppen im Journal abgleichen (z. B. Jahresbeiträge mit Grundbeitrag + Lizenz oder Split-Rechnungen)
+      // Priorisiere starke Partei-/Referenz-Treffer sowie zeitlich nächste Buchungen (kleinstes days), statt blind id DESC zu nehmen
+      if (!alreadyBooked || !matchedJournalEntry) {
+        const grpCandidates = [];
+        for (const [grpKey, grp] of journalGroups.entries()) {
+          if (usedGroupKeys.has(grpKey)) continue;
+          const netGrp = getGroupNetBankAmount(grp, tx.isCredit, txBankKonto);
+          if (Math.abs(netGrp - tx.amount) < 0.05) {
+            const days = bhBankDaysDiff(grp.datum, tx.bookingDate);
+            if (days <= 35 && bhBankMatchText(grp.allDescriptions, tx.partyName, tx.remittanceInfo, tx.creditorReference, matchedMember, matchedInvoice)) {
+              const strongMatch = bhBankMatchText(grp.allDescriptions, tx.partyName, '', tx.creditorReference, matchedMember, matchedInvoice);
+              grpCandidates.push({ grpKey, grp, days, strongMatch });
+            }
+          }
+        }
+        if (grpCandidates.length > 0) {
+          grpCandidates.sort((a, b) => {
+            if (a.strongMatch !== b.strongMatch) return a.strongMatch ? -1 : 1;
+            return a.days - b.days;
+          });
+          const best = grpCandidates[0];
+          alreadyBooked = true;
+          matchedJournalEntry = best.grp.entries[0];
+          bookedDate = bookedDate || formatSwissDate(best.grp.datum || tx.bookingDate);
+          matchLabel = `Im Journal gebucht (${best.grp.belegNr})`;
+          usedGroupKeys.add(best.grpKey);
+          best.grp.entryIds.forEach(id => usedJournalIds.add(id));
+        }
+      }
+
+      // B. Einzelbuchungen mit Text- / Namens-Match (ebenfalls nach Partei-/Referenz-Stärke und kleinster Datumsdifferenz sortiert)
+      if (!alreadyBooked || !matchedJournalEntry) {
+        const singleCandidates = journalHistory
+          .filter(j => {
+            if (usedJournalIds.has(j.id)) return false;
+            const amtDiff = Math.abs(Number(j.betrag || 0) - tx.amount);
+            if (amtDiff >= 0.05) return false;
+
+            // Strikte Bankkonto-Prüfung: Nur genau das erkannte Bankkonto (1020, 1021, 1022) der CAMT-Transaktion abgleichen!
+            if (tx.isCredit && String(j.konto_soll || '').trim() !== String(txBankKonto).trim()) return false;
+            if (!tx.isCredit && String(j.konto_haben || '').trim() !== String(txBankKonto).trim()) return false;
+
+            const days = bhBankDaysDiff(j.datum, tx.bookingDate);
+            if (days > 35) return false;
+
+            return bhBankMatchText(j.beschreibung, tx.partyName, tx.remittanceInfo, tx.creditorReference, matchedMember, matchedInvoice);
+          })
+          .map(j => ({
+            j,
+            days: bhBankDaysDiff(j.datum, tx.bookingDate),
+            strongMatch: bhBankMatchText(j.beschreibung, tx.partyName, '', tx.creditorReference, matchedMember, matchedInvoice)
+          }))
+          .sort((a, b) => {
+            if (a.strongMatch !== b.strongMatch) return a.strongMatch ? -1 : 1;
+            return a.days - b.days;
+          });
+
+        const matchedSingle = singleCandidates.length > 0 ? singleCandidates[0].j : null;
+
+        if (matchedSingle) {
+          alreadyBooked = true;
+          matchedJournalEntry = matchedSingle;
+          bookedDate = bookedDate || formatSwissDate(matchedSingle.datum || tx.bookingDate);
+          matchLabel = `Im Journal gebucht (${matchedSingle.beleg_nr || 'Kassabuch'})`;
+          usedJournalIds.add(matchedSingle.id);
+        }
+      }
+
+      // C. Fallback für Split-Gruppen: Exakter Netto-Bankbetrag + sehr enges Datumsfenster (<= 4 Tage)
+      if (!alreadyBooked || !matchedJournalEntry) {
+        for (const [grpKey, grp] of journalGroups.entries()) {
+          if (usedGroupKeys.has(grpKey)) continue;
+          const netGrp = getGroupNetBankAmount(grp, tx.isCredit, txBankKonto);
+          if (Math.abs(netGrp - tx.amount) < 0.05) {
+            const days = bhBankDaysDiff(grp.datum, tx.bookingDate);
+            if (days <= 4) {
+              const cleanGrp = normalizeString(grp.allDescriptions || '');
+
+              // Falls ein spezifischer Vertragscode (V-2026-xxxx) vorhanden ist, muss dieser übereinstimmen
+              const txCodes = String(tx.remittanceInfo || '').match(/v-\d{4}-\d{3,4}/i);
+              const grpCodes = String(grp.allDescriptions || '').match(/v-\d{4}-\d{3,4}/i);
+              if (txCodes && grpCodes && txCodes[0].toLowerCase() !== grpCodes[0].toLowerCase()) {
+                continue; // Abweichender Mietvertrag -> Kein Blind-Match!
+              }
+
+              // Falls partyName vorhanden ist, sicherstellen, dass im Journal-Text nicht ein völlig fremder Name steht
+              if (tx.partyName) {
+                const pWords = normalizeString(tx.partyName).split(' ').filter(w => w.length >= 3 && !['herr','frau','dr','die','der','das','und','gmbh','ag','schuetzen','sportschuetzen','sportschützen','muhen'].includes(w));
+                if (pWords.length > 0 && !pWords.some(w => cleanGrp.includes(w))) {
+                  // Wenn Verwendungszweck matcht oder es sich um interne/Anlass-Buchungen handelt (z.B. "10m DMM", "Wirtschaft"), ist es zulässig
+                  const rWords = normalizeString(tx.remittanceInfo).split(' ').filter(w => w.length >= 4 && !['zahlung','gutschrift','ueberweisung','rechnung','danke','spesen','abrechnung','muhen','vermietung','schuetzenhaus','schutzenhaus','miete','depot'].includes(w));
+                  const rMatches = rWords.some(w => cleanGrp.includes(w));
+                  const isGenericOrEventDesc = /dmm|wettschiessen|verbandsschiessen|stiche|bancomat|wirtschaft|meisterschaft|schiessen|reinigung/i.test(cleanGrp);
+                  if (!rMatches && !isGenericOrEventDesc) {
+                    continue;
+                  }
+                }
+              }
+
+              alreadyBooked = true;
+              matchedJournalEntry = grp.entries[0];
+              bookedDate = bookedDate || formatSwissDate(grp.datum || tx.bookingDate);
+              matchLabel = `Im Journal gebucht (${grp.belegNr})`;
+              usedGroupKeys.add(grpKey);
+              grp.entryIds.forEach(id => usedJournalIds.add(id));
+              break;
+            }
+          }
+        }
+      }
+
+      // D. Fallback Einzelbuchung: Exakter Betrag + sehr enges Datumsfenster (<= 4 Tage)
+      if (!alreadyBooked) {
+        const fallbackSingle = journalHistory.find(j => {
+          if (usedJournalIds.has(j.id)) return false;
+          const amtDiff = Math.abs(Number(j.betrag || 0) - tx.amount);
+          if (amtDiff >= 0.05) return false;
+
+          // Strikte Bankkonto-Prüfung: Bankkonto muss exakt übereinstimmen!
+          if (tx.isCredit && String(j.konto_soll || '').trim() !== String(txBankKonto).trim()) return false;
+          if (!tx.isCredit && String(j.konto_haben || '').trim() !== String(txBankKonto).trim()) return false;
+
+          const days = bhBankDaysDiff(j.datum, tx.bookingDate);
+          if (days > 4) return false;
+
+          // Falls ein Mitglied gematcht ist, nicht blind auf fremden Namen matchen
+          if (matchedMember && !bhBankMatchText(j.beschreibung, '', '', '', matchedMember, null)) {
+            return false;
+          }
+
+          // Falls partyName vorhanden ist, sicherstellen, dass im Journal-Text nicht ein völlig anderer Name steht
+          if (tx.partyName) {
+            const pWords = normalizeString(tx.partyName).split(' ').filter(w => w.length >= 3 && !['herr','frau','dr','die','der','das','und','gmbh','ag','schuetzen','sportschuetzen','sportschützen','muhen'].includes(w));
+            const cleanJ = normalizeString(j.beschreibung || '');
+            if (pWords.length > 0 && !pWords.some(w => cleanJ.includes(w))) {
+              // Falls Verwendungszweck-Wörter matchen (z. B. "Siggenthal 2025"), trotzdem gelten lassen
+              const rWords = normalizeString(tx.remittanceInfo).split(' ').filter(w => w.length >= 4 && !['zahlung','gutschrift','ueberweisung','rechnung','danke','spesen','abrechnung','muhen','vermietung','schuetzenhaus','schutzenhaus','miete','depot'].includes(w));
+              if (!rWords.some(w => cleanJ.includes(w))) {
+                return false; // Fremder Name im Journal -> Kein Blind-Match bei gleichem Betrag!
+              }
+            }
+          }
+          return true;
+        });
+
+        if (fallbackSingle) {
+          alreadyBooked = true;
+          matchedJournalEntry = fallbackSingle;
+          bookedDate = bookedDate || formatSwissDate(fallbackSingle.datum || tx.bookingDate);
+          matchLabel = `Im Journal gebucht (${fallbackSingle.beleg_nr || 'Kassabuch'})`;
+          usedJournalIds.add(fallbackSingle.id);
+        }
+      }
+    }
+
+    if (alreadyBooked) {
+      matchType = 'journal';
+      if (matchedJournalEntry) {
+        if (!tx._customSollEdited) {
+          suggestedSoll = tx.isCredit ? txBankKonto : (String(matchedJournalEntry.konto_soll || '').trim() || suggestedSoll);
+        }
+        if (!tx._customHabenEdited) {
+          suggestedHaben = tx.isCredit ? (String(matchedJournalEntry.konto_haben || '').trim() || suggestedHaben) : txBankKonto;
+        }
+      }
+    }
+
+    // ABSOLUTER GARANTIE-CHECK: Bankkonto darf NIEMALS auf der verkehrten Seite stehen!
+    // Belastung (tx.isCredit === false) -> Bank (1020) MUSS im HABEN stehen!
+    // Gutschrift (tx.isCredit === true)  -> Bank (1020) MUSS im SOLL stehen!
+    if (tx.isCredit) {
+      if (isBankKontoCode(suggestedHaben) && !isBankKontoCode(suggestedSoll)) {
+        const tmp = suggestedSoll;
+        suggestedSoll = suggestedHaben;
+        suggestedHaben = tmp;
+      }
+      if (!isBankKontoCode(suggestedSoll)) {
+        suggestedHaben = suggestedHaben || suggestedSoll || '';
+        suggestedSoll = txBankKonto;
+      }
+    } else {
+      if (isBankKontoCode(suggestedSoll) && !isBankKontoCode(suggestedHaben)) {
+        const tmp = suggestedHaben;
+        suggestedHaben = suggestedSoll;
+        suggestedSoll = tmp;
+      }
+      if (!isBankKontoCode(suggestedHaben)) {
+        suggestedSoll = suggestedSoll || suggestedHaben || '';
+        suggestedHaben = txBankKonto;
+      }
+    }
+
+    if (suggestedSoll && suggestedHaben && suggestedSoll === suggestedHaben) {
+      if (tx.isCredit) suggestedHaben = '';
+      else suggestedSoll = '';
+    }
+
+    // LÖSUNG 1: Falls kein Gegenkonto ermittelt werden konnte (unklare Bankzahlung),
+    // automatisch das Klärungskonto 1090 (Noch abzuklärende Bankzahlungen / Transit) vorschlagen!
+    // Dadurch kann jede Zahlung in streng chronologischer Reihenfolge mit aufsteigender Beleg-Nr. verbucht werden.
+    if (!alreadyBooked) {
+      if (tx.isCredit && !suggestedHaben && !tx._customHabenEdited) {
+        suggestedHaben = '1090';
+        if (matchType === 'unknown') {
+          matchType = 'transit';
+          matchLabel = '1090 Noch abzuklärende Bankzahlungen (Transit)';
+        }
+      } else if (!tx.isCredit && !suggestedSoll && !tx._customSollEdited) {
+        suggestedSoll = '1090';
+        if (matchType === 'unknown') {
+          matchType = 'transit';
+          matchLabel = '1090 Noch abzuklärende Bankzahlungen (Transit)';
+        }
+      }
+    }
+
+    let txYear = Number(window._bhYear || new Date().getFullYear());
+    if (tx.bookingDate) {
+      const isoMatch = String(tx.bookingDate).trim().match(/^(\d{4})-/);
+      const chMatch = String(tx.bookingDate).trim().match(/^\d{1,2}\.\d{1,2}\.(\d{4})$/);
+      if (isoMatch) txYear = parseInt(isoMatch[1], 10);
+      else if (chMatch) txYear = parseInt(chMatch[1], 10);
+      else {
+        const parsedDt = new Date(tx.bookingDate);
+        if (!isNaN(parsedDt.getTime())) txYear = parsedDt.getFullYear();
+      }
+    }
+    const activeYear = Number(window._bhYear || new Date().getFullYear());
+    const isWrongYear = txYear !== activeYear;
+
+    // Erkennung von Verbandsschiessen / Wettschiessen (Splitbuchungs-Empfehlung)
+    const cleanTextAll = ((tx.remittanceInfo || '') + ' ' + (tx.partyName || '')).toLowerCase();
+    const isVerbandsschiessen = /verbandsschiessen|vereinswettschiessen|wettschiessen|agksv|ssv|schützenverband|feldschiessen|kantonalstich|dmm/i.test(cleanTextAll);
+    const splitHint = isVerbandsschiessen 
+      ? '⚠️ Wettschiessen / Verbandsabrechnung! Enthält evtl. mehrere Teilbeträge (z. B. Nachwuchs / Meisterschaften). Split-Buchung empfohlen.'
+      : '';
+
+    return {
+      ...tx,
+      _customMatchOverride: tx._customMatchOverride,
+      txYear,
+      isWrongYear,
+      isVerbandsschiessen,
+      splitHint,
+      alreadyBooked: tx.alreadyBooked || alreadyBooked,
+      bookedDate: tx.bookedDate || bookedDate,
+      matchedJournalEntry: tx.matchedJournalEntry || matchedJournalEntry,
+      isInvoice,
+      matchedInvoice,
+      alreadyPaidInvoice,
+      isJahresbeitrag,
+      matchScore,
+      matchedMember,
+      matchedBeitrag,
+      alreadyPaidJb,
+      matchedPaymentOrder: tx.matchedPaymentOrder || matchedPaymentOrder,
+      matchType: (tx.alreadyBooked || alreadyBooked) ? 'journal' : matchType,
+      matchRuleName,
+      matchRulePrefix,
+      isSplit: tx.isSplit || false,
+      splitRows: tx.splitRows || null,
+      suggestedSoll: tx.isSplit ? (tx.suggestedSoll || suggestedSoll) : suggestedSoll,
+      suggestedHaben: tx.isSplit ? (tx.suggestedHaben || suggestedHaben) : suggestedHaben,
+      matchLabel
+    };
+  });
+
+  // Rechnungs- und Jahresbeitrags-Positionen anwenden (Split oder spezifisches Gegenkonto)
+  results.forEach(r => {
+    if (r.matchedInvoice) {
+      bhBankApplyInvoicePositionsToTx(r, r.matchedInvoice);
+    }
+    if (r.isJahresbeitrag || (r.matchedInvoice && String(r.matchedInvoice.type || '').toLowerCase().includes('jahresbeitrag'))) {
+      bhBankApplyJbPositionsToTx(r);
+    }
+  });
+
+  // Rechnungen ohne Positionen asynchron im Hintergrund nachladen und Ansicht auffrischen
+  const missingInvoices = results.filter(r => r.matchedInvoice && !r.alreadyBooked && (!r.matchedInvoice.positions || r.matchedInvoice.positions.length === 0));
+  if (missingInvoices.length > 0 && typeof window.rnGetInvoicePositions === 'function') {
+    const promises = missingInvoices.map(async r => {
+      const positions = await window.rnGetInvoicePositions(r.matchedInvoice.id);
+      if (positions && positions.length > 0) {
+        bhBankApplyInvoicePositionsToTx(r, r.matchedInvoice, positions);
+      }
+    });
+    Promise.allSettled(promises).then(() => {
+      if (typeof bhBankRenderResults === 'function' && window._bhBankMatchResults === results) {
+        bhBankRenderResults(window._bhBankActiveFilter);
+      }
+    });
+  }
+
+  // Belegnummern chronologisch von oben nach unten vorausberechnen
+  bhCalculateProjectedBankBelegNrs(results, window._bhYear);
+
+  return results;
+}
+
+
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ---------------------------------------------------------------------
+// Filter-Steuerung
+// ---------------------------------------------------------------------
+window.bhBankFilter = function(filter) {
+  ['bhBankFilterOffen','bhBankFilterBooked','bhBankFilterAll','bhBankFilterJb','bhBankFilterRules','bhBankFilterUnklar'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) btn.classList.remove('active', 'btn-dark', 'btn-primary', 'btn-secondary');
+  });
+  const idMap = {
+    offen: 'bhBankFilterOffen',
+    booked: 'bhBankFilterBooked',
+    all: 'bhBankFilterAll',
+    jb: 'bhBankFilterJb',
+    rules: 'bhBankFilterRules',
+    unklar: 'bhBankFilterUnklar'
+  };
+  const activeBtn = document.getElementById(idMap[filter] || 'bhBankFilterOffen');
+  if (activeBtn) activeBtn.classList.add('active');
+
+  bhBankRenderResults(filter);
+};
+
+// ---------------------------------------------------------------------
+// Eindeutige, lückenlose Belegnummern nach Bankkonto (z.B. B_Zahl_2026-001, B_Wirt_2026-001, B_Geno_2026-001)
+// ---------------------------------------------------------------------
+function getBankBelegPrefix(kontoCode) {
+  const c = String(kontoCode || '').trim();
+  if (c === '1021') return 'B_Wirt_';
+  if (c === '1020') return 'B_Zahl_';
+  if (c === '1022') return 'B_Spar_';
+  return 'BK_';
+}
+
+function bhGetNextBankBelegSeq(year, bankKonto = '1020') {
+  const y = Number(year || new Date().getFullYear());
+  const prefix = getBankBelegPrefix(bankKonto);
+  const altPfx = (prefix === 'B_Spar_') ? '(?:B_Spar_|B_Geno_)' : prefix;
+  const regex = new RegExp(`^(?:${altPfx}|BK[-_])${y}[-_](\\d+)`, 'i');
+  let maxSeq = 0;
+  
+  (window._bhJournal || []).forEach(j => {
+    if (Number(j.jahr) === y && j.beleg_nr) {
+      const m = String(j.beleg_nr).match(regex);
+      if (m) {
+        const num = parseInt(m[1], 10);
+        if (!isNaN(num) && num > maxSeq) maxSeq = num;
+      }
+    }
+  });
+
+  const stateKey = `${prefix}${y}`;
+  window._bhLastAssignedBankSeqs = window._bhLastAssignedBankSeqs || {};
+  const nextSeq = Math.max(maxSeq, window._bhLastAssignedBankSeqs[stateKey] || 0) + 1;
+  window._bhLastAssignedBankSeqs[stateKey] = nextSeq;
+  return nextSeq;
+}
+
+function bhGetNextBankBelegNr(year, bankKonto = '1020') {
+  const prefix = getBankBelegPrefix(bankKonto);
+  const seq = bhGetNextBankBelegSeq(year, bankKonto);
+  return `${prefix}${year}-${String(seq).padStart(3, '0')}`;
+}
+
+// ---------------------------------------------------------------------
+// Vorschau-Berechnung der Belegnummern streng chronologisch von oben nach unten (Top-to-Bottom)
+// ---------------------------------------------------------------------
+function bhCalculateProjectedBankBelegNrs(allRows, year) {
+  if (!Array.isArray(allRows) || allRows.length === 0) return;
+  const y = Number(year || window._bhYear || new Date().getFullYear());
+  const journal = window._bhJournal || [];
+
+  // 1. Höchste vorhandene Belegnummern im Journal je Präfix ermitteln
+  const maxSeqs = {};
+  journal.forEach(j => {
+    if (Number(j.jahr) === y && j.beleg_nr) {
+      const m = String(j.beleg_nr).match(/^(B_Zahl_|B_Wirt_|B_Spar_|B_Geno_|BK_)\d{4}-(\d+)/i);
+      if (m) {
+        let pfx = m[1].toUpperCase();
+        if (pfx === 'B_GENO_') pfx = 'B_SPAR_';
+        const num = parseInt(m[2], 10);
+        if (!isNaN(num)) {
+          maxSeqs[pfx] = Math.max(maxSeqs[pfx] || 0, num);
+        }
+      }
+    }
+  });
+
+  // 2. Ungebuchte Zeilen des Buchungsjahres filtern
+  const unbooked = allRows.filter(r => !r.alreadyBooked && !r.isWrongYear && Number(r.amount || 0) > 0);
+
+  // 3. Streng chronologisch und nach CAMT-Reihenfolge sortieren
+  unbooked.sort((a, b) => {
+    const dateA = new Date(a.bookingDate || '1970-01-01').getTime();
+    const dateB = new Date(b.bookingDate || '1970-01-01').getTime();
+    if (dateA !== dateB) return dateA - dateB;
+    const idxA = a._camtOrderIndex !== undefined ? a._camtOrderIndex : 0;
+    const idxB = b._camtOrderIndex !== undefined ? b._camtOrderIndex : 0;
+    return idxA - idxB;
+  });
+
+  // 4. Fortlaufende Nummern von oben nach unten vergeben
+  const runningSeqs = { ...maxSeqs };
+  unbooked.forEach(r => {
+    const txBankKonto = isBankKontoCode(r.suggestedSoll) 
+      ? r.suggestedSoll 
+      : (isBankKontoCode(r.suggestedHaben) 
+          ? r.suggestedHaben 
+          : bhBankGetAccountForIban(r.accountIban, '1020'));
+    const pfxRaw = getBankBelegPrefix(txBankKonto);
+    const pfxKey = pfxRaw.toUpperCase();
+    runningSeqs[pfxKey] = (runningSeqs[pfxKey] || 0) + 1;
+    r._projectedBelegNr = `${pfxRaw}${y}-${String(runningSeqs[pfxKey]).padStart(3, '0')}`;
+  });
+}
+
+// ---------------------------------------------------------------------
+// Buchungssatz im Speicher vorbereiten (für Einzel- & Sammel-Buchung)
+// ---------------------------------------------------------------------
+window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false) {
+  const tx = window._bhBankMatchResults[txIdx];
+  if (!tx) return null;
+
+  // 1. Doppel-Klick- & Parallel-Schutz (Re-entrancy Guard)
+  if (tx._isBooking || tx.alreadyBooked) {
+    console.warn(`[Bankabgleich] Transaktion #${txIdx} wird bereits gebucht oder ist bereits im Journal.`);
+    return null;
+  }
+
+  if (tx.isWrongYear) {
+    if (!isBatch && window.bhAlert) {
+      window.bhAlert('Buchung gesperrt', `Diese Transaktion stammt aus dem Jahr ${tx.txYear}, oben im Portal ist aber das Buchhaltungsjahr ${window._bhYear} gewählt.\n\nBitte wechsle oben das Buchhaltungsjahr auf ${tx.txYear}, um diese Transaktion in das entsprechende Jahr zu buchen.`, 'warning');
+    }
+    return null;
+  }
+
+  const sollEl  = document.getElementById(`bh-soll-${txIdx}`);
+  const habenEl = document.getElementById(`bh-haben-${txIdx}`);
+  const rowTr   = (sollEl ? sollEl.closest('tr') : null) || (habenEl ? habenEl.closest('tr') : null) || document.getElementById(`bh-bank-row-${txIdx}`) || (document.getElementById(`bh-status-badge-${txIdx}`)?.closest('tr') || null);
+  const statusBadge = document.getElementById(`bh-status-badge-${txIdx}`) || document.getElementById(`bh-book-btn-${txIdx}`) || (rowTr ? rowTr.querySelector('.badge') : null);
+  const bookBtn = statusBadge;
+
+  function resolveKontoCode(val) {
+    if (!val) return '';
+    const s = String(val).trim();
+    if (s.includes('|')) return s.split('|')[0].trim();
+    if (/^\d{4}$/.test(s)) return s;
+    const matches = bhFindMatchingKonten(s);
+    return matches.length > 0 ? String(matches[0].konto).trim() : s;
+  }
+
+  const rawSoll  = (sollEl && sollEl.value) ? sollEl.value : tx.suggestedSoll;
+  const rawHaben = (habenEl && habenEl.value) ? habenEl.value : tx.suggestedHaben;
+  let kontoSoll  = resolveKontoCode(rawSoll) || tx.suggestedSoll;
+  let kontoHaben = resolveKontoCode(rawHaben) || tx.suggestedHaben;
+  tx.suggestedSoll = kontoSoll;
+  tx.suggestedHaben = kontoHaben;
+
+  if (!tx.isSplit) {
+    if (!kontoSoll && !kontoHaben) {
+      if (!isBatch && window.bhAlert) window.bhAlert('Angaben unvollständig', 'Mindestens das Bankkonto (Soll oder Haben) muss vorhanden sein.', 'warning');
+      throw new Error('Mindestens das Bankkonto (Soll oder Haben) muss vorhanden sein.');
+    }
+    if (kontoSoll && kontoHaben && kontoSoll === kontoHaben) {
+      if (!isBatch && window.bhAlert) window.bhAlert('Ungültige Kontierung', 'Soll- und Haben-Konto dürfen nicht identisch sein.', 'warning');
+      throw new Error('Soll- und Haben-Konto dürfen nicht identisch sein.');
+    }
+  }
+
+  // AUTOMATISCHER SICHERHEITS-CHECK: Verhindern, dass Bankkonto auf der falschen Seite gebucht wird!
+  const defaultBankKonto = tx.accountIban ? bhBankGetAccountForIban(tx.accountIban, '1020') : '1020';
+  if (!tx.isCredit) {
+    // Belastung: Bank muss im Haben stehen
+    if (isBankKontoCode(kontoSoll) && !isBankKontoCode(kontoHaben)) {
+      const tempKonto = kontoSoll;
+      kontoSoll = kontoHaben;
+      kontoHaben = tempKonto;
+    }
+    if (!isBankKontoCode(kontoHaben)) {
+      kontoHaben = defaultBankKonto;
+    }
+  } else {
+    // Gutschrift: Bank muss im Soll stehen
+    if (isBankKontoCode(kontoHaben) && !isBankKontoCode(kontoSoll)) {
+      const tempKonto = kontoSoll;
+      kontoSoll = kontoHaben;
+      kontoHaben = tempKonto;
+    }
+    if (!isBankKontoCode(kontoSoll)) {
+      kontoSoll = defaultBankKonto;
+    }
+  }
+  if (sollEl) sollEl.value = kontoSoll;
+  if (habenEl) habenEl.value = kontoHaben;
+  tx.suggestedSoll = kontoSoll;
+  tx.suggestedHaben = kontoHaben;
+
+  const rmtEl = document.getElementById(`bh-rmt-${txIdx}`);
+  if (rmtEl) {
+    const rmtVal = rmtEl.value.trim();
+    if (rmtVal !== (tx._originalRemittanceInfo || '')) {
+      tx._customRemittanceEdited = true;
+      tx._customRemittance = rmtVal;
+      tx.remittanceInfo = rmtVal;
+    }
+  }
+
+  let beschreibung = '';
+  if (tx._customRemittanceEdited && tx._customRemittance) {
+    const party = (tx.partyName || '').trim();
+    const customTxt = tx._customRemittance.trim();
+    if (party && !customTxt.toLowerCase().includes(party.toLowerCase())) {
+      beschreibung = `${party}: ${customTxt}`;
+    } else {
+      beschreibung = customTxt;
+    }
+  } else if (tx.matchType === 'payment_order' && tx.matchedPaymentOrder) {
+    const po = tx.matchedPaymentOrder;
+    beschreibung = `Auszahlung ${po.order_nr} (${po.recipient_name}): ${po.beschreibung}`;
+  } else if (tx.isInvoice && tx.matchedInvoice) {
+    const inv = tx.matchedInvoice;
+    beschreibung = `Zahlungseingang Rechnung ${inv.id} (${inv.name})${inv.type ? ' - ' + inv.type : ''}`;
+  } else if (tx.isJahresbeitrag && tx.matchedMember) {
+    const m = tx.matchedMember;
+    const refTxt = tx.matchedBeitrag ? ` (Rechnung ${tx.matchedBeitrag.id})` : '';
+    beschreibung = `Jahresbeitrag ${window._bhYear}: ${m.FirstName} ${m.LastName}${refTxt}`;
+  } else if (tx.matchType === 'rule') {
+    let prefix = (tx.matchRulePrefix || tx.matchRuleName || '').trim();
+    let party  = (tx.partyName || '').trim();
+    let rmt    = (tx.remittanceInfo || '').trim();
+
+    // Falls RaiseNow: Datum hübsch extrahieren falls vorhanden
+    if (/raisenow/i.test(rmt)) {
+      const rangeMatch = rmt.match(/\b(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\s*-\s*(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b/);
+      let extractedDate = '';
+      if (rangeMatch) {
+        const [, y1, m1, d1, y2, m2, d2] = rangeMatch;
+        extractedDate = (y1 === y2 && m1 === m2) ? `${d1}.${m1}. - ${d2}.${m2}.${y2}` : `${d1}.${m1}.${y1} - ${d2}.${m2}.${y2}`;
+      } else {
+        const singleIsoMatch = rmt.match(/\b(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b/);
+        if (singleIsoMatch) extractedDate = `${singleIsoMatch[3]}.${singleIsoMatch[2]}.${singleIsoMatch[1]}`;
+      }
+      if (extractedDate) rmt = `RaiseNow vom ${extractedDate}`;
+    }
+
+    // Vermietungscode hervorheben falls vorhanden (z. B. V-2026-0041)
+    const vMatch = rmt.match(/v-\d{4}-\d{3,4}/i) || (party ? party.match(/v-\d{4}-\d{3,4}/i) : null);
+    if (vMatch && !prefix.includes(vMatch[0].toUpperCase())) {
+      prefix = `${prefix} (${vMatch[0].toUpperCase()})`;
+    }
+
+    if (rmt.toLowerCase().replace(/^(zahlung|gutschrift|überweisung|auszahlung)\s+/, '') === party.toLowerCase()) {
+      rmt = '';
+    }
+    if (party && prefix.toLowerCase().includes(party.toLowerCase())) {
+      party = '';
+    }
+
+    const details = [party, rmt].filter(Boolean).join(' - ');
+    beschreibung = `${prefix}${details ? ': ' + details : ''}`;
+  } else {
+    beschreibung = (tx.partyName ? `${tx.partyName}: ` : '') + (tx.remittanceInfo || 'Bankbuchung CAMT.053');
+  }
+
+  const year = Number(window._bhYear || new Date().getFullYear());
+  const txBankKonto = isBankKontoCode(kontoSoll) ? kontoSoll : (isBankKontoCode(kontoHaben) ? kontoHaben : (tx.accountIban ? bhBankGetAccountForIban(tx.accountIban) : '1020'));
+  const belegNr = customBelegNr || tx._batchBelegNr || tx._projectedBelegNr || bhGetNextBankBelegNr(year, txBankKonto);
+  const bookingDate = tx.bookingDate || new Date().toISOString().split('T')[0];
+
+  // Vorab sicherstellen: Falls Rechnung oder Jahresbeitrag gematcht und Positionen im Cache oder Objekt vorhanden sind
+  if (tx.matchedInvoice && !tx._customSplitEdited && (!tx.splitRows || tx.splitRows.length === 0)) {
+    const cachedPos = (window._invoicePositionsCache && window._invoicePositionsCache[String(tx.matchedInvoice.id).trim()]) || tx.matchedInvoice.positions;
+    if (cachedPos && cachedPos.length > 0) {
+      bhBankApplyInvoicePositionsToTx(tx, tx.matchedInvoice, cachedPos);
+    }
+  }
+  if ((tx.isJahresbeitrag || (tx.matchedInvoice && String(tx.matchedInvoice.type || '').toLowerCase().includes('jahresbeitrag'))) && !tx._customSplitEdited && (!tx.splitRows || tx.splitRows.length === 0)) {
+    bhBankApplyJbPositionsToTx(tx);
+  }
+
+  let entries = [];
+  if (tx.isSplit && Array.isArray(tx.splitRows) && tx.splitRows.length > 0) {
+    const validRows = tx.splitRows.filter(r => Number(r.betrag) > 0);
+    if (validRows.length === 0) {
+      throw new Error(`Splitbuchung #${txIdx+1} hat keine Positionen mit Betrag > 0.`);
+    }
+    entries = validRows.map((r, i) => {
+      const subChar = String.fromCharCode(97 + i); // a, b, c...
+      const sClean = bhBankCleanKonto(r.kontoSoll) || r.kontoSoll;
+      const hClean = bhBankCleanKonto(r.kontoHaben) || r.kontoHaben;
+      return {
+        jahr: year,
+        datum: bookingDate,
+        beleg_nr: `${belegNr}${subChar}`,
+        beschreibung: (r.beschreibung || beschreibung).trim(),
+        konto_soll: sClean,
+        konto_haben: hClean,
+        betrag: Math.abs(Number(r.betrag)),
+        typ: 'Bank-Split',
+        buchungstyp: (typeof getBuchungstyp === 'function') ? getBuchungstyp(sClean, hClean) : 'TRANSIT'
+      };
+    });
+  } else if ((tx.isJahresbeitrag || (tx.matchedInvoice && String(tx.matchedInvoice.type || '').toLowerCase().includes('jahresbeitrag'))) && (!tx._customHabenEdited || tx.suggestedHaben === '3410') && typeof window.jbGetSplitBookings === 'function') {
+    const hId = tx.matchedBeitrag ? tx.matchedBeitrag.id : (tx.matchedInvoice ? tx.matchedInvoice.id : null);
+    const beitragYear = tx.matchedBeitrag && tx.matchedBeitrag.year
+      ? Number(tx.matchedBeitrag.year)
+      : (tx.matchedInvoice && tx.matchedInvoice.year ? Number(tx.matchedInvoice.year) : year);
+    const mObj = tx.matchedMember || (tx.matchedInvoice ? { FirstName: tx.matchedInvoice.name, LastName: '', PersonNumber: tx.matchedInvoice.PersonNumber } : {});
+    const split = window.jbGetSplitBookings({
+      headerId: hId,
+      member: mObj,
+      paidAmount: Number(tx.amount || 0),
+      bookingDate: bookingDate,
+      belegNr: belegNr,
+      bankAccount: txBankKonto,
+      year: year,
+      beitragYear: beitragYear
+    });
+    if (Array.isArray(split) && split.length > 0) {
+      entries = split;
+    }
+  }
+
+  if (entries.length === 0) {
+    entries = [{
+      jahr: year,
+      datum: bookingDate,
+      beleg_nr: belegNr,
+      beschreibung: beschreibung,
+      konto_soll: kontoSoll,
+      konto_haben: kontoHaben,
+      betrag: Number(tx.amount || 0),
+      typ: 'Bank',
+      buchungstyp: (typeof getBuchungstyp === 'function') ? getBuchungstyp(kontoSoll, kontoHaben) : 'TRANSIT'
+    }];
+  }
+
+  const isJbMatched = Boolean(tx.isJahresbeitrag || (tx.matchedInvoice && String(tx.matchedInvoice.type || '').toLowerCase().includes('jahresbeitrag')));
+  const resolvedBeitrag = tx.matchedBeitrag || (isJbMatched ? (window._jbAllBeitraege || []).find(b => String(b.PersonNumber) === String(tx.matchedInvoice?.PersonNumber) || String(b.id) === String(tx.matchedInvoice?.id)) : null);
+
+  return {
+    txIdx,
+    tx,
+    belegNr,
+    bookingDate,
+    entries,
+    bookBtn,
+    matchedInvoice: tx.matchedInvoice,
+    matchedBeitrag: resolvedBeitrag,
+    matchedPaymentOrder: tx.matchedPaymentOrder,
+    isJahresbeitrag: isJbMatched
+  };
+};
+
+// ---------------------------------------------------------------------
+// Nachgelagerte Modul-Synchronisation nach erfolgreicher Bank-Buchung
+// (RechnungsCore + PDF, Vermietung + Logs, Jahresbeitrag, pain.001)
+// ---------------------------------------------------------------------
+async function _bhProcessLinkedModulesAfterBankBooking(item, createdEntries, sb) {
+  const { tx, belegNr, bookingDate, matchedInvoice, matchedBeitrag, matchedPaymentOrder, isJahresbeitrag } = item;
+  const warnings = [];
+
+  // 1. Rechnung via RechnungsCore verbuchen (kein rohes invoices-Update-Fallback ohne invoice_payments!)
+  if (matchedInvoice && matchedInvoice.id) {
+    try {
+      if (!window.RechnungsCore || typeof window.RechnungsCore.recordPayment !== 'function') {
+        throw new Error('RechnungsCore.recordPayment ist nicht verfügbar.');
+      }
+      const payAmt = Number(tx?.amount || matchedInvoice.total_amount || 0);
+      const payRes = await window.RechnungsCore.recordPayment(matchedInvoice.id, {
+        amount: payAmt,
+        paymentDate: bookingDate,
+        paymentMethod: 'Überweisung',
+        documentRef: belegNr,
+        notes: `Bankabgleich CAMT: ${tx?.partyName || ''} (${belegNr})`,
+        syncBookkeeping: false
+      });
+      if (!payRes || payRes.success === false) {
+        throw new Error(payRes?.error || `Zahlung für Rechnung ${matchedInvoice.id} fehlgeschlagen.`);
+      }
+      if (typeof window.RechnungsCore.renderPdf === 'function') {
+        window.RechnungsCore.renderPdf(matchedInvoice.id, { forceRecreate: true }).catch(() => {});
+      }
+
+      const invIdUpper = String(matchedInvoice.id || '').toUpperCase();
+      if (invIdUpper.startsWith('MV-') || invIdUpper.startsWith('DP-') || matchedInvoice.source_module === 'inventar') {
+        window._inventarNeedsReload = true;
+      }
+
+      const cachedInv = (window._invoices || []).find(inv => String(inv.id) === String(matchedInvoice.id));
+      if (cachedInv) {
+        const newOpen = payRes.newOpenAmount !== undefined ? Number(payRes.newOpenAmount) : Math.max(0, Number(cachedInv.open_amount ?? cachedInv.total_amount ?? 0) - payAmt);
+        cachedInv.open_amount = newOpen;
+        cachedInv.status = payRes.newStatus || (newOpen <= 0.01 ? 'bezahlt' : 'teilbezahlt');
+        cachedInv.payment_date = bookingDate;
+        cachedInv.payment_method = 'Überweisung';
+        cachedInv.document_ref = belegNr;
+      }
+
+      // 1a. Falls Vermietung: Stufe 2 (fibu_gebucht via CAMT) setzen & Status-Log ergänzen
+      const isVermietungInv = Boolean(
+        matchedInvoice.source_module === 'vermietung' ||
+        String(matchedInvoice.id || '').startsWith('VM-') ||
+        String(matchedInvoice.booking_number || '').startsWith('V-') ||
+        String(matchedInvoice.source_id || '').startsWith('V-')
+      );
+      if (isVermietungInv && sb) {
+        const vnr = matchedInvoice.booking_number || matchedInvoice.source_id;
+        const matchFilter = (vnr && matchedInvoice.id)
+          ? `booking_number.eq.${vnr},invoice_id.eq.${matchedInvoice.id}`
+          : (vnr ? `booking_number.eq.${vnr}` : `invoice_id.eq.${matchedInvoice.id}`);
+
+        const { data: beforeRentals, error: rSelErr } = await sb
+          .from('rental_requests')
+          .select('id, status')
+          .or(matchFilter);
+        if (rSelErr) throw rSelErr;
+
+        for (const br of (beforeRentals || [])) {
+          const nextStatus = (br.status === 'keys_issued' || br.status === 'completed') ? br.status : 'paid';
+          const { data: ur, error: rUpdErr } = await sb
+            .from('rental_requests')
+            .update({
+              status: nextStatus,
+              is_paid: true,
+              status_raiffeisen: 'fibu_gebucht',
+              datum_raiffeisen: bookingDate,
+              kommentar_raiffeisen: `FIBU gebucht via CAMT (${belegNr})`,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', br.id)
+            .select()
+            .maybeSingle();
+          if (rUpdErr) throw rUpdErr;
+
+          if (ur && br.status === nextStatus && (br.status === 'paid' || br.status === 'keys_issued' || br.status === 'completed')) {
+            const { error: logErr } = await sb.from('rental_status_logs').insert([{
+              rental_request_id: ur.id,
+              previous_status: br.status,
+              new_status: nextStatus,
+              comment: `Zahlung in FIBU via CAMT verbucht (${belegNr})`,
+              changed_by: 'FIBU CAMT-Import'
+            }]);
+            if (logErr) throw logErr;
+          }
+        }
+      }
+    } catch (invErr) {
+      warnings.push(`Rechnung ${matchedInvoice.id}: ${invErr.message || invErr}`);
+    }
+  }
+
+  // 2. Jahresbeitrag im Beitragswesen als bezahlt setzen
+  if (isJahresbeitrag && matchedBeitrag && matchedBeitrag.id) {
+    try {
+      if (sb) {
+        const { error: jbErr } = await sb.from('contributions_header').update({
+          status: 'bezahlt',
+          payment_date: bookingDate,
+          payment_method: 'Überweisung',
+          document_ref: belegNr,
+          updated_at: new Date().toISOString()
+        }).eq('id', matchedBeitrag.id);
+        if (jbErr) throw jbErr;
+      }
+      const cachedJb = (window._jbAllBeitraege || []).find(h => String(h.id) === String(matchedBeitrag.id));
+      if (cachedJb) {
+        cachedJb.status = 'bezahlt';
+        cachedJb.payment_date = bookingDate;
+      }
+    } catch (jbErr) {
+      warnings.push(`Jahresbeitrag ${matchedBeitrag.id}: ${jbErr.message || jbErr}`);
+    }
+  }
+
+  // 3. Zahlungsauftrag (pain.001) auf 'ausgefuehrt' setzen
+  if (matchedPaymentOrder && matchedPaymentOrder.id && sb) {
+    try {
+      const matchedJournalRow = (createdEntries || []).find(ce => String(ce.beleg_nr || '').startsWith(String(belegNr))) || createdEntries?.[0];
+      const jId = matchedJournalRow?.id ? Number(matchedJournalRow.id) : null;
+      const execIso = new Date().toISOString();
+
+      const { error: poErr } = await sb.from('accounting_payment_orders').update({
+        status: 'ausgefuehrt',
+        journal_id: jId,
+        executed_at: execIso
+      }).eq('id', matchedPaymentOrder.id);
+      if (poErr) throw poErr;
+
+      matchedPaymentOrder.status = 'ausgefuehrt';
+      matchedPaymentOrder.journal_id = jId;
+      matchedPaymentOrder.executed_at = execIso;
+
+      const cachedPo = (window._bhPaymentOrders || []).find(o => String(o.id) === String(matchedPaymentOrder.id));
+      if (cachedPo) {
+        cachedPo.status = 'ausgefuehrt';
+        cachedPo.journal_id = jId;
+        cachedPo.executed_at = execIso;
+      }
+    } catch (poErr) {
+      warnings.push(`Zahlungsauftrag ${matchedPaymentOrder.order_nr || matchedPaymentOrder.id}: ${poErr.message || poErr}`);
+    }
+  }
+
+  return warnings;
+}
+
+// ---------------------------------------------------------------------
+// Einzelne Buchung durchführen (mit sequentieller Request-Queue)
+// ---------------------------------------------------------------------
+window._bhBookingPromiseQueue = window._bhBookingPromiseQueue || Promise.resolve();
+window._bhBookingQueueCount = window._bhBookingQueueCount || 0;
+
+window.bhBankBookOne = async function(txIdx, customBelegNr, isBatch = false) {
+  if (window.bhCanWrite && !window.bhCanWrite()) {
+    if (!isBatch && window.bhAlert) {
+      await window.bhAlert('Keine Berechtigung', 'Du hast keine Berechtigung zum Verbuchen von Banktransaktionen.', 'warning');
+    }
+    return;
+  }
+
+  if (isBatch) {
+    return await _bhBankBookOneInternal(txIdx, customBelegNr, true);
+  }
+
+  const tx = window._bhBankMatchResults[txIdx];
+  if (!tx || tx._isBooking || tx.alreadyBooked) return;
+
+  // Reihenfolgen-Schutz: Prüfen, ob frühere Buchungen auf dem Kontoauszug noch ungebucht sind
+  const unbookedPrior = (window._bhBankMatchResults || []).filter((other, idx) => {
+    if (idx === txIdx || other.alreadyBooked || other.isWrongYear || Number(other.amount || 0) <= 0) return false;
+    const dateOther = new Date(other.bookingDate || 0).getTime();
+    const dateCurrent = new Date(tx.bookingDate || 0).getTime();
+    if (dateOther < dateCurrent) return true;
+    if (dateOther === dateCurrent && (other._camtOrderIndex || 0) < (tx._camtOrderIndex || 0)) return true;
+    return false;
+  });
+
+  if (unbookedPrior.length > 0) {
+    const plannedBeleg = tx._projectedBelegNr || bhGetNextBankBelegNr(Number(window._bhYear || new Date().getFullYear()), isBankKontoCode(tx.suggestedSoll) ? tx.suggestedSoll : (isBankKontoCode(tx.suggestedHaben) ? tx.suggestedHaben : bhBankGetAccountForIban(tx.accountIban, '1020')));
+    const proceed = window.bhConfirm
+      ? await window.bhConfirm(
+          'Belegnummern-Chronologie beachten',
+          `Auf diesem Kontoauszug befinden sich noch ${unbookedPrior.length} frühere Buchung(en), die noch nicht im Journal erfasst sind.\n\nWenn du diese Zeile jetzt einzeln buchst, erhält sie die Belegnummer ${plannedBeleg}, wodurch die Belegnummern von oben nach unten auf dem Auszug nicht mehr streng synchron bleiben.\n\nEmpfehlung: Verbuche den Auszug gesammelt über «Alle offenen Bank-Buchungen buchen» (unklare Posten laufen über Klärungskonto 1090).\n\nMöchtest du diese Zeile trotzdem einzeln buchen?`,
+          { type: 'warning', confirmText: 'Ja, einzeln buchen', cancelText: 'Abbrechen' }
+        )
+      : false;
+    if (!proceed) return;
+  }
+
+  // Sofortige Sperre gegen Mehrfachklick auf denselben Button
+  tx._isBooking = true;
+
+  const sollEl  = document.getElementById(`bh-soll-${txIdx}`);
+  const habenEl = document.getElementById(`bh-haben-${txIdx}`);
+  const rowTr   = (sollEl ? sollEl.closest('tr') : null) || (habenEl ? habenEl.closest('tr') : null) || document.getElementById(`bh-bank-row-${txIdx}`) || (document.getElementById(`bh-status-badge-${txIdx}`)?.closest('tr') || null);
+  const bookBtn = rowTr ? (rowTr.querySelector('button.btn-success') || rowTr.querySelector('.badge')) : null;
+
+  if (bookBtn) {
+    bookBtn.disabled = true;
+    if (window._bhBookingQueueCount > 0) {
+      bookBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Wartet...';
+    } else {
+      bookBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Bucht...';
+    }
+  }
+
+  window._bhBookingQueueCount++;
+
+  const runTask = async () => {
+    try {
+      if (bookBtn && bookBtn.innerHTML.includes('Wartet...')) {
+        bookBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Bucht...';
+      }
+      await _bhBankBookOneInternal(txIdx, customBelegNr, false);
+    } catch (taskErr) {
+      tx._isBooking = false;
+      console.error('[Bankabgleich] Queue-Buchung fehlgeschlagen:', taskErr);
+    } finally {
+      window._bhBookingQueueCount = Math.max(0, (window._bhBookingQueueCount || 1) - 1);
+      if (window._bhBookingQueueCount === 0) {
+        if (typeof loadBuchhaltungData === 'function') {
+          loadBuchhaltungData(true, true);
+        } else {
+          bhBankRenderResults(window._bhBankActiveFilter);
+        }
+      }
+      if (typeof bhBankUpdateSelectedBtn === 'function') bhBankUpdateSelectedBtn();
+      if (typeof bhBankUpdateSafeBookingsBtn === 'function') bhBankUpdateSafeBookingsBtn();
+    }
+  };
+
+  window._bhBookingPromiseQueue = window._bhBookingPromiseQueue.then(runTask, runTask);
+  return window._bhBookingPromiseQueue;
+};
+
+async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
+  const prepared = window.bhBankPrepareBookingItem(txIdx, customBelegNr, isBatch);
+  if (!prepared) return;
+  const { tx, belegNr, bookingDate, entries, bookBtn } = prepared;
+
+  // Visuelle Rückmeldung
+  tx._isBooking = true;
+  if (bookBtn) {
+    bookBtn.disabled = true;
+    bookBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Bucht...';
+  }
+
+  try {
+    const isSplit = entries.length > 1;
+
+    // 1. Supabase Native Direct Write
+    const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
+    let sbSuccess = false;
+    let createdEntries = [];
+    let lastSbErr = null;
+
+    if (sb) {
+      try {
+        const rowsToInsert = entries.map((e, eIdx) => {
+          const subSuffix = entries.length > 1 ? String.fromCharCode(97 + eIdx) : '';
+          const effectiveBelegNr = e.beleg_nr || (subSuffix ? `${belegNr}${subSuffix}` : belegNr);
+          const row = {
+            jahr: parseInt(e.jahr, 10),
+            datum: bookingDate,
+            beleg_nr: effectiveBelegNr,
+            beschreibung: e.beschreibung,
+            konto_soll: String(e.konto_soll).trim(),
+            konto_haben: String(e.konto_haben).trim(),
+            betrag: Number(e.betrag || 0),
+            typ: e.typ || 'Bank',
+            buchungstyp: e.buchungstyp || ((typeof getBuchungstyp === 'function') ? getBuchungstyp(e.konto_soll, e.konto_haben) : 'TRANSIT'),
+            created_at: new Date().toISOString()
+          };
+          if (typeof e.id === 'number') row.id = e.id;
+          return row;
+        });
+
+        const { data: sbData, error: sbErr } = await sb.from('accounting_journal').insert(rowsToInsert).select();
+        if (sbErr) {
+          console.warn('[Buchhaltung Supabase] Insert failed:', sbErr);
+          lastSbErr = sbErr;
+        } else {
+          sbSuccess = true;
+          createdEntries = sbData || rowsToInsert;
+        }
+      } catch (err) {
+        console.warn('[Buchhaltung Supabase] Insert exception:', err);
+        lastSbErr = err;
+      }
+    }
+
+    if (!sbSuccess) {
+      throw new Error(lastSbErr?.message || lastSbErr?.details || 'Fehler beim Buchen im Supabase Journal: Keine Buchung erstellt');
+    }
+
+    // 2. Verknüpfte Fachmodule (Rechnungen via RechnungsCore, Vermietung, Jahresbeitrag, Zahlungsauftrag)
+    const linkWarnings = await _bhProcessLinkedModulesAfterBankBooking(prepared, createdEntries, sb);
+
+    // Status im UI updaten
+    tx._isBooking = false;
+    window._bhBankMatchResults[txIdx].alreadyBooked = true;
+    window._bhBankMatchResults[txIdx].bookedDate = new Date().toLocaleDateString('de-CH');
+    if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
+      window._bhBankTransactions[txIdx].alreadyBooked = true;
+      window._bhBankTransactions[txIdx].bookedDate = window._bhBankMatchResults[txIdx].bookedDate;
+    }
+
+    // Sofort lokal im Kassabuch-Journal registrieren für 100%ige Sofort-Sperre
+    window._bhJournal = window._bhJournal || [];
+    createdEntries.forEach(entry => window._bhJournal.push(entry));
+
+    if (bookBtn) {
+      bookBtn.className = 'badge bg-light text-secondary border px-2 py-1.5';
+      bookBtn.innerHTML = '<i class="fas fa-check me-1"></i>Gebucht';
+      bookBtn.disabled = true;
+    }
+
+    if (linkWarnings.length > 0) {
+      const msg = `Journal gebucht, aber Nachlauf-Aktualisierung teilweise fehlgeschlagen:\n${linkWarnings.join('\n')}`;
+      if (isBatch) showToast(`⚠️ ${msg}`, 'warning', 'bottom-end', 5000);
+      else if (window.bhAlert) await window.bhAlert('Teilweise gebucht', msg, 'warning');
+    } else if (isSplit) {
+      showToast(`✅ Splitbuchung über CHF ${tx.amount.toFixed(2)} (${entries.length} Posten) gebucht!`, 'success', 'bottom-end', 3000);
+    } else {
+      showToast(`✅ Buchungssatz über CHF ${tx.amount.toFixed(2)} gebucht!`, 'success', 'bottom-end', 2500);
+    }
+
+    window._bhFocusNextAfterBooking = txIdx + 1;
+  } catch(err) {
+    tx._isBooking = false;
+    if (bookBtn) {
+      bookBtn.disabled = false;
+      bookBtn.innerHTML = '<i class="fas fa-check me-1"></i>Buchen';
+    }
+    if (!isBatch && window.bhAlert) {
+      await window.bhAlert('Buchungsfehler', 'Fehler beim Buchen: ' + err.message, 'danger');
+    } else {
+      console.error('Fehler beim Batch-Buchen von Transaktion ' + txIdx + ':', err);
+      showToast(`❌ Fehler bei Buchung: ${err.message}`, 'danger', 'bottom-end', 4000);
+    }
+    throw err;
+  }
+}
+
+// ---------------------------------------------------------------------
+// Batch-Buchung aller sicheren Treffer (1x atomarer Commit)
+// ---------------------------------------------------------------------
+window.bhBankBookAll = async function() {
+  if (window.bhCanWrite && !window.bhCanWrite()) {
+    if (window.bhAlert) await window.bhAlert('Keine Berechtigung', 'Du hast keine Berechtigung zum Verbuchen von Banktransaktionen.', 'warning');
+    return;
+  }
+  if (window._bhIsBookingAll) return;
+  const allBtn = document.getElementById('bhBtnBookAll') || document.querySelector('button[onclick="bhBankBookAll()"]');
+  const origBtnHtml = allBtn ? allBtn.innerHTML : '';
+
+  const results = window._bhBankMatchResults || [];
+  const activeYear = Number(window._bhYear || new Date().getFullYear());
+  
+  // Zusammengelegter Buchungs-Pool: Alle ungebuchten Transaktionen des aktiven Jahres
+  const unbookedRows = results
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => !r.alreadyBooked && !r._isBooking && !r.isWrongYear && Number(r.amount || 0) > 0);
+
+  if (!unbookedRows.length) {
+    showToast(`Keine ungebuchten Transaktionen für das Buchungsjahr ${activeYear} vorhanden.`, 'warning', 'top-end');
+    return;
+  }
+
+  // Vollständigkeit prüfen: Jede Buchung benötigt zwingend Soll- und Haben-Konto (OR 957ff / DB-Integrität)
+  const isRowComplete = (r) => {
+    if (r.isSplit) {
+      return Array.isArray(r.splitRows) && r.splitRows.length > 0 && r.splitRows.every(sr => sr.kontoSoll && sr.kontoHaben && Number(sr.betrag) > 0);
+    }
+    return Boolean(r.suggestedSoll && String(r.suggestedSoll).trim() && r.suggestedHaben && String(r.suggestedHaben).trim());
+  };
+
+  const toBook = unbookedRows.filter(({ r }) => isRowComplete(r));
+  const unvollstaendigList = unbookedRows.filter(({ r }) => !isRowComplete(r));
+  const unvollstaendigCount = unvollstaendigList.length;
+
+  if (toBook.length === 0) {
+    showToast(`⚠️ Keine vollständig kontierten Buchungen vorhanden. Bitte weise den ${unvollstaendigCount} unklaren Posten zuerst ein Gegenkonto zu.`, 'warning', 'top-end', 4500);
+    return;
+  }
+
+  const transitCount = toBook.filter(({ r }) => !r.isSplit && (String(r.suggestedSoll).trim() === '1090' || String(r.suggestedHaben).trim() === '1090')).length;
+
+  let confirmMsg = `${toBook.length} Bank-Buchungen jetzt in streng chronologischer Reihenfolge ins Journal eintragen?`;
+  if (transitCount > 0) {
+    confirmMsg += `\n\nℹ️ Hinweis: ${transitCount} Zahlung(en) sind als unklar eingestuft und werden über das Klärungskonto 1090 (Transit) gebucht, damit alle Bankbelege lückenlos aufsteigend nummeriert bleiben. Du kannst sie jederzeit im Journal umkontieren.`;
+  }
+  if (unvollstaendigCount > 0) {
+    confirmMsg += `\n\n⚠️ Hinweis: ${unvollstaendigCount} Buchung(en) haben noch kein Gegenkonto und verbleiben als unklar/offen in der Liste zur manuellen Kontierung.`;
+  }
+  confirmMsg += '\n\nZugeordnete Rechnungen und Jahresbeiträge werden parallel als bezahlt markiert.';
+
+  const ok = window.bhConfirm
+    ? await window.bhConfirm('Bank-Buchungen ausführen', confirmMsg, { type: 'primary', confirmText: `${toBook.length} Buchungen jetzt eintragen`, cancelText: 'Abbrechen' })
+    : false;
+  if (!ok) return;
+
+  window._bhIsBookingAll = true;
+  if (allBtn) {
+    allBtn.disabled = true;
+    allBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span>Bereite Buchungen vor...`;
+  }
+
+  // Oben rechts das persistente Batch-Banner anzeigen
+  const batchToast = showToast(`⏳ Bereite ${toBook.length} Buchungen lokal im Browser vor...`, 'info', 'top-end', 0);
+
+  try {
+    // 1. WICHTIG: Vor der Belegnummern-Vergabe STRIKT chronologisch nach Buchungsdatum und CAMT-Reihenfolge sortieren!
+    toBook.sort((a, b) => {
+      const dateA = new Date(a.r.bookingDate || '1970-01-01').getTime();
+      const dateB = new Date(b.r.bookingDate || '1970-01-01').getTime();
+      if (dateA !== dateB) return dateA - dateB;
+      const idxA = a.r._camtOrderIndex !== undefined ? a.r._camtOrderIndex : a.i;
+      const idxB = b.r._camtOrderIndex !== undefined ? b.r._camtOrderIndex : b.i;
+      return idxA - idxB;
+    });
+
+    // 2. Belegnummern im Vorfeld lückenlos und streng chronologisch vergeben
+    // Höchste vorhandene Belegnummern im Journal je Präfix ermitteln (Single Source of Truth)
+    const maxSeqs = {};
+    (window._bhJournal || []).forEach(j => {
+      if (Number(j.jahr) === activeYear && j.beleg_nr) {
+        const m = String(j.beleg_nr).match(/^(B_Zahl_|B_Wirt_|B_Spar_|B_Geno_|BK_)\d{4}-(\d+)/i);
+        if (m) {
+          let pfx = m[1].toUpperCase();
+          if (pfx === 'B_GENO_') pfx = 'B_SPAR_';
+          const num = parseInt(m[2], 10);
+          if (!isNaN(num)) {
+            maxSeqs[pfx] = Math.max(maxSeqs[pfx] || 0, num);
+          }
+        }
+      }
+    });
+
+    const runningSeqs = { ...maxSeqs };
+    toBook.forEach(({ r }) => {
+      const txBankKonto = isBankKontoCode(r.suggestedSoll) 
+        ? r.suggestedSoll 
+        : (isBankKontoCode(r.suggestedHaben) 
+            ? r.suggestedHaben 
+            : bhBankGetAccountForIban(r.accountIban, '1020'));
+      const pfxRaw = getBankBelegPrefix(txBankKonto);
+      const pfxKey = pfxRaw.toUpperCase();
+      runningSeqs[pfxKey] = (runningSeqs[pfxKey] || 0) + 1;
+      r._batchBelegNr = `${pfxRaw}${activeYear}-${String(runningSeqs[pfxKey]).padStart(3, '0')}`;
+    });
+
+    // 2. Alle Buchungspakete lokal im RAM zusammenstellen
+    const preparedList = [];
+    const allJournalEntries = [];
+
+    for (const { r, i } of toBook) {
+      const prepared = window.bhBankPrepareBookingItem(i, r._batchBelegNr, true);
+      if (prepared) {
+        preparedList.push(prepared);
+        allJournalEntries.push(...prepared.entries);
+        r._isBooking = true;
+        if (prepared.bookBtn) {
+          prepared.bookBtn.disabled = true;
+          prepared.bookBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Bucht...';
+        }
+      }
+    }
+
+    if (allJournalEntries.length === 0) {
+      throw new Error('Keine gültigen Buchungssätze generiert.');
+    }
+
+    // 3. Sammel-Commit (Supabase PostgreSQL - Single Source of Truth)
+    const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
+    let sbBatchSuccess = false;
+    let createdBatchEntries = [];
+    let lastSbBatchErr = null;
+
+    if (sb) {
+      if (allBtn) {
+        allBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span>Speichere ${allJournalEntries.length} Buchungen in Supabase...`;
+      }
+      if (batchToast) {
+        const span = batchToast.querySelector('span');
+        if (span) span.textContent = `⏳ Speichere ${allJournalEntries.length} Buchungen direkt in Supabase...`;
+      }
+
+      try {
+        const rowsToInsert = allJournalEntries.map((e, eIdx) => {
+          const row = {
+            jahr: parseInt(e.jahr || activeYear, 10),
+            datum: e.datum,
+            beleg_nr: e.beleg_nr,
+            beschreibung: e.beschreibung,
+            konto_soll: String(e.konto_soll).trim(),
+            konto_haben: String(e.konto_haben).trim(),
+            betrag: Number(e.betrag || 0),
+            typ: e.typ || 'Bank',
+            buchungstyp: e.buchungstyp || ((typeof getBuchungstyp === 'function') ? getBuchungstyp(e.konto_soll, e.konto_haben) : 'TRANSIT'),
+            created_at: new Date().toISOString()
+          };
+          if (typeof e.id === 'number') row.id = e.id;
+          return row;
+        });
+
+        const { data: sbData, error: sbErr } = await sb.from('accounting_journal').insert(rowsToInsert).select();
+        if (sbErr) {
+          console.error('[Buchhaltung Supabase] Batch insert error:', sbErr);
+          lastSbBatchErr = sbErr;
+        } else {
+          sbBatchSuccess = true;
+          createdBatchEntries = sbData || rowsToInsert;
+        }
+      } catch (sbEx) {
+        console.error('[Buchhaltung Supabase] Batch insert exception:', sbEx);
+        lastSbBatchErr = sbEx;
+      }
+    }
+
+    if (allBtn) {
+      allBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span>Übertrage ${allJournalEntries.length} Buchungssätze...`;
+    }
+    if (batchToast) {
+      const span = batchToast.querySelector('span');
+      if (span) span.textContent = `⏳ Verbuche ${allJournalEntries.length} Buchungssätze in Supabase...`;
+    }
+
+    if (!sbBatchSuccess) {
+      throw new Error(lastSbBatchErr?.message || lastSbBatchErr?.details || 'Fehler beim Sammel-Buchen im Supabase Journal');
+    }
+    window._bhJournal = window._bhJournal || [];
+    createdBatchEntries.forEach(entry => window._bhJournal.push(entry));
+
+    // 4. Nachgelagerte Modul-Aktualisierungen (RechnungsCore + PDF, Vermietung + Logs, Jahresbeiträge, pain.001)
+    const linkTaskResults = await Promise.allSettled(
+      preparedList.map(item => _bhProcessLinkedModulesAfterBankBooking(item, createdBatchEntries, sb))
+    );
+    const linkWarnings = [];
+    linkTaskResults.forEach(res => {
+      if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+        linkWarnings.push(...res.value);
+      } else if (res.status === 'rejected') {
+        linkWarnings.push(res.reason?.message || String(res.reason));
+      }
+    });
+
+    // Alle vorbereiteten Transaktionen im UI als gebucht markieren
+    const todayStr = new Date().toLocaleDateString('de-CH');
+    preparedList.forEach(({ tx, txIdx, bookBtn }) => {
+      tx._isBooking = false;
+      if (window._bhBankMatchResults && window._bhBankMatchResults[txIdx]) {
+        window._bhBankMatchResults[txIdx].alreadyBooked = true;
+        window._bhBankMatchResults[txIdx].bookedDate = todayStr;
+      }
+      if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
+        window._bhBankTransactions[txIdx].alreadyBooked = true;
+        window._bhBankTransactions[txIdx].bookedDate = todayStr;
+      }
+      if (bookBtn) {
+        bookBtn.className = 'badge bg-light text-secondary border px-2 py-1.5';
+        bookBtn.innerHTML = '<i class="fas fa-check me-1"></i>Gebucht';
+        bookBtn.disabled = true;
+      }
+    });
+
+    // Salden & KPIs sofort live im RAM neu berechnen
+    if (typeof recalculateLiveAccountBalances === 'function') recalculateLiveAccountBalances();
+    if (typeof updateAccountingKPIs === 'function') updateAccountingKPIs();
+
+    // Spinner sofort entfernen & Batch-Toast schließen
+    if (batchToast && batchToast.parentNode) batchToast.remove();
+    window._bhIsBookingAll = false;
+
+    // Sofort die Tabelle und Buttons aktualisieren (0ms Latenz)
+    bhBankRenderResults(window._bhBankActiveFilter);
+    window.bhBankUpdateSelectedBtn();
+    window.bhBankUpdateSafeBookingsBtn();
+
+    if (linkWarnings.length > 0) {
+      if (window.bhAlert) {
+        await window.bhAlert(
+          'Teilweise synchronisiert',
+          `${preparedList.length} Bank-Buchungen im Journal erfasst, aber folgende Modul-Synchronisationen sind fehlgeschlagen:\n\n${linkWarnings.join('\n')}`,
+          'warning'
+        );
+      } else {
+        showToast(`⚠️ ${preparedList.length} Buchungen erstellt, ${linkWarnings.length} Nachlauf-Fehler`, 'warning', 'top-end', 6000);
+      }
+    } else {
+      showToast(`⚡ ${preparedList.length} Bank-Buchungen (${allJournalEntries.length} Buchungssätze) erfolgreich ausgeführt!`, 'success', 'top-end', 4000);
+    }
+  } catch (err) {
+    console.error('Fehler beim Sammel-Buchen:', err);
+    showToast(`Fehler beim Sammel-Buchen: ${err.message || err}`, 'error', 'top-end', 6000);
+    toBook.forEach(({ r }) => { r._isBooking = false; });
+  } finally {
+    if (batchToast && batchToast.parentNode) batchToast.remove();
+    window._bhIsBookingAll = false;
+    if (allBtn && origBtnHtml) {
+      allBtn.innerHTML = origBtnHtml;
+    }
+    (window._bhBankMatchResults || []).forEach(r => {
+      if (!r.alreadyBooked) r._isBooking = false;
+    });
+    if (typeof bhBankRenderResults === 'function') bhBankRenderResults(window._bhBankActiveFilter);
+    if (typeof bhBankUpdateSafeBookingsBtn === 'function') bhBankUpdateSafeBookingsBtn();
+    if (typeof bhBankUpdateSelectedBtn === 'function') bhBankUpdateSelectedBtn();
+  }
+};
+
+// ---------------------------------------------------------------------
+// Buchungsstapel & Einzelauswahl (in Variante 1 durch Gesamtbuchung abgelöst)
+// ---------------------------------------------------------------------
+window.bhBankToggleQueue = function(txIdx, evt) {
+  showToast('ℹ️ Alle Bank-Buchungen werden gesammelt mit «Alle Buchungen ausführen» gebucht (automatisch nach Datum sortiert).', 'info', 'top-end', 3500);
+};
+
+window.bhBankUpdateSafeBookingsBtn = function() {
+  const allBtn = document.getElementById('bhBtnBookAll');
+  if (!allBtn) return;
+  if (window._bhIsBookingAll) {
+    allBtn.disabled = true;
+    return;
+  }
+  const rows = window._bhBankMatchResults || [];
+  const openCount = rows.filter(r => 
+    !r.alreadyBooked && !r._isBooking && !r.isWrongYear && Number(r.amount || 0) > 0
+  ).length;
+  allBtn.innerHTML = `<i class="fas fa-bolt me-1"></i>Alle Buchungen ausführen${openCount > 0 ? ` (${openCount})` : ''}`;
+  allBtn.disabled = (openCount === 0);
+};
+
+window.bhBankUpdateSelectedBtn = function() {
+  const btn = document.getElementById('bhBtnBookSelected');
+  if (btn) {
+    btn.classList.add('d-none');
+  }
+};
+
+window.bhBankBookSelected = async function() {
+  if (window.bhCanWrite && !window.bhCanWrite()) {
+    if (window.bhAlert) await window.bhAlert('Keine Berechtigung', 'Du hast keine Berechtigung zum Verbuchen von Banktransaktionen.', 'warning');
+    return;
+  }
+  if (window._bhIsBookingSelected || window._bhIsBookingAll) return;
+  const selBtn = document.getElementById('bhBtnBookSelected');
+  const origSelHtml = selBtn ? selBtn.innerHTML : '';
+
+  const results = window._bhBankMatchResults || [];
+  const activeYear = Number(window._bhYear || new Date().getFullYear());
+
+  const toBook = results
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => r._inBookingQueue && !r.alreadyBooked && !r._isBooking && !r.isWrongYear);
+
+  if (!toBook.length) {
+    showToast('Keine Buchungen im Buchungsstapel ausgewählt.', 'warning', 'top-end');
+    return;
+  }
+
+  const totalAmount = toBook.reduce((sum, { r }) => sum + (Number(r.amount) || 0), 0);
+  const amtText = typeof window.fmtChf === 'function' ? window.fmtChf(totalAmount) : `CHF ${totalAmount.toFixed(2)}`;
+  const ok = window.bhConfirm
+    ? await window.bhConfirm(
+        'Stapel-Buchung ausführen',
+        `${toBook.length} vorgemerkte Bank-Buchung(en) jetzt zusammenhängend in einem Schritt ins Journal eintragen?\n\nGesamtbetrag: ${amtText}`,
+        { type: 'primary', confirmText: `${toBook.length} Buchungen eintragen`, cancelText: 'Abbrechen' }
+      )
+    : false;
+  if (!ok) return;
+
+  window._bhIsBookingSelected = true;
+  if (selBtn) {
+    selBtn.disabled = true;
+    selBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span>Bereite Buchungen vor...`;
+  }
+
+  const batchToast = showToast(`⏳ Bereite ${toBook.length} Buchungen aus dem Stapel vor...`, 'info', 'top-end', 0);
+
+  try {
+    // 1. Vor der Belegnummern-Vergabe STRIKT chronologisch nach Buchungsdatum und CAMT-Reihenfolge sortieren
+    toBook.sort((a, b) => {
+      const dateA = new Date(a.r.bookingDate || '1970-01-01').getTime();
+      const dateB = new Date(b.r.bookingDate || '1970-01-01').getTime();
+      if (dateA !== dateB) return dateA - dateB;
+      const idxA = a.r._camtOrderIndex !== undefined ? a.r._camtOrderIndex : a.i;
+      const idxB = b.r._camtOrderIndex !== undefined ? b.r._camtOrderIndex : b.i;
+      return idxA - idxB;
+    });
+
+    // 2. Belegnummern lückenlos und chronologisch vergeben
+    // Höchste vorhandene Belegnummern im Journal je Präfix ermitteln (Single Source of Truth)
+    const maxSeqs = {};
+    (window._bhJournal || []).forEach(j => {
+      if (Number(j.jahr) === activeYear && j.beleg_nr) {
+        const m = String(j.beleg_nr).match(/^(B_Zahl_|B_Wirt_|B_Spar_|B_Geno_|BK_)\d{4}-(\d+)/i);
+        if (m) {
+          let pfx = m[1].toUpperCase();
+          if (pfx === 'B_GENO_') pfx = 'B_SPAR_';
+          const num = parseInt(m[2], 10);
+          if (!isNaN(num)) {
+            maxSeqs[pfx] = Math.max(maxSeqs[pfx] || 0, num);
+          }
+        }
+      }
+    });
+
+    const runningSeqs = { ...maxSeqs };
+    toBook.forEach(({ r }) => {
+      const txBankKonto = isBankKontoCode(r.suggestedSoll) 
+        ? r.suggestedSoll 
+        : (isBankKontoCode(r.suggestedHaben) 
+            ? r.suggestedHaben 
+            : bhBankGetAccountForIban(r.accountIban, '1020'));
+      const pfxRaw = getBankBelegPrefix(txBankKonto);
+      const pfxKey = pfxRaw.toUpperCase();
+      runningSeqs[pfxKey] = (runningSeqs[pfxKey] || 0) + 1;
+      r._batchBelegNr = `${pfxRaw}${activeYear}-${String(runningSeqs[pfxKey]).padStart(3, '0')}`;
+    });
+
+    // 2. Alle Buchungspakete lokal zusammenstellen
+    const preparedList = [];
+    const allJournalEntries = [];
+
+    for (const { r, i } of toBook) {
+      try {
+        const prepared = window.bhBankPrepareBookingItem(i, r._batchBelegNr, true);
+        if (prepared) {
+          preparedList.push(prepared);
+          allJournalEntries.push(...prepared.entries);
+          r._isBooking = true;
+          if (prepared.bookBtn) {
+            prepared.bookBtn.disabled = true;
+            prepared.bookBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Bucht...';
+          }
+        }
+      } catch (valErr) {
+        throw new Error(`Fehler bei Transaktion "${r.partyName || 'Zeile ' + (i+1)}": ${valErr.message}`);
+      }
+    }
+
+    if (allJournalEntries.length === 0) {
+      throw new Error('Keine gültigen Buchungssätze generiert.');
+    }
+
+    // 3. Sammel-Commit (Supabase PostgreSQL - Single Source of Truth)
+    const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
+    let sbBatchSuccess = false;
+    let createdBatchEntries = [];
+    let lastSbSelErr = null;
+
+    if (sb) {
+      if (selBtn) {
+        selBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span>Speichere ${allJournalEntries.length} Buchungen in Supabase...`;
+      }
+      if (batchToast) {
+        const span = batchToast.querySelector('span');
+        if (span) span.textContent = `⏳ Speichere ${allJournalEntries.length} Buchungen direkt in Supabase...`;
+      }
+
+      try {
+        const rowsToInsert = allJournalEntries.map((e, eIdx) => {
+          const row = {
+            jahr: parseInt(e.jahr || activeYear, 10),
+            datum: e.datum,
+            beleg_nr: e.beleg_nr,
+            beschreibung: e.beschreibung,
+            konto_soll: String(e.konto_soll).trim(),
+            konto_haben: String(e.konto_haben).trim(),
+            betrag: Number(e.betrag || 0),
+            typ: e.typ || 'Bank',
+            buchungstyp: e.buchungstyp || ((typeof getBuchungstyp === 'function') ? getBuchungstyp(e.konto_soll, e.konto_haben) : 'TRANSIT'),
+            created_at: new Date().toISOString()
+          };
+          if (typeof e.id === 'number') row.id = e.id;
+          return row;
+        });
+
+        const { data: sbData, error: sbErr } = await sb.from('accounting_journal').insert(rowsToInsert).select();
+        if (sbErr) {
+          console.error('[Buchhaltung Supabase] Batch selected insert error:', sbErr);
+          lastSbSelErr = sbErr;
+        } else {
+          sbBatchSuccess = true;
+          createdBatchEntries = sbData || rowsToInsert;
+        }
+      } catch (sbEx) {
+        console.error('[Buchhaltung Supabase] Batch selected insert exception:', sbEx);
+        lastSbSelErr = sbEx;
+      }
+    }
+
+    if (selBtn) {
+      selBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span>Übertrage ${allJournalEntries.length} Buchungssätze...`;
+    }
+    if (batchToast) {
+      const span = batchToast.querySelector('span');
+      if (span) span.textContent = `⏳ Verbuche ${allJournalEntries.length} Buchungssätze in Supabase...`;
+    }
+
+    if (!sbBatchSuccess) {
+      throw new Error(lastSbSelErr?.message || lastSbSelErr?.details || 'Fehler beim Sammel-Buchen im Supabase Journal');
+    }
+    window._bhJournal = window._bhJournal || [];
+    createdBatchEntries.forEach(entry => window._bhJournal.push(entry));
+
+    // 4. Nachgelagerte Modul-Aktualisierungen (RechnungsCore + PDF, Vermietung + Logs, Jahresbeiträge, pain.001)
+    const linkTaskResults = await Promise.allSettled(
+      preparedList.map(item => _bhProcessLinkedModulesAfterBankBooking(item, createdBatchEntries, sb))
+    );
+    const linkWarnings = [];
+    linkTaskResults.forEach(res => {
+      if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+        linkWarnings.push(...res.value);
+      } else if (res.status === 'rejected') {
+        linkWarnings.push(res.reason?.message || String(res.reason));
+      }
+    });
+
+    // Alle vorbereiteten Transaktionen im UI als gebucht markieren & aus Stapel entfernen
+    const todayStr = new Date().toLocaleDateString('de-CH');
+    preparedList.forEach(({ tx, txIdx, bookBtn }) => {
+      tx._isBooking = false;
+      tx._inBookingQueue = false;
+      if (window._bhBankMatchResults && window._bhBankMatchResults[txIdx]) {
+        window._bhBankMatchResults[txIdx].alreadyBooked = true;
+        window._bhBankMatchResults[txIdx].bookedDate = todayStr;
+        window._bhBankMatchResults[txIdx]._inBookingQueue = false;
+      }
+      if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
+        window._bhBankTransactions[txIdx].alreadyBooked = true;
+        window._bhBankTransactions[txIdx].bookedDate = todayStr;
+        window._bhBankTransactions[txIdx]._inBookingQueue = false;
+      }
+      if (bookBtn) {
+        bookBtn.className = 'badge bg-light text-secondary border px-2 py-1.5';
+        bookBtn.innerHTML = '<i class="fas fa-check me-1"></i>Gebucht';
+        bookBtn.disabled = true;
+      }
+    });
+
+    // Salden & KPIs sofort live im RAM neu berechnen
+    if (typeof recalculateLiveAccountBalances === 'function') recalculateLiveAccountBalances();
+    if (typeof updateAccountingKPIs === 'function') updateAccountingKPIs();
+
+    // Spinner sofort entfernen & Batch-Toast schließen
+    if (batchToast && batchToast.parentNode) batchToast.remove();
+    window._bhIsBookingSelected = false;
+
+    // Sofort die Tabelle und Buttons aktualisieren (0ms Latenz)
+    bhBankRenderResults(window._bhBankActiveFilter);
+    window.bhBankUpdateSelectedBtn();
+    window.bhBankUpdateSafeBookingsBtn();
+
+    if (linkWarnings.length > 0) {
+      if (window.bhAlert) {
+        await window.bhAlert(
+          'Teilweise synchronisiert',
+          `${preparedList.length} Bank-Buchung(en) im Journal erfasst, aber folgende Modul-Synchronisationen sind fehlgeschlagen:\n\n${linkWarnings.join('\n')}`,
+          'warning'
+        );
+      } else {
+        showToast(`⚠️ ${preparedList.length} Buchung(en) erstellt, ${linkWarnings.length} Nachlauf-Fehler`, 'warning', 'top-end', 6000);
+      }
+    } else {
+      showToast(`⚡ ${preparedList.length} Bank-Buchung(en) (${allJournalEntries.length} Buchungssätze) erfolgreich ausgeführt!`, 'success', 'top-end', 4000);
+    }
+  } catch (err) {
+    console.error('Fehler beim Stapel-Buchen:', err);
+    showToast(`Fehler beim Stapel-Buchen: ${err.message || err}`, 'error', 'top-end', 6000);
+    toBook.forEach(({ r }) => { r._isBooking = false; });
+  } finally {
+    if (batchToast && batchToast.parentNode) batchToast.remove();
+    window._bhIsBookingSelected = false;
+    if (selBtn) {
+      selBtn.disabled = false;
+      if (origSelHtml) selBtn.innerHTML = origSelHtml;
+    }
+    (window._bhBankMatchResults || []).forEach(r => {
+      if (!r.alreadyBooked) r._isBooking = false;
+    });
+    if (typeof bhBankRenderResults === 'function') bhBankRenderResults(window._bhBankActiveFilter);
+    window.bhBankUpdateSelectedBtn();
+    window.bhBankUpdateSafeBookingsBtn();
+  }
+};
+
+// ---------------------------------------------------------------------
+// Regel Editor Modal (Erstellen / Bearbeiten)
+// ---------------------------------------------------------------------
+window.bhUpdateRuleAmountInputs = function() {
+  const mode = document.getElementById('bhr-amount-mode')?.value || 'any';
+  const minWrap = document.getElementById('bhr-amount-min-wrap');
+  const maxWrap = document.getElementById('bhr-amount-max-wrap');
+  const minLabel = document.getElementById('bhr-amount-min-label');
+  if (!minWrap || !maxWrap) return;
+
+  if (mode === 'any') {
+    minWrap.style.display = 'none';
+    maxWrap.style.display = 'none';
+  } else if (mode === 'exact') {
+    minWrap.style.display = 'block';
+    maxWrap.style.display = 'none';
+    if (minLabel) minLabel.innerHTML = '<i class="fas fa-equals me-1 text-primary"></i>Exakter Betrag (CHF)';
+  } else if (mode === 'gt') {
+    minWrap.style.display = 'block';
+    maxWrap.style.display = 'none';
+    if (minLabel) minLabel.innerHTML = '<i class="fas fa-greater-than me-1 text-primary"></i>Grösser als (&gt;) (CHF)';
+  } else if (mode === 'lt') {
+    minWrap.style.display = 'block';
+    maxWrap.style.display = 'none';
+    if (minLabel) minLabel.innerHTML = '<i class="fas fa-less-than me-1 text-primary"></i>Kleiner als (&lt;) (CHF)';
+  } else if (mode === 'range') {
+    minWrap.style.display = 'block';
+    maxWrap.style.display = 'block';
+    if (minLabel) minLabel.innerHTML = '<i class="fas fa-arrow-right me-1 text-primary"></i>Von Betrag (CHF)';
+  }
+};
+
+window.bhBankOpenRuleEditorModal = function(editIdx, prefillObj) {
+  const rules = window.getBhBankRules();
+  const isEdit = typeof editIdx === 'number' && editIdx >= 0;
+  const existingRule = isEdit ? rules[editIdx] : null;
+
+  const rule = existingRule || prefillObj || {
+    pattern_party: '',
+    pattern_text: '',
+    pattern: '',
+    label: '',
+    prefix: '',
+    soll: '1020',
+    haben: '3410',
+    scope: 'all',
+    amount_mode: 'any',
+    amount_min: '',
+    amount_max: ''
+  };
+
+  const partyVal = rule.pattern_party !== undefined ? rule.pattern_party : (rule.scope === 'party' ? rule.pattern : (rule.scope === 'all' ? rule.pattern : ''));
+  const textVal  = rule.pattern_text  !== undefined ? rule.pattern_text  : (rule.scope === 'text'  ? rule.pattern : '');
+
+  let modalEl = document.getElementById('bhModalRuleEditor');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'bhModalRuleEditor';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    document.body.appendChild(modalEl);
+  }
+
+  modalEl.style.zIndex = '1065';
+
+  const amtMode = rule.amount_mode || 'any';
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered" style="z-index: 1066;">
+      <div class="modal-content border-0 rounded-4 shadow-lg">
+        <div class="modal-header bg-dark text-white border-0 py-3 rounded-top-4">
+          <h5 class="modal-title fw-bold">
+            <i class="fas ${isEdit ? 'fa-edit' : 'fa-plus-circle'} me-2"></i>
+            ${isEdit ? 'Buchhaltungsregel bearbeiten' : 'Neue Buchhaltungsregel erstellen'}
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <form onsubmit="bhBankSaveRuleSubmit(event, ${isEdit ? editIdx : -1})">
+          <div class="modal-body p-4">
+            <div class="mb-3">
+              <label class="form-label fw-bold small">Regel-Bezeichnung (System-Name)</label>
+              <input type="text" id="bhr-label" class="form-control form-control-sm" placeholder="z.B. AGSV Gruppenmeisterschaft oder Berchtold Fleisch AG" value="${escHtml(rule.label)}" required>
+              <div class="form-text small">Wird im Status-Badge als Regelname angezeigt.</div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label fw-bold small">Journal-Präfix / Buchungstext (Vorangestellt im Kassabuch)</label>
+              <input type="text" id="bhr-prefix" class="form-control form-control-sm" placeholder="z.B. AGSV Gruppenmeisterschaft" value="${escHtml(rule.prefix || rule.label)}">
+              <div class="form-text small">Dieser Text wird bei der Buchung im Kassabuch-Journal vorangestellt.</div>
+            </div>
+            
+            <div class="row g-2 mb-2">
+              <div class="col-md-6">
+                <label class="form-label fw-bold small text-primary">
+                  <i class="fas fa-user me-1"></i>Suchbegriff: Empfänger / Zahler
+                </label>
+                <input type="text" id="bhr-pattern-party" class="form-control form-control-sm" placeholder="z.B. AGSV, Berchtold, Swisscom..." value="${escHtml(partyVal)}">
+                <div class="form-text small">Wird im Absender/Empfänger gesucht (kann leer bleiben).</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-bold small text-success">
+                  <i class="fas fa-file-alt me-1"></i>Suchbegriff: Verwendungszweck
+                </label>
+                <input type="text" id="bhr-pattern-text" class="form-control form-control-sm" placeholder="z.B. Gruppenmeisterschaft, Munition..." value="${escHtml(textVal)}">
+                <div class="form-text small">Wird im Buchungstext/Mitteilung gesucht (kann leer bleiben).</div>
+              </div>
+            </div>
+
+            <!-- Betragseinschränkung (optional: beliebig, exakt, grösser als, kleiner als, von...bis) -->
+            <div class="row g-2 mb-3 align-items-end bg-light p-2 rounded-3 border">
+              <div class="col-md-5">
+                <label class="form-label fw-bold small text-dark mb-1">
+                  <i class="fas fa-coins me-1 text-warning"></i>Betragseinschränkung
+                </label>
+                <select id="bhr-amount-mode" class="form-select form-select-sm" onchange="bhUpdateRuleAmountInputs()">
+                  <option value="any" ${amtMode === 'any' ? 'selected' : ''}>Beliebiger Betrag (Standard)</option>
+                  <option value="exact" ${amtMode === 'exact' ? 'selected' : ''}>Exakter Betrag (=)</option>
+                  <option value="range" ${amtMode === 'range' ? 'selected' : ''}>Betragsbereich (von ... bis)</option>
+                  <option value="gt" ${amtMode === 'gt' ? 'selected' : ''}>Grösser als (&gt;)</option>
+                  <option value="lt" ${amtMode === 'lt' ? 'selected' : ''}>Kleiner als (&lt;)</option>
+                </select>
+              </div>
+              <div class="col-md-4" id="bhr-amount-min-wrap" style="display: ${amtMode === 'any' ? 'none' : 'block'};">
+                <label id="bhr-amount-min-label" class="form-label fw-bold small mb-1">
+                  ${amtMode === 'lt' ? 'Kleiner als (<) (CHF)' : (amtMode === 'gt' ? 'Grösser als (>) (CHF)' : (amtMode === 'range' ? 'Von Betrag (CHF)' : 'Exakter Betrag (CHF)'))}
+                </label>
+                <input type="number" step="0.01" min="0" id="bhr-amount-min" class="form-control form-control-sm font-monospace" placeholder="0.00" value="${(rule.amount_min !== undefined && rule.amount_min !== null && rule.amount_min !== '') ? rule.amount_min : ''}">
+              </div>
+              <div class="col-md-3" id="bhr-amount-max-wrap" style="display: ${amtMode === 'range' ? 'block' : 'none'};">
+                <label class="form-label fw-bold small mb-1">Bis Betrag (CHF)</label>
+                <input type="number" step="0.01" min="0" id="bhr-amount-max" class="form-control form-control-sm font-monospace" placeholder="0.00" value="${(rule.amount_max !== undefined && rule.amount_max !== null && rule.amount_max !== '') ? rule.amount_max : ''}">
+              </div>
+            </div>
+
+            <div class="alert alert-light border py-1.5 px-2.5 mb-3 small text-muted">
+              <i class="fas fa-info-circle me-1 text-info"></i>
+              Mindestens ein Kriterium (Empfänger, Text oder Betrag) muss gesetzt sein. Sind mehrere Kriterien gesetzt, greift die Regel nur, wenn alle zutreffen.
+            </div>
+
+            <div class="row g-2 mb-3">
+              <div class="col-6">
+                <label class="form-label fw-bold small">Soll-Konto</label>
+                <input type="text" id="bhr-soll" list="bh-konten-datalist" class="form-control form-control-sm" placeholder="Soll-Konto..." value="${escHtml(rule.soll)}" required autocomplete="off">
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-bold small">Haben-Konto</label>
+                <input type="text" id="bhr-haben" list="bh-konten-datalist" class="form-control form-control-sm" placeholder="Haben-Konto..." value="${escHtml(rule.haben)}" required autocomplete="off">
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer border-0 bg-light rounded-bottom-4">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+            <button type="submit" class="btn btn-sm btn-primary px-3 fw-bold">
+              <i class="fas fa-save me-1"></i> ${isEdit ? 'Änderungen speichern' : 'Regel erstellen'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+
+  bootstrap.Modal.getOrCreateInstance(modalEl).show();
+};
+
+window.bhBankSaveRuleSubmit = async function(e, editIdx) {
+  e.preventDefault();
+  if (window.bhCanWrite && !window.bhCanWrite()) {
+    if (window.bhAlert) await window.bhAlert('Keine Berechtigung', 'Du hast keine Berechtigung zum Speichern von Buchungsregeln.', 'warning');
+    return;
+  }
+
+  const label        = document.getElementById('bhr-label').value.trim();
+  const patternParty = document.getElementById('bhr-pattern-party').value.trim();
+  const patternText  = document.getElementById('bhr-pattern-text').value.trim();
+  const prefix       = document.getElementById('bhr-prefix').value.trim() || label;
+  const rawSoll      = document.getElementById('bhr-soll').value.trim();
+  const rawHaben     = document.getElementById('bhr-haben').value.trim();
+
+  const amountMode   = document.getElementById('bhr-amount-mode')?.value || 'any';
+  const rawAmountMin = document.getElementById('bhr-amount-min')?.value.trim();
+  const rawAmountMax = document.getElementById('bhr-amount-max')?.value.trim();
+
+  const amountMin = (rawAmountMin !== '' && !isNaN(Number(rawAmountMin))) ? Number(rawAmountMin) : '';
+  const amountMax = (rawAmountMax !== '' && !isNaN(Number(rawAmountMax))) ? Number(rawAmountMax) : '';
+
+  let soll  = rawSoll.split('|')[0].trim();
+  let haben = rawHaben.split('|')[0].trim();
+
+  // Soll/Haben Harmonisierung für Aufwände / Erträge:
+  // Bei Aufwand (4xxx, 5xxx, 6xxx, 7xxx, 89xx): Soll = Aufwand, Haben = Bank
+  // Bei Ertrag (3xxx, 80xx, 81xx): Soll = Bank, Haben = Ertrag
+  const isSollBank = isBankKontoCode(soll);
+  const isHabenBank = isBankKontoCode(haben);
+  const isSollAufwand = /^[4567]|^89/.test(soll);
+  const isHabenAufwand = /^[4567]|^89/.test(haben);
+  const isSollErtrag = /^3|^80|^81/.test(soll);
+  const isHabenErtrag = /^3|^80|^81/.test(haben);
+
+  if (isSollBank && isHabenAufwand) {
+    const tmp = soll;
+    soll = haben;
+    haben = tmp;
+  } else if (isHabenBank && isSollErtrag) {
+    const tmp = soll;
+    soll = haben;
+    haben = tmp;
+  }
+
+  const hasAnyFilter = Boolean(patternParty || patternText || (amountMode !== 'any' && amountMin !== ''));
+
+  if (!label || !hasAnyFilter || !soll || !haben) {
+    if (window.bhAlert) {
+      await window.bhAlert(
+        'Pflichtfelder ausfüllen',
+        'Bitte gib eine Regel-Bezeichnung, mindestens ein Filterkriterium (Empfänger, Verwendungszweck oder Betrag) sowie Soll- und Haben-Konto an.',
+        'warning'
+      );
+    }
+    return;
+  }
+
+  const legacyPattern = patternParty || patternText;
+  const legacyScope = (patternParty && !patternText) ? 'party' : (!patternParty && patternText ? 'text' : 'all');
+
+  const ruleObj = {
+    label,
+    pattern_party: patternParty,
+    pattern_text: patternText,
+    prefix,
+    soll,
+    haben,
+    pattern: legacyPattern,
+    scope: legacyScope,
+    amount_mode: amountMode,
+    amount_min: amountMin,
+    amount_max: amountMax
+  };
+
+  const rules = window.getBhBankRules().slice();
+  const isUpdate = editIdx >= 0 && editIdx < rules.length;
+
+  if (isUpdate) {
+    const existing = rules[editIdx];
+    if (existing && existing.id) {
+      ruleObj.id = existing.id;
+    }
+    rules[editIdx] = ruleObj;
+  } else {
+    rules.push(ruleObj);
+  }
+
+  try {
+    await window.saveBhBankRules(rules);
+    showToast(isUpdate ? `✅ Regel "${label}" erfolgreich aktualisiert!` : `✅ Neue Regel "${label}" gespeichert!`, 'success');
+  } catch (saveErr) {
+    if (window.bhAlert) {
+      await window.bhAlert('Speicherfehler', 'Fehler beim Speichern der Buchungsregel: ' + (saveErr.message || saveErr), 'danger');
+    }
+    return;
+  }
+
+  const editorModalEl = document.getElementById('bhModalRuleEditor');
+  if (editorModalEl) bootstrap.Modal.getInstance(editorModalEl)?.hide();
+
+  // Live Neu-Match durchführen
+  if (window._bhBankTransactions && window._bhBankTransactions.length > 0) {
+    window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);
+    bhBankRenderResults(window._bhBankActiveFilter);
+  }
+
+  // Falls das Verwalten-Modal offen ist, Ansicht neu rendern
+  const manageModalEl = document.getElementById('bhModalManageRules');
+  if (manageModalEl && manageModalEl.classList.contains('show')) {
+    bhBankManageRulesModal();
+  }
+};
+
+// ---------------------------------------------------------------------
+// Regel merken aus Zeilen-Button (+)
+// ---------------------------------------------------------------------
+window.bhBankSaveRuleModal = function(txIdx) {
+  const tx = window._bhBankMatchResults[txIdx];
+  if (!tx) return;
+
+  const party = (tx.partyName || '').trim();
+  const rmtEl = document.getElementById(`bh-rmt-${txIdx}`);
+  const remittance = (rmtEl ? rmtEl.value : (tx.remittanceInfo || '')).trim();
+
+  const sollEl  = document.getElementById(`bh-soll-${txIdx}`);
+  const habenEl = document.getElementById(`bh-haben-${txIdx}`);
+
+  const sollVal  = sollEl ? sollEl.value : tx.suggestedSoll;
+  const habenVal = habenEl ? habenEl.value : tx.suggestedHaben;
+  const txAmt    = (tx.amount !== undefined && tx.amount !== null) ? Number(tx.amount).toFixed(2) : '';
+
+  bhBankOpenRuleEditorModal(-1, {
+    label: party || remittance || 'Neue Regel',
+    prefix: party || remittance || '',
+    pattern_party: party,
+    pattern_text: '',
+    pattern: party || remittance,
+    scope: party ? 'party' : 'text',
+    soll: sollVal,
+    haben: habenVal,
+    amount_mode: 'any',
+    amount_min: txAmt,
+    amount_max: ''
+  });
+};
+
+// ---------------------------------------------------------------------
+// Regeln verwalten Modal & Vollbild-Toggle
+// ---------------------------------------------------------------------
+window._bhManageRulesIsFullscreen = window._bhManageRulesIsFullscreen || false;
+window.bhToggleManageRulesFullscreen = function() {
+  window._bhManageRulesIsFullscreen = !window._bhManageRulesIsFullscreen;
+  const dialog = document.getElementById('bhModalManageRulesDialog');
+  const icon = document.getElementById('bhManageRulesFsIcon');
+  const tableWrap = document.getElementById('bhManageRulesTableWrap');
+  if (!dialog) return;
+
+  if (window._bhManageRulesIsFullscreen) {
+    dialog.classList.add('modal-fullscreen');
+    dialog.classList.remove('modal-xl');
+    if (icon) icon.className = 'fas fa-compress';
+    if (tableWrap) tableWrap.style.maxHeight = 'calc(100vh - 220px)';
+  } else {
+    dialog.classList.remove('modal-fullscreen');
+    dialog.classList.add('modal-xl');
+    if (icon) icon.className = 'fas fa-expand';
+    if (tableWrap) tableWrap.style.maxHeight = '520px';
+  }
+};
+
+window.bhBankManageRulesModal = function() {
+  const rules = window.getBhBankRules();
+  const canEdit = window.bhCanWrite ? window.bhCanWrite() : false;
+
+  let modalEl = document.getElementById('bhModalManageRules');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'bhModalManageRules';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    document.body.appendChild(modalEl);
+  }
+
+  function extractCleanKontoNr(val) {
+    if (!val) return '–';
+    const str = String(val).trim();
+    const match = str.match(/\b\d{4}\b/);
+    if (match) return match[0];
+    return str.split('|')[0].trim().substring(0, 8);
+  }
+
+  const rulesRows = rules.length ? rules.map((r, i) => {
+    const sollNr  = extractCleanKontoNr(r.soll);
+    const habenNr = extractCleanKontoNr(r.haben);
+
+    const partyVal = r.pattern_party !== undefined ? r.pattern_party : (r.scope === 'party' ? r.pattern : '');
+    const textVal  = r.pattern_text  !== undefined ? r.pattern_text  : (r.scope === 'text'  ? r.pattern : '');
+    const legacyVal = (!partyVal && !textVal) ? (r.pattern || '') : '';
+
+    let partyHtml = partyVal
+      ? `<code class="text-primary bg-light px-2 py-0.5 rounded border small fw-bold">${escHtml(partyVal)}</code>`
+      : (legacyVal ? `<code class="text-secondary bg-light px-2 py-0.5 rounded border small">${escHtml(legacyVal)}</code>` : '<span class="text-muted small">–</span>');
+
+    let textHtml = textVal
+      ? `<code class="text-success bg-light px-2 py-0.5 rounded border small fw-bold">${escHtml(textVal)}</code>`
+      : (legacyVal ? `<span class="badge bg-light text-muted border">Überall</span>` : '<span class="text-muted small">–</span>');
+
+    // Betragsbedingung Formatierung
+    const amtMode = r.amount_mode || 'any';
+    let amtHtml = '<span class="text-muted small">Beliebig</span>';
+    if (amtMode === 'exact' && r.amount_min !== '' && r.amount_min !== undefined) {
+      amtHtml = `<span class="badge bg-light text-dark border font-monospace" title="Exakt gleich">= CHF ${Number(r.amount_min).toFixed(2)}</span>`;
+    } else if (amtMode === 'gt' && r.amount_min !== '' && r.amount_min !== undefined) {
+      amtHtml = `<span class="badge bg-light text-dark border font-monospace" title="Grösser als">&gt; CHF ${Number(r.amount_min).toFixed(2)}</span>`;
+    } else if (amtMode === 'lt' && ((r.amount_min !== '' && r.amount_min !== undefined) || (r.amount_max !== '' && r.amount_max !== undefined))) {
+      const val = (r.amount_max !== '' && r.amount_max !== undefined) ? r.amount_max : r.amount_min;
+      amtHtml = `<span class="badge bg-light text-dark border font-monospace" title="Kleiner als">&lt; CHF ${Number(val).toFixed(2)}</span>`;
+    } else if (amtMode === 'range' && (r.amount_min !== '' || r.amount_max !== '')) {
+      amtHtml = `<span class="badge bg-light text-dark border font-monospace" title="Betragsbereich">CHF ${Number(r.amount_min || 0).toFixed(2)} – ${Number(r.amount_max || 0).toFixed(2)}</span>`;
+    }
+
+    return `
+      <tr>
+        <td data-col-id="label" class="tk-col-label"><span class="fw-bold text-dark">${escHtml(r.label)}</span></td>
+        <td data-col-id="party" class="tk-col-party">${partyHtml}</td>
+        <td data-col-id="text" class="tk-col-text">${textHtml}</td>
+        <td data-col-id="amount" class="tk-col-amount">${amtHtml}</td>
+        <td data-col-id="prefix" class="tk-col-prefix"><span class="text-muted small fw-semibold">${escHtml(r.prefix || r.label)}</span></td>
+        <td data-col-id="soll" class="tk-col-soll"><span class="badge bg-primary font-monospace px-2 py-1" title="Soll: ${escHtml(r.soll)}">${escHtml(sollNr)}</span></td>
+        <td data-col-id="haben" class="tk-col-haben"><span class="badge bg-success font-monospace px-2 py-1" title="Haben: ${escHtml(r.haben)}">${escHtml(habenNr)}</span></td>
+        <td data-col-id="actions" class="text-end tk-col-actions" style="white-space: nowrap;">
+          ${canEdit ? `
+            <button class="btn btn-sm btn-outline-primary py-1 px-2 me-1" onclick="bhBankOpenRuleEditorModal(${i})" title="Regel bearbeiten">
+              <i class="fas fa-edit me-1"></i>Bearbeiten
+            </button>
+            <button class="btn btn-sm btn-outline-danger py-1 px-2" onclick="bhBankDeleteRule(${i})" title="Regel löschen">
+              <i class="fas fa-trash"></i>
+            </button>
+          ` : '<span class="text-muted small">Nur Einsicht</span>'}
+        </td>
+      </tr>
+    `;
+  }).join('') : `
+    <tr>
+      <td colspan="8" class="text-center text-muted py-4">
+        <i class="fas fa-magic fa-2x mb-2" style="opacity:0.3;"></i>
+        <p class="mb-0">Noch keine Benutzer-Regeln definiert.</p>
+      </td>
+    </tr>
+  `;
+
+  const isFs = window._bhManageRulesIsFullscreen;
+
+  modalEl.innerHTML = `
+    <div id="bhModalManageRulesDialog" class="modal-dialog ${isFs ? 'modal-fullscreen' : 'modal-xl'} modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content border-0 rounded-4 shadow">
+        <div class="modal-header bg-dark text-white border-0 py-3 rounded-top-4">
+          <h5 class="modal-title fw-bold"><i class="fas fa-sliders-h me-2"></i>Automatische Buchungsregeln verwalten</h5>
+          <div class="d-flex align-items-center ms-auto">
+            <button type="button" class="btn btn-sm btn-outline-light rounded-pill px-2.5 me-2" onclick="bhToggleManageRulesFullscreen()" title="Vollbild umschalten (Vergrössern / Verkleinern)">
+              <i id="bhManageRulesFsIcon" class="fas ${isFs ? 'fa-compress' : 'fa-expand'}"></i>
+            </button>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+        </div>
+        <div class="modal-body p-4">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <p class="text-muted small mb-0">Erstelle oder bearbeite Regeln für die automatische Zuordnung von Kontoauszug-Transaktionen (getrennte Kriterien für Empfänger/Zahler, Verwendungszweck und optionale Betragsfilter).</p>
+            <div class="d-flex align-items-center gap-2">
+              <div id="bh-rules-column-toggle" class="d-inline-block"></div>
+              ${canEdit ? `
+                <button class="btn btn-sm btn-success fw-bold px-3" onclick="bhBankOpenRuleEditorModal(-1)">
+                  <i class="fas fa-plus me-1"></i>Neue Regel erstellen
+                </button>
+              ` : ''}
+            </div>
+          </div>
+          <div id="bhManageRulesTableWrap" class="table-responsive" style="max-height: ${isFs ? 'calc(100vh - 220px)' : '520px'}; overflow-y: auto;">
+            <table id="bh-manage-rules-table" class="table table-hover table-sm align-middle mb-0" style="table-layout: fixed; width: 100%;">
+              <thead class="table-light sticky-top">
+                <tr>
+                  <th data-col-id="label" class="tk-col-label" style="width: 17%;">Bezeichnung</th>
+                  <th data-col-id="party" class="tk-col-party" style="width: 15%;"><i class="fas fa-user me-1 text-primary"></i>Empfänger / Zahler</th>
+                  <th data-col-id="text" class="tk-col-text" style="width: 15%;"><i class="fas fa-file-alt me-1 text-success"></i>Verwendungszweck</th>
+                  <th data-col-id="amount" class="tk-col-amount" style="width: 14%;"><i class="fas fa-coins me-1 text-warning"></i>Betrag</th>
+                  <th data-col-id="prefix" class="tk-col-prefix" style="width: 17%;">Journal-Text / Präfix</th>
+                  <th data-col-id="soll" class="tk-col-soll" style="width: 6%;">Soll</th>
+                  <th data-col-id="haben" class="tk-col-haben" style="width: 6%;">Haben</th>
+                  <th data-col-id="actions" class="tk-col-actions text-end" style="width: 10%;">Aktionen</th>
+                </tr>
+              </thead>
+              <tbody>${rulesRows}</tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-footer border-0 bg-light rounded-bottom-4">
+          <button class="btn btn-sm btn-secondary px-4 fw-bold" data-bs-dismiss="modal">Schliessen</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  bootstrap.Modal.getOrCreateInstance(modalEl).show();
+
+  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
+    setTimeout(() => {
+      window.TableKit.setupColumnToggle('#bh-manage-rules-table', {
+        container: document.getElementById('bh-rules-column-toggle'),
+        storageKey: 'tk_cols_bh_manage_rules'
+      });
+    }, 50);
+  }
+};
+
+window.bhBankDeleteRule = async function(idx) {
+  if (window.bhCanWrite && !window.bhCanWrite()) {
+    if (window.bhAlert) await window.bhAlert('Keine Berechtigung', 'Du hast keine Berechtigung zum Löschen von Buchungsregeln.', 'warning');
+    return;
+  }
+
+  const rules = window.getBhBankRules().slice();
+  const r = rules[idx];
+  if (!r) return;
+
+  const confirmed = window.bhConfirm
+    ? await window.bhConfirm(
+        'Regel löschen?',
+        `Möchtest du die Regel "${r.label}" wirklich unwiderruflich löschen?`,
+        { type: 'danger', confirmText: 'Löschen', cancelText: 'Abbrechen' }
+      )
+    : false;
+  if (!confirmed) return;
+
+  const ruleId = r.id;
+  const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
+  if (!sb) {
+    if (window.bhAlert) await window.bhAlert('Fehler', 'Keine Datenbankverbindung verfügbar.', 'danger');
+    return;
+  }
+
+  try {
+    if (ruleId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(ruleId))) {
+      const { error: delErr } = await sb.from('accounting_bank_rules').delete().eq('id', ruleId);
+      if (delErr) {
+        throw new Error(delErr.message || 'Regel konnte nicht in Supabase gelöscht werden.');
+      }
+    }
+
+    rules.splice(idx, 1);
+    await window.saveBhBankRules(rules);
+
+    showToast('Regel gelöscht.', 'info');
+  } catch (err) {
+    if (window.bhAlert) await window.bhAlert('Löschfehler', 'Fehler beim Löschen der Regel: ' + (err.message || err), 'danger');
+    return;
+  }
+
+  if (window._bhBankTransactions && window._bhBankTransactions.length > 0) {
+    window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);
+    bhBankRenderResults(window._bhBankActiveFilter);
+  }
+
+  const manageModalEl = document.getElementById('bhModalManageRules');
+  if (manageModalEl && manageModalEl.classList.contains('show')) {
+    bhBankManageRulesModal();
+  }
+};
+
+// =====================================================================
+// SPLIT-BUCHUNG MODAL & VERARBEITUNG
+// =====================================================================
+window.bhBankOpenSplitModal = async function(txIdx) {
+  const rows = window._bhBankMatchResults || [];
+  const tx = rows[txIdx];
+  if (!tx) return;
+
+  // Falls einer Rechnung zugeordnet und noch kein Split erfasst: Positionen nachladen & anwenden
+  if (tx.matchedInvoice && (!tx.splitRows || tx.splitRows.length === 0)) {
+    if (typeof window.rnGetInvoicePositions === 'function') {
+      const positions = await window.rnGetInvoicePositions(tx.matchedInvoice.id);
+      if (positions && positions.length > 0 && typeof window.bhBankApplyInvoicePositionsToTx === 'function') {
+        window.bhBankApplyInvoicePositionsToTx(tx, tx.matchedInvoice, positions);
+      }
+    }
+  }
+
+  // Falls Jahresbeitrag zugeordnet und noch kein Split in tx.splitRows hinterlegt: Beitragspositionen laden & anwenden
+  if ((tx.isJahresbeitrag || (tx.matchedInvoice && String(tx.matchedInvoice.type || '').toLowerCase().includes('jahresbeitrag'))) && (!tx.splitRows || tx.splitRows.length === 0) && !tx._customSplitEdited) {
+    if ((!window._jbAllPositions || window._jbAllPositions.length === 0) && typeof window.loadJahresbeitragData === 'function') {
+      try {
+        await window.loadJahresbeitragData(true, false);
+      } catch (_) {}
+    }
+    if (typeof window.bhBankApplyJbPositionsToTx === 'function') {
+      window.bhBankApplyJbPositionsToTx(tx);
+    }
+  }
+
+  window._bhSplitCurrentTxIndex = txIdx;
+  const isCredit = tx.isCredit;
+  const partyOrInfo = (tx.partyName || tx.remittanceInfo || 'Abrechnung Wettschiessen').trim();
+
+  const txBankKonto = bhBankGetAccountForIban(tx.accountIban, '1020');
+  const activeYear = Number(window._bhYear || (tx.bookingDate ? tx.bookingDate.split('-')[0] : new Date().getFullYear()));
+  if (!tx._batchBelegNr) {
+    tx._batchBelegNr = tx._projectedBelegNr || bhGetNextBankBelegNr(activeYear, txBankKonto);
+  }
+  if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
+    window._bhBankTransactions[txIdx]._batchBelegNr = tx._batchBelegNr;
+  }
+
+  const matchGegenkonto = isCredit
+    ? (tx.suggestedHaben && tx.suggestedHaben !== txBankKonto ? tx.suggestedHaben : '')
+    : (tx.suggestedSoll && tx.suggestedSoll !== txBankKonto ? tx.suggestedSoll : '');
+
+  // Falls bereits ein Split konfiguriert ist, diesen laden!
+  if (tx.isSplit && Array.isArray(tx.splitRows) && tx.splitRows.length > 0) {
+    window._bhSplitCurrentRows = JSON.parse(JSON.stringify(tx.splitRows));
+  } else {
+    // Preset 2 Split-Zeilen (flexibel ohne feste Kontenverdrahtung)
+    window._bhSplitCurrentRows = [
+      {
+        beschreibung: `${partyOrInfo} (Teilbetrag 1)`,
+        betrag: Number(tx.amount || 0),
+        kontoSoll: isCredit ? txBankKonto : matchGegenkonto,
+        kontoHaben: isCredit ? matchGegenkonto : txBankKonto
+      },
+      {
+        beschreibung: `${partyOrInfo} (Teilbetrag 2)`,
+        betrag: 0,
+        kontoSoll: isCredit ? txBankKonto : '',
+        kontoHaben: isCredit ? '' : txBankKonto
+      }
+    ];
+  }
+
+  let modalEl = document.getElementById('bhBankSplitModal');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'bhBankSplitModal';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+
+  bhBankRenderSplitModalContent(tx);
+  const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  bsModal.show();
+
+  setTimeout(() => {
+    if (window.UIModalKit && typeof window.UIModalKit.makeMovableAndResizable === 'function') {
+      modalEl._uiModalKitInitialized = false;
+      window.UIModalKit.makeMovableAndResizable(modalEl);
+    }
+  }, 50);
+};
+
+function bhBankCleanKonto(val) {
+  if (!val) return '';
+  if (typeof window.bhKontoResolveCode === 'function') {
+    return window.bhKontoResolveCode(val);
+  }
+  return String(val).split('|')[0].trim();
+}
+
+function bhBankCalcSplitBalance(tx, splitRows) {
+  const totalAmount = Number(tx.amount || 0);
+  const isCredit = Boolean(tx.isCredit);
+  const txBankKonto = bhBankGetAccountForIban(tx.accountIban, '1020');
+
+  let bankSollSum = 0;
+  let bankHabenSum = 0;
+  let hasNegative = false;
+
+  (splitRows || []).forEach(r => {
+    const rawAmt = Number(r.betrag) || 0;
+    if (rawAmt < 0) hasNegative = true;
+    const amt = Math.abs(rawAmt);
+    const s = bhBankCleanKonto(r.kontoSoll);
+    const h = bhBankCleanKonto(r.kontoHaben);
+
+    if (s === txBankKonto && h !== txBankKonto) {
+      bankSollSum += amt;
+    } else if (h === txBankKonto && s !== txBankKonto) {
+      bankHabenSum += amt;
+    } else {
+      // Falls noch nicht spezifisch Bankkonto zugewiesen, Default nach Transaktionsrichtung
+      if (isCredit) {
+        bankSollSum += amt;
+      } else {
+        bankHabenSum += amt;
+      }
+    }
+  });
+
+  // Netto-Wirkung auf Bankkonto:
+  // Für Gutschrift (isCredit): Soll (Mehrung) minus Haben (Minderung) muss dem Bankbetrag entsprechen
+  // Für Belastung (!isCredit): Haben (Minderung) minus Soll (Mehrung) muss dem Bankbetrag entsprechen
+  const actualNetBank = isCredit ? (bankSollSum - bankHabenSum) : (bankHabenSum - bankSollSum);
+  const diff = totalAmount - actualNetBank;
+  const isBalanced = Math.abs(diff) < 0.01 && !hasNegative;
+
+  return {
+    totalAmount,
+    isCredit,
+    txBankKonto,
+    bankSollSum,
+    bankHabenSum,
+    actualNetBank,
+    diff,
+    hasNegative,
+    isBalanced
+  };
+}
+
+function bhBankRenderSplitModalContent(tx) {
+  const modalEl = document.getElementById('bhBankSplitModal');
+  if (!modalEl) return;
+
+  const totalAmount = Number(tx.amount || 0);
+  const splitRows = window._bhSplitCurrentRows || [];
+  const bal = bhBankCalcSplitBalance(tx, splitRows);
+  const kontenrahmen = window._bhKontenrahmen || [];
+
+  function makeKontoSelectHTML(id, selectedVal, type) {
+    const matched = kontenrahmen.find(k => String(k.konto).trim() === String(selectedVal).trim());
+    const cleanObj = matched
+      ? (window.TableKit && typeof window.TableKit.cleanKontoDisplay === 'function'
+          ? window.TableKit.cleanKontoDisplay(matched.konto, matched.bezeichnung)
+          : { konto: matched.konto, bezeichnung: String(matched.bezeichnung || '').replace(/\s*\bCH\d{2}[\s0-9A-Z]{12,}\b/gi, '').trim(), display: `${matched.konto} | ${String(matched.bezeichnung || '').replace(/\s*\bCH\d{2}[\s0-9A-Z]{12,}\b/gi, '').trim()}` })
+      : null;
+    const displayVal = cleanObj ? cleanObj.display : (selectedVal ? String(selectedVal) : '');
+    const isResolved = Boolean(matched);
+    const placeholder = type === 'soll' ? 'Soll-Konto (Empfänger)...' : 'Haben-Konto (Quelle)...';
+    return `
+      <div class="input-group input-group-sm">
+        <input type="text" id="${id}" class="form-control form-control-sm bh-konto-ac-input ${isResolved ? 'is-resolved' : ''}" placeholder="${placeholder}" value="${escHtml(displayVal)}" autocomplete="off" oninput="bhBankUpdateSplitLiveBalance()" onchange="bhBankUpdateSplitLiveBalance()">
+        <button type="button" class="btn btn-outline-secondary px-2" tabindex="-1" onclick="const inp=this.previousElementSibling; inp.focus(); inp.click();" title="Kontenliste anzeigen">
+          <i class="fas fa-chevron-down" style="font-size: 10px;"></i>
+        </button>
+      </div>
+    `;
+  }
+
+  const tableRowsHtml = splitRows.map((r, i) => {
+    const amtVal = (r.betrag !== undefined && r.betrag !== null) ? r.betrag : '';
+    const subChar = String.fromCharCode(97 + i); // a, b, c...
+    const rowBelegNr = tx._batchBelegNr ? `${tx._batchBelegNr}${subChar}` : `#${i + 1}`;
+    return `
+      <tr>
+        <td class="text-center font-monospace fw-bold text-muted small" style="width:65px;" title="Beleg-Nr: ${escHtml(rowBelegNr)}">
+          #${i + 1} <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace" style="font-size:11px;">${subChar}</span>
+        </td>
+        <td>
+          <input type="text" class="form-control form-control-sm" id="bh-split-desc-${i}" value="${escHtml(r.beschreibung)}" placeholder="Beschreibung..." oninput="bhBankUpdateSplitLiveBalance()">
+        </td>
+        <td style="width: 140px;">
+          <input type="number" step="0.01" min="0" class="form-control form-control-sm text-end fw-bold font-monospace" id="bh-split-amt-${i}" value="${amtVal}" placeholder="0.00" oninput="bhBankUpdateSplitLiveBalance()">
+        </td>
+        <td style="width: 240px;">
+          ${makeKontoSelectHTML(`bh-split-soll-${i}`, r.kontoSoll, 'soll')}
+        </td>
+        <td style="width: 240px;">
+          ${makeKontoSelectHTML(`bh-split-haben-${i}`, r.kontoHaben, 'haben')}
+        </td>
+        <td class="text-center" style="width:45px;">
+          ${splitRows.length > 1 ? `
+            <button type="button" class="btn btn-sm btn-outline-danger py-1 px-2 rounded-2" onclick="bhBankRemoveSplitRow(${i})" title="Position entfernen">
+              <i class="fas fa-trash-alt"></i>
+            </button>
+          ` : `
+            <span class="text-muted small" title="Mindestens 1 Position verbleibt">-</span>
+          `}
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  let breakdownText = '';
+  if (bal.isCredit && bal.bankHabenSum > 0) {
+    breakdownText = `(Gutschriften Soll: CHF ${bal.bankSollSum.toFixed(2)} &middot; Abzüge Haben: CHF ${bal.bankHabenSum.toFixed(2)})`;
+  } else if (!bal.isCredit && bal.bankSollSum > 0) {
+    breakdownText = `(Belastungen Haben: CHF ${bal.bankHabenSum.toFixed(2)} &middot; Gutschriften Soll: CHF ${bal.bankSollSum.toFixed(2)})`;
+  }
+
+  let diffStatusHtml = '';
+  if (bal.hasNegative) {
+    diffStatusHtml = '<span class="text-danger fw-bold"><i class="fas fa-exclamation-triangle me-1"></i>Nur positive Beträge erlaubt (Soll/Haben anpassen)</span>';
+  } else if (bal.isBalanced) {
+    diffStatusHtml = '<span class="badge bg-success fs-6 px-3 py-1.5"><i class="fas fa-check-circle me-1.5"></i>Betrag exakt aufgeteilt</span>';
+  } else {
+    diffStatusHtml = `<span class="badge bg-danger-subtle text-danger border border-danger-subtle fs-6 px-3 py-1.5"><i class="fas fa-times-circle me-1.5"></i>Rest unverteilt: CHF ${bal.diff.toFixed(2)}</span>`;
+  }
+
+  const isSingle = (splitRows.length === 1);
+  const saveBtnText = isSingle ? 'Als Einzelbuchung übernehmen' : `Split-Aufteilung übernehmen (${splitRows.length} Zeilen)`;
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-content shadow-lg border-0 rounded-4 position-relative">
+        <div class="modal-header bg-primary text-white d-flex align-items-center justify-content-between" style="cursor: grab; user-select: none;">
+          <h5 class="modal-title fw-bold d-flex align-items-center gap-2 mb-0">
+            <i class="fas fa-columns"></i>
+            <span>Split-Buchung aufteilen</span>
+          </h5>
+          <div class="d-flex align-items-center">
+            <button type="button" class="btn btn-sm btn-link text-white p-0 rn-modal-maximize-btn me-2" title="Maximieren / Wiederherstellen" style="text-decoration:none; font-size:0.95rem;">
+              <i class="fas fa-expand"></i>
+            </button>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" title="Schliessen"></button>
+          </div>
+        </div>
+        <div class="modal-body p-4" style="overflow-y: auto; max-height: calc(85vh - 65px);">
+          <div class="alert alert-info border-start border-4 border-info shadow-sm py-2 px-3 mb-3 d-flex align-items-center gap-2 small">
+            <i class="fas fa-info-circle fs-5 text-info flex-shrink-0"></i>
+            <div><strong>Workflow-Hinweis:</strong> Die Split-Aufteilung wird für diese Zeile vorgemerkt. Verbucht wird alles gemeinsam mit allen anderen Bankbuchungen beim Klick auf <strong>«Alle Buchungen ausführen»</strong>.</div>
+          </div>
+          <div class="alert bg-light border-start border-4 border-warning shadow-sm mb-4">
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+              <div>
+                <span class="badge bg-warning text-dark me-2">CAMT Transaktion</span>
+                <span class="badge bg-primary text-white me-2 font-monospace" title="Offizielle Beleg-Nummer für diese Buchung">Beleg: ${escHtml(tx._batchBelegNr || '–')}</span>
+                <strong>${formatSwissDate(tx.bookingDate)}</strong> &middot; ${escHtml(tx.partyName || 'Bank-Transaktion')}
+                <div class="small text-muted mt-1">${escHtml(tx.remittanceInfo || '')}</div>
+              </div>
+              <div class="text-end">
+                <span class="text-muted small d-block">Gesamtbetrag Bank</span>
+                <span class="fs-4 fw-bold ${tx.isCredit ? 'text-success' : 'text-danger'}">
+                  ${tx.isCredit ? '+' : '-'} CHF ${totalAmount.toFixed(2)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center mb-2.5">
+            <h6 class="fw-bold mb-0 text-primary"><i class="fas fa-list me-1.5"></i>Split-Positionen (Kontoaufteilung)</h6>
+            <button type="button" class="btn btn-sm btn-primary py-1 px-3 fw-semibold shadow-sm" onclick="bhBankAddSplitRow()">
+              <i class="fas fa-plus me-1.5"></i>Position hinzufügen
+            </button>
+          </div>
+
+          <div class="table-responsive border rounded-3 mb-3 bg-white" style="min-height: 120px;">
+            <table class="table table-bordered table-striped table-hover align-middle mb-0" id="bh-split-table" style="font-size: 13.5px;">
+              <thead class="table-light">
+                <tr>
+                  <th style="width:65px;" class="text-center"># / Beleg</th>
+                  <th>Buchungstext / Beschreibung</th>
+                  <th style="width:140px;" class="text-end">Betrag (CHF)</th>
+                  <th style="width:240px;"><i class="fas fa-long-arrow-alt-right text-primary me-1"></i>Soll-Konto (Empfänger)</th>
+                  <th style="width:240px;"><i class="fas fa-long-arrow-alt-left text-success me-1"></i>Haben-Konto (Quelle)</th>
+                  <th style="width:45px;" class="text-center">Aktion</th>
+                </tr>
+              </thead>
+              <tbody id="bh-split-tbody">
+                ${tableRowsHtml}
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Live Balance Banner -->
+          <div id="bh-split-banner" class="card p-3 border-0 ${bal.isBalanced ? 'bg-success-subtle text-success border-success' : 'bg-warning-subtle text-dark border-warning'} rounded-3">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <div>
+                <span class="fw-bold"><i id="bh-split-banner-icon" class="fas ${bal.isBalanced ? 'fa-check-circle text-success' : 'fa-exclamation-triangle text-warning'} me-2"></i>Status Aufteilung:</span>
+                Netto Bank: <strong>CHF <span id="bh-split-current-sum">${bal.actualNetBank.toFixed(2)}</span></strong> von <strong>CHF ${totalAmount.toFixed(2)}</strong>
+                <span id="bh-split-breakdown" class="small ms-2 text-muted">${breakdownText}</span>
+              </div>
+              <div class="fw-bold fs-6" id="bh-split-diff-status">
+                ${diffStatusHtml}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer bg-light d-flex justify-content-between">
+          <div>
+            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bhBankClearSplit(${window._bhSplitCurrentTxIndex})" title="Aufteilung verwerfen und als normale Einzelbuchung führen">
+              <i class="fas fa-undo me-1.5"></i>Split aufheben (Einzelbuchung)
+            </button>
+          </div>
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-secondary px-3" data-bs-dismiss="modal">Abbrechen</button>
+            <button type="button" id="bh-split-save-print-btn" class="btn btn-outline-primary fw-bold px-3 shadow-sm" ${!bal.isBalanced ? 'disabled' : ''} onclick="bhBankSaveAndPrintSplitBooking(${window._bhSplitCurrentTxIndex})" title="Split-Aufteilung speichern und direkt druckreifen Buchungsbeleg (A4) öffnen">
+              <i class="fas fa-print me-1.5"></i>Split übernehmen &amp; Beleg drucken
+            </button>
+            <button type="button" id="bh-split-save-btn" class="btn btn-success fw-bold px-4 shadow-sm" ${!bal.isBalanced ? 'disabled' : ''} onclick="bhBankSaveSplitBooking(${window._bhSplitCurrentTxIndex})">
+              <i class="fas fa-check me-1.5"></i>${saveBtnText}
+            </button>
+          </div>
+        </div>
+
+        <!-- Resize-Grip Ecke unten rechts für UIModalKit -->
+        <div class="rn-modal-resizer" style="position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 1060; display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px; color: #94a3b8; user-select: none;" title="Grösse durch Ziehen verändern">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M11 1v10H1V11h10z M11 5v6H5V11h6z M11 9v2H9V11h2z"/></svg>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Autocomplete für alle Konten-Felder analog manueller Erfassung aktivieren
+  if (typeof window.bhInitKontoAutocompleteForContainer === 'function') {
+    window.bhInitKontoAutocompleteForContainer(modalEl);
+  }
+}
+
+window.bhBankUpdateSplitLiveBalance = function() {
+  bhBankUpdateSplitFromInputs();
+
+  const kontenrahmen = window._bhKontenrahmen || [];
+  const rows = window._bhSplitCurrentRows || [];
+  rows.forEach((r, i) => {
+    const sollEl = document.getElementById(`bh-split-soll-${i}`);
+    const habenEl = document.getElementById(`bh-split-haben-${i}`);
+    if (sollEl) {
+      const matchSoll = kontenrahmen.some(k => String(k.konto).trim() === String(r.kontoSoll).trim());
+      sollEl.classList.toggle('is-resolved', matchSoll);
+    }
+    if (habenEl) {
+      const matchHaben = kontenrahmen.some(k => String(k.konto).trim() === String(r.kontoHaben).trim());
+      habenEl.classList.toggle('is-resolved', matchHaben);
+    }
+  });
+
+  const txs = window._bhBankMatchResults || [];
+  const tx = txs[window._bhSplitCurrentTxIndex];
+  if (!tx) return;
+
+  const bal = bhBankCalcSplitBalance(tx, rows);
+
+  const sumEl = document.getElementById('bh-split-current-sum');
+  if (sumEl) sumEl.textContent = bal.actualNetBank.toFixed(2);
+
+  const breakdownEl = document.getElementById('bh-split-breakdown');
+  if (breakdownEl) {
+    let breakdownText = '';
+    if (bal.isCredit && bal.bankHabenSum > 0) {
+      breakdownText = `(Gutschriften Soll: CHF ${bal.bankSollSum.toFixed(2)} &middot; Abzüge Haben: CHF ${bal.bankHabenSum.toFixed(2)})`;
+    } else if (!bal.isCredit && bal.bankSollSum > 0) {
+      breakdownText = `(Belastungen Haben: CHF ${bal.bankHabenSum.toFixed(2)} &middot; Gutschriften Soll: CHF ${bal.bankSollSum.toFixed(2)})`;
+    }
+    breakdownEl.innerHTML = breakdownText;
+  }
+
+  const diffStatusEl = document.getElementById('bh-split-diff-status');
+  if (diffStatusEl) {
+    if (bal.hasNegative) {
+      diffStatusEl.innerHTML = '<span class="text-danger fw-bold"><i class="fas fa-exclamation-triangle me-1"></i>Nur positive Beträge erlaubt (Soll/Haben anpassen)</span>';
+    } else if (bal.isBalanced) {
+      diffStatusEl.innerHTML = '<span class="badge bg-success fs-6"><i class="fas fa-check me-1"></i>Betrag exakt aufgeteilt</span>';
+    } else {
+      diffStatusEl.innerHTML = `<span class="text-danger"><i class="fas fa-times-circle me-1"></i>Rest unverteilt: CHF ${bal.diff.toFixed(2)}</span>`;
+    }
+  }
+
+  const bannerEl = document.getElementById('bh-split-banner');
+  if (bannerEl) {
+    bannerEl.className = `card p-3 border-0 ${bal.isBalanced ? 'bg-success-subtle text-success border-success' : 'bg-warning-subtle text-dark border-warning'} rounded-3`;
+  }
+
+  const iconEl = document.getElementById('bh-split-banner-icon');
+  if (iconEl) {
+    iconEl.className = `fas ${bal.isBalanced ? 'fa-check-circle text-success' : 'fa-exclamation-triangle text-warning'} me-2`;
+  }
+
+  const saveBtn = document.getElementById('bh-split-save-btn');
+  if (saveBtn) {
+    const isSingle = (rows.length === 1);
+    saveBtn.disabled = !bal.isBalanced;
+    saveBtn.innerHTML = `<i class="fas fa-check me-1.5"></i>${isSingle ? 'Als Einzelbuchung übernehmen' : `Split-Aufteilung übernehmen (${rows.length} Zeilen)`}`;
+  }
+
+  const savePrintBtn = document.getElementById('bh-split-save-print-btn');
+  if (savePrintBtn) {
+    savePrintBtn.disabled = !bal.isBalanced;
+  }
+};
+
+window.bhBankUpdateSplitFromInputs = function() {
+  const rows = window._bhSplitCurrentRows || [];
+  rows.forEach((r, i) => {
+    const descEl = document.getElementById(`bh-split-desc-${i}`);
+    const amtEl = document.getElementById(`bh-split-amt-${i}`);
+    const sollEl = document.getElementById(`bh-split-soll-${i}`);
+    const habenEl = document.getElementById(`bh-split-haben-${i}`);
+
+    if (descEl) r.beschreibung = descEl.value;
+    if (amtEl) r.betrag = amtEl.value !== '' ? (parseFloat(amtEl.value) || 0) : 0;
+    if (sollEl) r.kontoSoll = bhBankCleanKonto(sollEl.value);
+    if (habenEl) r.kontoHaben = bhBankCleanKonto(habenEl.value);
+  });
+};
+
+window.bhBankAddSplitRow = function() {
+  bhBankUpdateSplitFromInputs();
+  const txs = window._bhBankMatchResults || [];
+  const tx = txs[window._bhSplitCurrentTxIndex];
+  const isCredit = tx ? tx.isCredit : false;
+  const txBankKonto = tx ? bhBankGetAccountForIban(tx.accountIban, '1020') : '1020';
+
+  (window._bhSplitCurrentRows = window._bhSplitCurrentRows || []).push({
+    beschreibung: (tx ? (tx.partyName || tx.remittanceInfo || 'Split-Position') : 'Split-Position'),
+    betrag: 0,
+    kontoSoll: isCredit ? txBankKonto : '',
+    kontoHaben: isCredit ? '' : txBankKonto
+  });
+
+  if (tx) {
+    bhBankRenderSplitModalContent(tx);
+    const mEl = document.getElementById('bhBankSplitModal');
+    if (mEl && window.UIModalKit && typeof window.UIModalKit.makeMovableAndResizable === 'function') {
+      mEl._uiModalKitInitialized = false;
+      window.UIModalKit.makeMovableAndResizable(mEl);
+    }
+  }
+};
+
+window.bhBankRemoveSplitRow = function(idx) {
+  bhBankUpdateSplitFromInputs();
+  if (window._bhSplitCurrentRows && window._bhSplitCurrentRows.length > 1) {
+    window._bhSplitCurrentRows.splice(idx, 1);
+  }
+  const txs = window._bhBankMatchResults || [];
+  const tx = txs[window._bhSplitCurrentTxIndex];
+  if (tx) {
+    bhBankRenderSplitModalContent(tx);
+    const mEl = document.getElementById('bhBankSplitModal');
+    if (mEl && window.UIModalKit && typeof window.UIModalKit.makeMovableAndResizable === 'function') {
+      mEl._uiModalKitInitialized = false;
+      window.UIModalKit.makeMovableAndResizable(mEl);
+    }
+  }
+};
+
+window.bhBankSaveSplitBooking = async function(txIdx, andPrint = false) {
+  if (window.bhCanWrite && !window.bhCanWrite()) {
+    if (window.bhAlert) await window.bhAlert('Keine Berechtigung', 'Du hast keine Berechtigung zum Speichern von Splitbuchungen.', 'warning');
+    return;
+  }
+
+  bhBankUpdateSplitFromInputs();
+  const txs = window._bhBankMatchResults || [];
+  const tx = txs[txIdx];
+  if (!tx) return;
+
+  const splitRows = (window._bhSplitCurrentRows || []).filter(r => Number(r.betrag) > 0);
+  const bal = bhBankCalcSplitBalance(tx, splitRows);
+
+  if (bal.hasNegative) {
+    if (window.bhAlert) await window.bhAlert('Ungültiger Betrag', 'Buchungsbeträge müssen positiv sein. Die Richtung (Zunahme/Abnahme) wird ausschliesslich über Soll und Haben bestimmt.', 'warning');
+    return;
+  }
+
+  if (splitRows.length === 0) {
+    if (window.bhAlert) await window.bhAlert('Position fehlt', 'Bitte erfasse mindestens eine Position mit Betrag > 0.', 'warning');
+    return;
+  }
+
+  if (!bal.isBalanced) {
+    if (window.bhAlert) await window.bhAlert('Aufteilung nicht ausgeglichen', `Die Netto-Aufteilung auf das Bankkonto (CHF ${bal.actualNetBank.toFixed(2)}) entspricht nicht dem Bankbetrag (CHF ${bal.totalAmount.toFixed(2)}). Differenz: CHF ${bal.diff.toFixed(2)}.`, 'warning');
+    return;
+  }
+
+  const txBankKonto = bhBankGetAccountForIban(tx.accountIban, '1020');
+  const activeYear = Number(window._bhYear || (tx.bookingDate ? tx.bookingDate.split('-')[0] : new Date().getFullYear()));
+  if (!tx._batchBelegNr) {
+    tx._batchBelegNr = tx._projectedBelegNr || bhGetNextBankBelegNr(activeYear, txBankKonto);
+  }
+  if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
+    window._bhBankTransactions[txIdx]._batchBelegNr = tx._batchBelegNr;
+  }
+
+  // FALL 1: Genau 1 Zeile -> Saubere Übernahme als vollständige Einzelbuchung!
+  if (splitRows.length === 1) {
+    const single = splitRows[0];
+    if (!single.kontoSoll || !single.kontoHaben) {
+      if (window.bhAlert) await window.bhAlert('Konten fehlen', 'Bitte gib Soll- und Haben-Konto für die Position an.', 'warning');
+      return;
+    }
+    if (single.kontoSoll === single.kontoHaben) {
+      if (window.bhAlert) await window.bhAlert('Ungültige Kontierung', 'Soll- und Haben-Konto dürfen nicht identisch sein.', 'warning');
+      return;
+    }
+    if (Number(single.betrag) <= 0) {
+      if (window.bhAlert) await window.bhAlert('Ungültiger Betrag', 'Bitte gib einen Betrag grösser als 0 ein.', 'warning');
+      return;
+    }
+
+    // Split aufheben & direkt als Einzelbuchung auf der Transaktion hinterlegen
+    tx.isSplit = false;
+    delete tx.splitRows;
+    tx._customSplitEdited = true;
+    tx._customSollEdited = true;
+    tx._customHabenEdited = true;
+    tx.suggestedSoll = single.kontoSoll;
+    tx.suggestedHaben = single.kontoHaben;
+    if (single.beschreibung && single.beschreibung.trim()) {
+      tx.remittanceInfo = single.beschreibung.trim();
+    }
+
+    if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
+      window._bhBankTransactions[txIdx].isSplit = false;
+      delete window._bhBankTransactions[txIdx].splitRows;
+      window._bhBankTransactions[txIdx]._customSplitEdited = true;
+      window._bhBankTransactions[txIdx]._customSollEdited = true;
+      window._bhBankTransactions[txIdx]._customHabenEdited = true;
+      window._bhBankTransactions[txIdx].suggestedSoll = single.kontoSoll;
+      window._bhBankTransactions[txIdx].suggestedHaben = single.kontoHaben;
+      if (single.beschreibung && single.beschreibung.trim()) {
+        window._bhBankTransactions[txIdx].remittanceInfo = single.beschreibung.trim();
+      }
+    }
+
+    const modalEl = document.getElementById('bhBankSplitModal');
+    if (modalEl) {
+      const bsModal = bootstrap.Modal.getInstance(modalEl);
+      if (bsModal) bsModal.hide();
+    }
+
+    if (andPrint && typeof window.bhPrintJournalBeleg === 'function') {
+      const printEntry = {
+        datum: tx.bookingDate || new Date().toISOString().split('T')[0],
+        beleg_nr: tx._batchBelegNr,
+        beschreibung: (single.beschreibung || tx.partyName || 'Bankbuchung').trim(),
+        konto_soll: single.kontoSoll,
+        konto_haben: single.kontoHaben,
+        betrag: Number(single.betrag),
+        typ: 'Bank'
+      };
+      const addr = [tx.partyStreet, `${tx.partyPLZ || ''} ${tx.partyCity || ''}`.trim()].filter(Boolean).join(', ');
+      const recipient = {
+        name: tx.partyName || 'Banktransaktion',
+        iban: tx.partyIban || tx.accountIban || '',
+        address: addr,
+        city: tx.partyCity || ''
+      };
+      window.bhPrintJournalBeleg([printEntry], `${tx.partyName || 'Banktransaktion'} · Buchungsbeleg`, recipient);
+    }
+
+    showToast(`✅ Transaktion als Einzelbuchung (${single.kontoSoll} / ${single.kontoHaben}) übernommen!`, 'success', 'top-end', 3500);
+    bhBankRenderResults(window._bhBankActiveFilter);
+    if (typeof bhBankUpdateSafeBookingsBtn === 'function') bhBankUpdateSafeBookingsBtn();
+    return;
+  }
+
+  // FALL 2: Mindestens 2 Zeilen -> Split-Buchung
+  for (let i = 0; i < splitRows.length; i++) {
+    const r = splitRows[i];
+    if (!r.beschreibung.trim()) {
+      if (window.bhAlert) await window.bhAlert('Beschreibung fehlt', `Bitte gib eine Beschreibung für Zeile #${i+1} ein.`, 'warning');
+      return;
+    }
+    if (!r.kontoSoll || !r.kontoHaben) {
+      if (window.bhAlert) await window.bhAlert('Konten fehlen', `Bitte gib Soll- und Haben-Konto für Zeile #${i+1} an.`, 'warning');
+      return;
+    }
+    if (r.kontoSoll === r.kontoHaben) {
+      if (window.bhAlert) await window.bhAlert('Ungültige Kontierung', `Soll- und Haben-Konto für Zeile #${i+1} dürfen nicht identisch sein.`, 'warning');
+      return;
+    }
+    if (Number(r.betrag) <= 0) {
+      if (window.bhAlert) await window.bhAlert('Ungültiger Betrag', `Zeile #${i+1}: Bitte gib einen Betrag grösser als 0 ein.`, 'warning');
+      return;
+    }
+  }
+
+  // Split auf dem Transaktionsobjekt im Speicher ablegen
+  tx.isSplit = true;
+  tx._customSplitEdited = true;
+  tx.splitRows = JSON.parse(JSON.stringify(splitRows));
+
+  if (tx.isCredit) {
+    tx.suggestedSoll = txBankKonto;
+    tx.suggestedHaben = '';
+  } else {
+    tx.suggestedHaben = txBankKonto;
+    tx.suggestedSoll = '';
+  }
+
+  if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
+    window._bhBankTransactions[txIdx].isSplit = true;
+    window._bhBankTransactions[txIdx]._customSplitEdited = true;
+    window._bhBankTransactions[txIdx].splitRows = JSON.parse(JSON.stringify(splitRows));
+    window._bhBankTransactions[txIdx].suggestedSoll = tx.suggestedSoll;
+    window._bhBankTransactions[txIdx].suggestedHaben = tx.suggestedHaben;
+    window._bhBankTransactions[txIdx]._batchBelegNr = tx._batchBelegNr;
+  }
+
+  // Modal schliessen
+  const modalEl = document.getElementById('bhBankSplitModal');
+  if (modalEl) {
+    const bsModal = bootstrap.Modal.getInstance(modalEl);
+    if (bsModal) bsModal.hide();
+  }
+
+  if (andPrint && typeof window.bhPrintJournalBeleg === 'function') {
+    const baseBeleg = tx._batchBelegNr;
+    const printEntries = splitRows.map((r, rIdx) => {
+      const subChar = String.fromCharCode(97 + rIdx); // a, b, c...
+      return {
+        datum: tx.bookingDate || new Date().toISOString().split('T')[0],
+        beleg_nr: `${baseBeleg}${subChar}`,
+        beschreibung: (r.beschreibung || tx.partyName || 'Bankbuchung').trim(),
+        konto_soll: r.kontoSoll,
+        konto_haben: r.kontoHaben,
+        betrag: Number(r.betrag),
+        typ: 'Bank-Split'
+      };
+    });
+    const addr = [tx.partyStreet, `${tx.partyPLZ || ''} ${tx.partyCity || ''}`.trim()].filter(Boolean).join(', ');
+    const recipient = {
+      name: tx.partyName || 'Banktransaktion',
+      iban: tx.partyIban || tx.accountIban || '',
+      address: addr,
+      city: tx.partyCity || ''
+    };
+    window.bhPrintJournalBeleg(printEntries, `${tx.partyName || 'Banktransaktion'} · Split-Aufteilung (${splitRows.length} Positionen)`, recipient);
+  }
+
+  showToast(`✅ Split-Aufteilung (${splitRows.length} Positionen) übernommen! Belegnummer ${tx._batchBelegNr} (a–${String.fromCharCode(96 + splitRows.length)}).`, 'success', 'top-end', 4000);
+
+  bhBankRenderResults(window._bhBankActiveFilter);
+  if (typeof bhBankUpdateSafeBookingsBtn === 'function') bhBankUpdateSafeBookingsBtn();
+};
+
+window.bhBankSaveAndPrintSplitBooking = function(txIdx) {
+  bhBankSaveSplitBooking(txIdx, true);
+};
+
+window.bhBankClearSplit = function(txIdx) {
+  if (window.bhCanWrite && !window.bhCanWrite()) return;
+  const rows = window._bhBankMatchResults || [];
+  const tx = rows[txIdx];
+  if (!tx) return;
+
+  tx.isSplit = false;
+  tx._customSplitEdited = true;
+  delete tx.splitRows;
+
+  // Bei Aufhebung: Gegenkonto aus Rechnungspositionen oder Standard ableiten falls bisher leer
+  if (tx.isCredit && !tx.suggestedHaben) {
+    const cachedPos = (window._invoicePositionsCache && window._invoicePositionsCache[String(tx.matchedInvoice?.id).trim()]) || tx.matchedInvoice?.positions;
+    const firstPosKonto = cachedPos && cachedPos.length > 0 ? bhBankCleanKonto(cachedPos[0].konto) : '';
+    if (firstPosKonto) {
+      tx.suggestedHaben = firstPosKonto;
+    } else if (tx.matchedInvoice) {
+      const invIdUpper = String(tx.matchedInvoice.id || '').toUpperCase();
+      const invType = String(tx.matchedInvoice.type || '').toLowerCase();
+      const posKonto = (tx.matchedInvoice.positions || []).find(p => p.konto)?.konto;
+      if (invIdUpper.startsWith('DP-') || invType.includes('depot') || invType.includes('pfand') || invType.includes('kaution')) {
+        tx.suggestedHaben = posKonto || localStorage.getItem('inventar_preferred_haben_konto_depot') || '2030';
+      } else if (invIdUpper.startsWith('MV-') || invType.includes('material')) {
+        tx.suggestedHaben = posKonto || localStorage.getItem('inventar_preferred_haben_konto_verkauf') || '8121';
+      } else if (invIdUpper.startsWith('VT-') || invType.includes('vermietung')) tx.suggestedHaben = '3650';
+      else if (invIdUpper.startsWith('JB-') || invType.includes('jahresbeitrag')) tx.suggestedHaben = '3410';
+      else tx.suggestedHaben = '3800';
+    }
+  } else if (!tx.isCredit && !tx.suggestedSoll) {
+    const cachedPos = (window._invoicePositionsCache && window._invoicePositionsCache[String(tx.matchedInvoice?.id).trim()]) || tx.matchedInvoice?.positions;
+    const firstPosKonto = cachedPos && cachedPos.length > 0 ? bhBankCleanKonto(cachedPos[0].konto) : '';
+    if (firstPosKonto) {
+      tx.suggestedSoll = firstPosKonto;
+    }
+  }
+
+  tx._customSollEdited = true;
+  tx._customHabenEdited = true;
+
+  if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
+    window._bhBankTransactions[txIdx].isSplit = false;
+    window._bhBankTransactions[txIdx]._customSplitEdited = true;
+    delete window._bhBankTransactions[txIdx].splitRows;
+    window._bhBankTransactions[txIdx]._customSollEdited = true;
+    window._bhBankTransactions[txIdx]._customHabenEdited = true;
+    window._bhBankTransactions[txIdx].suggestedSoll = tx.suggestedSoll;
+    window._bhBankTransactions[txIdx].suggestedHaben = tx.suggestedHaben;
+  }
+
+  const modalEl = document.getElementById('bhBankSplitModal');
+  if (modalEl) {
+    const bsModal = bootstrap.Modal.getInstance(modalEl);
+    if (bsModal) bsModal.hide();
+  }
+
+  showToast('Split-Aufteilung aufgehoben. Posten wird als Einzelsatz geführt.', 'info', 'top-end', 3000);
+  bhBankRenderResults(window._bhBankActiveFilter);
+  if (typeof bhBankUpdateSafeBookingsBtn === 'function') bhBankUpdateSafeBookingsBtn();
+};
+
+// =====================================================================
+// MODAL & FUNKTIONEN: STATUS & ZUORDNUNG ANPASSEN (Jahresbeitrag / Manuell)
+// =====================================================================
+
+window.bhBankRemoveJbAssignment = function(txIdx) {
+  if (window.bhCanWrite && !window.bhCanWrite()) return;
+  const rows = window._bhBankMatchResults || [];
+  const tx = rows[txIdx];
+  if (!tx) return;
+
+  tx._customMatchOverride = 'manual';
+  tx.isJahresbeitrag = false;
+  tx.matchedMember = null;
+  tx.matchedBeitrag = null;
+  tx.alreadyPaidJb = false;
+  tx.isInvoice = false;
+  tx.matchedInvoice = null;
+  tx.alreadyPaidInvoice = false;
+  tx.isSplit = false;
+  delete tx.splitRows;
+  delete tx._customSplitEdited;
+  tx.matchType = tx.alreadyBooked ? 'journal' : 'unknown';
+  tx.matchLabel = 'Manuelle Buchung';
+  tx.matchScore = 0;
+
+  // Wenn Haben-Konto automatisch auf 3410 (Mitgliederbeiträge) gesetzt war, leeren
+  if (!tx._customHabenEdited && tx.suggestedHaben === '3410') {
+    tx.suggestedHaben = '';
+  }
+
+  if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
+    Object.assign(window._bhBankTransactions[txIdx], {
+      _customMatchOverride: 'manual',
+      isJahresbeitrag: false,
+      matchedMember: null,
+      matchedBeitrag: null,
+      alreadyPaidJb: false,
+      isInvoice: false,
+      matchedInvoice: null,
+      alreadyPaidInvoice: false,
+      isSplit: false,
+      splitRows: null,
+      matchType: tx.matchType,
+      matchLabel: 'Manuelle Buchung',
+      matchScore: 0,
+      suggestedHaben: tx.suggestedHaben
+    });
+    delete window._bhBankTransactions[txIdx]._customSplitEdited;
+  }
+
+  const modalEl = document.getElementById('bhModalAssign');
+  if (modalEl) {
+    const bsModal = bootstrap.Modal.getInstance(modalEl);
+    if (bsModal) bsModal.hide();
+  }
+
+  bhBankRenderResults(window._bhBankActiveFilter);
+  if (typeof showToast === 'function') {
+    showToast('✅ Status "Jahresbeitrag" entfernt. Buchung kann nun frei manuell verbucht werden.', 'info');
+  }
+};
+
+window.bhBankApplyJbAssignment = function(txIdx, personNumber) {
+  if (window.bhCanWrite && !window.bhCanWrite()) return;
+  const rows = window._bhBankMatchResults || [];
+  const tx = rows[txIdx];
+  if (!tx) return;
+
+  const members = window._jbMembers || [];
+  const activeYear = Number(window._bhYear || new Date().getFullYear());
+  const mem = members.find(m => String(m.PersonNumber) === String(personNumber));
+  if (!mem) {
+    if (typeof showToast === 'function') showToast('Bitte ein Mitglied auswählen.', 'warning');
+    return;
+  }
+
+  const beitrag = bhBankFindBestBeitragForMember(mem.PersonNumber, tx.amount, tx.remittanceInfo, activeYear);
+
+  tx._customMatchOverride = 'jahresbeitrag';
+  tx.isJahresbeitrag = true;
+  tx.matchedMember = mem;
+  tx.matchedBeitrag = beitrag;
+  tx.alreadyPaidJb = beitrag ? (beitrag.status === 'bezahlt') : false;
+  tx.isInvoice = false;
+  tx.matchedInvoice = null;
+  tx.alreadyPaidInvoice = false;
+  tx.isSplit = false;
+  tx.splitRows = null;
+  delete tx._customSplitEdited;
+  if (tx.alreadyPaidJb) {
+    tx.alreadyBooked = true;
+    tx.bookedDate = tx.bookedDate || (beitrag ? formatSwissDate(beitrag.payment_date || tx.bookingDate) : '');
+  }
+  const jbYr = beitrag && beitrag.year ? beitrag.year : activeYear;
+  tx.matchType = tx.alreadyBooked ? 'journal' : 'jb';
+  tx.matchLabel = tx.alreadyBooked ? `Jahresbeitrag ${jbYr} bezahlt (${mem.FirstName} ${mem.LastName})` : `Jahresbeitrag ${jbYr} (${mem.FirstName} ${mem.LastName})`;
+  tx.matchScore = 2;
+
+  const txBankKonto = tx.accountIban ? bhBankGetAccountForIban(tx.accountIban, '1020') : '1020';
+  if (!tx._customSollEdited) tx.suggestedSoll = txBankKonto;
+  if (!tx._customHabenEdited) tx.suggestedHaben = '3410';
+
+  bhBankApplyJbPositionsToTx(tx);
+
+  if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
+    Object.assign(window._bhBankTransactions[txIdx], {
+      _customMatchOverride: 'jahresbeitrag',
+      isJahresbeitrag: true,
+      matchedMember: mem,
+      matchedBeitrag: beitrag,
+      alreadyPaidJb: tx.alreadyPaidJb,
+      alreadyBooked: tx.alreadyBooked,
+      bookedDate: tx.bookedDate,
+      isInvoice: false,
+      matchedInvoice: null,
+      alreadyPaidInvoice: false,
+      isSplit: tx.isSplit,
+      splitRows: tx.splitRows ? JSON.parse(JSON.stringify(tx.splitRows)) : null,
+      matchType: tx.matchType,
+      matchLabel: tx.matchLabel,
+      matchScore: 2,
+      suggestedSoll: tx.suggestedSoll,
+      suggestedHaben: tx.suggestedHaben
+    });
+  }
+
+  const modalEl = document.getElementById('bhModalAssign');
+  if (modalEl) {
+    const bsModal = bootstrap.Modal.getInstance(modalEl);
+    if (bsModal) bsModal.hide();
+  }
+
+  bhBankRenderResults(window._bhBankActiveFilter);
+  if (typeof showToast === 'function') {
+    showToast(`✅ Transaktion als Jahresbeitrag ${jbYr} von ${mem.FirstName} ${mem.LastName} zugeordnet.`, 'success');
+  }
+};
+
+window.bhBankApplyInvoiceAssignment = function(txIdx, invoiceId) {
+  if (window.bhCanWrite && !window.bhCanWrite()) return;
+  const rows = window._bhBankMatchResults || [];
+  const tx = rows[txIdx];
+  if (!tx) return;
+
+  const invoices = window._invoices || window._jbAllInvoices || [];
+  const inv = invoices.find(i => String(i.id) === String(invoiceId));
+  if (!inv) {
+    if (typeof showToast === 'function') showToast('Bitte eine Rechnung auswählen.', 'warning');
+    return;
+  }
+
+  tx._customMatchOverride = 'invoice';
+  tx.isInvoice = true;
+  tx.matchedInvoice = inv;
+  tx.alreadyPaidInvoice = (inv.status === 'bezahlt');
+  tx.isSplit = false;
+  tx.splitRows = null;
+  delete tx._customSplitEdited;
+
+  const invType = String(inv.type || '').toLowerCase();
+  const invIdUpper = String(inv.id || '').toUpperCase();
+  if (invType.includes('jahresbeitrag') || invIdUpper.startsWith('JB-') || invIdUpper.startsWith('RE-JB-')) {
+    tx.isJahresbeitrag = true;
+    const members = window._jbMembers || [];
+    const beitraege = window._jbAllBeitraege || [];
+    tx.matchedBeitrag = bhBankFindBestBeitragForMember(inv.PersonNumber, tx.amount, tx.remittanceInfo, Number(inv.year || window._bhYear || new Date().getFullYear()))
+      || beitraege.find(b => String(b.PersonNumber) === String(inv.PersonNumber) || String(b.id) === String(inv.id)) || null;
+    tx.matchedMember = members.find(m => String(m.PersonNumber) === String(inv.PersonNumber)) || null;
+    tx.alreadyPaidJb = tx.alreadyPaidInvoice || (tx.matchedBeitrag && tx.matchedBeitrag.status === 'bezahlt');
+    if (!tx._customHabenEdited) tx.suggestedHaben = '3410';
+  } else {
+    tx.isJahresbeitrag = false;
+    tx.matchedBeitrag = null;
+    tx.matchedMember = null;
+    tx.alreadyPaidJb = false;
+    if (!tx._customHabenEdited) {
+      if (invType.includes('vermietung') || invType.includes('miete')) tx.suggestedHaben = '3650';
+      else if (invType.includes('schulsport')) tx.suggestedHaben = '3420';
+      else if (invType.includes('sponsor') || invType.includes('gönner')) tx.suggestedHaben = '3800';
+      else tx.suggestedHaben = '3650';
+    }
+  }
+
+  if (tx.alreadyPaidInvoice || tx.alreadyPaidJb) {
+    tx.alreadyBooked = true;
+    tx.bookedDate = tx.bookedDate || formatSwissDate(inv.payment_date || tx.bookingDate);
+  }
+  tx.matchType = tx.alreadyBooked ? 'journal' : 'invoice';
+  tx.matchLabel = tx.alreadyBooked ? `Rechnung ${inv.id} bezahlt (${inv.name})` : `Rechnung ${inv.id} (${inv.type || 'Diverse'}): ${inv.name}`;
+  tx.matchScore = 2;
+
+  const txBankKonto = tx.accountIban ? bhBankGetAccountForIban(tx.accountIban, '1020') : '1020';
+  if (!tx._customSollEdited) tx.suggestedSoll = txBankKonto;
+
+  bhBankApplyInvoicePositionsToTx(tx, inv);
+  if (tx.isJahresbeitrag) {
+    bhBankApplyJbPositionsToTx(tx);
+  }
+
+  if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
+    Object.assign(window._bhBankTransactions[txIdx], {
+      _customMatchOverride: 'invoice',
+      isInvoice: true,
+      matchedInvoice: inv,
+      alreadyPaidInvoice: tx.alreadyPaidInvoice,
+      isJahresbeitrag: tx.isJahresbeitrag,
+      matchedBeitrag: tx.matchedBeitrag,
+      matchedMember: tx.matchedMember,
+      alreadyPaidJb: tx.alreadyPaidJb,
+      alreadyBooked: tx.alreadyBooked,
+      bookedDate: tx.bookedDate,
+      isSplit: tx.isSplit,
+      splitRows: tx.splitRows ? JSON.parse(JSON.stringify(tx.splitRows)) : null,
+      matchType: tx.matchType,
+      matchLabel: tx.matchLabel,
+      matchScore: 2,
+      suggestedSoll: tx.suggestedSoll,
+      suggestedHaben: tx.suggestedHaben
+    });
+  }
+
+  const modalEl = document.getElementById('bhModalAssign');
+  if (modalEl) {
+    const bsModal = bootstrap.Modal.getInstance(modalEl);
+    if (bsModal) bsModal.hide();
+  }
+
+  bhBankRenderResults(window._bhBankActiveFilter);
+  if (typeof showToast === 'function') {
+    showToast(`✅ Transaktion Rechnung ${inv.id} (${inv.name}) zugeordnet.`, 'success');
+  }
+};
+
+window.bhBankFilterAssignMemberList = function(txIdx) {
+  const q = normalizeString(document.getElementById('bhAssignMemberSearch')?.value || '');
+  const sel = document.getElementById('bhAssignMemberSelect');
+  if (!sel) return;
+
+  const members = window._jbMembers || [];
+  const activeYear = Number(window._bhYear || new Date().getFullYear());
+  const tx = (window._bhBankMatchResults || [])[txIdx];
+  const currentMemPn = tx && tx.matchedMember ? String(tx.matchedMember.PersonNumber) : '';
+
+  const filteredMems = members.filter(m => {
+    if (!q) return true;
+    const name = normalizeString(`${m.FirstName} ${m.LastName} ${m.PersonNumber}`);
+    return name.includes(q);
+  });
+
+  if (filteredMems.length === 0) {
+    sel.innerHTML = '<option value="" disabled>Keine Mitglieder gefunden</option>';
+    return;
+  }
+
+  sel.innerHTML = filteredMems.map(m => {
+    const b = bhBankFindBestBeitragForMember(m.PersonNumber, tx?.amount, tx?.remittanceInfo, activeYear);
+    const amt = b ? Number(b.Gesamt || 0) : 0;
+    const isSel = String(m.PersonNumber) === currentMemPn;
+    const yrTag = b && b.year ? ` ${b.year}` : '';
+    const bStatus = b ? (b.status === 'bezahlt' ? ` (${yrTag} bereits bezahlt)` : ` (Offen${yrTag}: CHF ${amt.toFixed(2)})`) : '';
+    return `<option value="${escHtml(m.PersonNumber)}" ${isSel ? 'selected' : ''}>${escHtml(m.LastName)} ${escHtml(m.FirstName)} [Nr. ${escHtml(m.PersonNumber)}]${bStatus}</option>`;
+  }).join('');
+};
+
+window.bhBankApplyJbFromModal = function(txIdx) {
+  const sel = document.getElementById('bhAssignMemberSelect');
+  if (!sel || !sel.value) {
+    if (typeof showToast === 'function') showToast('Bitte wähle ein Mitglied aus der Liste aus.', 'warning');
+    return;
+  }
+  bhBankApplyJbAssignment(txIdx, sel.value);
+};
+
+window.bhBankApplyInvoiceFromModal = function(txIdx) {
+  const sel = document.getElementById('bhAssignInvoiceSelect');
+  if (!sel || !sel.value) {
+    if (typeof showToast === 'function') showToast('Bitte wähle eine Rechnung aus der Liste aus.', 'warning');
+    return;
+  }
+  bhBankApplyInvoiceAssignment(txIdx, sel.value);
+};
+
+window.bhBankOpenAssignModal = function(txIdx, initialTab = 'auto') {
+  const rows = window._bhBankMatchResults || [];
+  const tx = rows[txIdx];
+  if (!tx) return;
+
+  let modalEl = document.getElementById('bhModalAssign');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'bhModalAssign';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+
+  const invoices = window._invoices || window._jbAllInvoices || [];
+  const currentInvId = tx.matchedInvoice ? String(tx.matchedInvoice.id) : '';
+
+  const isCredit = tx.isCredit;
+  const amtClass = isCredit ? 'text-success' : 'text-danger';
+  const amtSign  = isCredit ? '+' : '-';
+
+  let invoiceOptions = '<option value="">-- Offene Rechnung auswählen --</option>';
+  invoices.forEach(inv => {
+    const isSel = String(inv.id) === currentInvId;
+    const invAmt = Number(inv.total_amount || 0).toFixed(2);
+    invoiceOptions += `<option value="${escHtml(inv.id)}" ${isSel ? 'selected' : ''}>${escHtml(inv.id)}: ${escHtml(inv.name)} (CHF ${invAmt}, ${escHtml(inv.status || 'offen')})</option>`;
+  });
+
+  let currentStatusBadge = '';
+  if (tx.isJahresbeitrag) {
+    currentStatusBadge = `<span class="badge bg-success me-1"><i class="fas fa-check-circle me-1"></i>Jahresbeitrag</span>`;
+  } else if (tx.isInvoice) {
+    currentStatusBadge = `<span class="badge bg-success me-1"><i class="fas fa-file-invoice me-1"></i>Rechnung</span>`;
+  } else if (tx.matchType === 'rule') {
+    currentStatusBadge = `<span class="badge bg-info text-dark me-1"><i class="fas fa-magic me-1"></i>Regel</span>`;
+  } else {
+    currentStatusBadge = `<span class="badge bg-warning text-dark me-1"><i class="fas fa-question-circle me-1"></i>Offen / Manuell</span>`;
+  }
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content shadow-lg border-0 rounded-4">
+        <div class="modal-header bg-primary text-white py-3">
+          <h5 class="modal-title fw-bold">
+            <i class="fas fa-sliders-h me-2"></i>Status &amp; Zuordnung anpassen
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+        </div>
+        <div class="modal-body p-4">
+          <!-- Transaktions-Info -->
+          <div class="card bg-light border-0 p-3 mb-4 rounded-3">
+            <div class="row g-2 small">
+              <div class="col-6 col-md-3">
+                <span class="text-muted d-block">Buchungsdatum:</span>
+                <strong>${formatSwissDate(tx.bookingDate)}</strong>
+              </div>
+              <div class="col-6 col-md-3">
+                <span class="text-muted d-block">Betrag:</span>
+                <strong class="${amtClass}">${amtSign} CHF ${Number(tx.amount || 0).toFixed(2)}</strong>
+              </div>
+              <div class="col-12 col-md-6">
+                <span class="text-muted d-block">Zahler / Empfänger:</span>
+                <strong class="text-truncate d-block" title="${escHtml(tx.partyName || '–')}">${escHtml(tx.partyName || '–')}</strong>
+              </div>
+              <div class="col-12">
+                <span class="text-muted d-block">Verwendungszweck:</span>
+                <span class="text-muted font-monospace small d-block" style="white-space:normal; word-break:break-word;">${escHtml(tx.remittanceInfo || '–')}</span>
+              </div>
+              <div class="col-12 mt-2 pt-2 border-top">
+                <span class="text-muted">Aktueller Status:</span>
+                ${currentStatusBadge}
+                <span class="text-secondary small fw-semibold ms-1">${escHtml(tx.matchLabel || 'Manuelle Buchung')}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- OPTION 1: Status Jahresbeitrag entfernen / Manuelle Buchung -->
+          <div class="card border rounded-3 p-3 mb-3 ${(tx.isJahresbeitrag || tx.isInvoice || tx.matchType === 'rule') ? 'border-danger bg-light' : 'border-secondary'}">
+            <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3">
+              <div>
+                <h6 class="fw-bold text-dark mb-1">
+                  <i class="fas fa-times-circle text-danger me-2"></i>Kein Jahresbeitrag (Manuell buchen)
+                </h6>
+                <p class="small text-muted mb-0">
+                  Entfernt die Erkennung als Jahresbeitrag oder Rechnung. Die Buchung wird als reguläre Kontobuchung behandelt (keine automatischen Split-Beiträge, kein Statusupdate im Jahresbeitrags-Modul).
+                </p>
+              </div>
+              <button type="button" class="btn btn-outline-danger btn-sm text-nowrap fw-bold px-3 py-1.5 flex-shrink-0" onclick="bhBankRemoveJbAssignment(${txIdx})">
+                <i class="fas fa-unlink me-1"></i>Status auf 'Manuell' setzen
+              </button>
+            </div>
+          </div>
+
+          <!-- OPTION 2: Als Jahresbeitrag einem Mitglied zuordnen -->
+          <div class="card border rounded-3 p-3 mb-3 ${tx.isJahresbeitrag ? 'border-success' : ''}">
+            <h6 class="fw-bold text-primary mb-1">
+              <i class="fas fa-id-card me-2"></i>Als Jahresbeitrag einem Mitglied zuordnen
+            </h6>
+            <p class="small text-muted mb-2">
+              Wähle das Mitglied aus. Beim Verbuchen wird der offene Jahresbeitrag im Beitrags-Modul automatisch als bezahlt markiert und der Buchungssatz gemäss Gebührenreglement gesplittet.
+            </p>
+            <div class="row g-2">
+              <div class="col-12 col-md-8">
+                <div class="input-group input-group-sm mb-1">
+                  <span class="input-group-text"><i class="fas fa-search"></i></span>
+                  <input type="text" id="bhAssignMemberSearch" class="form-control" placeholder="Name oder Nr. tippen..." oninput="bhBankFilterAssignMemberList(${txIdx})">
+                </div>
+                <select id="bhAssignMemberSelect" class="form-select form-select-sm" size="5" style="font-size:12px;">
+                  <!-- Dynamisch befüllt -->
+                </select>
+              </div>
+              <div class="col-12 col-md-4 d-flex flex-column justify-content-end">
+                <button type="button" class="btn btn-success btn-sm w-100 fw-bold py-2 shadow-sm" onclick="bhBankApplyJbFromModal(${txIdx})">
+                  <i class="fas fa-check-circle me-1"></i>Als Jahresbeitrag zuordnen
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- OPTION 3: Rechnung zuordnen -->
+          <div class="card border rounded-3 p-3">
+            <h6 class="fw-bold text-dark mb-1">
+              <i class="fas fa-file-invoice me-2"></i>Rechnung aus Rechnungsmodul zuordnen
+            </h6>
+            <p class="small text-muted mb-2">
+              Ordne diese Zahlung einer bestehenden Vereinsrechnung zu.
+            </p>
+            <div class="row g-2 align-items-center">
+              <div class="col-12 col-md-8">
+                <select id="bhAssignInvoiceSelect" class="form-select form-select-sm" style="font-size:12px;">
+                  ${invoiceOptions}
+                </select>
+              </div>
+              <div class="col-12 col-md-4">
+                <button type="button" class="btn btn-primary btn-sm w-100 fw-bold py-1.5" onclick="bhBankApplyInvoiceFromModal(${txIdx})">
+                  <i class="fas fa-link me-1"></i>Rechnung zuweisen
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer bg-light border-0 py-2.5 rounded-bottom-4">
+          <button type="button" class="btn btn-secondary btn-sm fw-semibold px-3" data-bs-dismiss="modal">Abbrechen</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  bsModal.show();
+
+  window.bhBankFilterAssignMemberList(txIdx);
+
+  setTimeout(() => {
+    const searchInp = document.getElementById('bhAssignMemberSearch');
+    if (searchInp && initialTab === 'member') searchInp.focus();
+  }, 300);
+};
