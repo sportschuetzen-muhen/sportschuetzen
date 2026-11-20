@@ -185,18 +185,17 @@ CREATE TABLE public.documents (
 
 ---
 
-### 2.8 Dual-Publishing & Lösch-Management für News & Vereinsberichte
-* **Automatisches Dual-Publishing (`v1-vorstand.js`):**
-  * Veröffentlichte Berichte und Fotos aus dem Modul News & KI werden automatisch parallel in zwei Ziel-Repositories synchronisiert:
-    1. `sportschuetzen-muhen/website` (Branch `main`): Beliefert die klassische GitHub-Pages-Seite (`sportschuetzen-muhen.github.io/website/#reports`).
-    2. `sportschuetzen-muhen/sportschuetzen` (Branch `migration-supabase`): Beliefert die Cloudflare Pages Instanz (`sps-b55.pages.dev/sportschuetzen-website/frontend/#reports`).
-  * Jeder Publish im Vorstandsportal löst dadurch automatisch das Deployment auf Cloudflare Pages aus.
+### 2.8 Publishing, Social Media & Lösch-Management für News & Vereinsberichte
+* **Single-Target Publishing & geprüfter Bild-Upload (`v1-vorstand.js`):**
+  * Veröffentlichte Berichte (`data/berichte.json`) und Fotos (`img/reports/*`) aus dem Modul News & KI werden auf das zentrale Ziel-Repository `sportschuetzen-muhen/website` (Branch `main`) übertragen, von wo aus auch die Website (`main.js`) und die Berichte-Verwaltung (`news.js`) live lesen.
+  * Bildpfade werden erst nach bestätigtem GitHub-Upload (`HTTP 2xx`) in den Bericht bzw. an Instagram/Facebook übergeben, um `404`-Folgefehler (z. B. Instagram-Containerfehler bei fehlgeschlagenem Upload) auszuschliessen.
+  * Für Facebook-Beiträge nutzt der Worker Meta Graph API `v25.0` und löst aus einem hinterlegten System-User- oder User-Access-Token dynamisch das erforderliche Page Access Token auf (`resolveFacebookPageToken`); zudem prüft `action=test_social` neben Meta-Token-Typ, fehlenden Scopes (`pages_manage_posts`, `instagram_content_publish`) und Page-Token-Auflösung auch die Erreichbarkeit und Schreibberechtigung (`push`) des GitHub-Targets.
 * **Robuste Frontend-Darstellung mit Live-Fallback (`main.js`):**
-  * `loadReports()` lädt primär die lokale `data/berichte.json` mit automatischem Fallback auf die GitHub-Live-Quelle, falls ein Rebuild noch aussteht.
+  * `loadReports()` lädt primär die GitHub-Live-Quelle (`sportschuetzen-muhen/website/main/data/berichte.json`) mit automatischem Fallback auf die lokale `data/berichte.json`, falls GitHub nicht erreichbar ist.
   * Bild-URLs verwenden bei Bedarf die GitHub-Raw-URL als Fallback (`onerror`), um Darstellungsunterbrüche auszuschliessen.
 * **Sicheres Löschen fehlpublizierter Berichte:**
   * Im Vorstandsportal (`news.js`) steht unter dem Reiter **«📋 Publizierte Berichte»** eine Echtzeit-Verwaltung zur Verfügung.
-  * Das Löschen erfolgt granular über die eindeutige Berichts-ID (`id: "report_..."`) über beide Repositories hinweg, inklusive Sicherheitsdialog und Hinweis auf allfällige manuelle Social-Media-Entfernungen.
+  * Das Löschen erfolgt granular über die eindeutige Berichts-ID (`id: "report_..."`), inklusive Sicherheitsdialog und Hinweis auf allfällige manuelle Social-Media-Entfernungen; schlägt beim Publizieren ein Kanal fehl, bleiben Entwurf und hochgeladene Fotos im Formular erhalten.
 * **Modulübergreifende Apple HEIC/HEIF Bildverarbeitung (`ImageKit`):**
   * Fotos zum Bericht im Modul KI-News (`news.js`) unterstützen durch Integration mit dem zentralen `ImageKit` und `heic2any` die vollautomatische Client-seitige Konvertierung von Apple HEIC/HEIF-Dateien direkt beim Upload oder Fotografieren mit dem iPhone.
   * Neben KI-News greifen auch Resultate OCR (`resultate-events.js`), der Standblatt-Upload (`upload.js`), die Vereins-Galerie (`galerie.js`) und die Mitgliederverwaltung auf denselben Normalisierungs-Standard zurück.

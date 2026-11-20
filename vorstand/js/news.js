@@ -557,7 +557,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     if (resData.socialLog && resData.socialLog.length > 0) {
                         resData.socialLog.forEach(log => {
-                            const isErr = log.includes("Fehler") || log.includes("Verbindungsfehler");
+                            const isErr = log.includes("Fehler") || log.includes("Verbindungsfehler") || log.includes("Ausnahme");
                             const isDeact = log.includes("Deaktiviert") || log.includes("Übersprungen");
                             if (isErr) hasError = true;
                             const badge = isErr ? '<span class="badge bg-danger me-2">Fehler</span>' : (isDeact ? '<span class="badge bg-secondary me-2">Übersprungen</span>' : '<span class="badge bg-success me-2">Erfolgreich</span>');
@@ -582,23 +582,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 if (hasError) {
-                    showToast("Bericht verarbeitet, aber Social-Media-Fehler aufgetreten. Siehe Protokoll.", "warning");
+                    showToast("Bei der Veröffentlichung sind Fehler aufgetreten. Dein Entwurf und deine Fotos wurden behalten — siehe Protokoll.", "warning");
                 } else {
                     showToast("Bericht erfolgreich publiziert!", "success");
+                    // Formular & Bilder nur bei fehlerfreiem Abschluss zurücksetzen
+                    document.getElementById('newsForm').reset();
+                    draftContainer.style.display = 'none';
+                    draftEditor.innerHTML = '';
+                    publishBtn.classList.add('d-none');
+                    base64Images = [];
+                    renderNewsPhotoPreviews();
+                    const docTextEl = document.getElementById('news-doc-text');
+                    if (docTextEl) {
+                        docTextEl.innerText = "Klicken Sie hier, um eine Word-Datei (.docx) hochzuladen.";
+                    }
+                    window.switchNewsMode('ki');
                 }
-                
-                // Formular & Bilder zurücksetzen
-                document.getElementById('newsForm').reset();
-                draftContainer.style.display = 'none';
-                draftEditor.innerHTML = '';
-                publishBtn.classList.add('d-none');
-                base64Images = [];
-                renderNewsPhotoPreviews();
-                const docTextEl = document.getElementById('news-doc-text');
-                if (docTextEl) {
-                    docTextEl.innerText = "Klicken Sie hier, um eine Word-Datei (.docx) hochzuladen.";
-                }
-                window.switchNewsMode('ki');
                 
             } catch (err) {
                 console.error(err);
@@ -1332,7 +1331,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return clean;
     }
 
-    // --- SOCIAL MEDIA VERBINDUNGSTEST (INSTAGRAM & FACEBOOK) ---
+    // --- SOCIAL MEDIA & GITHUB VERBINDUNGSTEST ---
     window.checkSocialMediaStatus = async function() {
         const btn = document.getElementById('news-check-social-btn');
         const infoDiv = document.getElementById('news-social-status-info');
@@ -1340,7 +1339,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (btn) btn.disabled = true;
         infoDiv.classList.remove('d-none');
-        infoDiv.innerHTML = '<div class="alert alert-info py-2 px-3 mb-0"><span class="spinner-border spinner-border-sm text-primary me-2"></span>Prüfe Meta-Verbindung (Instagram & Facebook)...</div>';
+        infoDiv.innerHTML = '<div class="alert alert-info py-2 px-3 mb-0"><span class="spinner-border spinner-border-sm text-primary me-2"></span>Prüfe Verbindungen (Webseite/GitHub, Instagram &amp; Facebook)...</div>';
 
         try {
             const res = await apiFetch('news', 'action=test_social');
@@ -1348,29 +1347,85 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             if (!data.success) throw new Error(data.error || "Unbekannter Fehler");
 
-            const r = data.results;
+            const r = data.results || {};
+            const gh = r.github || null;
+            const fbMissing = Array.isArray(r.missingFacebookScopes) ? r.missingFacebookScopes : [];
+            const igMissing = Array.isArray(r.missingInstagramScopes) ? r.missingInstagramScopes : [];
+
             let html = '<div class="alert alert-secondary py-2 px-3 mb-0">';
-            html += `<div><strong>Token-Status:</strong> ${r.metaTokenValid ? '<span class="text-success fw-bold">🟢 Gültig</span>' : '<span class="text-danger fw-bold">🔴 Ungültig / Abgelaufen</span>'}`;
+
+            // 1. Webseite / GitHub
+            if (gh) {
+                const ghReady = gh.connected && gh.berichteAccessible && gh.canPush !== false && !gh.error;
+                html += `<div><strong>Webseite (GitHub):</strong> `;
+                if (ghReady) {
+                    html += `<span class="text-success fw-bold">🟢 Verbunden</span>`;
+                } else {
+                    html += `<span class="text-danger fw-bold">🔴 Problem erkannt</span>`;
+                }
+                html += ` <span class="text-muted">(${escapeHtml(gh.repo || '')} / ${escapeHtml(gh.branch || 'main')})</span>`;
+                if (gh.connected) {
+                    html += ` &middot; <span class="${gh.berichteAccessible ? 'text-success' : 'text-danger'}">berichte.json: ${gh.berichteAccessible ? 'OK' : 'nicht erreichbar'}</span>`;
+                    if (gh.canPush === false) {
+                        html += ` &middot; <span class="text-danger fw-bold">Keine Push-Rechte (Read-only!)</span>`;
+                    }
+                }
+                if (gh.error) {
+                    html += `<div class="text-danger small mt-1"><i class="fas fa-exclamation-circle me-1"></i>${escapeHtml(gh.error)}</div>`;
+                }
+                if (gh.isFineGrained) {
+                    html += `<div class="text-muted small mt-1"><i class="fas fa-key me-1"></i>Fine-Grained Token erkannt — stelle sicher, dass für <code>${escapeHtml(gh.repo || '')}</code> unter <em>Repository permissions → Contents</em> «Read and write» aktiv ist.</div>`;
+                }
+                html += '</div><hr class="my-2">';
+            }
+
+            // 2. Meta-Token & Scopes
+            html += `<div><strong>Meta-Token:</strong> ${r.metaTokenValid ? '<span class="text-success fw-bold">🟢 Gültig</span>' : '<span class="text-danger fw-bold">🔴 Ungültig / Abgelaufen</span>'}`;
+            if (r.tokenType) {
+                html += ` <span class="badge bg-light text-dark border ms-1">${escapeHtml(r.tokenType)}</span>`;
+            }
             if (r.tokenExpires) {
-                html += ` <small class="text-muted">(Ablauf: ${r.tokenExpires})</small>`;
+                html += ` <small class="text-muted">(Ablauf: ${escapeHtml(r.tokenExpires)})</small>`;
+            }
+            if (r.metaError) {
+                html += `<div class="text-danger small mt-1"><i class="fas fa-exclamation-circle me-1"></i>${escapeHtml(r.metaError)}</div>`;
+            }
+            if (fbMissing.length > 0 || igMissing.length > 0) {
+                const allMissing = [...new Set([...fbMissing, ...igMissing])];
+                html += `<div class="text-danger small mt-1"><i class="fas fa-shield-halved me-1"></i><strong>Fehlende Berechtigungen im Token:</strong> ${allMissing.map(s => `<code>${escapeHtml(s)}</code>`).join(', ')}</div>`;
             }
             html += '</div>';
 
+            // 3. Instagram
             html += `<div class="mt-1"><strong>Instagram:</strong> `;
-            if (r.instagram && r.instagram.connected) {
+            if (r.instagram && r.instagram.connected && igMissing.length === 0) {
                 html += `<span class="text-success fw-bold">🟢 Verbunden als @${escapeHtml(r.instagram.username || '')}</span> <span class="text-muted">(${escapeHtml(r.instagram.name || '')})</span>`;
+            } else if (r.instagram && r.instagram.connected) {
+                html += `<span class="text-warning fw-bold">🟡 Konto @${escapeHtml(r.instagram.username || '')} erreichbar, aber fehlende Scopes: ${igMissing.map(s => escapeHtml(s)).join(', ')}</span>`;
             } else {
                 html += `<span class="text-danger fw-bold">🔴 Nicht verbunden</span> <small class="text-danger">(${escapeHtml(r.instagram ? r.instagram.error || 'Fehler' : 'Keine Daten')})</small>`;
             }
             html += '</div>';
 
+            // 4. Facebook
             html += `<div class="mt-1"><strong>Facebook:</strong> `;
             if (r.facebook && r.facebook.connected) {
-                html += `<span class="text-success fw-bold">🟢 Verbunden mit Seite "${escapeHtml(r.facebook.name || '')}"</span>`;
+                const ptBadge = r.facebook.pageTokenResolved === true
+                    ? '<span class="badge bg-success-subtle text-success border ms-1">Page-Token aufgelöst</span>'
+                    : (r.facebook.pageTokenResolved === false ? '<span class="badge bg-warning text-dark ms-1">⚠️ Kein Page-Token aufgelöst</span>' : '');
+                if (fbMissing.length > 0) {
+                    html += `<span class="text-warning fw-bold">🟡 Seite "${escapeHtml(r.facebook.name || '')}" erreichbar</span> ${ptBadge} <div class="text-danger small">Fehlende Rechte für Beiträge: ${fbMissing.map(s => `<code>${escapeHtml(s)}</code>`).join(', ')} (im Meta Business Portfolio Seite zuweisen &amp; Scope beim Token aktivieren).</div>`;
+                } else {
+                    html += `<span class="text-success fw-bold">🟢 Verbunden mit Seite "${escapeHtml(r.facebook.name || '')}"</span> ${ptBadge}`;
+                }
             } else {
                 html += `<span class="text-danger fw-bold">🔴 Nicht verbunden</span> <small class="text-danger">(${escapeHtml(r.facebook ? r.facebook.error || 'Fehler' : 'Keine Daten')})</small>`;
             }
             html += '</div>';
+
+            if (r.workerVersion) {
+                html += `<div class="text-muted mt-2" style="font-size: 0.72rem;">Worker: <code>${escapeHtml(r.workerVersion)}</code>${r.graphApiVersion ? ` &middot; Meta Graph API: <code>${escapeHtml(r.graphApiVersion)}</code>` : ''}</div>`;
+            }
 
             html += '</div>';
             infoDiv.innerHTML = html;
