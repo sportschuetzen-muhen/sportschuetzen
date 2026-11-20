@@ -106,7 +106,7 @@ async function apiFetch(module, paramsOrObj, options) {
     }
 
     let url;
-    let fetchOptions = { method: method, headers: headers };
+    let fetchOptions = { method: method, headers: headers, cache: 'no-store' };
 
     const qs = (typeof paramsOrObj === 'string') ? paramsOrObj : new URLSearchParams(paramsOrObj || {}).toString();
 

@@ -1342,7 +1342,7 @@ document.addEventListener('DOMContentLoaded', () => {
         infoDiv.innerHTML = '<div class="alert alert-info py-2 px-3 mb-0"><span class="spinner-border spinner-border-sm text-primary me-2"></span>Prüfe Verbindungen (Webseite/GitHub, Instagram &amp; Facebook)...</div>';
 
         try {
-            const res = await apiFetch('news', 'action=test_social');
+            const res = await apiFetch('news', `action=test_social&_t=${Date.now()}`);
             if (!res.ok) {
                 const errBody = await res.json().catch(() => null);
                 const workerVer = res.headers.get('X-Worker-Version') || '';
