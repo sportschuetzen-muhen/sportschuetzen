@@ -1343,7 +1343,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const res = await apiFetch('news', 'action=test_social');
-            if (!res.ok) throw new Error("HTTP Fehler " + res.status);
+            if (!res.ok) {
+                const errBody = await res.json().catch(() => null);
+                const workerVer = res.headers.get('X-Worker-Version') || '';
+                let detailMsg = `HTTP Fehler ${res.status}`;
+                if (errBody && errBody.error) {
+                    detailMsg += ` – ${errBody.error}`;
+                }
+                if (workerVer) {
+                    detailMsg += ` [Worker: ${workerVer}]`;
+                }
+                throw new Error(detailMsg);
+            }
             const data = await res.json();
             if (!data.success) throw new Error(data.error || "Unbekannter Fehler");
 
